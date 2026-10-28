@@ -2,20 +2,10 @@
 //! slugs.
 
 use porter_capability::Subject;
-use porter_capability::{
-    Access, Capability, CapabilityKind, Delta, HashKind, StorageCap, StorageScope,
-};
-use porter_core::token::Audience;
+use porter_capability::{Access, Capability, Delta, HashKind, StorageCap, StorageScope};
+use porter_core::consent::Usage;
 use porter_core::{AccountId, GrantId, ProviderId};
-use porter_core::{
-    AccountLabel, AppId, AppName, Candidate, DataClass, Isolation, IssuedToken, ProviderHint,
-    Restriction, SecretText, SpaceId, SpaceScope, TokenKind,
-};
-use porter_core::{
-    GrantKey,
-    consent::{Availability, Decision, Grant, GrantScope, Usage},
-};
-use porter_ids::UnixSeconds;
+use porter_core::{AccountLabel, Candidate, DataClass, ProviderHint, Restriction};
 use porter_match::{Need, StorageNeed};
 use porter_wire::{AccountsReply, AccountsRequest, ParentWindow, Refusal};
 use serde::Serialize;
@@ -64,27 +54,6 @@ fn candidate() -> Candidate {
     )
 }
 
-fn grant() -> Grant {
-    Grant {
-        id: grant_id("g1"),
-        key: GrantKey {
-            app: AppId {
-                name: AppName::parse("org.quire.Photos").expect("name"),
-                isolation: Isolation::Flatpak,
-            },
-            account: account_id("cloud"),
-            kind: CapabilityKind::Storage,
-            class: DataClass::Photos,
-            usage: Usage::Background,
-            space: SpaceScope::Only(SpaceId::parse("work").expect("space")),
-            reach: StorageScope::AppFolder,
-        },
-        decision: Decision::Allow,
-        scope: GrantScope::Always,
-        at: UnixSeconds(1_790_000_000),
-    }
-}
-
 #[test]
 fn every_request_and_reply_round_trips() {
     let need = Need::Storage(StorageNeed::new(
@@ -94,17 +63,7 @@ fn every_request_and_reply_round_trips() {
         true,
     ));
     let window = ParentWindow::Handle("wayland:abc".into());
-    let requests = vec![
-        AccountsRequest::Query {
-            need: need.clone(),
-            class: DataClass::Photos,
-            usage: Usage::Interactive,
-        },
-        AccountsRequest::Availability {
-            need: need.clone(),
-            class: DataClass::Files,
-            usage: Usage::Background,
-        },
+    let requests = [
         AccountsRequest::Choose {
             need,
             class: DataClass::Photos,
@@ -123,30 +82,13 @@ fn every_request_and_reply_round_trips() {
             account: account_id("cloud"),
             window,
         },
-        AccountsRequest::ListGrants,
-        AccountsRequest::Revoke {
-            grant: grant_id("g1"),
-        },
-        AccountsRequest::IssueToken {
-            grant: grant_id("g1"),
-            audience: Audience("imap".into()),
-        },
     ];
     requests.iter().for_each(round_trip);
-    let replies = vec![
-        AccountsReply::Candidates(vec![candidate()]),
-        AccountsReply::Availability(Availability::Unsupported),
+    let replies = [
         AccountsReply::Chosen(candidate()),
         AccountsReply::Added(account_id("cloud")),
         AccountsReply::AlreadyAdded(account_id("cloud")),
         AccountsReply::Reauthenticated,
-        AccountsReply::Grants(vec![grant()]),
-        AccountsReply::Revoked,
-        AccountsReply::Token(IssuedToken::new(
-            TokenKind::Bearer,
-            SecretText::new("t"),
-            UnixSeconds(1),
-        )),
         AccountsReply::Refused(Refusal::AudienceNotGranted),
         AccountsReply::Refused(Refusal::EndpointNotGranted),
     ];

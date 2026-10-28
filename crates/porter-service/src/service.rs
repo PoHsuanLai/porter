@@ -14,10 +14,12 @@ use crate::sheets::Sheets;
 use porter_capability::{CapabilityKind, Claim, Toggle};
 use porter_core::LauncherSession;
 use porter_core::ProviderHint;
-use porter_core::consent::Usage;
+use porter_core::consent::{Availability, Grant, Usage};
 use porter_core::store::{NoStore, RegistryStore};
 use porter_core::{AccountId, GrantId, ProviderId};
-use porter_core::{AccountState, AgentState, AppId, DataClass, EndpointUrl, RelayPlan, SecretText};
+use porter_core::{
+    AccountState, AgentState, AppId, Candidate, DataClass, EndpointUrl, RelayPlan, SecretText,
+};
 use porter_ids::clock::Clock;
 use porter_match::Need;
 use porter_provider::{Provider, ProviderSpec, RevokeOutcome};
@@ -89,17 +91,13 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         self.ctx.lock().clone()
     }
 
-    /// Answers `request` from `caller`. A relay carries a descriptor the transport makes, so it is
-    /// not a request: it is [`AccountService::open_authenticated`] and
+    /// Answers `request` from `caller`: a sheet (a chooser, the add-account sheet, a sign-in
+    /// again). What an app reads of its grants is [`AccountService::candidates`],
+    /// [`AccountService::availability`] and [`AccountService::grants`]; a relay carries a
+    /// descriptor the transport makes, so it is [`AccountService::open_authenticated`] and
     /// [`AccountService::open_linked`].
     pub async fn handle(&self, caller: &AppId, request: AccountsRequest) -> AccountsReply {
         match request {
-            AccountsRequest::Query { need, class, usage } => {
-                self.ctx.query(caller, &need, class, usage)
-            }
-            AccountsRequest::Availability { need, class, usage } => {
-                self.ctx.availability_of(caller, &need, class, usage)
-            }
             AccountsRequest::Choose {
                 need,
                 class,
@@ -116,14 +114,43 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             AccountsRequest::Reauthenticate { account, window } => {
                 self.ctx.reauthenticate(caller, &account, window).await
             }
-            AccountsRequest::ListGrants => self.ctx.grants_of(caller),
-            AccountsRequest::Revoke { grant } => self.ctx.revoke(caller, &grant).await,
-            AccountsRequest::IssueToken { grant, audience } => {
-                self.ctx.issue_token(caller, &grant, &audience).await
-            }
             // a variant a newer porter adds: refused as unavailable
             _ => AccountsReply::Refused(Refusal::Unavailable),
         }
+    }
+
+    /// The accounts that fit `need` for `caller` and that `caller` holds a grant for, best first.
+    pub fn candidates(
+        &self,
+        caller: &AppId,
+        need: &Need,
+        class: DataClass,
+        usage: Usage,
+    ) -> Vec<Candidate> {
+        self.ctx.candidates_of(caller, need, class, usage)
+    }
+
+    /// Whether `need` can be met for `caller`, revealing no identity: an account fits and
+    /// `caller` holds a grant, an account fits and the person is yet to be asked, or none fits.
+    pub fn availability(
+        &self,
+        caller: &AppId,
+        need: &Need,
+        class: DataClass,
+        usage: Usage,
+    ) -> Availability {
+        self.ctx.availability_of(caller, need, class, usage)
+    }
+
+    /// The grants `caller` holds.
+    pub fn grants(&self, caller: &AppId) -> Vec<Grant> {
+        self.ctx.grants_of(caller)
+    }
+
+    /// Withdraws one of `caller`'s own grants; `UnknownGrant` when `caller` holds none of that
+    /// id.
+    pub async fn revoke(&self, caller: &AppId, grant: &GrantId) -> Result<(), Refusal> {
+        self.ctx.revoke(caller, grant).await
     }
 
     /// The API key filed for `account`: the in-process read for a host that runs the agent

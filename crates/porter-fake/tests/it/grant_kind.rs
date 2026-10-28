@@ -1,15 +1,14 @@
-//! A token an app receives (`IssueToken`) and one a relay presents (`OpenAuthenticated`) are
-//! asked of the provider session for the grant's kind (`access_token_for`), so a family whose
-//! tokens are per kind (Microsoft's Graph, Google's APIs) gives a calendar grant a calendar
-//! token and nothing wider (sec-1).
+//! A token a relay presents (`OpenAuthenticated`) is asked of the provider session for the
+//! grant's kind (`access_token_for`), so a family whose tokens are per kind (Microsoft's Graph,
+//! Google's APIs) gives a calendar grant a calendar token and nothing wider (sec-1).
 
 use porter_capability::CapabilityKind;
 use porter_capability::StorageScope;
 use porter_core::GrantId;
 use porter_core::consent::{Decision, GrantScope, Usage};
 use porter_core::{
-    AppId, AppName, Audience, Credential, DataClass, Isolation, IssuedToken, RelayAuth, SecretKey,
-    SecretPurpose, SecretText, SpaceScope,
+    Account, AppId, AppName, Audience, AuthKind, Credential, DataClass, Isolation, IssuedToken,
+    RelayAuth, SecretKey, SecretPurpose, SecretText, SpaceScope,
 };
 use porter_core::{GrantKey, consent::Grant};
 use porter_fake::{
@@ -172,25 +171,6 @@ async fn service() -> (Svc, Asked) {
 }
 
 #[tokio::test]
-async fn a_token_issued_to_an_app_is_asked_for_the_grants_kind() {
-    let (service, asked) = service().await;
-    let reply = service
-        .handle(
-            &mail_app(),
-            AccountsRequest::IssueToken {
-                grant: grant_id(),
-                audience: Audience("imap".into()),
-            },
-        )
-        .await;
-    assert!(matches!(reply, AccountsReply::Token(_)), "{reply:?}");
-    assert_eq!(
-        *asked.lock().unwrap(),
-        [Some((CapabilityKind::Mail, StorageScope::AppFolder))]
-    );
-}
-
-#[tokio::test]
 async fn a_token_a_relay_presents_is_asked_for_the_grants_kind() {
     let (service, asked) = service().await;
     let imap = mail_account().endpoints[0].url.clone();
@@ -208,15 +188,24 @@ async fn a_token_a_relay_presents_is_asked_for_the_grants_kind() {
 
 #[tokio::test]
 async fn a_token_is_asked_for_as_far_as_the_storage_grant_reaches() {
-    let account = storage_account();
+    // A drive that signs in with OAuth: its relay presents a token, not a password.
+    let account = Account {
+        auth: AuthKind::OAuthPkce,
+        ..storage_account()
+    };
     let secrets = MemorySecrets::default();
     secrets
         .put(
             &SecretKey {
                 account: account.id.clone(),
-                purpose: SecretPurpose::Password,
+                purpose: SecretPurpose::OAuthRefresh,
             },
-            &Credential::Password(SecretText::new("app-password")),
+            &Credential::OAuth {
+                access: SecretText::new("stale"),
+                refresh: SecretText::new("refresh"),
+                expires_at: UnixSeconds(0),
+                granted: Default::default(),
+            },
         )
         .await
         .expect("filed");
@@ -225,6 +214,7 @@ async fn a_token_is_asked_for_as_far_as_the_storage_grant_reaches() {
         isolation: Isolation::Unsandboxed,
     };
     let held = account.id.clone();
+    let webdav = account.endpoints[0].url.clone();
     let grant = |id: &str, reach| Grant {
         id: GrantId::parse(id).expect("id"),
         key: GrantKey {
@@ -262,16 +252,11 @@ async fn a_token_is_asked_for_as_far_as_the_storage_grant_reaches() {
     .with_store(MemoryStore::default())
     .with_audit(RecordingAudit::default());
     for id in ["folder", "drive"] {
-        let reply = service
-            .handle(
-                &files,
-                AccountsRequest::IssueToken {
-                    grant: GrantId::parse(id).expect("id"),
-                    audience: Audience("webdav".into()),
-                },
-            )
-            .await;
-        assert!(matches!(reply, AccountsReply::Token(_)), "{id}: {reply:?}");
+        let plan = service
+            .open_authenticated(&files, &GrantId::parse(id).expect("id"), &webdav)
+            .await
+            .unwrap_or_else(|refusal| panic!("{id}: {refusal:?}"));
+        assert!(matches!(plan.auth, RelayAuth::AccessToken(_)), "{id}");
     }
     assert_eq!(
         *asked.lock().unwrap(),

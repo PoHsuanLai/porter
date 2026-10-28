@@ -12,7 +12,6 @@ use common::hosted::{Link, NoDirectory, Service, host, keep};
 use porter_callers::{Caller, CallerRole};
 use porter_capability::StorageScope;
 use porter_capability::{CapabilityKind, Claim, Offer, Provenance, Subject};
-use porter_client::Accounts;
 use porter_core::{
     Account, AccountLabel, AccountState, AuthKind, Credential, DataClass, EndpointUrl, Family,
     LoginName, Restriction, SecretKey, SecretPurpose, SecretText, ServiceEndpoint, SpaceScope, Tls,
@@ -144,7 +143,7 @@ struct Rig {
     nextcloud: Running<NextcloudHandle>,
     hub: Hub,
     mirrors: PathBuf,
-    accounts: Arc<Accounts<Link>>,
+    service: Arc<Service>,
     /// syncd's accounts, whose `remove` is what the Settings row runs.
     own: Keep<Service, NoDirectory>,
     accountd_up: Arc<AtomicBool>,
@@ -288,6 +287,7 @@ async fn rig(with_grants: bool) -> Rig {
         secrets,
     );
     let accounts = Arc::clone(&hosted.accounts);
+    let service = Arc::clone(&hosted.service);
 
     let root = bus.scratch().join("syncd");
     let paths = Paths {
@@ -332,7 +332,7 @@ async fn rig(with_grants: bool) -> Rig {
         nextcloud,
         hub,
         mirrors: paths.mirrors,
-        accounts,
+        service,
         own,
         accountd_up,
         asked,
@@ -694,7 +694,10 @@ async fn a_revoked_grant_stops_and_removes_the_mirror_but_an_unanswering_grant_l
 
     // The person withdraws the Contacts grant: that mirror goes, the calendars stay.
     rig.accountd_up.store(true, Ordering::Relaxed);
-    rig.accounts.revoke(&rig.grants[1]).await.expect("revoke");
+    rig.service
+        .revoke(&syncd_app(), &rig.grants[1])
+        .await
+        .expect("revoke");
     eventually(&rig, "the address book is gone", || !contacts.exists()).await;
     assert!(rig.calendar("personal").exists());
     assert!(
@@ -733,7 +736,10 @@ async fn a_calendar_and_an_address_book_of_one_name_keep_apart_and_retiring_one_
     assert!(items_in(&book, PimKind::Calendar).is_empty());
 
     // The Contacts grant is withdrawn: the address book goes, the calendar of that name stays.
-    rig.accounts.revoke(&rig.grants[1]).await.expect("revoke");
+    rig.service
+        .revoke(&syncd_app(), &rig.grants[1])
+        .await
+        .expect("revoke");
     eventually(&rig, "the address book is gone", || !book.exists()).await;
     assert_eq!(items_in(&calendar, PimKind::Calendar), ["s1.ics"]);
     assert_eq!(read(&calendar.join(DISPLAYNAME)).as_deref(), Some("Shared"));

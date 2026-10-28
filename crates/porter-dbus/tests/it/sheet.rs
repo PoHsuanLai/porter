@@ -164,9 +164,9 @@ fn a_chosen_account_carries_its_path_and_label_beside_its_fields() {
 
 #[test]
 fn a_reply_that_does_not_answer_the_sheet_is_other_unavailable() {
-    let response = response_of(SheetKind::AddAccount, &AccountsReply::Revoked);
+    let response = response_of(SheetKind::AddAccount, &AccountsReply::Reauthenticated);
     assert_eq!(response.code, ResponseCode::Other);
-    let (_, back) = crossing(SheetKind::AddAccount, &AccountsReply::Revoked);
+    let (_, back) = crossing(SheetKind::AddAccount, &AccountsReply::Reauthenticated);
     assert_eq!(back, Ok(AccountsReply::Refused(Refusal::Unavailable)));
     let chosen_for_add = crossing(SheetKind::AddAccount, &AccountsReply::Chosen(candidate()));
     assert_eq!(chosen_for_add.0, 2);

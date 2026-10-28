@@ -1,9 +1,8 @@
 //! What an app asks accountd. The caller's identity is not part of it: each transport derives
 //! it from the connection.
 
+use porter_core::AccountId;
 use porter_core::consent::Usage;
-use porter_core::token::Audience;
-use porter_core::{AccountId, GrantId};
 use porter_core::{DataClass, ProviderHint};
 use porter_match::Need;
 use serde::{Deserialize, Serialize};
@@ -13,25 +12,7 @@ use serde::{Deserialize, Serialize};
 #[serde(tag = "kind", content = "v", rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum AccountsRequest {
-    /// The granted accounts that meet a need (`Manager.Query`).
-    Query {
-        /// The need.
-        need: Need,
-        /// The data it touches.
-        class: DataClass,
-        /// Interactive or background.
-        usage: Usage,
-    },
-    /// Whether a need can be met, revealing no identity (`Manager.Availability`).
-    Availability {
-        /// The need.
-        need: Need,
-        /// The data it touches.
-        class: DataClass,
-        /// Interactive or background.
-        usage: Usage,
-    },
-    /// Ask the user to pick a fitting account and consent (`Manager.Choose`).
+    /// Ask the user to pick a fitting account and consent (`Keys.RequestKey`).
     Choose {
         /// The need.
         need: Need,
@@ -55,20 +36,6 @@ pub enum AccountsRequest {
         account: AccountId,
         /// The window the sheet attaches to.
         window: ParentWindow,
-    },
-    /// The caller's own grants (`Grants.List`).
-    ListGrants,
-    /// Withdraw one of the caller's grants (`Grants.Revoke`).
-    Revoke {
-        /// The grant.
-        grant: GrantId,
-    },
-    /// A short-lived token for a granted account (`Tokens.IssueToken`).
-    IssueToken {
-        /// The grant.
-        grant: GrantId,
-        /// The service it is for.
-        audience: Audience,
     },
 }
 

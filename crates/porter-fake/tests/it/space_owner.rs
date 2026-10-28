@@ -7,7 +7,7 @@ use porter_capability::CapabilityKind;
 use porter_capability::StorageScope;
 use porter_core::GrantId;
 use porter_core::{
-    AppId, AppName, Audience, Credential, DataClass, Isolation, SecretKey, SecretPurpose,
+    AppId, AppName, Credential, DataClass, Isolation, RelayPlan, SecretKey, SecretPurpose,
     SecretText, SpaceId, SpaceScope,
 };
 use porter_core::{
@@ -22,7 +22,6 @@ use porter_ids::clock::FixedClock;
 use porter_secrets::{MemorySecrets, Secrets};
 use porter_service::{AccountService, Registry};
 use porter_wire::Refusal;
-use porter_wire::{AccountsReply, AccountsRequest};
 
 type Svc = AccountService<
     FakeProvider,
@@ -104,15 +103,10 @@ async fn service() -> Svc {
     .with_audit(RecordingAudit::default())
 }
 
-async fn token(service: &Svc, grant: &str) -> AccountsReply {
+async fn relay(service: &Svc, grant: &str) -> Result<RelayPlan, Refusal> {
+    let imap = mail_account().endpoints[0].url.clone();
     service
-        .handle(
-            &mail_app(),
-            AccountsRequest::IssueToken {
-                grant: GrantId::parse(grant).expect("id"),
-                audience: Audience("imap".into()),
-            },
-        )
+        .open_authenticated(&mail_app(), &GrantId::parse(grant).expect("id"), &imap)
         .await
 }
 
@@ -120,24 +114,16 @@ async fn token(service: &Svc, grant: &str) -> AccountsReply {
 async fn a_grant_over_another_apps_own_space_is_refused() {
     let service = service().await;
     assert_eq!(
-        token(&service, "theirs").await,
-        AccountsReply::Refused(Refusal::Denied)
+        relay(&service, "theirs").await.map(|_| ()),
+        Err(Refusal::Denied)
     );
-    let imap = mail_account().endpoints[0].url.clone();
-    let relay = service
-        .open_authenticated(&mail_app(), &GrantId::parse("theirs").expect("id"), &imap)
-        .await;
-    assert_eq!(relay.map(|_| ()), Err(Refusal::Denied));
 }
 
 #[tokio::test]
 async fn own_linked_outside_and_any_spaces_still_pass() {
     let service = service().await;
     for grant in ["own", "linked", "outside", "any"] {
-        let reply = token(&service, grant).await;
-        assert!(
-            matches!(reply, AccountsReply::Token(_)),
-            "{grant}: {reply:?}"
-        );
+        let planned = relay(&service, grant).await;
+        assert!(planned.is_ok(), "{grant}: {planned:?}");
     }
 }

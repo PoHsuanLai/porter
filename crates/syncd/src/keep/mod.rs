@@ -385,18 +385,9 @@ impl<H: Hosted, D: Directory> Keep<H, D> {
 
     /// Takes back every grant of syncd's under one of `wanted`.
     async fn revoke(&self, wanted: &[GrantKey]) -> Result<(), SwitchError> {
-        let AccountsReply::Grants(grants) = self.hosted.answer(AccountsRequest::ListGrants).await
-        else {
-            return Err(SwitchError::Unsaved);
-        };
+        let grants = self.hosted.grants();
         for grant in grants.iter().filter(|g| wanted.contains(&g.key)) {
-            let reply = self
-                .hosted
-                .answer(AccountsRequest::Revoke {
-                    grant: grant.id.clone(),
-                })
-                .await;
-            if reply != AccountsReply::Revoked {
+            if self.hosted.revoke(&grant.id).await.is_err() {
                 return Err(SwitchError::Unsaved);
             }
         }

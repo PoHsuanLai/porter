@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### The wire carries only sheets
+
+- `AccountsRequest` is `Choose`, `AddAccount` and `Reauthenticate`, and `AccountsReply` is
+  `Chosen`, `Added`, `AlreadyAdded`, `Reauthenticated` and `Refused`. Deleted, because no daemon
+  served them: the requests `Query`, `Availability`, `ListGrants`, `Revoke` and `IssueToken`, and
+  the replies `Candidates`, `Availability`, `Grants`, `Revoked` and `Token`. What an app read of
+  its grants is typed on the service: `AccountService::{candidates, availability, grants,
+  revoke}`. `porter_client::Accounts::find` reads it through the in-process transport and is
+  offered only there (`Accounts<InProcess<..>>`); over the bus it was already unsupported.
+  Nothing called `IssueToken` outside tests, so the token it issued is gone with it
+  (`AccountService` has no `issue_token`, `porter_client::Accounts` no `token`), and so are the
+  client's `grants` and `revoke`. `AuditEvent::TokenIssued` is read and never written: an old
+  `audit.jsonl` line of that kind still reads and shows. `Choose` stays: inferd's `Keys` sheet
+  and syncd's own grants use it, and accountd will serve it.
+
 ### Sans-IO is checked
 
 - check-boundary fails when a `*-proto` crate depends on porter-http, tokio or reqwest, or has an

@@ -215,16 +215,10 @@ where
             .find(|p| p.spec().id == account.provider)
             .ok_or(Refusal::Unavailable)?;
         // The grant's kind and reach, so the bearer reaches that kind's service alone, as far as
-        // the grant does. One refresh at a time per account, shared with `IssueToken`; a rotated
+        // the grant does. One refresh at a time per account, shared with `rediscover`; a rotated
         // token is stored first.
         let issued = self
-            .issue_for(
-                account,
-                provider,
-                Some(SecretPurpose::OAuthRefresh),
-                &audience,
-                (kind, reach),
-            )
+            .issue_for(account, provider, &audience, (kind, reach))
             .await?;
         bearer_of(issued.kind, &issued.value)
             .map(RelayAuth::AccessToken)

@@ -1,5 +1,5 @@
 //! Acceptance 1 of design/31 §7.1, in process: a Nextcloud account is added by Login Flow v2
-//! against the fake; a second app's `Query(Storage)` finds nothing until consent is accepted, and
+//! against the fake; a second app's candidates for Storage are none until consent is accepted, and
 //! then one candidate with the account's endpoints. Around it, the rest of what the service does
 //! with a real family: sign in again, close the sheet mid-wait, a registry that cannot be
 //! written, a service turned off, add-and-allow.
@@ -13,7 +13,7 @@ use porter_capability::{Access, CapabilityKind, Delta, StorageScope};
 use porter_core::ProviderHint;
 use porter_core::consent::{GrantScope, Usage};
 use porter_core::{AccountId, ProviderId};
-use porter_core::{AccountState, AppId, AppName, Audience, DataClass, Family, Isolation};
+use porter_core::{AccountState, AppId, AppName, Candidate, DataClass, Family, Isolation};
 use porter_fake::{Scripted, ScriptedSheets};
 use porter_fake_servers::{FakeNextcloud, LoginPolicy, NextcloudHandle, Running, shipped};
 use porter_families::DynProvider;
@@ -45,12 +45,9 @@ fn storage() -> Need {
     ))
 }
 
-fn query() -> AccountsRequest {
-    AccountsRequest::Query {
-        need: storage(),
-        class: DataClass::Files,
-        usage: Usage::Interactive,
-    }
+/// What `app` is told it may use for `storage()`.
+fn candidates_of(service: &Service, app: &AppId) -> Vec<Candidate> {
+    service.candidates(app, &storage(), DataClass::Files, Usage::Interactive)
 }
 
 fn provider() -> Box<dyn DynProvider> {
@@ -157,10 +154,7 @@ async fn adding_a_nextcloud_account_by_login_flow_then_a_second_app_asks_and_is_
 
     // A second app: nothing until it is allowed.
     let files = app("org.quire.Files");
-    assert_eq!(
-        service.handle(&files, query()).await,
-        AccountsReply::Candidates(vec![])
-    );
+    assert_eq!(candidates_of(&service, &files), vec![]);
     let reply = service
         .handle(
             &files,
@@ -177,9 +171,7 @@ async fn adding_a_nextcloud_account_by_login_flow_then_a_second_app_asks_and_is_
     };
     assert_eq!(chosen.account, id);
 
-    let AccountsReply::Candidates(found) = service.handle(&files, query()).await else {
-        panic!("candidates");
-    };
+    let found = candidates_of(&service, &files);
     let [candidate] = found.as_slice() else {
         panic!("one candidate: {found:?}");
     };
@@ -197,18 +189,8 @@ async fn adding_a_nextcloud_account_by_login_flow_then_a_second_app_asks_and_is_
     );
     assert_eq!(candidate.grant, chosen.grant);
 
-    // The password is not in anything an app is told, and no token carries it.
+    // The password is not in anything an app is told.
     assert!(!format!("{found:?}").contains(&password));
-    let token = service
-        .handle(
-            &files,
-            AccountsRequest::IssueToken {
-                grant: chosen.grant.clone(),
-                audience: Audience("webdav".into()),
-            },
-        )
-        .await;
-    assert_eq!(token, AccountsReply::Refused(Refusal::Denied));
 
     // The audit log names the sign-in (the first app) and the grant (the second), no values.
     let entries = kept.audit.entries();
@@ -509,10 +491,7 @@ async fn add_and_allow_is_one_step_with_one_grant() {
     assert_eq!(grants.len(), 1);
     assert_eq!((&grants[0].key.app, &grants[0].key.account), (&files, &id));
     // No second prompt: the app finds the account at once.
-    let AccountsReply::Candidates(found) = service.handle(&files, query()).await else {
-        panic!("candidates");
-    };
-    assert_eq!(found.len(), 1);
+    assert_eq!(candidates_of(&service, &files).len(), 1);
     let kinds: Vec<_> = kept
         .audit
         .entries()

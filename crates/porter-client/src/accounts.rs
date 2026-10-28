@@ -9,9 +9,9 @@ use crate::transport::Transport;
 #[cfg(feature = "infer")]
 use porter_capability::Tier;
 use porter_core::ProviderHint;
-use porter_core::consent::{Grant, Usage};
+use porter_core::consent::Usage;
 use porter_core::{AccountId, GrantId};
-use porter_core::{Audience, Candidate, DataClass, EndpointUrl, IssuedToken};
+use porter_core::{Candidate, DataClass, EndpointUrl};
 #[cfg(feature = "infer")]
 use porter_infer::{
     ClientFrame, InferEvent, InferReply, InferRequest, InferSession, OpenOptions, Readiness,
@@ -71,15 +71,7 @@ impl<T: Transport> Accounts<T> {
         class: DataClass,
         usage: Usage,
     ) -> Result<Found, ClientError> {
-        let query = AccountsRequest::Query {
-            need: need.clone(),
-            class,
-            usage,
-        };
-        let candidates = match self.transport.call(query).await? {
-            AccountsReply::Candidates(candidates) => candidates,
-            other => return Err(unexpected(other)),
-        };
+        let candidates = self.transport.granted(need, class, usage).await?;
         let offer = ConsentOffer {
             need: need.clone(),
             class,
@@ -92,15 +84,8 @@ impl<T: Transport> Accounts<T> {
                 offer,
             ));
         }
-        let ask = AccountsRequest::Availability {
-            need: need.clone(),
-            class,
-            usage,
-        };
-        match self.transport.call(ask).await? {
-            AccountsReply::Availability(availability) => Ok(found(candidates, availability, offer)),
-            other => Err(unexpected(other)),
-        }
+        let availability = self.transport.availability(need, class, usage).await?;
+        Ok(found(candidates, availability, offer))
     }
 
     /// Shows the chooser and consent sheet for `offer`; the account the user picked, granted.
@@ -157,22 +142,6 @@ impl<T: Transport> Accounts<T> {
         }
     }
 
-    /// A short-lived token for a granted candidate; ask again when it expires or on a 401.
-    pub async fn token(
-        &self,
-        candidate: &Candidate,
-        audience: &Audience,
-    ) -> Result<IssuedToken, ClientError> {
-        let request = AccountsRequest::IssueToken {
-            grant: candidate.grant.clone(),
-            audience: audience.clone(),
-        };
-        match self.transport.call(request).await? {
-            AccountsReply::Token(token) => Ok(token),
-            other => Err(unexpected(other)),
-        }
-    }
-
     /// A byte stream to `endpoint`, one of the account's servers the candidate listed, already
     /// authenticated by a daemon-side relay: an IMAP, SMTP or HTTP engine speaks its protocol on
     /// it and never holds the password. The IMAP stream starts with a `PREAUTH` greeting, the
@@ -204,28 +173,6 @@ impl<T: Transport> Accounts<T> {
         match self.transport.open_linked(grant, origin).await? {
             Relayed::Stream(stream) => Ok(stream),
             Relayed::Refused(refusal) => Err(ClientError::Refused(refusal)),
-        }
-    }
-
-    /// The app's own grants.
-    pub async fn grants(&self) -> Result<Vec<Grant>, ClientError> {
-        match self.transport.call(AccountsRequest::ListGrants).await? {
-            AccountsReply::Grants(grants) => Ok(grants),
-            other => Err(unexpected(other)),
-        }
-    }
-
-    /// Withdraws one of the app's grants.
-    pub async fn revoke(&self, grant: &GrantId) -> Result<(), ClientError> {
-        match self
-            .transport
-            .call(AccountsRequest::Revoke {
-                grant: grant.clone(),
-            })
-            .await?
-        {
-            AccountsReply::Revoked => Ok(()),
-            other => Err(unexpected(other)),
         }
     }
 

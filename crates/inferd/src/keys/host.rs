@@ -3,10 +3,12 @@
 //! implementation; the trait keeps the bus objects free of its six type parameters.
 
 use porter_capability::{CapabilityKind, Claim, Toggle};
+use porter_core::consent::Usage;
 use porter_core::store::RegistryStore;
 use porter_core::{AccountId, GrantId, ProviderId};
-use porter_core::{AccountState, AgentState, AppId, Candidate};
+use porter_core::{AccountState, AgentState, AppId, Candidate, DataClass};
 use porter_ids::clock::Clock;
+use porter_match::Need;
 use porter_provider::{Provider, RevokeOutcome};
 use porter_secrets::{Secrets, SecretsError};
 use porter_service::{
@@ -24,6 +26,15 @@ pub trait KeyHost: Send + Sync + 'static {
         caller: &AppId,
         request: AccountsRequest,
     ) -> impl Future<Output = AccountsReply> + Send;
+
+    /// The accounts that fit `need` for `caller` and that `caller` holds a permit for.
+    fn candidates(
+        &self,
+        caller: &AppId,
+        need: &Need,
+        class: DataClass,
+        usage: Usage,
+    ) -> Vec<Candidate>;
 
     /// A copy of the registry.
     fn registry(&self) -> Registry;
@@ -51,18 +62,11 @@ pub trait KeyHost: Send + Sync + 'static {
                 } => (need, class, usage, window),
                 other => return self.handle(caller, other).await,
             };
-            let query = AccountsRequest::Query {
-                need: need.clone(),
-                class,
-                usage,
-            };
-            if let AccountsReply::Candidates(found) = self.handle(caller, query).await {
-                let grants = self.registry().grants;
-                let given =
-                    |held: &Candidate| grants.iter().find(|g| g.id == held.grant).map(|g| g.at);
-                if let Some(best) = found.into_iter().max_by_key(given) {
-                    return AccountsReply::Chosen(best);
-                }
+            let found = self.candidates(caller, &need, class, usage);
+            let grants = self.registry().grants;
+            let given = |held: &Candidate| grants.iter().find(|g| g.id == held.grant).map(|g| g.at);
+            if let Some(best) = found.into_iter().max_by_key(given) {
+                return AccountsReply::Chosen(best);
             }
             let choose = AccountsRequest::Choose {
                 need,
@@ -146,6 +150,16 @@ where
         request: AccountsRequest,
     ) -> impl Future<Output = AccountsReply> + Send {
         AccountService::handle(self, caller, request)
+    }
+
+    fn candidates(
+        &self,
+        caller: &AppId,
+        need: &Need,
+        class: DataClass,
+        usage: Usage,
+    ) -> Vec<Candidate> {
+        AccountService::candidates(self, caller, need, class, usage)
     }
 
     fn registry(&self) -> Registry {

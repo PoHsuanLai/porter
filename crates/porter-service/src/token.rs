@@ -1,4 +1,4 @@
-//! `IssueToken`: what the app is told when the provider or the secret store fails.
+//! What the app is told when a provider, the secret store or a sheet fails.
 
 use porter_provider::ProviderError;
 use porter_secrets::SecretsError;

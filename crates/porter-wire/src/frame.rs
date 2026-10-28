@@ -55,22 +55,30 @@ pub fn decode_frame<T: DeserializeOwned>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::AccountsRequest;
+    use crate::{AccountsRequest, ParentWindow};
+    use porter_core::ProviderHint;
+
+    fn request() -> AccountsRequest {
+        AccountsRequest::AddAccount {
+            hint: ProviderHint::Any,
+            window: ParentWindow::Unparented,
+        }
+    }
 
     #[test]
     fn a_frame_decodes_to_what_was_encoded() {
-        let bytes = encode_frame(&AccountsRequest::ListGrants).expect("encodes");
+        let bytes = encode_frame(&request()).expect("encodes");
         let read = decode_frame::<AccountsRequest>(&bytes).expect("decodes");
         let expected = Envelope {
             vocab: VocabVersion::CURRENT,
-            body: AccountsRequest::ListGrants,
+            body: request(),
         };
         assert_eq!(read, Some((expected, bytes.len())));
     }
 
     #[test]
     fn a_short_buffer_is_partial() {
-        let bytes = encode_frame(&AccountsRequest::ListGrants).expect("encodes");
+        let bytes = encode_frame(&request()).expect("encodes");
         for cut in [0, 3, bytes.len() - 1] {
             let read = decode_frame::<AccountsRequest>(&bytes[..cut]).expect("no error");
             assert_eq!(read, None, "cut at {cut}");

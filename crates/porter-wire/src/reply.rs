@@ -1,8 +1,7 @@
 //! What accountd answers.
 
 use porter_core::AccountId;
-use porter_core::consent::{Availability, Grant};
-use porter_core::{Candidate, IssuedToken};
+use porter_core::Candidate;
 use serde::{Deserialize, Serialize};
 
 /// One reply from accountd, matching its [`crate::AccountsRequest`].
@@ -13,10 +12,6 @@ use serde::{Deserialize, Serialize};
 #[serde(tag = "kind", content = "v", rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum AccountsReply {
-    /// For `Query`: the granted accounts that fit, best first.
-    Candidates(Vec<Candidate>),
-    /// For `Availability`.
-    Availability(Availability),
     /// For `Choose`: the account picked, with its new grant.
     Chosen(Candidate),
     /// For `AddAccount`: the account added.
@@ -27,12 +22,6 @@ pub enum AccountsReply {
     AlreadyAdded(AccountId),
     /// For `Reauthenticate`: signed in again.
     Reauthenticated,
-    /// For `ListGrants`.
-    Grants(Vec<Grant>),
-    /// For `Revoke`.
-    Revoked,
-    /// For `IssueToken`.
-    Token(IssuedToken),
     /// The request was refused, and why.
     Refused(Refusal),
 }

@@ -1,7 +1,7 @@
 use super::*;
 use porter_capability::{Access, Delta, StorageScope};
 use porter_core::consent::{GrantScope, Usage};
-use porter_core::{AppId, AppName, Audience, DataClass, Isolation};
+use porter_core::{AppId, AppName, DataClass, Isolation};
 use porter_fake::{Scripted, ScriptedSheets, fake_service};
 use porter_ids::UnixSeconds;
 use porter_match::Need;
@@ -95,16 +95,11 @@ async fn the_file_a_service_writes_holds_none_of_the_fake_secrets() {
     let AccountsReply::Chosen(candidate) = chosen else {
         panic!("not chosen: {chosen:?}");
     };
-    let token = service
-        .handle(
-            &me,
-            AccountsRequest::IssueToken {
-                grant: candidate.grant.clone(),
-                audience: Audience("webdav".into()),
-            },
-        )
-        .await;
-    assert!(matches!(token, AccountsReply::Token(_)));
+    let endpoint = candidate.endpoints[0].url.clone();
+    service
+        .open_authenticated(&me, &candidate.grant, &endpoint)
+        .await
+        .expect("planned");
     service
         .remove_account(&candidate.account)
         .await

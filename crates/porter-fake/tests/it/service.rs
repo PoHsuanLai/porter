@@ -5,7 +5,7 @@ use porter_capability::CapabilityKind;
 use porter_capability::{Access, Delta, StorageScope};
 use porter_core::consent::{GrantScope, Usage};
 use porter_core::{AccountId, GrantId};
-use porter_core::{AppId, AppName, Audience, DataClass, EndpointUrl, Family, Isolation};
+use porter_core::{AppId, AppName, DataClass, EndpointUrl, Family, Isolation};
 use porter_fake::{MemoryStore, NOW, RecordingAudit, Scripted, ScriptedSheets, fake_service};
 use porter_ids::clock::FixedClock;
 use porter_match::Need;
@@ -83,47 +83,6 @@ fn granted(reply: AccountsReply) -> porter_core::Candidate {
 }
 
 #[tokio::test]
-async fn a_grant_covers_the_audiences_of_its_own_kind_only() {
-    let sheets = ScriptedSheets::answering([
-        Scripted::AllowFirst(GrantScope::Always),
-        Scripted::AllowFirst(GrantScope::Always),
-    ]);
-    let service = fake_service(sheets).await;
-    let me = app("org.quire.Mail");
-    let storage = granted(choose(&service, &me, files(), DataClass::Files).await);
-    let sending = granted(choose(&service, &me, mail(), DataClass::Mail).await);
-    let token = |grant: &GrantId, audience: &str| {
-        service.handle(
-            &me,
-            AccountsRequest::IssueToken {
-                grant: grant.clone(),
-                audience: Audience(audience.into()),
-            },
-        )
-    };
-    assert!(matches!(
-        token(&storage.grant, "webdav").await,
-        AccountsReply::Token(_)
-    ));
-    assert_eq!(
-        token(&storage.grant, "imap").await,
-        AccountsReply::Refused(Refusal::AudienceNotGranted)
-    );
-    assert!(matches!(
-        token(&sending.grant, "imap").await,
-        AccountsReply::Token(_)
-    ));
-    assert!(matches!(
-        token(&sending.grant, "smtp").await,
-        AccountsReply::Token(_)
-    ));
-    assert_eq!(
-        token(&sending.grant, "webdav").await,
-        AccountsReply::Refused(Refusal::AudienceNotGranted)
-    );
-}
-
-#[tokio::test]
 async fn a_candidate_lists_the_endpoints_of_the_kind_that_fit() {
     let sheets = ScriptedSheets::answering([
         Scripted::AllowFirst(GrantScope::Always),
@@ -142,17 +101,8 @@ async fn a_candidate_lists_the_endpoints_of_the_kind_that_fit() {
         "no CalDAV root for files"
     );
     assert_eq!(families(&sending), vec![Family::Imap, Family::Smtp]);
-    let queried = service
-        .handle(
-            &me,
-            AccountsRequest::Query {
-                need: mail(),
-                class: DataClass::Mail,
-                usage: Usage::Interactive,
-            },
-        )
-        .await;
-    assert_eq!(queried, AccountsReply::Candidates(vec![sending]));
+    let queried = service.candidates(&me, &mail(), DataClass::Mail, Usage::Interactive);
+    assert_eq!(queried, vec![sending]);
 }
 
 #[tokio::test]
@@ -472,27 +422,11 @@ async fn every_change_to_the_registry_is_saved_and_audited_without_a_value() {
         AccountsReply::Refused(Refusal::Denied)
     );
     assert_eq!(asks.asked().len(), 2);
-    let token = service
-        .handle(
-            &me,
-            AccountsRequest::IssueToken {
-                grant: storage.grant.clone(),
-                audience: Audience("webdav".into()),
-            },
-        )
-        .await;
-    assert!(matches!(token, AccountsReply::Token(_)));
-    assert_eq!(
-        service
-            .handle(
-                &me,
-                AccountsRequest::Revoke {
-                    grant: storage.grant.clone()
-                }
-            )
-            .await,
-        AccountsReply::Revoked
-    );
+    service
+        .open_authenticated(&me, &storage.grant, &storage.endpoints[0].url)
+        .await
+        .expect("planned");
+    assert_eq!(service.revoke(&me, &storage.grant).await, Ok(()));
     let removed: AccountId = storage.account.clone();
     service.remove_account(&removed).await.expect("removed");
     let saved = store.stored().expect("saved");
@@ -522,9 +456,9 @@ async fn every_change_to_the_registry_is_saved_and_audited_without_a_value() {
             ),
             (
                 NOW,
-                AuditEvent::TokenIssued {
+                AuditEvent::ProxyOpened {
                     grant: storage.grant.clone(),
-                    audience: Audience("webdav".into())
+                    endpoint: storage.endpoints[0].url.clone(),
                 }
             ),
             (

@@ -67,6 +67,32 @@ pub trait Transport: Send + Sync {
         request: AccountsRequest,
     ) -> impl Future<Output = Result<AccountsReply, TransportError>> + Send;
 
+    /// The accounts that fit `need` for this app and that it holds a grant for. Only a transport
+    /// that hosts the service ([`InProcess`]) answers; accountd keeps nothing grant-keyed, so on
+    /// the bus it is [`TransportError::Unsupported`].
+    fn granted(
+        &self,
+        need: &porter_match::Need,
+        class: porter_core::DataClass,
+        usage: porter_core::consent::Usage,
+    ) -> impl Future<Output = Result<Vec<porter_core::Candidate>, TransportError>> + Send {
+        let _ = (need, class, usage);
+        async { Err(TransportError::Unsupported) }
+    }
+
+    /// Whether `need` can be met for this app, revealing no identity. As with
+    /// [`Transport::granted`], only a transport that hosts the service answers.
+    fn availability(
+        &self,
+        need: &porter_match::Need,
+        class: porter_core::DataClass,
+        usage: porter_core::consent::Usage,
+    ) -> impl Future<Output = Result<porter_core::consent::Availability, TransportError>> + Send
+    {
+        let _ = (need, class, usage);
+        async { Err(TransportError::Unsupported) }
+    }
+
     /// A byte stream to one endpoint of a granted account, authenticated by a daemon-side relay
     /// (`Tokens.OpenAuthenticated`). The descriptor is out of band, so it is not a `call`. A
     /// transport that cannot carry one is `Unreachable`.

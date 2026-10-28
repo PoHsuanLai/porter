@@ -23,16 +23,15 @@ use crate::error::TransportError;
 use crate::relays::{NoRelays, RelayHost};
 #[cfg(feature = "infer")]
 use porter_capability::Tier;
-#[cfg(feature = "infer")]
 use porter_core::DataClass;
 use porter_core::GrantId;
+use porter_core::consent::{Availability, Usage};
 use porter_core::store::RegistryStore;
 use porter_core::stream::duplex;
-use porter_core::{AppId, EndpointUrl, RelayPlan};
+use porter_core::{AppId, Candidate, EndpointUrl, RelayPlan};
 use porter_ids::clock::Clock;
 #[cfg(feature = "infer")]
 use porter_infer::{OpenOptions, Readiness};
-#[cfg(feature = "infer")]
 use porter_match::Need;
 use porter_provider::Provider;
 use porter_secrets::Secrets;
@@ -57,6 +56,24 @@ pub trait HostedCore: Send + Sync {
         app: &AppId,
         request: AccountsRequest,
     ) -> impl Future<Output = AccountsReply> + Send;
+
+    /// The accounts that fit `need` for `app` and that it holds a grant for.
+    fn candidates(
+        &self,
+        app: &AppId,
+        need: &Need,
+        class: DataClass,
+        usage: Usage,
+    ) -> Vec<Candidate>;
+
+    /// Whether `need` can be met for `app`, revealing no identity.
+    fn availability(
+        &self,
+        app: &AppId,
+        need: &Need,
+        class: DataClass,
+        usage: Usage,
+    ) -> Availability;
 
     /// The plan for a relay that authenticates to one endpoint of a granted account, or why not.
     fn relay_authenticated(
@@ -86,6 +103,26 @@ where
 {
     async fn answer(&self, app: &AppId, request: AccountsRequest) -> AccountsReply {
         self.handle(app, request).await
+    }
+
+    fn candidates(
+        &self,
+        app: &AppId,
+        need: &Need,
+        class: DataClass,
+        usage: Usage,
+    ) -> Vec<Candidate> {
+        AccountService::candidates(self, app, need, class, usage)
+    }
+
+    fn availability(
+        &self,
+        app: &AppId,
+        need: &Need,
+        class: DataClass,
+        usage: Usage,
+    ) -> Availability {
+        AccountService::availability(self, app, need, class, usage)
     }
 
     async fn relay_authenticated(
@@ -206,6 +243,24 @@ where
         Ok(self.call_service(request).await)
     }
 
+    async fn granted(
+        &self,
+        need: &Need,
+        class: DataClass,
+        usage: Usage,
+    ) -> Result<Vec<Candidate>, TransportError> {
+        Ok(self.service.candidates(&self.app, need, class, usage))
+    }
+
+    async fn availability(
+        &self,
+        need: &Need,
+        class: DataClass,
+        usage: Usage,
+    ) -> Result<Availability, TransportError> {
+        Ok(self.service.availability(&self.app, need, class, usage))
+    }
+
     async fn open_authenticated(
         &self,
         grant: &GrantId,
@@ -234,6 +289,24 @@ where
 
     async fn call(&self, request: AccountsRequest) -> Result<AccountsReply, TransportError> {
         Ok(self.call_service(request).await)
+    }
+
+    async fn granted(
+        &self,
+        need: &Need,
+        class: DataClass,
+        usage: Usage,
+    ) -> Result<Vec<Candidate>, TransportError> {
+        Ok(self.service.candidates(&self.app, need, class, usage))
+    }
+
+    async fn availability(
+        &self,
+        need: &Need,
+        class: DataClass,
+        usage: Usage,
+    ) -> Result<Availability, TransportError> {
+        Ok(self.service.availability(&self.app, need, class, usage))
     }
 
     async fn open_authenticated(

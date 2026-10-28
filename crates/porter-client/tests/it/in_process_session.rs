@@ -5,8 +5,9 @@
 
 use porter_capability::Tier;
 use porter_client::{
-    Accounts, ClientError, InProcess, InferSession, NoBroker, SessionHost, TransportError,
+    Accounts, ClientError, Found, InProcess, InferSession, NoBroker, SessionHost, TransportError,
 };
+use porter_core::consent::Usage;
 use porter_core::{AppId, AppName, DataClass, Isolation};
 use porter_fake::fake_service;
 use porter_fake::{FakeService, ScriptedSheets};
@@ -84,7 +85,10 @@ async fn with_no_broker_a_session_is_unreachable_and_accounts_still_answer() {
             .await,
         Err(ClientError::Transport(TransportError::Unreachable))
     );
-    assert_eq!(accounts.grants().await, Ok(vec![]));
+    let found = accounts
+        .find(&need(), DataClass::Public, Usage::Interactive)
+        .await;
+    assert!(matches!(found, Ok(Found::NeedsConsent(_))), "{found:?}");
     let _ = NoBroker;
 }
 

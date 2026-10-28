@@ -1,5 +1,5 @@
 //! The app-facing API (design/31 §5.1). An app asks for a capability, never a brand. The
-//! account calls below (`find`, `request_grant`, tokens, relays) are answered by a service the
+//! account calls below (`find`, `request_grant`, relays) are answered by a service the
 //! app hosts in process ([`InProcess`]); over the buses accountd and inferd keep what they hold
 //! and the app asks them for an identity or a key permit:
 //!

@@ -96,13 +96,6 @@ pub enum AuditEvent {
         /// The grant.
         grant: GrantId,
     },
-    /// A short-lived token was issued.
-    TokenIssued {
-        /// The grant it was issued under.
-        grant: GrantId,
-        /// The service it is for.
-        audience: Audience,
-    },
     /// An authenticated relay was opened.
     ProxyOpened {
         /// The grant it was opened under.
@@ -236,9 +229,9 @@ mod tests {
                 isolation: Isolation::Flatpak,
             }),
             account: Some(AccountId::parse("cloud").expect("id")),
-            event: AuditEvent::TokenIssued {
+            event: AuditEvent::Granted {
                 grant: GrantId::parse("g1").expect("id"),
-                audience: Audience("imap".into()),
+                kind: CapabilityKind::Mail,
             },
         };
         let json = serde_json::to_string(&entry).expect("json");
@@ -246,13 +239,25 @@ mod tests {
             json,
             concat!(
                 r#"{"at":1790000000,"app":{"name":"org.quire.Mail","isolation":"flatpak"},"#,
-                r#""account":"cloud","event":{"kind":"token_issued","v":{"grant":"g1","audience":"imap"}}}"#
+                r#""account":"cloud","event":{"kind":"granted","v":{"grant":"g1","kind":"mail"}}}"#
             )
         );
         assert_eq!(
             serde_json::from_str::<AuditEntry>(&json).expect("entry"),
             entry
         );
+    }
+
+    #[test]
+    fn a_line_of_a_kind_no_longer_written_is_skipped_and_the_lines_around_it_are_read() {
+        let kept = AuditEntry::new(UnixSeconds(5), None, None, AuditEvent::SignedIn);
+        let text = format!(
+            "{}\n{}\n{}\n",
+            serde_json::to_string(&kept).expect("json"),
+            r#"{"at":1790000000,"app":null,"account":"cloud","event":{"kind":"token_issued","v":{"grant":"g1","audience":"imap"}}}"#,
+            serde_json::to_string(&kept).expect("json"),
+        );
+        assert_eq!(AuditEntry::read_all(&text), vec![kept.clone(), kept]);
     }
 
     #[test]
@@ -451,7 +456,6 @@ mod tests {
             r#"{"at":1,"app":null,"account":"cloud","event":{"kind":"granted","v":{"grant":"g1","kind":"mail"}}}"#,
             r#"{"at":1,"app":null,"account":null,"event":{"kind":"denied","v":{"kind":"storage"}}}"#,
             r#"{"at":1,"app":null,"account":"cloud","event":{"kind":"revoked","v":{"grant":"g1"}}}"#,
-            r#"{"at":1,"app":null,"account":"cloud","event":{"kind":"token_issued","v":{"grant":"g1","audience":"resolve_key"}}}"#,
             r#"{"at":1,"app":null,"account":"cloud","event":{"kind":"signed_in"}}"#,
             r#"{"at":1,"app":null,"account":"cloud","event":{"kind":"reauthed"}}"#,
             r#"{"at":1,"app":null,"account":"cloud","event":{"kind":"removed"}}"#,

@@ -1777,17 +1777,13 @@ fn whole_store() -> porter_match::Need {
     ))
 }
 
-async fn availability_of_the_whole_store(service: &Service) -> AccountsReply {
-    service
-        .handle(
-            &app("org.quire.Files"),
-            AccountsRequest::Availability {
-                need: whole_store(),
-                class: DataClass::Files,
-                usage: Usage::Background,
-            },
-        )
-        .await
+fn availability_of_the_whole_store(service: &Service) -> porter_core::consent::Availability {
+    service.availability(
+        &app("org.quire.Files"),
+        &whole_store(),
+        DataClass::Files,
+        Usage::Background,
+    )
 }
 
 /// An account stored before it was given the on-use access (its record has no claim of it)
@@ -1801,8 +1797,8 @@ async fn one_more_access_given_is_claimed_so_a_need_of_it_fits_the_account() {
     let before = service.registry().accounts[0].capabilities.clone();
     assert_eq!(before, vec![imap_claim()]);
     assert_eq!(
-        availability_of_the_whole_store(&service).await,
-        AccountsReply::Availability(porter_core::consent::Availability::NeedsAccount)
+        availability_of_the_whole_store(&service),
+        porter_core::consent::Availability::NeedsAccount
     );
     let asked = service
         .extend_access(
@@ -1833,7 +1829,7 @@ async fn one_more_access_given_is_claimed_so_a_need_of_it_fits_the_account() {
         ]
     );
     assert_eq!(
-        availability_of_the_whole_store(&service).await,
-        AccountsReply::Availability(porter_core::consent::Availability::AvailableNeedsConsent)
+        availability_of_the_whole_store(&service),
+        porter_core::consent::Availability::AvailableNeedsConsent
     );
 }

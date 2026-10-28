@@ -1,6 +1,6 @@
 //! accountd's calls over the bus: the two sheet methods it still has, `AddAccount` and
 //! `Reauthenticate`. accountd keeps identities and nothing grant-keyed, so finding, choosing,
-//! tokens, grants and relays are not on the bus; a request for one of them is
+//! grants and relays are not on the bus; a request for one of them is
 //! [`TransportError::Unsupported`], as for any carrier that has no such call. A refusal comes back
 //! as the error `org.quire.Accounts1.Error.<Refusal>` and is returned as
 //! `AccountsReply::Refused`, as the in-process carrier does.

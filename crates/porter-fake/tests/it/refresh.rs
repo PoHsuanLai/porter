@@ -10,7 +10,7 @@ use porter_core::AccountId;
 use porter_core::consent::{GrantScope, Usage};
 use porter_core::{
     Account, AppId, AppName, Audience, Candidate, Credential, DataClass, Isolation, IssuedToken,
-    SecretKey, SecretPurpose, SecretText, TokenKind,
+    RelayAuth, RelayPlan, SecretKey, SecretPurpose, SecretText, TokenKind,
 };
 use porter_fake::{
     FakeProvider, FakeSignIn, MemoryStore, NOW, Scripted, ScriptedSheets, mail_account,
@@ -25,8 +25,8 @@ use porter_provider::{
 };
 use porter_secrets::{MemorySecrets, Secrets};
 use porter_service::{AccountService, Registry};
-use porter_wire::ParentWindow;
 use porter_wire::{AccountsReply, AccountsRequest};
+use porter_wire::{ParentWindow, Refusal};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -199,21 +199,20 @@ async fn service() -> (Svc, Seen, Candidate) {
     (service, seen, candidate)
 }
 
-async fn token(service: &Svc, candidate: &Candidate, audience: &str) -> AccountsReply {
+/// The token a relay to the account's `audience` server presents.
+async fn token(service: &Svc, candidate: &Candidate, audience: &str) -> Result<RelayPlan, Refusal> {
+    let server = match audience {
+        "imap" => &candidate.endpoints[0],
+        _ => &candidate.endpoints[1],
+    };
     service
-        .handle(
-            &app(),
-            AccountsRequest::IssueToken {
-                grant: candidate.grant.clone(),
-                audience: Audience(audience.to_owned()),
-            },
-        )
+        .open_authenticated(&app(), &candidate.grant, &server.url)
         .await
 }
 
-fn bearer(reply: AccountsReply) -> String {
-    match reply {
-        AccountsReply::Token(token) => token.value.expose().to_owned(),
+fn bearer(planned: Result<RelayPlan, Refusal>) -> String {
+    match planned.map(|plan| plan.auth) {
+        Ok(RelayAuth::AccessToken(token)) => token.expose().to_owned(),
         other => panic!("not a token: {other:?}"),
     }
 }
@@ -254,8 +253,8 @@ async fn a_scope_never_given_is_needs_consent_and_the_account_stays_signed_in() 
     let (service, seen, candidate) = service().await;
     *seen.unconsented.lock().expect("unconsented") = true;
     assert_eq!(
-        token(&service, &candidate, "imap").await,
-        AccountsReply::Refused(porter_wire::Refusal::NeedsConsent)
+        token(&service, &candidate, "imap").await.map(|_| ()),
+        Err(Refusal::NeedsConsent)
     );
     assert_eq!(
         service.registry().accounts[0].state,

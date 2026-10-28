@@ -7,8 +7,11 @@ use crate::choose::{ask_for, settle};
 use crate::ctx::Ctx;
 use crate::registry::Asker;
 use crate::sheets::Sheets;
+use porter_core::Candidate;
 use porter_core::LauncherSession;
-use porter_core::consent::{ConsentAnswer, GrantScope, Usage, Verdict, availability};
+use porter_core::consent::{
+    Availability, ConsentAnswer, Grant, GrantScope, Usage, Verdict, availability,
+};
 use porter_core::store::RegistryStore;
 use porter_core::{AccountId, GrantId};
 use porter_core::{AppId, DataClass};
@@ -22,49 +25,47 @@ use porter_wire::{ParentWindow, Refusal};
 impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSink>
     Ctx<P, S, U, K, R, A>
 {
-    /// The accounts that fit `need` for `caller`, as `Query` answers.
-    pub(crate) fn query(
+    /// The accounts that fit `need` for `caller` and that `caller` holds a grant for.
+    pub(crate) fn candidates_of(
         &self,
         caller: &AppId,
         need: &Need,
         class: DataClass,
         usage: Usage,
-    ) -> AccountsReply {
+    ) -> Vec<Candidate> {
         let asker = Asker {
             app: caller,
             class,
             usage,
         };
-        AccountsReply::Candidates(self.lock().candidates(need, asker))
+        self.lock().candidates(need, asker)
     }
 
-    /// What is available for `need`, as `Availability` answers.
+    /// What is available for `need`: whether an account fits and whether `caller` may use it.
     pub(crate) fn availability_of(
         &self,
         caller: &AppId,
         need: &Need,
         class: DataClass,
         usage: Usage,
-    ) -> AccountsReply {
+    ) -> Availability {
         let asker = Asker {
             app: caller,
             class,
             usage,
         };
         let verdicts = self.lock().verdicts(need, asker);
-        AccountsReply::Availability(availability(&verdicts, self.catalog.catalog(need)))
+        availability(&verdicts, self.catalog.catalog(need))
     }
 
-    /// The grants `caller` holds, as `ListGrants` answers.
-    pub(crate) fn grants_of(&self, caller: &AppId) -> AccountsReply {
-        let grants = self
-            .lock()
+    /// The grants `caller` holds.
+    pub(crate) fn grants_of(&self, caller: &AppId) -> Vec<Grant> {
+        self.lock()
             .grants
             .iter()
             .filter(|g| g.key.app == *caller)
             .cloned()
-            .collect();
-        AccountsReply::Grants(grants)
+            .collect()
     }
 
     pub(crate) async fn choose(
@@ -132,11 +133,12 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         }
     }
 
-    pub(crate) async fn revoke(&self, caller: &AppId, grant: &GrantId) -> AccountsReply {
+    /// The body of [`AccountService::revoke`](crate::AccountService::revoke).
+    pub(crate) async fn revoke(&self, caller: &AppId, grant: &GrantId) -> Result<(), Refusal> {
         let account = {
             let mut registry = self.lock();
             let Some(held) = registry.grant_of(caller, grant) else {
-                return AccountsReply::Refused(Refusal::UnknownGrant);
+                return Err(Refusal::UnknownGrant);
             };
             let account = held.key.account.clone();
             registry.grants.retain(|g| g.id != *grant);
@@ -149,10 +151,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                 grant: grant.clone(),
             },
         );
-        match self.persist().await {
-            Ok(()) => AccountsReply::Revoked,
-            Err(refusal) => AccountsReply::Refused(refusal),
-        }
+        self.persist().await
     }
 
     /// The body of [`AccountService::spend_once`](crate::AccountService::spend_once).

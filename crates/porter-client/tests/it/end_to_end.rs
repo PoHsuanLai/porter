@@ -6,7 +6,7 @@ use porter_capability::{Access, Delta, StorageScope};
 use porter_client::{Accounts, ClientError, ConsentOffer, Found, InProcess, NoAccount};
 use porter_core::AccountId;
 use porter_core::consent::{GrantScope, Usage};
-use porter_core::{AppId, AppName, Audience, DataClass, Isolation};
+use porter_core::{AppId, AppName, DataClass, Isolation, RelayAuth};
 use porter_fake::{FakeService, Scripted, ScriptedSheets, fake_service};
 use porter_match::Need;
 use porter_match::StorageNeed;
@@ -15,12 +15,15 @@ use std::sync::Arc;
 
 type App = Accounts<InProcess<FakeService>>;
 
-fn app(service: &Arc<FakeService>, name: &str) -> App {
-    let id = AppId {
+fn app_id(name: &str) -> AppId {
+    AppId {
         name: AppName::parse(name).expect("app name"),
         isolation: Isolation::Flatpak,
-    };
-    Accounts::over(InProcess::new(Arc::clone(service), id))
+    }
+}
+
+fn app(service: &Arc<FakeService>, name: &str) -> App {
+    Accounts::over(InProcess::new(Arc::clone(service), app_id(name)))
 }
 
 fn storage(delta: Delta) -> Need {
@@ -79,11 +82,19 @@ async fn a_storage_need_finds_the_fake_cloud_after_consent() {
         Found::One(candidate) => assert_eq!(candidate, chosen),
         other => panic!("expected One, got {other:?}"),
     }
-    let token = photos
-        .token(&chosen, &Audience("webdav".into()))
+    let plan = service
+        .open_authenticated(
+            &app_id("org.quire.Photos"),
+            &chosen.grant,
+            &chosen.endpoints[0].url,
+        )
         .await
-        .expect("token");
-    assert_eq!(token.value.expose(), "fake:fake-storage:webdav");
+        .expect("a relay is planned");
+    assert!(
+        matches!(&plan.auth, RelayAuth::Password(password) if password.expose() == "app-pw"),
+        "{:?}",
+        plan.auth
+    );
 
     let files = app(&service, "org.quire.Files");
     let other = files
@@ -130,7 +141,7 @@ async fn a_need_no_provider_meets_is_unsupported() {
 }
 
 #[tokio::test]
-async fn a_once_grant_is_spent_by_its_token() {
+async fn a_once_grant_is_spent_by_its_first_relay() {
     let service = Arc::new(
         fake_service(ScriptedSheets::answering([Scripted::AllowFirst(
             GrantScope::Once,
@@ -149,12 +160,11 @@ async fn a_once_grant_is_spent_by_its_token() {
         .request_grant(&offer, &ParentWindow::Unparented)
         .await
         .expect("granted");
-    photos
-        .token(&chosen, &Audience("webdav".into()))
-        .await
-        .expect("first token");
-    let again = photos.token(&chosen, &Audience("webdav".into())).await;
-    assert_eq!(again, Err(ClientError::Refused(Refusal::UnknownGrant)));
+    let me = app_id("org.quire.Photos");
+    let relay = |grant| service.open_authenticated(&me, grant, &chosen.endpoints[0].url);
+    relay(&chosen.grant).await.expect("first relay");
+    let again = relay(&chosen.grant).await.map(|_| ());
+    assert_eq!(again, Err(Refusal::UnknownGrant));
     let after = photos
         .find(&need, DataClass::Files, Usage::Interactive)
         .await
@@ -182,9 +192,10 @@ async fn revoking_a_grant_ends_it() {
         .request_grant(&offer, &ParentWindow::Unparented)
         .await
         .expect("granted");
-    assert_eq!(photos.grants().await.expect("grants").len(), 1);
-    photos.revoke(&chosen.grant).await.expect("revoke");
-    assert_eq!(photos.grants().await.expect("grants"), vec![]);
+    let me = app_id("org.quire.Photos");
+    assert_eq!(service.grants(&me).len(), 1);
+    service.revoke(&me, &chosen.grant).await.expect("revoke");
+    assert_eq!(service.grants(&me), vec![]);
 }
 
 /// A DAV account added through a real family (the generic one, over a fake DAV server) from the
