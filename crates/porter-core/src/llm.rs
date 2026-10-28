@@ -72,3 +72,30 @@ impl OwnServerRow {
         }
     }
 }
+
+/// One AI account, as the daemon that sends keys to AI companies lists it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct AiAccountRow {
+    /// The account.
+    pub account: AccountId,
+    /// The provider file the account was made from.
+    pub provider: String,
+    /// What the person calls it.
+    pub label: String,
+    /// Whether it is reached over the network (a program on this computer is not), so a spend
+    /// can be counted against it.
+    pub network: bool,
+}
+
+impl AiAccountRow {
+    /// The row of `account`.
+    pub fn new(account: AccountId, provider: String, label: String, network: bool) -> Self {
+        Self {
+            account,
+            provider,
+            label,
+            network,
+        }
+    }
+}

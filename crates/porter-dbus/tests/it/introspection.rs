@@ -15,6 +15,9 @@ fn checked_in_introspection_matches_the_interfaces() {
         inference::AGENTS,
         inference::LAUNCHER,
         inference::KEYS,
+        accounts::KEYS,
+        accounts::LAUNCHER,
+        accounts::BROKER,
         accounts::SPACES,
         accounts::IDENTITIES,
         accounts::TAILNET,
@@ -396,4 +399,84 @@ fn syncd_and_inferd_declare_what_they_did() {
         format!("{}NoSuchConflict", porter_dbus::sync::SYNC_ERROR_PREFIX)
     );
     assert_eq!(porter_dbus::sync::STATUS_KEY_QUOTA, "quota");
+}
+
+#[test]
+fn accountds_launcher_is_the_old_ones_eight_methods_and_three_signals_with_a_memfd_reply() {
+    let xml = porter_dbus::accounts::LAUNCHER.introspection();
+    for member in [
+        "<interface name=\"org.quire.Accounts1.Launcher\">",
+        "<method name=\"RegisterLauncher\">",
+        "<method name=\"BeginSession\">",
+        "<method name=\"EndSession\">",
+        "<method name=\"RequestAgentKey\">",
+        "<method name=\"ReportAgentLogin\">",
+        "<method name=\"ReportAgentLogout\">",
+        "<method name=\"IssueProcessCredential\">",
+        "<method name=\"RevokeProcessCredential\">",
+        "<signal name=\"AgentLoginRequested\">",
+        "<signal name=\"AgentLogoutRequested\">",
+        "<signal name=\"ProcessCredentialRevoked\">",
+        "<arg name=\"permit\" type=\"s\" direction=\"in\"/>",
+        // The key travels on a sealed descriptor, in no string.
+        "<arg type=\"h\" direction=\"out\"/>",
+    ] {
+        assert!(xml.contains(member), "missing {member}");
+    }
+    assert_eq!(xml.matches("<method ").count(), 8);
+    assert_eq!(xml.matches("<signal ").count(), 3);
+    assert!(!xml.contains("SetAgentState"), "its effect is the reports'");
+    assert!(!xml.contains("type=\"v\""), "the handle is a descriptor");
+    assert!(
+        !xml.contains("name=\"kind\""),
+        "RequestAgentKey has no kind"
+    );
+    assert!(!xml.contains("grant"), "the launcher speaks of permits");
+}
+
+#[test]
+fn accountds_keys_interface_is_a_request_for_a_permit_and_nothing_else() {
+    let xml = porter_dbus::accounts::KEYS.introspection();
+    assert!(xml.contains("<interface name=\"org.quire.Accounts1.Keys\">"));
+    assert!(xml.contains("<method name=\"RequestKey\">"));
+    // Adding a key is `Manager.AddAccount`; a Request object comes back.
+    assert_eq!(xml.matches("<method ").count(), 1);
+    assert_eq!(xml.matches("<signal ").count(), 0);
+    assert_eq!(
+        xml.matches("<arg type=\"o\" direction=\"out\"/>").count(),
+        1
+    );
+}
+
+#[test]
+fn the_broker_declares_six_methods_and_one_signal_and_hands_keys_only_on_descriptors() {
+    let xml = porter_dbus::accounts::BROKER.introspection();
+    for member in [
+        "<interface name=\"org.quire.Accounts1.Broker\">",
+        "<method name=\"Verdicts\">",
+        "<arg name=\"app\" type=\"(ss)\" direction=\"in\"/>",
+        "<method name=\"ReadKey\">",
+        "<method name=\"Accounts\">",
+        "<method name=\"Servers\">",
+        "<method name=\"ReadServerKey\">",
+        "<method name=\"ReportLocal\">",
+        "<signal name=\"Changed\">",
+    ] {
+        assert!(xml.contains(member), "missing {member}");
+    }
+    assert_eq!(xml.matches("<method ").count(), 6);
+    assert_eq!(xml.matches("<signal ").count(), 1);
+    assert_eq!(xml.matches("<property ").count(), 0);
+    // The two keys are the only descriptors; no string in the interface carries one.
+    assert_eq!(
+        xml.matches("<arg type=\"h\" direction=\"out\"/>").count(),
+        2
+    );
+    assert!(xml.contains("<signal name=\"Changed\">\n   </signal>"));
+    // Additive: its own file, and Accounts1's is as it was.
+    assert!(
+        !porter_dbus::accounts::ACCOUNTS
+            .introspection()
+            .contains("Broker")
+    );
 }

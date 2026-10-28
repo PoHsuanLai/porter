@@ -48,7 +48,7 @@ pub use helper_id::HelperId;
 pub use identities::{Identity, IdentityAddress, IdentityId, IdentityKind, IdentityName};
 pub use identity::{CgroupPath, ClaimedId, PeerFacts, PeerIdentity, SandboxFacts, identity_of};
 pub use ids::{AccountId, GrantId, ProviderId};
-pub use llm::{LlmVerdict, OWN_SERVER_PROVIDER, OwnServerRow};
+pub use llm::{AiAccountRow, LlmVerdict, OWN_SERVER_PROVIDER, OwnServerRow};
 pub use process_credential::ProcessCredentialId;
 pub use protocol::EndpointProtocol;
 pub use provider_hint::ProviderHint;
