@@ -1,21 +1,17 @@
 //! The keys of accountd's settings module (PLAN §2.5), as a pure function of the registry: for
 //! each account of every group (the identities and Tailscale, the AI services, the programs on
-//! this computer and the assistants) the rows every account has ([`crate::ROWS`]); for an
-//! identity the expiry of a sign-in that expires and the apps using it (`used_by.<n>`,
-//! read-outs); for an AI account or an assistant a switch for each service, and one Revoke per
-//! permit with its day, how long it lasts, its app and its service; and one text row per OAuth
-//! issuer for a bring-your-own client id. Sync switches are syncd's. What an account spent on
-//! hosted models is inferd's (`spend.month` and `spend.cap`, whose paths this module spells so
-//! that both modules name the same account). Every key is under `accounts.`, so it is never
-//! agent-settable (`ds-settings` refuses a schema that says otherwise).
+//! this computer and the assistants) the rows of [`crate::ROWS`] that the account has; and one
+//! text row per OAuth issuer for a bring-your-own client id. Sync switches are syncd's. What an
+//! account spent on hosted models is inferd's (`spend.month` and `spend.cap`, whose paths this
+//! module spells so that both modules name the same account). Every key is under `accounts.`, so
+//! it is never agent-settable (`ds-settings` refuses a schema that says otherwise).
 
 use crate::spec as spec_of;
-use crate::{Names, READOUTS, REAUTH, REMOVE, Row, action, off, readout as readout_of};
+use crate::{At, GrantRow, PERMITS, ROWS, Row};
 use ds_settings::live::LiveSchema;
-use ds_settings::schema::{ActionWeight, Exposure, KeyKind, KeySpec};
-use porter_capability::{AbsentReason, CapabilityKind, Offer};
-use porter_core::consent::{Decision, Grant, GrantScope};
-use porter_core::{Account, AccountId, AccountState, AppName, AuthKind, GrantId, ProviderId};
+use ds_settings::schema::{Exposure, KeyKind, KeySpec};
+use porter_core::consent::Grant;
+use porter_core::{Account, AccountId, AccountState, AppName, GrantId, ProviderId};
 use porter_ids::word::{from_word, word};
 use porter_provider::Issuer;
 use porter_service_core::registry::Registry;
@@ -24,7 +20,7 @@ use std::collections::BTreeMap;
 
 /// What the daemon knows that the registry does not: how a provider and an app are called, and
 /// where an account is listed.
-pub trait Directory {
+pub trait Directory: Sync {
     /// What a person reads for `provider`, when its file is loaded.
     fn provider_label(&self, provider: &ProviderId) -> Option<&str>;
     /// The group of the page `account` is listed under.
@@ -47,35 +43,27 @@ pub type UsedBy = BTreeMap<AccountId, Vec<AppName>>;
 /// What a key names.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Key {
-    /// `accounts.<id>.<row>`: a row every account has.
-    Account(AccountId, Row),
-    /// `accounts.<id>.expires`: read-only, only for a sign-in that expires (Google, a client in
-    /// testing).
-    Expires(AccountId),
-    /// `accounts.<id>.used_by.<n>`: read-only, the display name of the n-th app (from 0, in name
-    /// order) that signed in with this identity.
-    UsedBy(AccountId, usize),
-    /// `accounts.<id>.service.<kind>`: the switch for one service of an AI account or an
-    /// assistant.
-    Service(AccountId, CapabilityKind),
-    /// `accounts.<id>.grant.<grant>`: a permit, with its Revoke action.
-    Grant(AccountId, GrantId),
-    /// `accounts.<id>.grant.<grant>.since`: read-only, the UTC day the permit was given.
-    Since(AccountId, GrantId),
-    /// `accounts.<id>.grant.<grant>.scope`: read-only, how long it holds.
-    Scope(AccountId, GrantId),
-    /// `accounts.<id>.grant.<grant>.app`: read-only, the app the permit is for.
-    App(AccountId, GrantId),
-    /// `accounts.<id>.grant.<grant>.service`: read-only, the service it reaches.
-    GrantService(AccountId, GrantId),
-    /// `accounts.<id>.sign_out`: for an assistant that signs itself in and is signed in, asks it
-    /// to sign itself out.
-    SignOut(AccountId),
+    /// `accounts.<id>.<tail>`: a row of an account, and the path after the id that says which of
+    /// the row's paths (the row alone says it for a plain row, and the id or index for the rest).
+    Account(AccountId, Row, String),
     /// `accounts.clients.<issuer>`.
     Client(Issuer),
     /// `accounts.clients.<issuer>.secret`: the application secret of the client, for the
     /// issuers that need one ([`SECRET_ISSUERS`]).
     ClientSecret(Issuer),
+}
+
+impl Key {
+    /// The key of a row that has one path.
+    pub fn row(id: AccountId, row: Row) -> Key {
+        let tail = row.0.suffix().to_owned();
+        Key::Account(id, row, tail)
+    }
+
+    /// The key of one of the rows of the permit `grant` of the account `id`.
+    pub fn permit(id: AccountId, row: &dyn GrantRow, grant: &GrantId) -> Key {
+        Key::Account(id, PERMITS, format!("grant.{grant}{}", row.ending()))
+    }
 }
 
 /// `word` with its first letter in capitals ("microsoft" -> "Microsoft").
@@ -123,79 +111,20 @@ pub fn parse(path: &str, registry: &Registry) -> Option<Key> {
         };
     }
     let (id, tail) = account_tail(path, registry.accounts.iter().map(|a| &a.id))?;
-    if let Some(row) = Row::named(tail) {
-        return Some(Key::Account(id, row));
-    }
-    if tail == "expires" {
-        return Some(Key::Expires(id));
-    }
-    if tail == "sign_out" {
-        let account = registry.accounts.iter().find(|a| a.id == id)?;
-        return (account.auth == AuthKind::AgentLogin).then_some(Key::SignOut(id));
-    }
-    if let Some(n) = tail.strip_prefix("used_by.") {
-        return n.parse::<usize>().ok().map(|n| Key::UsedBy(id, n));
-    }
-    if let Some(kind) = tail.strip_prefix("service.") {
-        let kind: CapabilityKind = from_word(kind)?;
-        let account = registry.accounts.iter().find(|a| a.id == id)?;
-        return switch_kinds(account)
-            .contains(&kind)
-            .then_some(Key::Service(id, kind));
-    }
-    let grant = tail.strip_prefix("grant.")?;
-    // A permit's own rows end `.since`, `.scope`, `.app` and `.service`; an id may hold dots, so
-    // the suffix counts only when what is left names a permit the registry has.
-    let held = |text: &str| {
-        GrantId::parse(text)
-            .ok()
-            .filter(|g| registry.grants.iter().any(|held| held.id == *g))
-    };
-    for (suffix, make) in [
-        (".since", Key::Since as fn(AccountId, GrantId) -> Key),
-        (".scope", Key::Scope),
-        (".app", Key::App),
-        (".service", Key::GrantService),
-    ] {
-        if let Some(found) = grant.strip_suffix(suffix).and_then(held) {
-            return Some(make(id, found));
-        }
-    }
-    held(grant).map(|g| Key::Grant(id, g))
+    let account = registry.accounts.iter().find(|a| a.id == id)?;
+    let row = ROWS
+        .iter()
+        .find(|row| row.0.claims(tail, account, &registry.grants))?;
+    Some(Key::Account(id, *row, tail.to_owned()))
 }
 
 /// The path of `key`.
 pub fn path(key: &Key) -> String {
     match key {
-        Key::Account(id, row) => row.path(id),
-        Key::Service(id, kind) => format!("accounts.{id}.service.{}", word(kind)),
-        Key::Grant(id, grant) => format!("accounts.{id}.grant.{grant}"),
-        Key::Since(id, grant) => format!("accounts.{id}.grant.{grant}.since"),
-        Key::Scope(id, grant) => format!("accounts.{id}.grant.{grant}.scope"),
-        Key::App(id, grant) => format!("accounts.{id}.grant.{grant}.app"),
-        Key::GrantService(id, grant) => format!("accounts.{id}.grant.{grant}.service"),
-        Key::SignOut(id) => format!("accounts.{id}.sign_out"),
-        Key::Expires(id) => format!("accounts.{id}.expires"),
-        Key::UsedBy(id, n) => format!("accounts.{id}.used_by.{n}"),
+        Key::Account(id, _, tail) => format!("accounts.{id}.{tail}"),
         Key::Client(issuer) => format!("accounts.clients.{}", word(issuer)),
         Key::ClientSecret(issuer) => format!("accounts.clients.{}.secret", word(issuer)),
     }
-}
-
-/// A row of this module that is not one every account has.
-fn row(
-    key: &Key,
-    section: &str,
-    label: String,
-    help: &str,
-    kind: KeyKind,
-    default: toml::Value,
-) -> KeySpec {
-    let exposure = match key {
-        Key::Client(_) | Key::ClientSecret(_) => Exposure::Advanced,
-        _ => Exposure::Basic,
-    };
-    spec_of(path(key), section, label, help, kind, default, exposure)
 }
 
 /// What the `expires` row says: when Google signs the account out, or that it did. Only for an
@@ -208,179 +137,9 @@ pub fn expiry_text(account: &Account) -> Option<String> {
     })
 }
 
-/// The kinds of service of `account` that have a switch: the AI and assistant services it
-/// offers, and the ones the person turned off. An account with several models holds one claim
-/// per model of the same kind, and has one switch.
-fn switch_kinds(account: &Account) -> Vec<CapabilityKind> {
-    let mut kinds: Vec<CapabilityKind> = Vec::new();
-    for kind in account
-        .capabilities
-        .iter()
-        .filter_map(|claim| match &claim.offer {
-            Offer::Present(_) => Some(claim.offer.kind()),
-            Offer::Absent {
-                kind,
-                reason: AbsentReason::TurnedOff,
-            } => Some(*kind),
-            Offer::Absent { .. } => None,
-        })
-        .filter(|kind| kind.is_ai() || *kind == CapabilityKind::Agent)
-    {
-        if !kinds.contains(&kind) {
-            kinds.push(kind);
-        }
-    }
-    kinds
-}
-
-/// How long a permit holds, as a person reads it.
-const SCOPE_WORDS: [(&str, &str); 3] = [
-    ("once", "Once"),
-    ("always", "Always"),
-    ("session", "This session only"),
-];
-
-/// A permit's row: "Companion can use Language model" (allowed) or "Mail can't use Language
-/// model" (refused), and "... (this session)" for one that lasts one launcher session.
-fn grant_label(grant: &Grant, directory: &dyn Directory) -> String {
-    let can = match grant.decision {
-        Decision::Allow => "can",
-        Decision::Deny => "can't",
-    };
-    let lasting = match grant.scope {
-        GrantScope::Session(_) => " (this session)",
-        GrantScope::Once | GrantScope::Always => "",
-    };
-    format!(
-        "{} {can} use {}{lasting}",
-        directory.app_title(&grant.key.app.name),
-        grant.key.kind.name()
-    )
-}
-
 /// What the `since` row of `grant` says: the UTC day it was given, `YYYY-MM-DD`.
 pub fn since_text(grant: &Grant) -> String {
     grant.at.utc_date().unwrap_or_default()
-}
-
-/// The rows of an AI account or an assistant that an identity has none of: a switch for each
-/// AI service, and for each permit a Revoke with its day, how long it lasts, its app and its
-/// service.
-fn service_keys(
-    account: &Account,
-    grants: &[Grant],
-    section: &str,
-    directory: &dyn Directory,
-) -> Vec<KeySpec> {
-    let id = &account.id;
-    let mut keys = Vec::new();
-    for kind in switch_kinds(account) {
-        keys.push(row(
-            &Key::Service(id.clone(), kind),
-            section,
-            kind.name().to_owned(),
-            "Whether apps may use this service of the account.",
-            KeyKind::Toggle {
-                variants: ["on".to_owned(), "off".to_owned()],
-            },
-            toml::Value::String("on".to_owned()),
-        ));
-    }
-    for grant in grants.iter().filter(|g| g.key.account == *id) {
-        let readout = |key: Key, label: &str, word: &str, labels: &[(&str, &str)]| {
-            readout_of(path(&key), section, label, word, labels)
-        };
-        keys.push(row(
-            &Key::Grant(id.clone(), grant.id.clone()),
-            section,
-            grant_label(grant, directory),
-            "Revoking asks the app again the next time it needs the account.",
-            action("Revoke", ActionWeight::Plain),
-            off(),
-        ));
-        keys.push(readout(
-            Key::Since(id.clone(), grant.id.clone()),
-            "Since",
-            &since_text(grant),
-            &[],
-        ));
-        keys.push(readout(
-            Key::Scope(id.clone(), grant.id.clone()),
-            "Lasts",
-            grant.scope.word(),
-            &SCOPE_WORDS,
-        ));
-        let app = grant.key.app.name.as_str();
-        keys.push(readout(
-            Key::App(id.clone(), grant.id.clone()),
-            "App",
-            app,
-            &[(app, &directory.app_title(&grant.key.app.name))],
-        ));
-        let service = word(&grant.key.kind);
-        keys.push(readout(
-            Key::GrantService(id.clone(), grant.id.clone()),
-            "Service",
-            service,
-            &[(service, grant.key.kind.name())],
-        ));
-    }
-    keys
-}
-
-fn account_keys(
-    account: &Account,
-    grants: &[Grant],
-    used_by: &[AppName],
-    directory: &dyn Directory,
-) -> Vec<KeySpec> {
-    let section = account.label.0.as_str();
-    let id = &account.id;
-    let names = names_of(account, directory);
-    let mut keys: Vec<KeySpec> = READOUTS
-        .iter()
-        .filter_map(|row| row.0.spec(account, section, &names))
-        .collect();
-    if let Some(text) = expiry_text(account) {
-        keys.push(row(
-            &Key::Expires(id.clone()),
-            section,
-            "Sign-in".to_owned(),
-            "Google ends the sign-ins of an app that is not verified yet after 7 days; signing in again starts another 7.",
-            KeyKind::Fixed {
-                variant: text.clone(),
-            },
-            toml::Value::String(text),
-        ));
-    }
-    for (n, app) in used_by.iter().enumerate() {
-        let title = directory.app_title(app);
-        keys.push(row(
-            &Key::UsedBy(id.clone(), n),
-            section,
-            "Used by".to_owned(),
-            "",
-            KeyKind::Fixed {
-                variant: title.clone(),
-            },
-            toml::Value::String(title),
-        ));
-    }
-    keys.extend(service_keys(account, grants, section, directory));
-    keys.extend(REAUTH.0.spec(account, section, &names));
-    // An assistant that is signed in signs itself out from here; one that is signed out signs in.
-    if account.auth == AuthKind::AgentLogin && account.state != AccountState::NeedsLogin {
-        keys.push(row(
-            &Key::SignOut(account.id.clone()),
-            section,
-            "Sign out".to_owned(),
-            "Asks the assistant to sign itself out when it is running; otherwise it only forgets here that it was signed in, and the assistant's own login is not touched.",
-            action("Sign out", ActionWeight::Plain),
-            off(),
-        ));
-    }
-    keys.extend(REMOVE.0.spec(account, section, &names));
-    keys
 }
 
 /// Whether accountd lists `account`: the identities and Tailscale, the AI services and the
@@ -398,48 +157,12 @@ pub fn read(
     used_by: &UsedBy,
     directory: &dyn Directory,
 ) -> Option<toml::Value> {
-    let account = |id: &AccountId| registry.accounts.iter().find(|a| a.id == *id);
-    let held = |grant: &GrantId| registry.grants.iter().find(|g| g.id == *grant);
-    match key {
-        Key::Account(id, row) => {
-            let account = account(id)?;
-            Some(row.0.read(account, &names_of(account, directory)))
-        }
-        Key::Service(id, kind) => {
-            let on = account(id)?
-                .capabilities
-                .iter()
-                .any(|c| c.offer.kind() == *kind && matches!(c.offer, Offer::Present(_)));
-            Some(toml::Value::String(
-                if on { "on" } else { "off" }.to_owned(),
-            ))
-        }
-        Key::Grant(..) | Key::SignOut(_) => Some(off()),
-        Key::Since(_, grant) => held(grant).map(|g| toml::Value::String(since_text(g))),
-        Key::Scope(_, grant) => held(grant).map(|g| toml::Value::String(g.scope.word().to_owned())),
-        Key::App(_, grant) => {
-            held(grant).map(|g| toml::Value::String(g.key.app.name.as_str().to_owned()))
-        }
-        Key::GrantService(_, grant) => {
-            held(grant).map(|g| toml::Value::String(word(&g.key.kind).to_owned()))
-        }
-        Key::Expires(id) => expiry_text(account(id)?).map(toml::Value::String),
-        Key::UsedBy(id, n) => used_by
-            .get(id)
-            .and_then(|apps| apps.get(*n))
-            .map(|app| toml::Value::String(directory.app_title(app))),
-        Key::Client(_) | Key::ClientSecret(_) => None,
-    }
-}
-
-/// What the rows of `account` need to know of its provider.
-fn names_of<'a>(account: &'a Account, directory: &'a dyn Directory) -> Names<'a> {
-    Names {
-        provider_label: directory
-            .provider_label(&account.provider)
-            .unwrap_or_else(|| account.provider.as_str()),
-        group: directory.group_of(account),
-    }
+    let Key::Account(id, row, tail) = key else {
+        return None;
+    };
+    let account = registry.accounts.iter().find(|a| a.id == *id)?;
+    row.0
+        .read(tail, &At::of(account, registry, used_by, directory))
 }
 
 /// The schema of the module for `registry`; `used_by` says which apps use which identity.
@@ -449,30 +172,34 @@ pub fn schema(registry: &Registry, used_by: &UsedBy, directory: &dyn Directory) 
         .iter()
         .filter(|account| listed(account, directory))
         .flat_map(|account| {
-            let apps = used_by.get(&account.id).map(Vec::as_slice).unwrap_or(&[]);
-            account_keys(account, &registry.grants, apps, directory)
+            let at = At::of(account, registry, used_by, directory);
+            ROWS.iter()
+                .flat_map(|row| row.0.specs(&at))
+                .collect::<Vec<_>>()
         })
         .collect();
     key.extend(ISSUERS.iter().flat_map(|issuer| {
         let name = sentence_case(word(issuer));
         let text = || KeyKind::Text;
         let empty = || toml::Value::String(String::new());
-        let id = row(
-            &Key::Client(*issuer),
+        let id = spec_of(
+            path(&Key::Client(*issuer)),
             "Sign-in keys",
             format!("{name} sign-in key"),
             client_help(*issuer),
             text(),
             empty(),
+            Exposure::Advanced,
         );
         let secret = SECRET_ISSUERS.contains(issuer).then(|| {
-            row(
-                &Key::ClientSecret(*issuer),
+            spec_of(
+                path(&Key::ClientSecret(*issuer)),
                 "Sign-in keys",
                 format!("{name} sign-in secret"),
                 "The secret Google shows beside the sign-in key. Google asks for it even from an app on your computer; it is not your password.",
                 text(),
                 empty(),
+                Exposure::Advanced,
             )
         });
         std::iter::once(id).chain(secret)
@@ -496,9 +223,11 @@ fn client_help(issuer: Issuer) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{SIGN_IN, place_slug};
+    use crate::{APP, GRANT_SERVICE, REVOKE, SCOPE, SERVICE, SIGN_IN, SINCE, USED_BY, place_slug};
     use ds_settings::schema::{ActionWeight, AgentSetting};
+    use porter_capability::CapabilityKind;
     use porter_core::AuthKind;
+    use porter_core::consent::{Decision, GrantScope};
     use porter_fake::{mail_account, storage_account};
 
     /// A directory that knows no provider file and no app name: the id stands for the label and
@@ -555,6 +284,23 @@ mod tests {
 
     fn no_apps() -> UsedBy {
         UsedBy::new()
+    }
+
+    /// The rows of `account` alone, in the order they are listed.
+    fn account_keys(
+        account: &Account,
+        grants: &[Grant],
+        used_by: &[AppName],
+        directory: &dyn Directory,
+    ) -> Vec<KeySpec> {
+        let registry = Registry {
+            grants: grants.to_vec(),
+            accounts: vec![account.clone()],
+            toggles: vec![],
+        };
+        let used: UsedBy = [(account.id.clone(), used_by.to_vec())].into();
+        let at = At::of(account, &registry, &used, directory);
+        ROWS.iter().flat_map(|row| row.0.specs(&at)).collect()
     }
 
     fn rows(registry: &Registry) -> Vec<KeySpec> {
@@ -621,7 +367,7 @@ mod tests {
             ]
         );
         assert!(schema.check().is_ok());
-        let key = Key::UsedBy(storage, 1);
+        let key = Key::Account(storage, USED_BY, "used_by.1".to_owned());
         assert_eq!(
             parse("accounts.fake-storage.used_by.1", &registry),
             Some(key.clone())
@@ -653,7 +399,7 @@ mod tests {
         let id = &registry.accounts[1].id;
         assert_eq!(
             parse(&format!("accounts.{id}.sign_in"), &registry),
-            Some(Key::Account(id.clone(), SIGN_IN))
+            Some(Key::row(id.clone(), SIGN_IN))
         );
     }
 
@@ -894,12 +640,12 @@ mod tests {
         let id = registry.accounts[0].id.clone();
         let grant = GrantId::parse("g.1").expect("id");
         let keys = [
-            Key::Service(id.clone(), CapabilityKind::Llm),
-            Key::Grant(id.clone(), grant.clone()),
-            Key::Since(id.clone(), grant.clone()),
-            Key::Scope(id.clone(), grant.clone()),
-            Key::App(id.clone(), grant.clone()),
-            Key::GrantService(id, grant),
+            Key::Account(id.clone(), SERVICE, "service.llm".to_owned()),
+            Key::permit(id.clone(), REVOKE, &grant),
+            Key::permit(id.clone(), SINCE, &grant),
+            Key::permit(id.clone(), SCOPE, &grant),
+            Key::permit(id.clone(), APP, &grant),
+            Key::permit(id, GRANT_SERVICE, &grant),
         ];
         for key in keys {
             assert_eq!(parse(&path(&key), &registry), Some(key.clone()), "{key:?}");
@@ -960,14 +706,17 @@ mod tests {
         let read = |key: Key| read(&key, &registry, &no_apps(), &Plain);
         let grant = GrantId::parse("g.1").expect("id");
         assert_eq!(
-            read(Key::Service(id.clone(), CapabilityKind::Llm)),
+            read(Key::Account(id.clone(), SERVICE, "service.llm".to_owned())),
             Some(toml::Value::String("on".into()))
         );
         assert_eq!(
-            read(Key::Since(id.clone(), grant.clone())),
+            read(Key::permit(id.clone(), SINCE, &grant)),
             Some(toml::Value::String("1970-01-01".into()))
         );
-        assert_eq!(read(Key::Grant(id.clone(), grant)), Some(off()));
+        assert_eq!(
+            read(Key::permit(id.clone(), REVOKE, &grant)),
+            Some(toml::Value::Boolean(false))
+        );
     }
 
     /// inferd serves the spend rows of the accounts accountd lists: both find an account in a

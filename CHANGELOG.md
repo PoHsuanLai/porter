@@ -50,6 +50,12 @@
   `Key` variants. accountd's keys (`Key`, `parse`, `path`, `schema`) and the edit of
   `clients.toml` moved there from accountd; the daemon hosts the module. The row paths and words
   are unchanged.
+- The rows that carry an id or an index (`used_by.<n>`, `service.<kind>`, `grant.<grant>` and its
+  four read-outs, `sign_out`, `expires`) are `AccountRow` impls too, found by the path under the
+  account's id, and a permit's five rows are `GrantRow` impls: `Key` is an account with its row
+  and path, or an issuer's client row, and the daemon does what an action row asks through
+  `Acts`. inferd's two spend rows are `SpendRow` impls. Adding a row is one impl and one line of
+  `ROWS`. Every key path, word and value is unchanged; a table test holds them.
 
 ### The service is a facade over domains
 

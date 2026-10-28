@@ -10,7 +10,7 @@ use porter_core::AccountId;
 use porter_ids::word::word as word_of;
 use porter_service_core::registry::Registry;
 use porter_settings::accounts::{Key, expiry_text, path, since_text};
-use porter_settings::{LABEL, STATE};
+use porter_settings::{EXPIRES, LABEL, REVOKE, SCOPE, SINCE, STATE};
 
 /// One change a client may be told of.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,17 +79,15 @@ pub(crate) fn settings_news(
     let mut news = Vec::new();
     for event in list {
         match event {
-            Event::Removed(id) => {
-                news.push((row(Key::Account(id.clone(), STATE)), text("removed")))
-            }
+            Event::Removed(id) => news.push((row(Key::row(id.clone(), STATE)), text("removed"))),
             Event::Added(id) | Event::StateChanged(id) => {
                 if let Some(account) = after.accounts.iter().find(|a| a.id == *id) {
                     news.push((
-                        row(Key::Account(id.clone(), STATE)),
+                        row(Key::row(id.clone(), STATE)),
                         text(word_of(&account.state)),
                     ));
                     if let Some(words) = expiry_text(account) {
-                        news.push((row(Key::Expires(id.clone())), text(&words)));
+                        news.push((row(Key::row(id.clone(), EXPIRES)), text(&words)));
                     }
                 }
             }
@@ -104,7 +102,7 @@ pub(crate) fn settings_news(
             .is_some_and(|old| old.label != account.label);
         if renamed {
             news.push((
-                row(Key::Account(account.id.clone(), LABEL)),
+                row(Key::row(account.id.clone(), LABEL)),
                 text(&account.label.0),
             ));
         }
@@ -137,7 +135,7 @@ fn permit_news(before: &Registry, after: &Registry) -> Vec<(KeyPath, toml::Value
             .or_else(|| was.clone())
             .filter(|g| g.scope.session().is_some())
         {
-            let key = Key::Grant(grant.key.account.clone(), grant.id.clone());
+            let key = Key::permit(grant.key.account.clone(), REVOKE, &grant.id);
             news.push((
                 row(key),
                 text(if now.is_some() { "added" } else { "removed" }),
@@ -147,13 +145,13 @@ fn permit_news(before: &Registry, after: &Registry) -> Vec<(KeyPath, toml::Value
             let (account, grant) = (&now.key.account, &now.id);
             if was.scope.word() != now.scope.word() {
                 news.push((
-                    row(Key::Scope(account.clone(), grant.clone())),
+                    row(Key::permit(account.clone(), SCOPE, grant)),
                     text(now.scope.word()),
                 ));
             }
             if since_text(&was) != since_text(&now) {
                 news.push((
-                    row(Key::Since(account.clone(), grant.clone())),
+                    row(Key::permit(account.clone(), SINCE, grant)),
                     text(&since_text(&now)),
                 ));
             }
