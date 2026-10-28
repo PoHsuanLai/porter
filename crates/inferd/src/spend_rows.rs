@@ -54,12 +54,32 @@ impl std::fmt::Debug for SpendRows {
     }
 }
 
-/// Which of the two rows a path is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Row {
-    Month,
-    Cap,
+/// One of the two rows of an account: its path after the id, its words, and what it says of the
+/// month's ledger.
+struct SpendRow {
+    suffix: &'static str,
+    label: &'static str,
+    /// What the row says when its provider reports no charges: why nothing here applies.
+    unreported: &'static str,
+    /// The row's value: the month's spend or the cap on it, as digits.
+    value: fn(&ChargeTotal, Option<Money>) -> String,
 }
+
+/// The rows of an account, in the order they are listed.
+static ROWS: [SpendRow; 2] = [
+    SpendRow {
+        suffix: SPEND_MONTH,
+        label: "Spent this month",
+        unreported: "nothing is counted here",
+        value: |total, _| cents_up(total.reported),
+    },
+    SpendRow {
+        suffix: SPEND_CAP,
+        label: "Monthly limit",
+        unreported: "a limit can't apply to it",
+        value: |_, cap| cap.map_or_else(|| "0".to_owned(), cents_up),
+    },
+];
 
 impl SpendRows {
     /// The rows of `accounts`, spend read from `spend`.
@@ -67,7 +87,7 @@ impl SpendRows {
         Self { accounts, spend }
     }
 
-    fn spec(account: &AiAccountRow, row: Row) -> KeySpec {
+    fn spec(account: &AiAccountRow, row: &SpendRow) -> KeySpec {
         // Only what a provider reports is counted. For one that reports nothing, both rows say so
         // before any request runs: its replies show tokens and never dollars, so a limit on it
         // could never be met.
@@ -76,25 +96,17 @@ impl SpendRows {
             .provider_label
             .as_deref()
             .unwrap_or(&account.provider);
-        let says = |what: &str| format!("{name} doesn't report what its replies cost, so {what}.");
-        let (suffix, label, help) = match (row, reported) {
-            (Row::Month, Charges::PerReply) => (SPEND_MONTH, "Spent this month", String::new()),
-            (Row::Cap, Charges::PerReply) => (SPEND_CAP, "Monthly limit", String::new()),
-            (Row::Month, _) => (
-                SPEND_MONTH,
-                "Spent this month",
-                says("nothing is counted here"),
-            ),
-            (Row::Cap, _) => (
-                SPEND_CAP,
-                "Monthly limit",
-                says("a limit can't apply to it"),
+        let help = match reported {
+            Charges::PerReply => String::new(),
+            _ => format!(
+                "{name} doesn't report what its replies cost, so {}.",
+                row.unreported
             ),
         };
         let mut spec = porter_settings::readout(
-            format!("accounts.{}.{suffix}", account.account),
+            format!("accounts.{}.{}", account.account, row.suffix),
             &account.label,
-            label,
+            row.label,
             "0",
             &[],
         );
@@ -108,23 +120,14 @@ impl SpendRows {
             .now()
             .iter()
             .filter(|account| account.network)
-            .flat_map(|account| {
-                [
-                    Self::spec(account, Row::Month),
-                    Self::spec(account, Row::Cap),
-                ]
-            })
+            .flat_map(|account| ROWS.iter().map(move |row| Self::spec(account, row)))
             .collect()
     }
 
-    fn row_of(&self, path: &str) -> Option<(AccountId, Row)> {
+    fn row_of(&self, path: &str) -> Option<(AccountId, &'static SpendRow)> {
         let now = self.accounts.now();
         let (id, tail) = account_tail(path, now.iter().map(|a| &a.account))?;
-        let row = match tail {
-            SPEND_MONTH => Row::Month,
-            SPEND_CAP => Row::Cap,
-            _ => return None,
-        };
+        let row = ROWS.iter().find(|row| row.suffix == tail)?;
         now.iter()
             .any(|a| a.account == id && a.network)
             .then_some((id, row))
@@ -142,11 +145,7 @@ impl SpendRows {
                 .row_of(path)
                 .ok_or_else(|| LiveError::UnknownKey(path.to_owned()))?;
             let (total, cap) = self.spend.month(&id);
-            let text = match row {
-                Row::Month => cents_up(total.reported),
-                Row::Cap => cap.map_or_else(|| "0".to_owned(), cents_up),
-            };
-            Ok(toml::Value::String(text))
+            Ok(toml::Value::String((row.value)(&total, cap)))
         })
     }
 
