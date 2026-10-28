@@ -14,37 +14,32 @@ use porter_sheet::{Hop, MailServers, Security, SignInFault};
 /// What looking for a mail server came to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum Looked {
-    /// Servers, what the account can do there, and whether the password may be tried there
-    /// before the person has seen them.
-    Found(Vec<ServiceEndpoint>, Vec<Claim>, Vouched),
+    /// Servers and what the account can do there.
+    Found {
+        /// The servers.
+        endpoints: Vec<ServiceEndpoint>,
+        /// What the account can do there.
+        claims: Vec<Claim>,
+        /// Whether the password is sent only after the person has seen the servers on the review
+        /// and confirmed them: DNS SRV records naming a host outside the address's domain. Unsigned
+        /// DNS can be answered by anyone on the path. Otherwise (the address's own domain or a
+        /// database of documents: a provider file, the domain's autoconfig over HTTPS, the ISPDB,
+        /// or SRV records naming hosts within the domain) the password is tried before the review.
+        confirm_first: bool,
+    },
     /// Nothing usable is published: ask the person for the server.
     Ask,
     /// Nothing could be reached to ask.
     Offline,
 }
 
-/// Who vouches for the servers a search found, which decides when the password is first sent.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Vouched {
-    /// The address's own domain or a database of documents (a provider file, the domain's
-    /// autoconfig over HTTPS, the ISPDB), or SRV records naming hosts within the domain: the
-    /// password is tried before the review.
-    ByTheDomain,
-    /// DNS SRV records naming a host outside the address's domain. Unsigned DNS can be answered
-    /// by anyone on the path, so the password is sent only after the person has seen the
-    /// servers on the review and confirmed them.
-    Unconfirmed,
-}
-
-/// Who vouches for `found`, the finding for an address in `domain`.
-fn vouched(found: &Found, domain: &DomainName) -> Vouched {
+/// Whether the password is sent only after the person has confirmed `found`, the finding for an
+/// address in `domain`: servers that only unsigned DNS names, outside the domain.
+fn confirm_first(found: &Found, domain: &DomainName) -> bool {
     let within = |endpoint: &ServiceEndpoint| {
         DomainName::parse(&endpoint.url.origin().host).is_ok_and(|host| host.is_within(domain))
     };
-    match found.source {
-        Source::Srv if !found.endpoints.iter().all(within) => Vouched::Unconfirmed,
-        _ => Vouched::ByTheDomain,
-    }
+    matches!(found.source, Source::Srv) && !found.endpoints.iter().all(within)
 }
 
 /// The domain of an address, when it is one.
@@ -63,8 +58,12 @@ pub(super) async fn look(
     match discover_mail(&io.http, dns, providers, address).await {
         Ok(Outcome::Servers(found)) => match domain_of(address) {
             Some(domain) => {
-                let vouched = vouched(&found, &domain);
-                Looked::Found(found.endpoints, found.claims, vouched)
+                let confirm_first = confirm_first(&found, &domain);
+                Looked::Found {
+                    endpoints: found.endpoints,
+                    claims: found.claims,
+                    confirm_first,
+                }
             }
             None => Looked::Ask,
         },

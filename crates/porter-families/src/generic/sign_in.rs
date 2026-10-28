@@ -3,7 +3,7 @@
 //! asks for the server, a user name and a password.
 
 use super::login::SharedLogin;
-use super::mail::{self, Looked, Vouched};
+use super::mail::{self, Looked};
 use super::{dav, jmap};
 use crate::io::{Io, SharedDns};
 use crate::password::{parse_server, password_for, plain, text_of, typed_password};
@@ -44,10 +44,12 @@ enum State {
     Asked,
     /// The mail servers were not found; the server is asked for.
     AskedServer(Typed),
-    /// Discovery is on screen, waiting for the person's confirmation.
-    Reviewing(Box<Signed>),
-    /// Servers only unsigned DNS named are on screen; the password is tried once confirmed.
-    ReviewingUnchecked(Box<Signed>),
+    /// Discovery is on screen, waiting for the person's confirmation. When `tried_password` is
+    /// false the servers are ones only unsigned DNS named: the password is tried once confirmed.
+    Reviewing {
+        signed: Box<Signed>,
+        tried_password: bool,
+    },
     Ended,
 }
 
@@ -135,7 +137,7 @@ impl GenericSignIn {
         }
         let signed = Self::signed(credential, label, endpoints, claims);
         match self.mode {
-            SignInMode::Add => Self::review(&mut self.state, signed, State::Reviewing),
+            SignInMode::Add => Self::review(&mut self.state, signed, true),
             SignInMode::Reauthenticate { .. } => {
                 self.state = State::Ended;
                 SignInStep::Done(signed)
@@ -160,7 +162,7 @@ impl GenericSignIn {
         match &self.mode {
             SignInMode::Add => {
                 let signed = Self::signed(credential, typed.login, endpoints, claims);
-                Self::review(&mut self.state, signed, State::ReviewingUnchecked)
+                Self::review(&mut self.state, signed, false)
             }
             SignInMode::Reauthenticate {
                 endpoints: held, ..
@@ -188,15 +190,19 @@ impl GenericSignIn {
         )
     }
 
-    /// Shows `signed` for review and waits in the state `waiting` makes of it.
-    fn review(state: &mut State, signed: Signed, waiting: fn(Box<Signed>) -> State) -> SignInStep {
+    /// Shows `signed` for review and waits for the person; `tried_password` says whether its
+    /// password was tried at the servers already.
+    fn review(state: &mut State, signed: Signed, tried_password: bool) -> SignInStep {
         let step = SignInStep::Review {
             claims: signed.claims.clone(),
             endpoints: signed.endpoints.clone(),
             restriction: signed.restriction.clone(),
             label: signed.label.clone(),
         };
-        *state = waiting(Box::new(signed));
+        *state = State::Reviewing {
+            signed: Box::new(signed),
+            tried_password,
+        };
         step
     }
 
@@ -258,12 +264,20 @@ impl GenericSignIn {
             return self.failed(SignInFault::Unreadable);
         }
         match mail::look(&self.io, &self.dns, &self.providers, &address).await {
-            Looked::Found(endpoints, claims, Vouched::ByTheDomain) => {
+            Looked::Found {
+                endpoints,
+                claims,
+                confirm_first: false,
+            } => {
                 let label = address;
                 self.found(Credential::Password(password), label, endpoints, claims)
                     .await
             }
-            Looked::Found(endpoints, claims, Vouched::Unconfirmed) => {
+            Looked::Found {
+                endpoints,
+                claims,
+                confirm_first: true,
+            } => {
                 let typed = Typed {
                     login: address,
                     password,
@@ -346,10 +360,20 @@ impl SignIn for GenericSignIn {
             (State::AskedServer(typed), SignInInput::Fields(answers)) => {
                 self.typed_server(typed, &answers).await
             }
-            (State::Reviewing(signed), SignInInput::Confirm(_)) => SignInStep::Done(*signed),
-            (State::ReviewingUnchecked(signed), SignInInput::Confirm(_)) => {
-                self.confirmed_unchecked(*signed).await
-            }
+            (
+                State::Reviewing {
+                    signed,
+                    tried_password: true,
+                },
+                SignInInput::Confirm(_),
+            ) => SignInStep::Done(*signed),
+            (
+                State::Reviewing {
+                    signed,
+                    tried_password: false,
+                },
+                SignInInput::Confirm(_),
+            ) => self.confirmed_unchecked(*signed).await,
             _ => self.failed(SignInFault::Unreadable),
         }
     }
