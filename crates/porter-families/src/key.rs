@@ -21,9 +21,7 @@ use porter_http::http::Method;
 use porter_http::http::header::{ACCEPT, AUTHORIZATION, HeaderName};
 use porter_http::http::request::Builder;
 use porter_http::{Http, SensitiveHeader, request_to};
-use porter_provider::{
-    Presented, ProviderError, ProviderSession, ProviderSpec, SignInStep, Signed,
-};
+use porter_provider::{Presented, ProviderError, ProviderSession, ProviderSpec, Signed};
 use porter_sheet::SignInFault;
 
 /// The key a presented credential holds, or `Unauthorized` when the account has none.
@@ -226,16 +224,6 @@ pub(crate) fn signed_server(
         vec![server],
         Restriction::none(),
     )
-}
-
-/// The review of `signed`.
-pub(crate) fn review_of(signed: &Signed) -> SignInStep {
-    SignInStep::Review {
-        claims: signed.claims.clone(),
-        endpoints: signed.endpoints.clone(),
-        restriction: signed.restriction.clone(),
-        label: signed.label.clone(),
-    }
 }
 
 /// What a failed call says to the person.

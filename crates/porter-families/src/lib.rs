@@ -15,7 +15,14 @@
 mod agent_login;
 #[cfg(feature = "api_key")]
 mod api_key;
-#[cfg(feature = "oauth")]
+#[cfg(any(
+    feature = "agent_login",
+    feature = "api_key",
+    feature = "generic",
+    feature = "nextcloud",
+    feature = "oauth",
+    feature = "tailnet"
+))]
 mod conversation;
 mod dispatch;
 #[cfg(feature = "oauth")]
@@ -44,16 +51,23 @@ pub mod set;
 mod tailnet;
 
 #[cfg(feature = "agent_login")]
-pub use agent_login::{AgentLoginProvider, AgentLoginSession, AgentLoginSignIn};
+pub use agent_login::{AgentLoginFlow, AgentLoginProvider, AgentLoginSession};
 #[cfg(feature = "api_key")]
-pub use api_key::{ApiKeyProvider, ApiKeySession, ApiKeySignIn};
-#[cfg(feature = "oauth")]
+pub use api_key::{ApiKeyFlow, ApiKeyProvider, ApiKeySession};
+#[cfg(any(
+    feature = "agent_login",
+    feature = "api_key",
+    feature = "generic",
+    feature = "nextcloud",
+    feature = "oauth",
+    feature = "tailnet"
+))]
 pub use conversation::{Conversation, Flow, Move};
 pub use dispatch::{DynProvider, DynSession, DynSignIn};
 #[cfg(feature = "oauth")]
 pub use env_common::{ClientFiles, Clock, Random};
 #[cfg(feature = "generic")]
-pub use generic::{GenericProvider, GenericSession, GenericSignIn};
+pub use generic::{GenericFlow, GenericProvider, GenericSession};
 #[cfg(feature = "oauth")]
 pub use google::{Google, GoogleState};
 #[cfg(any(feature = "nextcloud", feature = "generic"))]
@@ -61,10 +75,10 @@ pub use io::{Pacing, SharedDns};
 #[cfg(feature = "oauth")]
 pub use microsoft::{Microsoft, is_personal};
 #[cfg(feature = "nextcloud")]
-pub use nextcloud::{NextcloudProvider, NextcloudSession, NextcloudSignIn};
+pub use nextcloud::{NextcloudFlow, NextcloudProvider, NextcloudSession};
 #[cfg(feature = "oauth")]
 pub use oauth::{
     Browser, BrowserFlow, BrowserIssuer, Cx, Grant, OAuthEnv, OAuthProvider, OAuthSession, Standard,
 };
 #[cfg(feature = "tailnet")]
-pub use tailnet::{TailnetProvider, TailnetSession, TailnetSignIn};
+pub use tailnet::{TailnetFlow, TailnetProvider, TailnetSession};

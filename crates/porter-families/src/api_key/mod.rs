@@ -12,6 +12,7 @@
 
 mod sign_in;
 
+use crate::conversation::Conversation;
 use crate::key::{asks_server, check, check_server, key_of, own_server};
 use porter_capability::Claim;
 use porter_core::AccountId;
@@ -24,7 +25,7 @@ use porter_provider::{
 use std::sync::Arc;
 
 pub use crate::key::KeySession as ApiKeySession;
-pub use sign_in::ApiKeySignIn;
+pub use sign_in::ApiKeyFlow;
 
 /// Where a person deletes a key, by provider file id.
 const KEY_PAGES: &[(&str, &str)] = &[
@@ -77,7 +78,7 @@ impl<H> ApiKeyProvider<H> {
 
 impl<H: Http + 'static> Provider for ApiKeyProvider<H> {
     type Session = ApiKeySession;
-    type SignIn = ApiKeySignIn<H>;
+    type SignIn = Conversation<ApiKeyFlow<H>>;
 
     fn spec(&self) -> &ProviderSpec {
         &self.spec
@@ -108,12 +109,12 @@ impl<H: Http + 'static> Provider for ApiKeyProvider<H> {
         Ok(ApiKeySession::new(account.clone()))
     }
 
-    fn sign_in(&self, start: SignInStart) -> Result<ApiKeySignIn<H>, ProviderError> {
-        Ok(ApiKeySignIn::new(
+    fn sign_in(&self, start: SignInStart) -> Result<Self::SignIn, ProviderError> {
+        Ok(Conversation::new(ApiKeyFlow::new(
             self.spec.clone(),
             Arc::clone(&self.http),
             start.mode,
-        ))
+        )))
     }
 
     async fn revoke(

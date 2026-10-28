@@ -10,6 +10,7 @@
 
 mod sign_in;
 
+use crate::conversation::Conversation;
 use porter_capability::Claim;
 use porter_core::AccountId;
 use porter_core::{Account, Audience, Credential, IssuedToken};
@@ -20,7 +21,7 @@ use porter_provider::{
 };
 use porter_tailscale::LocalApi;
 
-pub use sign_in::TailnetSignIn;
+pub use sign_in::TailnetFlow;
 
 /// The Tailnet family's provider.
 #[derive(Debug, Clone)]
@@ -44,7 +45,7 @@ pub struct TailnetSession;
 
 impl Provider for TailnetProvider {
     type Session = TailnetSession;
-    type SignIn = TailnetSignIn;
+    type SignIn = Conversation<TailnetFlow>;
 
     fn spec(&self) -> &ProviderSpec {
         &self.spec
@@ -70,15 +71,15 @@ impl Provider for TailnetProvider {
         }
     }
 
-    fn sign_in(&self, start: SignInStart) -> Result<TailnetSignIn, ProviderError> {
+    fn sign_in(&self, start: SignInStart) -> Result<Self::SignIn, ProviderError> {
         // Signing in again is the same conversation as adding, ending without a review: the
         // account is already there.
         let review = matches!(start.mode, SignInMode::Add);
-        Ok(TailnetSignIn::new(
+        Ok(Conversation::new(TailnetFlow::new(
             self.api.clone(),
             self.sleep.clone(),
             review,
-        ))
+        )))
     }
 
     async fn revoke(

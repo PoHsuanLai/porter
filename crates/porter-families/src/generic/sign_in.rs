@@ -1,10 +1,11 @@
-//! The Generic sign-in conversation. A mail account asks for an address and a password and
+//! The Generic sign-in flow. A mail account asks for an address and a password and
 //! finds the servers from the address (the server too, when none is published); a DAV account
 //! asks for the server, a user name and a password.
 
 use super::login::SharedLogin;
 use super::mail::{self, Looked};
 use super::{dav, jmap};
+use crate::conversation::{Flow, Move};
 use crate::io::{Io, SharedDns};
 use crate::password::{parse_server, password_for, plain, text_of, typed_password};
 use porter_capability::Claim;
@@ -12,7 +13,7 @@ use porter_core::{
     AccountLabel, Credential, Family, LoginName, Restriction, SecretPurpose, SecretText,
     ServiceEndpoint,
 };
-use porter_provider::{ProviderSet, ProviderSpec, SignIn, SignInMode, SignInStep, Signed};
+use porter_provider::{ProviderSet, ProviderSpec, SignInMode, SignInStep, Signed};
 use porter_sheet::{
     FieldAnswer, FieldKind, FieldSpec, Manual, Protocol, SignInFault, SignInInput, manual_form,
     parse_manual,
@@ -32,25 +33,18 @@ pub(super) enum Flavor {
 
 /// What was typed that a later step still needs.
 #[derive(Debug)]
-struct Typed {
+pub struct Typed {
     login: String,
     password: SecretText,
 }
 
+/// Where the conversation waits.
 #[derive(Debug)]
-enum State {
-    Fresh,
+pub enum Mid {
     /// The first form is on screen.
     Asked,
     /// The mail servers were not found; the server is asked for.
     AskedServer(Typed),
-    /// Discovery is on screen, waiting for the person's confirmation. When `tried_password` is
-    /// false the servers are ones only unsigned DNS named: the password is tried once confirmed.
-    Reviewing {
-        signed: Box<Signed>,
-        tried_password: bool,
-    },
-    Ended,
 }
 
 /// Whether `found` are at the hosts the account `held` already (each found host is one of
@@ -67,9 +61,9 @@ fn same_hosts(found: &[ServiceEndpoint], held: &[ServiceEndpoint]) -> bool {
         })
 }
 
-/// The sign-in conversation of a generic account.
+/// The sign-in flow of a generic account.
 #[derive(Debug)]
-pub struct GenericSignIn {
+pub struct GenericFlow {
     io: Io,
     dns: SharedDns,
     providers: ProviderSet,
@@ -77,10 +71,12 @@ pub struct GenericSignIn {
     spec: ProviderSpec,
     flavor: Flavor,
     mode: SignInMode,
-    state: State,
+    /// Whether the review on screen is of servers only unsigned DNS named, whose password is
+    /// tried once the person confirms.
+    untried: bool,
 }
 
-impl GenericSignIn {
+impl GenericFlow {
     pub(super) fn new(
         io: Io,
         dns: SharedDns,
@@ -98,7 +94,7 @@ impl GenericSignIn {
             spec,
             flavor,
             mode,
-            state: State::Fresh,
+            untried: false,
         }
     }
 
@@ -117,11 +113,6 @@ impl GenericSignIn {
         }
     }
 
-    fn failed(&mut self, fault: SignInFault) -> SignInStep {
-        self.state = State::Ended;
-        SignInStep::Failed(fault)
-    }
-
     /// The account is known: the password is tried at its mail server (a wrong one, or a server
     /// that does not answer, ends the sign-in here), then it is reviewed (a new account) or
     /// finished (a sign-in again).
@@ -131,19 +122,16 @@ impl GenericSignIn {
         label: String,
         endpoints: Vec<ServiceEndpoint>,
         claims: Vec<Claim>,
-    ) -> SignInStep {
+    ) -> Move<Mid> {
         if let Err(fault) = self.login.check(&credential, &endpoints).await {
-            return self.failed(fault);
+            return Move::Fail(fault);
         }
         let signed = Self::signed(credential, label, endpoints, claims);
         match self.mode {
-            SignInMode::Add => Self::review(&mut self.state, signed, true),
-            SignInMode::Reauthenticate { .. } => {
-                self.state = State::Ended;
-                SignInStep::Done(signed)
-            }
+            SignInMode::Add => self.review(signed, false),
+            SignInMode::Reauthenticate { .. } => Move::Done(signed),
             // a variant a newer porter adds: the sign-in ends as unreadable
-            _ => self.failed(SignInFault::Unreadable),
+            _ => Move::Fail(SignInFault::Unreadable),
         }
     }
 
@@ -157,12 +145,12 @@ impl GenericSignIn {
         typed: Typed,
         endpoints: Vec<ServiceEndpoint>,
         claims: Vec<Claim>,
-    ) -> SignInStep {
+    ) -> Move<Mid> {
         let credential = Credential::Password(typed.password.clone());
         match &self.mode {
             SignInMode::Add => {
                 let signed = Self::signed(credential, typed.login, endpoints, claims);
-                Self::review(&mut self.state, signed, false)
+                self.review(signed, true)
             }
             SignInMode::Reauthenticate {
                 endpoints: held, ..
@@ -171,7 +159,7 @@ impl GenericSignIn {
             }
             SignInMode::Reauthenticate { .. } => self.ask_server(typed),
             // a variant a newer porter adds: the sign-in ends as unreadable
-            _ => self.failed(SignInFault::Unreadable),
+            _ => Move::Fail(SignInFault::Unreadable),
         }
     }
 
@@ -190,43 +178,23 @@ impl GenericSignIn {
         )
     }
 
-    /// Shows `signed` for review and waits for the person; `tried_password` says whether its
-    /// password was tried at the servers already.
-    fn review(state: &mut State, signed: Signed, tried_password: bool) -> SignInStep {
-        let step = SignInStep::Review {
-            claims: signed.claims.clone(),
-            endpoints: signed.endpoints.clone(),
-            restriction: signed.restriction.clone(),
-            label: signed.label.clone(),
-        };
-        *state = State::Reviewing {
-            signed: Box::new(signed),
-            tried_password,
-        };
-        step
-    }
-
-    /// The person confirmed servers whose password was not tried yet: it is tried now, and a
-    /// wrong one, or a server that does not answer, ends the sign-in.
-    async fn confirmed_unchecked(&mut self, signed: Signed) -> SignInStep {
-        let tried = match signed.credentials.first() {
-            Some((_, credential)) => self.login.check(credential, &signed.endpoints).await,
-            None => Err(SignInFault::Unreadable),
-        };
-        match tried {
-            Ok(()) => SignInStep::Done(signed),
-            Err(fault) => self.failed(fault),
-        }
+    /// Shows `signed` for review and waits for the person; `untried` says whether its password
+    /// is still to be tried at the servers.
+    fn review(&mut self, signed: Signed, untried: bool) -> Move<Mid> {
+        self.untried = untried;
+        Move::Review(signed)
     }
 
     /// Asks for the mail server, keeping what was typed.
-    fn ask_server(&mut self, typed: Typed) -> SignInStep {
+    fn ask_server(&self, typed: Typed) -> Move<Mid> {
         let domain = mail::domain_of(&typed.login).map(|d| d.as_str().to_owned());
-        self.state = State::AskedServer(typed);
-        SignInStep::AskFields(manual_form(Protocol::Imap, domain.as_deref()))
+        Move::Next(
+            SignInStep::AskFields(manual_form(Protocol::Imap, domain.as_deref())),
+            Mid::AskedServer(typed),
+        )
     }
 
-    async fn submitted(&mut self, answers: Vec<FieldAnswer>) -> SignInStep {
+    async fn submitted(&mut self, answers: Vec<FieldAnswer>) -> Move<Mid> {
         match self.flavor {
             Flavor::Mail => self.submitted_mail(answers).await,
             Flavor::Dav => self.submitted_dav(answers).await,
@@ -234,34 +202,34 @@ impl GenericSignIn {
         }
     }
 
-    async fn submitted_fixed(&mut self, answers: Vec<FieldAnswer>) -> SignInStep {
+    async fn submitted_fixed(&mut self, answers: Vec<FieldAnswer>) -> Move<Mid> {
         let (Some(address), Some(password)) = (
             text_of(&answers, FieldKind::Address),
             typed_password(&answers),
         ) else {
-            return self.failed(SignInFault::Unreadable);
+            return Move::Fail(SignInFault::Unreadable);
         };
         if mail::domain_of(&address).is_none() {
-            return self.failed(SignInFault::Unreadable);
+            return Move::Fail(SignInFault::Unreadable);
         }
         match mail::fixed(&address, &self.spec) {
             Ok((endpoints, claims)) => {
                 self.found(Credential::Password(password), address, endpoints, claims)
                     .await
             }
-            Err(fault) => self.failed(fault),
+            Err(fault) => Move::Fail(fault),
         }
     }
 
-    async fn submitted_mail(&mut self, answers: Vec<FieldAnswer>) -> SignInStep {
+    async fn submitted_mail(&mut self, answers: Vec<FieldAnswer>) -> Move<Mid> {
         let (Some(address), Some(password)) = (
             text_of(&answers, FieldKind::Address),
             typed_password(&answers),
         ) else {
-            return self.failed(SignInFault::Unreadable);
+            return Move::Fail(SignInFault::Unreadable);
         };
         if mail::domain_of(&address).is_none() {
-            return self.failed(SignInFault::Unreadable);
+            return Move::Fail(SignInFault::Unreadable);
         }
         match mail::look(&self.io, &self.dns, &self.providers, &address).await {
             Looked::Found {
@@ -288,17 +256,17 @@ impl GenericSignIn {
                 login: address,
                 password,
             }),
-            Looked::Offline => self.failed(SignInFault::Unreachable),
+            Looked::Offline => Move::Fail(SignInFault::Unreachable),
         }
     }
 
-    async fn submitted_dav(&mut self, answers: Vec<FieldAnswer>) -> SignInStep {
+    async fn submitted_dav(&mut self, answers: Vec<FieldAnswer>) -> Move<Mid> {
         let (Some(server), Some(user), Some(password)) = (
             text_of(&answers, FieldKind::Server).and_then(|t| parse_server(&t)),
             text_of(&answers, FieldKind::Username),
             typed_password(&answers),
         ) else {
-            return self.failed(SignInFault::Unreadable);
+            return Move::Fail(SignInFault::Unreadable);
         };
         let login = LoginName(user.clone());
         match dav::discover(&self.io, &self.spec, &server, &login, &password).await {
@@ -312,7 +280,7 @@ impl GenericSignIn {
                 )
                 .await
             }
-            Err(fault) => self.failed(fault),
+            Err(fault) => Move::Fail(fault),
         }
     }
 
@@ -320,9 +288,9 @@ impl GenericSignIn {
     /// still does not read is unreadable. The endpoints go the way a looked-up candidate's do:
     /// to the review, then stored. A JMAP API token, when typed, is the credential instead of
     /// the password.
-    async fn typed_server(&mut self, typed: Typed, answers: &[FieldAnswer]) -> SignInStep {
+    async fn typed_server(&mut self, typed: Typed, answers: &[FieldAnswer]) -> Move<Mid> {
         let Ok(manual) = parse_manual(answers) else {
-            return self.failed(SignInFault::Unreadable);
+            return Move::Fail(SignInFault::Unreadable);
         };
         let login = LoginName(manual.login().map_or(typed.login.clone(), str::to_owned));
         let mut credential = Credential::Password(typed.password.clone());
@@ -341,40 +309,39 @@ impl GenericSignIn {
                 let label = typed.login.clone();
                 self.found(credential, label, endpoints, claims).await
             }
-            Err(fault) => self.failed(fault),
+            Err(fault) => Move::Fail(fault),
         }
     }
 }
 
-impl SignIn for GenericSignIn {
-    async fn next(&mut self, input: SignInInput) -> SignInStep {
-        let state = std::mem::replace(&mut self.state, State::Ended);
-        match (state, input) {
-            (_, SignInInput::Cancel) => SignInStep::Failed(SignInFault::Cancelled),
-            // Begin, and begin again after a step back.
-            (_, SignInInput::Start) => {
-                self.state = State::Asked;
-                SignInStep::AskFields(self.form())
-            }
-            (State::Asked, SignInInput::Fields(answers)) => self.submitted(answers).await,
-            (State::AskedServer(typed), SignInInput::Fields(answers)) => {
+impl Flow for GenericFlow {
+    type Mid = Mid;
+
+    async fn start(&mut self) -> Move<Mid> {
+        self.untried = false;
+        Move::Next(SignInStep::AskFields(self.form()), Mid::Asked)
+    }
+
+    async fn resume(&mut self, mid: Mid, input: SignInInput) -> Move<Mid> {
+        match (mid, input) {
+            (Mid::Asked, SignInInput::Fields(answers)) => self.submitted(answers).await,
+            (Mid::AskedServer(typed), SignInInput::Fields(answers)) => {
                 self.typed_server(typed, &answers).await
             }
-            (
-                State::Reviewing {
-                    signed,
-                    tried_password: true,
-                },
-                SignInInput::Confirm(_),
-            ) => SignInStep::Done(*signed),
-            (
-                State::Reviewing {
-                    signed,
-                    tried_password: false,
-                },
-                SignInInput::Confirm(_),
-            ) => self.confirmed_unchecked(*signed).await,
-            _ => self.failed(SignInFault::Unreadable),
+            _ => Move::Fail(SignInFault::Unreadable),
         }
+    }
+
+    /// The person confirmed servers whose password was not tried yet: it is tried now, and a
+    /// wrong one, or a server that does not answer, ends the sign-in.
+    async fn confirm(&mut self, signed: Signed) -> Result<Signed, SignInFault> {
+        if !std::mem::take(&mut self.untried) {
+            return Ok(signed);
+        }
+        match signed.credentials.first() {
+            Some((_, credential)) => self.login.check(credential, &signed.endpoints).await?,
+            None => return Err(SignInFault::Unreadable),
+        }
+        Ok(signed)
     }
 }

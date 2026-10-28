@@ -1,46 +1,42 @@
-//! The Nextcloud sign-in conversation: the server (when the provider file does not name one),
-//! Login Flow v2 in the browser, what the account can do, and the review.
+//! The Nextcloud sign-in flow: the server (when the provider file does not name one), Login Flow
+//! v2 in the browser, what the account can do, and the review.
 
 use super::discover::{Found, Who, discover};
 use super::flow::{Granted, Polled, Started, poll, start};
 use super::known::server_of;
+use crate::conversation::{Flow, Move};
 use crate::io::Io;
 use crate::password::{parse_server, plain, text_of};
 use porter_core::{AccountLabel, Credential, EndpointUrl, Restriction, SecretPurpose};
 use porter_http::Sleep;
-use porter_provider::{SignIn, SignInMode, SignInStep, Signed};
+use porter_provider::{SignInMode, SignInStep, Signed};
 use porter_sheet::{FieldKind, SignInFault, SignInInput};
 use std::time::Duration;
 
 /// How many polls in a row may fail to reach the server before the flow is given up.
 const MAX_HICCUPS: u32 = 5;
 
-/// The sign-in conversation of a Nextcloud account.
+/// The sign-in flow of a Nextcloud account.
 #[derive(Debug)]
-pub struct NextcloudSignIn {
+pub struct NextcloudFlow {
     io: Io,
     mode: SignInMode,
     /// Where the provider file says the Nextcloud is (a deployment's own file), if it does.
     fixed: Option<EndpointUrl>,
-    state: State,
 }
 
+/// Where the conversation waits.
 #[derive(Debug)]
-enum State {
-    /// Nothing asked yet.
-    Fresh,
+pub enum Mid {
     /// The server was asked for.
     AskedServer,
     /// The person is in the browser.
     Polling(Polling),
-    /// Discovery is on screen, waiting for the person's confirmation.
-    Reviewing(Box<Signed>),
-    /// Over, or cancelled.
-    Ended,
 }
 
+/// A Login Flow v2 being polled.
 #[derive(Debug)]
-struct Polling {
+pub struct Polling {
     server: EndpointUrl,
     started: Started,
     attempt: u32,
@@ -48,14 +44,9 @@ struct Polling {
     hiccups: u32,
 }
 
-impl NextcloudSignIn {
+impl NextcloudFlow {
     pub(super) fn new(io: Io, mode: SignInMode, fixed: Option<EndpointUrl>) -> Self {
-        Self {
-            io,
-            mode,
-            fixed,
-            state: State::Fresh,
-        }
+        Self { io, mode, fixed }
     }
 
     /// The server to start at without asking: the provider file's, or the account's own when
@@ -70,38 +61,32 @@ impl NextcloudSignIn {
         held.or_else(|| self.fixed.clone())
     }
 
-    fn ask_server() -> SignInStep {
-        SignInStep::AskFields(vec![plain(FieldKind::Server)])
-    }
-
-    fn failed(&mut self, fault: SignInFault) -> SignInStep {
-        self.state = State::Ended;
-        SignInStep::Failed(fault)
-    }
-
     /// Starts the flow at `server` and sends the person to its page.
-    async fn begin(&mut self, server: EndpointUrl) -> SignInStep {
+    async fn begin(&mut self, server: EndpointUrl) -> Move<Mid> {
         match start(&self.io, &server).await {
             Ok(started) => {
                 let login = started.login.clone();
-                self.state = State::Polling(Polling {
+                let polling = Polling {
                     server,
                     started,
                     attempt: 0,
                     waited: Duration::ZERO,
                     hiccups: 0,
-                });
-                SignInStep::OpenBrowser { url: login }
+                };
+                Move::Next(
+                    SignInStep::OpenBrowser { url: login },
+                    Mid::Polling(polling),
+                )
             }
-            Err(fault) => self.failed(fault),
+            Err(fault) => Move::Fail(fault),
         }
     }
 
     /// One poll: waits its turn, asks, and says what came of it.
-    async fn poll(&mut self, mut polling: Polling) -> SignInStep {
+    async fn poll(&mut self, mut polling: Polling) -> Move<Mid> {
         let pacing = self.io.pacing;
         if polling.waited >= pacing.limit {
-            return self.failed(SignInFault::TimedOut);
+            return Move::Fail(SignInFault::TimedOut);
         }
         let wait = pacing.wait(polling.attempt);
         self.io.sleep.sleep(wait).await;
@@ -110,23 +95,21 @@ impl NextcloudSignIn {
         match poll(&self.io, &polling.started).await {
             Polled::Waiting => {
                 polling.hiccups = 0;
-                self.state = State::Polling(polling);
-                SignInStep::Waiting
+                Move::Next(SignInStep::Waiting, Mid::Polling(polling))
             }
             Polled::Hiccup if polling.hiccups + 1 < MAX_HICCUPS => {
                 polling.hiccups += 1;
-                self.state = State::Polling(polling);
-                SignInStep::Waiting
+                Move::Next(SignInStep::Waiting, Mid::Polling(polling))
             }
-            Polled::Hiccup => self.failed(SignInFault::Unreachable),
-            Polled::Failed(fault) => self.failed(fault),
+            Polled::Hiccup => Move::Fail(SignInFault::Unreachable),
+            Polled::Failed(fault) => Move::Fail(fault),
             Polled::Granted(granted) => self.granted(polling.server, granted).await,
         }
     }
 
     /// The person approved: find out what the account can do, then review (a new account) or
     /// finish (a sign-in again, which only replaces the password).
-    async fn granted(&mut self, dialled: EndpointUrl, granted: Granted) -> SignInStep {
+    async fn granted(&mut self, dialled: EndpointUrl, granted: Granted) -> Move<Mid> {
         let server = granted.server.unwrap_or(dialled);
         let who = Who {
             server,
@@ -135,26 +118,14 @@ impl NextcloudSignIn {
         };
         let found = match discover(&self.io, &who).await {
             Ok(found) => found,
-            Err(fault) => return self.failed(fault),
+            Err(fault) => return Move::Fail(fault),
         };
         let signed = signed(&who, found);
         match self.mode {
-            SignInMode::Add => {
-                let step = SignInStep::Review {
-                    claims: signed.claims.clone(),
-                    endpoints: signed.endpoints.clone(),
-                    restriction: signed.restriction.clone(),
-                    label: signed.label.clone(),
-                };
-                self.state = State::Reviewing(Box::new(signed));
-                step
-            }
-            SignInMode::Reauthenticate { .. } => {
-                self.state = State::Ended;
-                SignInStep::Done(signed)
-            }
+            SignInMode::Add => Move::Review(signed),
+            SignInMode::Reauthenticate { .. } => Move::Done(signed),
             // a variant a newer porter adds: the sign-in ends as unreadable
-            _ => self.failed(SignInFault::Unreadable),
+            _ => Move::Fail(SignInFault::Unreadable),
         }
     }
 }
@@ -181,28 +152,29 @@ fn host_of(server: &EndpointUrl) -> String {
     }
 }
 
-impl SignIn for NextcloudSignIn {
-    async fn next(&mut self, input: SignInInput) -> SignInStep {
-        let state = std::mem::replace(&mut self.state, State::Ended);
-        match (state, input) {
-            (_, SignInInput::Cancel) => SignInStep::Failed(SignInFault::Cancelled),
-            // Begin, and begin again after a step back.
-            (_, SignInInput::Start) => match self.known_server() {
-                Some(server) => self.begin(server).await,
-                None => {
-                    self.state = State::AskedServer;
-                    Self::ask_server()
-                }
-            },
-            (State::AskedServer, SignInInput::Fields(answers)) => {
+impl Flow for NextcloudFlow {
+    type Mid = Mid;
+
+    async fn start(&mut self) -> Move<Mid> {
+        match self.known_server() {
+            Some(server) => self.begin(server).await,
+            None => Move::Next(
+                SignInStep::AskFields(vec![plain(FieldKind::Server)]),
+                Mid::AskedServer,
+            ),
+        }
+    }
+
+    async fn resume(&mut self, mid: Mid, input: SignInInput) -> Move<Mid> {
+        match (mid, input) {
+            (Mid::AskedServer, SignInInput::Fields(answers)) => {
                 match text_of(&answers, FieldKind::Server).and_then(|t| parse_server(&t)) {
                     Some(server) => self.begin(server).await,
-                    None => self.failed(SignInFault::Unreadable),
+                    None => Move::Fail(SignInFault::Unreadable),
                 }
             }
-            (State::Polling(polling), SignInInput::Poll) => self.poll(polling).await,
-            (State::Reviewing(signed), SignInInput::Confirm(_)) => SignInStep::Done(*signed),
-            _ => self.failed(SignInFault::Unreadable),
+            (Mid::Polling(polling), SignInInput::Poll) => self.poll(polling).await,
+            _ => Move::Fail(SignInFault::Unreadable),
         }
     }
 }

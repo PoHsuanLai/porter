@@ -14,6 +14,7 @@ mod login;
 mod mail;
 mod sign_in;
 
+use crate::conversation::Conversation;
 use crate::io::{Io, SharedDns};
 use crate::password::{declared, secret_presented};
 use porter_capability::Claim;
@@ -26,7 +27,7 @@ use porter_provider::{
     RevokeOutcome, SignInStart,
 };
 
-pub use sign_in::GenericSignIn;
+pub use sign_in::GenericFlow;
 
 /// The Generic family's provider.
 #[derive(Debug, Clone)]
@@ -83,7 +84,7 @@ impl GenericSession {
 
 impl Provider for GenericProvider {
     type Session = GenericSession;
-    type SignIn = GenericSignIn;
+    type SignIn = Conversation<GenericFlow>;
 
     fn spec(&self) -> &ProviderSpec {
         &self.spec
@@ -108,14 +109,14 @@ impl Provider for GenericProvider {
         })
     }
 
-    fn sign_in(&self, start: SignInStart) -> Result<GenericSignIn, ProviderError> {
+    fn sign_in(&self, start: SignInStart) -> Result<Self::SignIn, ProviderError> {
         let flavor = match self.spec.discovery {
             Discovery::Autoconfig => sign_in::Flavor::Mail,
             Discovery::WellKnown => sign_in::Flavor::Dav,
             Discovery::Fixed => sign_in::Flavor::Fixed,
             _ => return Err(ProviderError::Unreadable),
         };
-        Ok(GenericSignIn::new(
+        Ok(Conversation::new(GenericFlow::new(
             self.io.clone(),
             self.dns.clone(),
             self.providers.clone(),
@@ -123,7 +124,7 @@ impl Provider for GenericProvider {
             self.spec.clone(),
             flavor,
             start.mode,
-        ))
+        )))
     }
 
     async fn revoke(

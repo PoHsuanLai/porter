@@ -10,6 +10,7 @@
 
 mod sign_in;
 
+use crate::conversation::Conversation;
 use porter_capability::{Claim, Offer, Provenance, Subject};
 use porter_core::AccountId;
 use porter_core::{Account, Audience, Credential, IssuedToken};
@@ -17,7 +18,7 @@ use porter_provider::{
     Presented, Provider, ProviderError, ProviderSession, ProviderSpec, RevokeOutcome, SignInStart,
 };
 
-pub use sign_in::AgentLoginSignIn;
+pub use sign_in::AgentLoginFlow;
 
 /// The claims an agent file declares: one per program, about that program.
 pub(crate) fn claims(spec: &ProviderSpec) -> Vec<Claim> {
@@ -53,7 +54,7 @@ pub struct AgentLoginSession;
 
 impl Provider for AgentLoginProvider {
     type Session = AgentLoginSession;
-    type SignIn = AgentLoginSignIn;
+    type SignIn = Conversation<AgentLoginFlow>;
 
     fn spec(&self) -> &ProviderSpec {
         &self.spec
@@ -80,9 +81,9 @@ impl Provider for AgentLoginProvider {
         }
     }
 
-    fn sign_in(&self, _start: SignInStart) -> Result<AgentLoginSignIn, ProviderError> {
+    fn sign_in(&self, _start: SignInStart) -> Result<Self::SignIn, ProviderError> {
         // Adding and signing in again are the same two steps: the agent holds the login either way.
-        Ok(AgentLoginSignIn::new(self.spec.clone()))
+        Ok(Conversation::new(AgentLoginFlow::new(self.spec.clone())))
     }
 
     async fn revoke(

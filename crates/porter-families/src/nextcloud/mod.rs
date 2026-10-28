@@ -11,6 +11,7 @@ mod known;
 mod revoke;
 mod sign_in;
 
+use crate::conversation::Conversation;
 use crate::io::{Io, Pacing};
 use crate::password::password_of;
 use discover::Who;
@@ -23,7 +24,7 @@ use porter_provider::{
 };
 use porter_sheet::SignInFault;
 
-pub use sign_in::NextcloudSignIn;
+pub use sign_in::NextcloudFlow;
 
 /// The Nextcloud family's provider.
 #[derive(Debug, Clone)]
@@ -78,7 +79,7 @@ impl NextcloudSession {
 
 impl Provider for NextcloudProvider {
     type Session = NextcloudSession;
-    type SignIn = NextcloudSignIn;
+    type SignIn = Conversation<NextcloudFlow>;
 
     fn spec(&self) -> &ProviderSpec {
         &self.spec
@@ -117,12 +118,12 @@ impl Provider for NextcloudProvider {
         })
     }
 
-    fn sign_in(&self, start: SignInStart) -> Result<NextcloudSignIn, ProviderError> {
-        Ok(NextcloudSignIn::new(
+    fn sign_in(&self, start: SignInStart) -> Result<Self::SignIn, ProviderError> {
+        Ok(Conversation::new(NextcloudFlow::new(
             self.io.clone(),
             start.mode,
             self.fixed_server(),
-        ))
+        )))
     }
 
     async fn revoke(
