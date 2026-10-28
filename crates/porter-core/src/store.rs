@@ -6,7 +6,6 @@
 
 use crate::AccountId;
 use crate::account::Account;
-use crate::auth_kind::AuthKind;
 use crate::consent::Grant;
 use porter_capability::Toggle;
 use porter_capability::{CapabilityKind, VocabVersion};
@@ -109,19 +108,6 @@ type Migration = fn(Value) -> Result<Value, StoreFault>;
 /// written before it reads as it was. Versions 3 to 12 changed no stored shape, so the table
 /// starts empty; their frozen documents are in the tests.
 const MIGRATIONS: &[(VocabVersion, Migration)] = &[];
-
-/// Drops from `persisted` what accountd no longer holds: it keeps the identity accounts (OAuth,
-/// password, app password, and Nextcloud's sign-in, which is a password the server minted) and
-/// the Tailscale account, and empties the grants and the toggles. Only accountd applies this,
-/// and it keeps a copy of the old file first.
-pub fn prune_to_identities(persisted: &mut Persisted) {
-    persisted.accounts.retain(|account| {
-        account.auth.facts().identity.is_some()
-            || matches!(account.auth, AuthKind::LoginFlowV2 | AuthKind::OwnProgram)
-    });
-    persisted.grants.clear();
-    persisted.toggles.clear();
-}
 
 impl Persisted {
     /// A registry with nothing in it, at this build's vocabulary.

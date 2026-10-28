@@ -37,6 +37,23 @@ pub(crate) fn start<H: Host, C: Callers>(core: &Arc<Core<H, C>>) {
     });
 }
 
+/// Tells the clients what moved each time the registry was saved, whoever saved it: a sign-in
+/// that finished in the background, a permit given, a runtime reported. Holds the core weakly,
+/// so it ends with it.
+pub(crate) fn follow_saves<H: Host, C: Callers>(
+    core: &Arc<Core<H, C>>,
+    saved: Arc<tokio::sync::Notify>,
+) {
+    let core = Arc::downgrade(core);
+    tokio::spawn(async move {
+        loop {
+            saved.notified().await;
+            let Some(core) = core.upgrade() else { return };
+            core.publish().await;
+        }
+    });
+}
+
 impl<H: Host, C: Callers> Core<H, C> {
     /// Tells the clients what changed since they were last told: registers and removes the
     /// `Account` objects, and sends each signal to the connections of the roles it concerns
@@ -66,6 +83,11 @@ impl<H: Host, C: Callers> Core<H, C> {
         }
         self.announce_states(&list, &before, &after).await;
         self.announce_identities_removed(&before, &after).await;
+        if before != after {
+            // The AI broker asks again, and a credential does not outlive its permit.
+            crate::broker::announce(self).await;
+            self.sweep().await;
+        }
         for event in list {
             let names = self.known_where(|who| hears(who.role, &event));
             for name in names {

@@ -47,7 +47,7 @@ fn storage_account_id() -> porter_core::AccountId {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn the_agent_launcher_is_not_served_here_because_its_interface_is_inferds() {
+async fn the_agent_launcher_may_call_its_own_interface_and_nothing_else_of_accountd() {
     let rig = Rig::start().await;
     let launcher = rig
         .client_as(caller("org.quire.Docket", CallerRole::AgentLauncher))

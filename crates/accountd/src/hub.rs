@@ -9,7 +9,7 @@ use porter_callers::CallerRole;
 use porter_core::AccountId;
 use porter_ids::word::word as word_of;
 use porter_service_core::registry::Registry;
-use porter_settings::accounts::{Key, expiry_text, path};
+use porter_settings::accounts::{Key, expiry_text, path, since_text};
 use porter_settings::{LABEL, STATE};
 
 /// One change a client may be told of.
@@ -109,6 +109,56 @@ pub(crate) fn settings_news(
             ));
         }
     }
+    news.extend(permit_news(before, after));
+    news
+}
+
+/// What moved in the permits, said on rows of their account: a permit for one launcher session
+/// that came or went is its row with `added` or `removed`; a permit given again with another
+/// scope or day says its `.scope` and `.since`.
+fn permit_news(before: &Registry, after: &Registry) -> Vec<(KeyPath, toml::Value)> {
+    let row = |key: Key| KeyPath(path(&key));
+    let text = |slug: &str| toml::Value::String(slug.to_owned());
+    let grant_in = |registry: &Registry, id: &porter_core::GrantId| {
+        registry.grants.iter().find(|g| g.id == *id).cloned()
+    };
+    let mut ids: Vec<porter_core::GrantId> = Vec::new();
+    for g in after.grants.iter().chain(&before.grants) {
+        let changed = grant_in(before, &g.id) != grant_in(after, &g.id);
+        if changed && !ids.contains(&g.id) {
+            ids.push(g.id.clone());
+        }
+    }
+    let mut news = Vec::new();
+    for id in ids {
+        let (was, now) = (grant_in(before, &id), grant_in(after, &id));
+        if let Some(grant) = now
+            .clone()
+            .or_else(|| was.clone())
+            .filter(|g| g.scope.session().is_some())
+        {
+            let key = Key::Grant(grant.key.account.clone(), grant.id.clone());
+            news.push((
+                row(key),
+                text(if now.is_some() { "added" } else { "removed" }),
+            ));
+        }
+        if let (Some(was), Some(now)) = (was, now) {
+            let (account, grant) = (&now.key.account, &now.id);
+            if was.scope.word() != now.scope.word() {
+                news.push((
+                    row(Key::Scope(account.clone(), grant.clone())),
+                    text(now.scope.word()),
+                ));
+            }
+            if since_text(&was) != since_text(&now) {
+                news.push((
+                    row(Key::Since(account.clone(), grant.clone())),
+                    text(&since_text(&now)),
+                ));
+            }
+        }
+    }
     news
 }
 
@@ -149,6 +199,7 @@ mod tests {
                 (CallerRole::Settings, true),
                 (CallerRole::App, false),
                 (CallerRole::PorterDaemon, false),
+                (CallerRole::AiBroker, false),
                 (CallerRole::Agent, false),
             ] {
                 assert_eq!(hears(role, event), heard, "{role:?} {event:?}");
@@ -189,5 +240,66 @@ mod tests {
             ]
         );
         assert!(settings_news(&events(&before, &before), &before, &before).is_empty());
+    }
+
+    fn permit(scope: porter_core::consent::GrantScope, at: i64) -> porter_core::consent::Grant {
+        use porter_capability::StorageScope;
+        use porter_core::consent::{Decision, Usage};
+        use porter_core::{DataClass, GrantId, GrantKey, SpaceScope};
+        porter_core::consent::Grant {
+            id: GrantId::parse("g1").expect("id"),
+            key: GrantKey {
+                app: porter_core::AppId {
+                    name: porter_core::AppName::parse("org.quire.Companion").expect("name"),
+                    isolation: porter_core::Isolation::Unsandboxed,
+                },
+                account: porter_fake::llm_account().id,
+                kind: porter_capability::CapabilityKind::Llm,
+                class: DataClass::Prompt,
+                usage: Usage::Interactive,
+                space: SpaceScope::Any,
+                reach: StorageScope::AppFolder,
+            },
+            decision: Decision::Allow,
+            scope,
+            at: porter_ids::UnixSeconds(at),
+        }
+    }
+
+    #[test]
+    fn a_permit_for_a_session_coming_going_and_changing_is_said_on_its_rows() {
+        use porter_core::SessionToken;
+        use porter_core::consent::GrantScope;
+        let account = porter_fake::llm_account();
+        let with = |grants| Registry {
+            accounts: vec![account.clone()],
+            grants,
+            toggles: vec![],
+        };
+        let id = &account.id;
+        let row = |suffix: &str| KeyPath(format!("accounts.{id}.{suffix}"));
+        let word = |text: &str| toml::Value::String(text.to_owned());
+        let session = GrantScope::Session(SessionToken::parse("s1").expect("id"));
+        let before = with(vec![]);
+        let during = with(vec![permit(session.clone(), 1_790_000_000)]);
+        assert_eq!(
+            settings_news(&[], &before, &during),
+            vec![(row("grant.g1"), word("added"))]
+        );
+        assert_eq!(
+            settings_news(&[], &during, &before),
+            vec![(row("grant.g1"), word("removed"))]
+        );
+        // The same permit given again with another scope and day says both rows.
+        let again = with(vec![permit(GrantScope::Always, 1_790_086_400)]);
+        let day = since_text(&permit(GrantScope::Always, 1_790_086_400));
+        assert_eq!(day.len(), 10, "{day}");
+        assert_eq!(
+            settings_news(&[], &during, &again),
+            vec![
+                (row("grant.g1.scope"), word("always")),
+                (row("grant.g1.since"), word(&day)),
+            ]
+        );
     }
 }

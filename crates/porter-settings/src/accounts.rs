@@ -9,12 +9,13 @@
 //! that both modules name the same account). Every key is under `accounts.`, so it is never
 //! agent-settable (`ds-settings` refuses a schema that says otherwise).
 
-use crate::{ACTIONS, Names, READOUTS, Row, action, off, readout as readout_of, spec as spec_of};
+use crate::spec as spec_of;
+use crate::{Names, READOUTS, REAUTH, REMOVE, Row, action, off, readout as readout_of};
 use ds_settings::live::LiveSchema;
 use ds_settings::schema::{ActionWeight, Exposure, KeyKind, KeySpec};
 use porter_capability::{AbsentReason, CapabilityKind, Offer};
 use porter_core::consent::{Decision, Grant, GrantScope};
-use porter_core::{Account, AccountId, AccountState, AppName, GrantId, ProviderId};
+use porter_core::{Account, AccountId, AccountState, AppName, AuthKind, GrantId, ProviderId};
 use porter_ids::word::{from_word, word};
 use porter_provider::Issuer;
 use porter_service_core::registry::Registry;
@@ -67,6 +68,9 @@ pub enum Key {
     App(AccountId, GrantId),
     /// `accounts.<id>.grant.<grant>.service`: read-only, the service it reaches.
     GrantService(AccountId, GrantId),
+    /// `accounts.<id>.sign_out`: for an assistant that signs itself in and is signed in, asks it
+    /// to sign itself out.
+    SignOut(AccountId),
     /// `accounts.clients.<issuer>`.
     Client(Issuer),
     /// `accounts.clients.<issuer>.secret`: the application secret of the client, for the
@@ -125,6 +129,10 @@ pub fn parse(path: &str, registry: &Registry) -> Option<Key> {
     if tail == "expires" {
         return Some(Key::Expires(id));
     }
+    if tail == "sign_out" {
+        let account = registry.accounts.iter().find(|a| a.id == id)?;
+        return (account.auth == AuthKind::AgentLogin).then_some(Key::SignOut(id));
+    }
     if let Some(n) = tail.strip_prefix("used_by.") {
         return n.parse::<usize>().ok().map(|n| Key::UsedBy(id, n));
     }
@@ -166,6 +174,7 @@ pub fn path(key: &Key) -> String {
         Key::Scope(id, grant) => format!("accounts.{id}.grant.{grant}.scope"),
         Key::App(id, grant) => format!("accounts.{id}.grant.{grant}.app"),
         Key::GrantService(id, grant) => format!("accounts.{id}.grant.{grant}.service"),
+        Key::SignOut(id) => format!("accounts.{id}.sign_out"),
         Key::Expires(id) => format!("accounts.{id}.expires"),
         Key::UsedBy(id, n) => format!("accounts.{id}.used_by.{n}"),
         Key::Client(issuer) => format!("accounts.clients.{}", word(issuer)),
@@ -358,11 +367,19 @@ fn account_keys(
         ));
     }
     keys.extend(service_keys(account, grants, section, directory));
-    keys.extend(
-        ACTIONS
-            .iter()
-            .filter_map(|row| row.0.spec(account, section, &names)),
-    );
+    keys.extend(REAUTH.0.spec(account, section, &names));
+    // An assistant that is signed in signs itself out from here; one that is signed out signs in.
+    if account.auth == AuthKind::AgentLogin && account.state != AccountState::NeedsLogin {
+        keys.push(row(
+            &Key::SignOut(account.id.clone()),
+            section,
+            "Sign out".to_owned(),
+            "Asks the assistant to sign itself out when it is running; otherwise it only forgets here that it was signed in, and the assistant's own login is not touched.",
+            action("Sign out", ActionWeight::Plain),
+            off(),
+        ));
+    }
+    keys.extend(REMOVE.0.spec(account, section, &names));
     keys
 }
 
@@ -397,7 +414,7 @@ pub fn read(
                 if on { "on" } else { "off" }.to_owned(),
             ))
         }
-        Key::Grant(..) => Some(off()),
+        Key::Grant(..) | Key::SignOut(_) => Some(off()),
         Key::Since(_, grant) => held(grant).map(|g| toml::Value::String(since_text(g))),
         Key::Scope(_, grant) => held(grant).map(|g| toml::Value::String(g.scope.word().to_owned())),
         Key::App(_, grant) => {

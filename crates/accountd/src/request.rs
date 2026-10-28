@@ -15,7 +15,7 @@ use crate::state::{Core, Standing};
 use porter_callers::CallerRole;
 use porter_dbus::Details;
 use porter_dbus::accounts::sheet::SheetKind;
-use porter_wire::AccountsRequest;
+use porter_wire::{AccountsReply, AccountsRequest};
 use std::pin::Pin;
 use std::sync::Arc;
 use zbus::export::futures_core::Stream;
@@ -51,6 +51,30 @@ impl<H: Host, C: Callers> Core<H, C> {
                 AccountsRequest::Reauthenticate { account, window } if shell => {
                     core.host.reauthenticate_any(&app, &account, window).await
                 }
+                // An app that holds a permit for this need already is answered with it and no
+                // sheet is drawn, as a system does for an app that has the permission; with
+                // several the one the person gave most recently wins.
+                AccountsRequest::Choose {
+                    need,
+                    class,
+                    usage,
+                    window,
+                } => match core.host.existing_permit(&app, &need, class, usage) {
+                    Some(best) => AccountsReply::Chosen(best),
+                    None => {
+                        core.host
+                            .handle(
+                                &app,
+                                AccountsRequest::Choose {
+                                    need,
+                                    class,
+                                    usage,
+                                    window,
+                                },
+                            )
+                            .await
+                    }
+                },
                 request => core.host.handle(&app, request).await,
             };
             core.publish().await;

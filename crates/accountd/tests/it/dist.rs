@@ -105,7 +105,7 @@ fn the_sample_caller_table_gives_settings_the_sheet_host_and_both_daemons_their_
     for (unit, role) in [
         ("org.quire.Settings.service", CallerRole::Settings),
         ("sill.service", CallerRole::SheetHost),
-        ("inferd.service", CallerRole::PorterDaemon),
+        ("inferd.service", CallerRole::AiBroker),
         ("syncd.service", CallerRole::PorterDaemon),
     ] {
         assert_eq!(
@@ -201,7 +201,7 @@ fn nothing_that_ships_names_the_file_key_store() {
 }
 
 #[test]
-fn no_shipped_row_grants_the_agent_launcher_role_and_the_sample_leaves_it_to_inferd() {
+fn no_shipped_row_grants_the_agent_launcher_role_and_the_sample_shows_how_a_machine_lists_it() {
     use porter_callers::CallerRole;
     let shipped = dist("callers.toml");
     let table = porter_callers::table_from_toml(&shipped).expect("the sample reads");
@@ -212,9 +212,9 @@ fn no_shipped_row_grants_the_agent_launcher_role_and_the_sample_leaves_it_to_inf
             .all(|row| row.role != CallerRole::AgentLauncher),
         "the launcher is listed by the machine that runs it, never by default"
     );
-    // The launcher's row is documented in inferd's table (dist/inferd.toml), which serves it.
+    // The launcher's interface is accountd's now, so its row is documented here, commented out.
     assert!(
-        !shipped.contains("DocketAcp"),
-        "accountd's sample no longer shows the launcher row"
+        shipped.contains("#   role = \"agent_launcher\""),
+        "accountd's sample shows the launcher row"
     );
 }

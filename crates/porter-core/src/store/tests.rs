@@ -332,33 +332,6 @@ const AT_THIRTEEN: &str = r#"{
   "toggles": []
 }"#;
 
-/// An old file with an identity, an API key, a Tailscale account, a grant and a toggle: accountd
-/// keeps the identity and Tailscale, and nothing else.
-#[test]
-fn pruning_to_identities_keeps_the_sign_in_accounts_and_tailscale_and_empties_the_rest() {
-    let mut mixed = Persisted::from_json(AT_THIRTEEN).expect("reads");
-    let mut identity = account(Vec::new());
-    identity.id = AccountId::parse("google-ada").expect("id");
-    identity.auth = AuthKind::OAuthPkce;
-    let mut password = account(Vec::new());
-    password.id = AccountId::parse("fastmail-ada").expect("id");
-    password.auth = AuthKind::AppPassword;
-    let mut key = account(Vec::new());
-    key.id = AccountId::parse("anthropic").expect("id");
-    key.auth = AuthKind::ApiKey;
-    mixed.accounts.extend([identity, key, password]);
-    mixed.toggles.push(AccountToggle {
-        account: AccountId::parse("google-ada").expect("id"),
-        kind: CapabilityKind::Storage,
-        toggle: Toggle::Off,
-    });
-    prune_to_identities(&mut mixed);
-    let kept: Vec<_> = mixed.accounts.iter().map(|a| a.id.as_str()).collect();
-    assert_eq!(kept, ["tailscale", "google-ada", "fastmail-ada"]);
-    assert!(mixed.grants.is_empty());
-    assert!(mixed.toggles.is_empty());
-}
-
 /// Every frozen document reads, whatever version wrote it, as the current vocabulary, with what
 /// that version could hold: the rows say what each is expected to come out as.
 #[test]

@@ -5,14 +5,17 @@
 # app id, a daemon by the unit named in its row (a service only as the unit's main process, as the
 # systemd manager says; a scope, which has none, as any process in it). A row with a unit gives
 # its role to that unit alone, never to an app scope of the same id. Roles:
-# `settings` (the Settings app), `sheet_host` (draws the accounts sheets), `porter_daemon` (inferd
-# and syncd), `agent`, `cua`, `agent_launcher` (inferd's: see below), `terminal` (temor:
+# `settings` (the Settings app), `sheet_host` (draws the accounts sheets), `ai_broker` (inferd: the
+# one daemon that asks for the key behind a permit), `porter_daemon` (syncd), `agent`, `cua`,
+# `agent_launcher` (the launcher of external coding agents: see below), `terminal` (temor:
 # reads the person's computers from `org.quire.Tailnet1` and nothing else), `compositor` (casement:
 # lists the desktop-wide Spaces and registers the ids it mints for its workspaces through
 # `org.quire.Spaces1.Register`, and nothing else); anything unlisted is an `app`.
-# `agent_launcher` (the launcher that runs external coding agents, docket-acp) is inferd's
-# business, not accountd's: accountd refuses it outright, and the row that names it lives in
-# inferd's own table (dist/inferd.toml).
+# `agent_launcher` (the launcher that runs external coding agents, docket-acp) may call accountd's
+# `Launcher` interface (its programs, sessions, the consent sheet for an agent's key, the keys
+# it hands the processes it spawns) and nothing else of accountd. It is never listed by default:
+# a machine that runs the launcher writes its row here (below) and in inferd's own table
+# (dist/inferd-callers.toml), which serves the launcher's `Agents` endpoints.
 # An optional `name = "..."` is what a person reads for the app (Settings' account page lists
 # "Mail" under an identity, not "org.quire.Mail"); an app without one is named by its desktop
 # entry (`<app id>.desktop`, its `Name=`), else by its id.
@@ -45,11 +48,12 @@ role = "sheet_host"
 name = "Shell"
 exe = ["/usr/bin/sill", "/usr/local/bin/sill", "/opt/quire/releases/*/bin/sill"]
 
-# inferd: asks for verdicts and resolves API keys for the models it runs.
+# inferd, the AI broker: asks what each app's permits say and for the key behind a permit, for
+# the models it runs, and reads the computers on the person's tailnet.
 [[caller]]
 app = "org.quire.Inference"
 unit = "inferd.service"
-role = "porter_daemon"
+role = "ai_broker"
 name = "Intelligence"
 
 # syncd: lists grants and opens authenticated relays for its replicas.
@@ -90,6 +94,28 @@ app = "org.quire.Reader"
 unit = "readerd.service"
 role = "agent"
 
+# docket-acp, the editor-agent launcher, runs the planner's turns in its own scope as the
+# companion. A scope's name gives no program, so the row names docket-acp's.
+[[caller]]
+app = "org.quire.Companion"
+unit = "docket-acp.scope"
+role = "agent"
+exe = ["/usr/bin/docket-acp", "/usr/local/bin/docket-acp", "/opt/quire/releases/*/bin/docket-acp"]
+
+# memoryd and voiced hold permits for the AI keys like any app, so accountd knows them as inferd
+# does (dist/inferd-callers.toml names the same units; a test holds the two tables to it).
+[[caller]]
+app = "org.quire.Memory"
+unit = "memoryd.service"
+role = "app"
+name = "Memory"
+
+[[caller]]
+app = "org.quire.Voice"
+unit = "voiced.service"
+role = "app"
+name = "Voice"
+
 # casement, the compositor: mints a desktop-wide Space id for each workspace and registers it
 # (`Spaces1.Register`); it may list the Spaces and nothing else. The row goes live once casement
 # runs as its own unit (today desktop-session starts it as a plain child process, which proves no
@@ -100,3 +126,12 @@ role = "agent"
 #   unit = "casement.service"
 #   role = "compositor"
 #   name = "Desktop"
+
+# The launcher of external coding agents (docket-acp), on a machine that runs it. Its unit and
+# programs are the machine's own; a row here gives the launcher its `Launcher` interface.
+#
+#   [[caller]]
+#   app = "org.quire.DocketAcp"
+#   unit = "docket-acp.service"
+#   role = "agent_launcher"
+#   name = "Agents"

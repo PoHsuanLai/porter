@@ -34,6 +34,12 @@ pub(crate) enum Standing {
     /// standing a `Compositor` has; anyone else is as with `Any`, and `Register` checks the role
     /// itself.
     Spaces,
+    /// The agent launcher's calls (`Launcher`): the only standing an `AgentLauncher` has, and the
+    /// object checks that the caller is one.
+    Launcher,
+    /// The AI broker's calls (`Broker`): the one standing an `AiBroker` has besides reading the
+    /// person's computers, and the object checks that the caller is one.
+    Broker,
 }
 
 /// The shared state of every object accountd serves.
@@ -52,6 +58,10 @@ pub(crate) struct Core<H, C> {
     pub(crate) app_names: AppNames,
     /// What the settings module calls a provider and which part of the page it is listed under.
     pub(crate) provider_names: ProviderNames,
+    /// The agent launchers registered and their pending requests (`Launcher`).
+    pub(crate) launchers: crate::launcher::Launchers,
+    /// The credentials handed to the processes the launcher spawns.
+    pub(crate) credentials: crate::launcher::Credentials,
     /// The time a property that says when a sign-in ends is read on.
     pub(crate) clock: Arc<dyn Clock>,
     /// The served settings module, which announces an account's new state as `Changed`; set
@@ -101,10 +111,18 @@ impl<H: Host, C: Callers> Core<H, C> {
         if standing == Standing::Acting && caller.role == CallerRole::Agent {
             return Err(RefusedError::of(Refusal::Denied));
         }
-        // The agent launcher is inferd's: accountd holds nothing it asks for.
-        if caller.role == CallerRole::AgentLauncher {
+        // The agent launcher is nothing else to accountd than the launcher of its programs.
+        if standing != Standing::Launcher && caller.role == CallerRole::AgentLauncher {
             return Err(RefusedError::access_denied(
-                "accountd serves no agent launcher; the launcher's interface is inferd's",
+                "the agent launcher may only call the launcher's interface",
+            ));
+        }
+        // The AI broker asks for keys and reads the person's computers, and is nothing else.
+        if !matches!(standing, Standing::Broker | Standing::Machines)
+            && caller.role == CallerRole::AiBroker
+        {
+            return Err(RefusedError::access_denied(
+                "the AI broker may only ask for keys and read the person's computers",
             ));
         }
         // The terminal is narrower still: it reads the person's computers and is nothing else.
@@ -155,6 +173,13 @@ impl<H: Host, C: Callers> Core<H, C> {
     pub(crate) async fn left(self: &Arc<Self>, name: &str) {
         held(&self.roster).remove(name);
         self.picks.clear(name);
+        // A launcher's sessions close first (their permits are removed and the credentials under
+        // them end `session_closed`, with nobody left to tell), then what is left of its
+        // credentials ends `launcher_gone`.
+        for session in self.launchers.left(name) {
+            self.close_session(&session, false).await;
+        }
+        self.credentials_left(name);
     }
 }
 

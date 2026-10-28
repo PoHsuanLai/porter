@@ -131,6 +131,7 @@ async fn apps_and_porter_daemons_use_identities_and_everything_else_is_refused()
         Some(CallerRole::Agent),
         Some(CallerRole::Cua),
         Some(CallerRole::AgentLauncher),
+        Some(CallerRole::AiBroker),
         Some(CallerRole::Terminal),
         Some(CallerRole::Compositor),
         None,

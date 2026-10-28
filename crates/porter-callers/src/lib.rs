@@ -117,23 +117,28 @@ pub enum CallerRole {
     Settings,
     /// sill, or a standalone sheet host: may serve `AccountsSheet1`.
     SheetHost,
-    /// inferd and syncd, as the peers of one another and of the desktop's daemons. accountd no
-    /// longer has an interface for them: it keeps identities, and nothing a daemon asks for on
+    /// syncd, as the peer of the desktop's daemons. accountd has no interface for it beyond the
+    /// computers on the person's tailnet: it keeps identities, and nothing a daemon asks for on
     /// an app's behalf.
     PorterDaemon,
-    /// intentd, companiond, readerd, cuad, quire-do, actions-mcp: refused inferd's `Keys`
-    /// (`RequestKey`, `AddAccount`) and accountd's `AddAccount` and `Reauthenticate`; they keep
-    /// inferd's own inference calls.
+    /// inferd, the AI broker: the one daemon that sends a key to an AI company, so the one that
+    /// may ask accountd (`org.quire.Accounts1.Broker`) what each app's permits say and for the
+    /// key behind a permit. It also reads the person's computers from `org.quire.Tailnet1`, as
+    /// the porter daemons do. Given by the unit that is inferd, never by an app scope's name.
+    AiBroker,
+    /// intentd, companiond, readerd, cuad, quire-do, actions-mcp: refused accountd's `Keys`
+    /// (`RequestKey`) and `AddAccount` and `Reauthenticate`; they keep inferd's own inference
+    /// calls.
     Agent,
     /// cuad, for inferd: the only role that may open a computer-use session.
     Cua,
-    /// The agent launcher (docket-acp), which runs external coding agents: may call inferd's
-    /// `Launcher` interface (`SetAgentState`, `RegisterLauncher`, `BeginSession`, `EndSession`,
-    /// `RequestAgentKey`, `ReportAgentLogin`, `ReportAgentLogout`, `IssueProcessCredential` and
+    /// The agent launcher (docket-acp), which runs external coding agents: may call accountd's
+    /// `Launcher` interface (`RegisterLauncher`, `BeginSession`, `EndSession`, `RequestAgentKey`,
+    /// `ReportAgentLogin`, `ReportAgentLogout`, `IssueProcessCredential` and
     /// `RevokeProcessCredential`: an API key for a process it spawns, only for a program it
-    /// registered), and nothing else. Read from inferd's caller table, not accountd's. Never
-    /// granted by default: `dist/inferd.toml` has no row for it, so a machine lists the launcher
-    /// by its own row.
+    /// registered) and inferd's `Agents` interface, and nothing else. Never granted by default:
+    /// the shipped tables have no row for it, so a machine lists the launcher by its own row, in
+    /// accountd's table and in inferd's.
     AgentLauncher,
     /// The terminal (temor): may read the person's computers from `org.quire.Tailnet1`
     /// (`Machines`) and nothing else of accountd. Given by the unit that is the terminal, as the
@@ -147,7 +152,7 @@ pub enum CallerRole {
 
 impl CallerRole {
     /// Whether the role stands for more than a plain app, so only the system's table may give
-    /// it: `Settings`, `SheetHost`, `PorterDaemon`, `AgentLauncher`, `Cua`, `Terminal` and
+    /// it: `Settings`, `SheetHost`, `PorterDaemon`, `AiBroker`, `AgentLauncher`, `Cua`, `Terminal` and
     /// `Compositor`. `App` and `Agent` hold no standing beyond an app (`Agent` is refused more
     /// than `App` is), so a user's file may name them.
     pub const fn is_fixed(self) -> bool {

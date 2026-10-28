@@ -23,15 +23,12 @@ use zbus::names::BusName;
 use zbus::object_server::SignalEmitter;
 
 /// Whether a role may read the person's computers: the shell, Settings, the terminal, and the
-/// AI broker (`PorterDaemon`), which looks for the computers that lend their models and asks
+/// AI broker (`AiBroker`), which looks for the computers that lend their models and asks
 /// nothing of Tailscale itself for that list.
 pub(crate) fn may_read(role: CallerRole) -> bool {
     matches!(
         role,
-        CallerRole::SheetHost
-            | CallerRole::Settings
-            | CallerRole::Terminal
-            | CallerRole::PorterDaemon
+        CallerRole::SheetHost | CallerRole::Settings | CallerRole::Terminal | CallerRole::AiBroker
     )
 }
 

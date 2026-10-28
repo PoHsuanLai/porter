@@ -19,5 +19,7 @@
 //! and porter-core depends on no executor (`scripts/check-boundary.sh` holds it to that).
 
 mod file;
+mod import_marker;
 
 pub use file::{FileStore, RegistryRefusal};
+pub use import_marker::{ImportMarker, MarkerError};

@@ -13,6 +13,14 @@ pub struct Paths {
     pub registry_dir: PathBuf,
     /// `$XDG_STATE_HOME/quire/accountd/audit.jsonl`.
     pub audit: PathBuf,
+    /// inferd's old key store: its registry directory, `$XDG_STATE_HOME/quire/inferd/keys`. accountd
+    /// reads it once (the unit may read, not write, the person's files outside its own), copies
+    /// it ([`crate::import`]) and leaves removing it to inferd.
+    pub inferd_keys: PathBuf,
+    /// inferd's old key audit file, `$XDG_STATE_HOME/quire/inferd/keys-audit.jsonl`.
+    pub inferd_keys_audit: PathBuf,
+    /// The record of that copy, `$XDG_STATE_HOME/quire/accountd/ai-import.json`.
+    pub ai_import: PathBuf,
     /// The system caller table, `/etc/porter/callers.toml` (another file in a test build:
     /// [`porter_callers::SystemCallers`]).
     pub callers_system: PathBuf,
@@ -68,6 +76,9 @@ impl Paths {
         Ok(Self {
             registry_dir: state.join("porter"),
             audit: state.join("quire/accountd/audit.jsonl"),
+            inferd_keys: state.join("quire/inferd/keys"),
+            inferd_keys_audit: state.join("quire/inferd/keys-audit.jsonl"),
+            ai_import: state.join("quire/accountd/ai-import.json"),
             callers_system: PathBuf::from(porter_callers::SYSTEM_CALLERS),
             callers_user: config.join("porter/callers.toml"),
             clients_shipped: xdg.shipped("porter/clients.toml"),
@@ -170,6 +181,14 @@ mod tests {
         assert_eq!(
             paths.audit,
             Path::new("/home/ada/.local/state/quire/accountd/audit.jsonl")
+        );
+        assert_eq!(
+            paths.inferd_keys,
+            Path::new("/home/ada/.local/state/quire/inferd/keys")
+        );
+        assert_eq!(
+            paths.ai_import,
+            Path::new("/home/ada/.local/state/quire/accountd/ai-import.json")
         );
         assert_eq!(
             paths.callers_user,

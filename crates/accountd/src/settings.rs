@@ -12,6 +12,7 @@
 
 use crate::callers::Callers;
 use crate::host::Host;
+use crate::launcher::SignOutNews;
 use crate::state::Core;
 use ds_settings::live::{
     Access, Caller, LiveError, LiveModule, LiveSchema, Snapshot, Verdict, serve,
@@ -19,11 +20,13 @@ use ds_settings::live::{
 use ds_settings::schema::KeyPath;
 use porter_callers::CallerRole;
 use porter_capability::Toggle;
-use porter_core::{Account, AppId, AppName, AuthKind, IdentityId, Isolation, ProviderId};
+use porter_core::ProviderId;
+use porter_core::{Account, AgentState, AppId, AppName, AuthKind, IdentityId, Isolation};
 use porter_dbus::accounts::ACCOUNTS_SETTINGS_PATH;
 use porter_families::set::ProviderNames;
 use porter_identities::IdentitiesApi;
 use porter_provider::{ClientChannel, ClientsFile, Issuer, parse_clients};
+use porter_service_accounts::{Launchers as _, program_of};
 use porter_service_core::audit::{AuditEvent, ClientIdChange};
 use porter_service_core::registry::Registry;
 use porter_settings::accounts::{Directory, Key, UsedBy, listed, parse, read, schema};
@@ -68,6 +71,8 @@ pub(crate) enum ReauthNews {
     Cancelled,
     /// The service said no: the sign-in was refused or forbidden.
     Refused,
+    /// An assistant's login was asked for and no launcher runs that program.
+    NoLauncher,
     /// It could not be done (unreachable, no client for the issuer, the store failed, ...).
     Failed,
 }
@@ -79,6 +84,7 @@ impl ReauthNews {
             AccountsReply::Reauthenticated => ReauthNews::Done,
             AccountsReply::Refused(Refusal::Dismissed) => ReauthNews::Cancelled,
             AccountsReply::Refused(Refusal::Denied) => ReauthNews::Refused,
+            AccountsReply::Refused(Refusal::NoLauncher) => ReauthNews::NoLauncher,
             _ => ReauthNews::Failed,
         }
     }
@@ -263,14 +269,33 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
                         "this account has nothing to sign in to".into(),
                     ));
                 }
+                let agent = registry
+                    .accounts
+                    .iter()
+                    .any(|a| a.id == id && a.auth == AuthKind::AgentLogin);
                 let core = Arc::clone(&self.0);
                 tokio::spawn(async move {
-                    let reply = core
-                        .host
-                        .reauthenticate_any(&settings_app(), &id, ParentWindow::Unparented)
-                        .await;
+                    // An assistant signs itself in, through its launcher, with a sheet that shows
+                    // the wait; any other account is signed in again through its provider.
+                    let reply = match agent {
+                        true => {
+                            core.host
+                                .login_agent_any(
+                                    &settings_app(),
+                                    &id,
+                                    ParentWindow::Unparented,
+                                    &core.launchers,
+                                )
+                                .await
+                        }
+                        false => {
+                            core.host
+                                .reauthenticate_any(&settings_app(), &id, ParentWindow::Unparented)
+                                .await
+                        }
+                    };
                     if let AccountsReply::Refused(why) = &reply {
-                        eprintln!("accountd: reauthenticate from Settings refused: {why:?}");
+                        eprintln!("accountd: sign in again from Settings refused: {why:?}");
                     }
                     // The pane hears how it ended on the row.
                     announce_row(
@@ -282,6 +307,7 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
                     core.publish().await;
                 });
             }
+            Key::SignOut(id) => self.sign_out(&id).await?,
             Key::Client(issuer) => {
                 let text = match &value {
                     toml::Value::String(text) => text.trim().to_owned(),
@@ -330,6 +356,47 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
             }
         }
         self.0.publish().await;
+        Ok(())
+    }
+}
+
+impl<H: Host, C: Callers> AccountsSettings<H, C> {
+    /// "Sign out" of an assistant: the launcher that runs its program is asked to have it sign
+    /// itself out, and the pane hears how that ended; with no launcher, accountd only forgets
+    /// that it was signed in and the assistant's own login is not touched.
+    async fn sign_out(&self, id: &porter_core::AccountId) -> Result<(), LiveError> {
+        let core = &self.0;
+        let program = core
+            .host
+            .registry()
+            .accounts
+            .iter()
+            .find(|a| a.id == *id && a.auth == AuthKind::AgentLogin)
+            .and_then(program_of);
+        let waiting = match program {
+            Some(program) => core.launchers.ask_logout(id, &program).await.ok(),
+            None => None,
+        };
+        let key = Key::SignOut(id.clone());
+        let Some(waiting) = waiting else {
+            core.host
+                .set_agent_state(id, AgentState::NeedsLogin)
+                .await
+                .map_err(|fault| {
+                    eprintln!("accountd: signing an assistant out was refused: {fault:?}");
+                    failed("That could not be done.")
+                })?;
+            announce_row(core, &key, SignOutNews::LoginUntouched.slug()).await;
+            core.publish().await;
+            return Ok(());
+        };
+        announce_row(core, &key, SignOutNews::Asked.slug()).await;
+        let core = Arc::clone(core);
+        tokio::spawn(async move {
+            let news = SignOutNews::of(waiting.await);
+            announce_row(&core, &key, news.slug()).await;
+            core.publish().await;
+        });
         Ok(())
     }
 }
@@ -407,6 +474,7 @@ mod tests {
         assert_eq!(word(&ReauthNews::Done), "done");
         assert_eq!(word(&ReauthNews::Cancelled), "cancelled");
         assert_eq!(word(&ReauthNews::Refused), "refused");
+        assert_eq!(word(&ReauthNews::NoLauncher), "no_launcher");
         assert_eq!(word(&ReauthNews::Failed), "failed");
     }
 }

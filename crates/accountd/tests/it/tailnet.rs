@@ -755,10 +755,10 @@ async fn who_may_read_the_computers() {
         common::ACCESS_DENIED,
         "step 2: a stranger"
     );
-    // Step 3, the AI broker: inferd (`PorterDaemon`) gets the same list as the shell, to find
+    // Step 3, the AI broker: inferd (`AiBroker`) gets the same list as the shell, to find
     // the computers that lend its models.
     let rows = world
-        .machines_as(CallerRole::PorterDaemon)
+        .machines_as(CallerRole::AiBroker)
         .await
         .expect("step 3: the broker reads the computers");
     assert_eq!(rows.len(), 4, "step 3: the broker's list");

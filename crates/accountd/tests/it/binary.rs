@@ -178,8 +178,8 @@ async fn a_test_build_reads_callers_from_the_proc_root_and_says_so() {
         daemon.stderr()
     );
 
-    // This process is the Probe app by the fixture: it lists the one identity, and the AI key
-    // and the grant of the old file are not accountd's any more.
+    // This process is the Probe app by the fixture: it lists the one identity; the AI key of the
+    // file is an account but not an identity.
     let client = bus.connect().await;
     let found = IdentitiesProxy::new(&client)
         .await
@@ -190,19 +190,23 @@ async fn a_test_build_reads_callers_from_the_proc_root_and_says_so() {
     assert_eq!(found.len(), 1, "only the identity was kept");
 }
 
-/// R4: the old file is kept once, as it was, beside the registry, and accountd's own file holds
-/// the identity alone once it writes.
+/// The registry is read as it is: an AI key, its permit and the identity all stay, and no copy of
+/// the file is made beside it.
 #[tokio::test(flavor = "multi_thread")]
-async fn the_old_registry_is_kept_once_beside_the_registry_before_anything_is_dropped() {
+async fn the_registry_is_read_as_it_is_and_no_copy_is_made() {
     let bus = PrivateBus::start();
     let home = scratch(&bus, "home");
     seed(&home);
     let dir = home.join("state/porter");
-    let before = std::fs::read_to_string(dir.join("registry.json")).expect("old file");
+    let before = std::fs::read_to_string(dir.join("registry.json")).expect("the file");
     let mut daemon = spawn(&bus, &home, None);
     assert!(serving(&bus, &mut daemon).await, "{}", daemon.stderr());
-    let copy = dir.join(accountd::presplit::PRE_SPLIT_FILE);
-    assert_eq!(std::fs::read_to_string(&copy).expect("the copy"), before);
+    assert_eq!(
+        std::fs::read_to_string(dir.join("registry.json")).expect("the file"),
+        before,
+        "nothing was dropped or rewritten"
+    );
+    assert!(!dir.join("registry.pre-split.json").exists());
 }
 
 #[cfg(not(feature = "test-proc-root"))]
@@ -299,13 +303,18 @@ async fn a_caller_table_that_does_not_parse_stops_the_daemon_naming_the_file() {
     );
 }
 
-/// There is no `add` subcommand any more: adding an AI key is `inferd add`.
+/// Adding an AI key from a terminal is `accountd add`.
 #[test]
-fn accountd_has_no_add_command() {
+fn accountd_has_an_add_command_that_says_what_it_does() {
     let output = Command::new(env!("CARGO_BIN_EXE_accountd"))
         .args(["add", "--help"])
         .env_clear()
         .output()
         .expect("runs");
-    assert!(!output.status.success());
+    assert!(output.status.success());
+    let help = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        help.contains("--allow") && help.contains("org.quire.Accounts1"),
+        "{help}"
+    );
 }

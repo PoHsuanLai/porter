@@ -630,3 +630,40 @@ fn the_shipped_table_names_docket_acps_programs() {
         ]
     );
 }
+
+/// Q10: the two shipped caller tables agree. A permit binds to the app a daemon's table names, and
+/// the permits inferd asks accountd about were given to the apps accountd's table named, so every
+/// unit that inferd's `[apps]` lists is the same app, running the same programs, in accountd's.
+#[test]
+fn every_app_inferds_table_names_is_the_same_app_in_accountds() {
+    let inferd = shipped_callers().rows();
+    let accountd =
+        porter_callers::table_from_toml(&dist("callers.toml")).expect("accountd's table reads");
+    let apps: Vec<_> = inferd
+        .callers
+        .iter()
+        .filter(|row| {
+            matches!(
+                row.role,
+                porter_callers::CallerRole::App | porter_callers::CallerRole::Agent
+            )
+        })
+        .collect();
+    assert!(!apps.is_empty(), "the table names apps");
+    for row in apps {
+        let unit = row.unit.as_deref().expect("an app is a unit");
+        let theirs = accountd
+            .callers
+            .iter()
+            .find(|theirs| theirs.unit.as_deref() == Some(unit))
+            .unwrap_or_else(|| panic!("accountd's table does not name {unit}"));
+        assert_eq!(
+            theirs.app, row.app,
+            "{unit} is another app in accountd's table"
+        );
+        assert_eq!(
+            theirs.exe, row.exe,
+            "{unit} runs other programs in accountd's table"
+        );
+    }
+}

@@ -1,6 +1,6 @@
 //! Serving accountd's objects: [`serve`] puts `Manager`, the `Account` objects, `Spaces1`,
-//! `Identities1`, `Tailnet1` and the settings module on a connection over a [`Host`], and takes
-//! the name. What the objects share is `state`; this module is the one that names them all.
+//! `Identities1`, `Tailnet1`, the AI keys' `Keys`, `Launcher` and `Broker` and the settings module
+//! on a connection over a [`Host`], and takes the name. What the objects share is `state`; this module is the one that names them all.
 
 use crate::account::publish_accounts;
 use crate::callers::Callers;
@@ -8,7 +8,8 @@ use crate::host::Host;
 use crate::manager::Manager;
 use crate::state::Core;
 use porter_dbus::accounts::{ACCOUNTS_BUS, ACCOUNTS_PATH};
-use porter_dbus::accounts::{IdentitiesServed, ManagerServed, SpacesServed, TailnetServed};
+use porter_dbus::accounts::{BrokerServed, IdentitiesServed, KeysServed, LauncherServed};
+use porter_dbus::accounts::{ManagerServed, SpacesServed, TailnetServed};
 use porter_families::set::ProviderNames;
 use porter_ids::{clock::Clock, clock::SystemClock};
 use porter_sheets::{AppNames, RequestObjects};
@@ -42,6 +43,14 @@ pub struct Options {
     /// The picker and the passwords behind `org.quire.Identities1`'s `Offer` and `TakePassword`;
     /// none refuses both as unavailable (`List`, `RegisterUse` and `Uses` need no desk).
     pub identities: Option<Arc<dyn porter_identities::IdentityDesk>>,
+    /// The roster of agent launchers, with the clock, the bound and the audit of a request to
+    /// one ([`Launchers::new`](crate::launcher::Launchers::new)); the default is one on the
+    /// system clock, ten minutes, one second, and nothing recorded. A host that keeps a handle
+    /// on the roster (a clone) can ask a launcher to sign an agent in itself.
+    pub launchers: Option<crate::launcher::Launchers>,
+    /// Woken after each save of the registry (a [`crate::NewsStore`]); each wake tells the
+    /// clients what moved. None leaves the objects to tell them after their own changes.
+    pub saved: Option<Arc<tokio::sync::Notify>>,
 }
 
 impl std::fmt::Debug for Options {
@@ -55,6 +64,8 @@ impl std::fmt::Debug for Options {
             .field("tailnet", &self.tailnet)
             .field("uses", &self.uses)
             .field("identities", &self.identities)
+            .field("launchers", &self.launchers)
+            .field("saved", &self.saved.as_ref().map(|_| "<set>"))
             .finish()
     }
 }
@@ -87,6 +98,13 @@ pub async fn serve_with<H: Host, C: Callers>(
         eprintln!("accountd: {said}");
     }
     let clock: Arc<dyn Clock> = options.clock.unwrap_or_else(|| Arc::new(SystemClock));
+    // No launcher session is open in a starting accountd, so a session permit the store holds is
+    // one nobody can end.
+    host.end_session_grants(None).await;
+    let launchers = options.launchers.unwrap_or_else(|| {
+        crate::launcher::Launchers::new(connection.clone(), crate::launcher::LoginTiming::new())
+    });
+    host.use_launcher_roster(launchers.roster());
     let core = Arc::new(Core {
         host,
         callers,
@@ -109,13 +127,36 @@ pub async fn serve_with<H: Host, C: Callers>(
         uses: tokio::sync::Mutex::new(uses),
         picks: porter_identities::Picks::default(),
         publisher: OnceLock::new(),
+        launchers,
+        credentials: crate::launcher::Credentials::default(),
     });
     crate::publish::start(&core);
+    if let Some(saved) = options.saved {
+        crate::publish::follow_saves(&core, saved);
+    }
     let server: &ObjectServer = connection.object_server();
     server
         .at(
             ACCOUNTS_PATH,
             ManagerServed(Manager::new(Arc::clone(&core))),
+        )
+        .await?;
+    server
+        .at(
+            ACCOUNTS_PATH,
+            KeysServed(crate::keys::KeysObject::new(Arc::clone(&core))),
+        )
+        .await?;
+    server
+        .at(
+            ACCOUNTS_PATH,
+            LauncherServed(crate::launcher::LauncherObject::new(Arc::clone(&core))),
+        )
+        .await?;
+    server
+        .at(
+            ACCOUNTS_PATH,
+            BrokerServed(crate::broker::BrokerObject::new(Arc::clone(&core))),
         )
         .await?;
     server
