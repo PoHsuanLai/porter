@@ -1,14 +1,14 @@
 //! The person's computers through the client (`DbusTransport::tailnet`), against the real accountd
 //! front end on a private bus following a fake Tailscale on a scratch socket (never the real
 //! one): the typed `Machine`s, the stream of changes, and the refusals read back as
-//! `TailnetError`s. No dictionary is parsed here: that is what the reader is for.
+//! `CallFailure`s. No dictionary is parsed here: that is what the reader is for.
 #![cfg(feature = "dbus")]
 
 use crate::common;
 
 use accountd::{Options, TableCallers, TailnetWatch};
 use common::bus::PrivateBus;
-use porter_client::{DbusTransport, TailnetError};
+use porter_client::{CallFailure, DbusTransport};
 use porter_core::{
     Account, AccountLabel, AccountState, AppId, AppName, AuthKind, Isolation, Restriction,
 };
@@ -182,13 +182,13 @@ async fn an_app_and_a_stranger_are_refused_with_the_reason_read_back() {
         .tailnet()
         .await
         .expect("tailnet");
-    assert!(matches!(app.machines().await, Err(TailnetError::Denied(_))));
+    assert!(matches!(app.machines().await, Err(CallFailure::Denied(_))));
     let stranger = DbusTransport::over(world.bus.connect().await)
         .tailnet()
         .await
         .expect("tailnet");
     assert!(matches!(
         stranger.machines().await,
-        Err(TailnetError::Denied(_))
+        Err(CallFailure::Denied(_))
     ));
 }

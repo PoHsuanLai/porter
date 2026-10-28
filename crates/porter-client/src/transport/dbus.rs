@@ -103,7 +103,7 @@ impl DbusTransport {
 
     /// The person's computers on their Tailscale network (`org.quire.Tailnet1`), over this
     /// connection: for the shell, Settings and the terminal.
-    pub async fn tailnet(&self) -> Result<crate::Tailnet, crate::TailnetError> {
+    pub async fn tailnet(&self) -> Result<crate::Tailnet, crate::CallFailure> {
         crate::Tailnet::connect_at(&self.connection, &self.accounts).await
     }
 }

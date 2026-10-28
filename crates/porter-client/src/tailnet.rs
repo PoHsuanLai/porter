@@ -19,10 +19,6 @@ use porter_tailscale::Machine;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-/// Why a Tailnet call failed: the call itself did ([`CallFailure`]); the list has no reasons of
-/// its own. More reasons may be added: match with a wildcard.
-pub type TailnetError = CallFailure;
-
 /// accountd's list of the person's computers, as its callers see it.
 #[derive(Debug, Clone)]
 pub struct Tailnet {
@@ -31,7 +27,7 @@ pub struct Tailnet {
 
 impl Tailnet {
     /// The list over `connection`.
-    pub async fn connect(connection: &BusConnection) -> Result<Self, TailnetError> {
+    pub async fn connect(connection: &BusConnection) -> Result<Self, CallFailure> {
         Self::connect_at(connection, &crate::Destination::WellKnown).await
     }
 
@@ -39,7 +35,7 @@ impl Tailnet {
     pub async fn connect_at(
         connection: &BusConnection,
         to: &crate::Destination,
-    ) -> Result<Self, TailnetError> {
+    ) -> Result<Self, CallFailure> {
         Ok(Self {
             proxy: to.proxy(connection).await?,
         })
@@ -48,7 +44,7 @@ impl Tailnet {
     /// The other computers on the person's network, none for this one, in accountd's order. The
     /// list is empty with no Tailscale account, or one that is not working: the account's own
     /// state says why.
-    pub async fn machines(&self) -> Result<Vec<Machine>, TailnetError> {
+    pub async fn machines(&self) -> Result<Vec<Machine>, CallFailure> {
         self.proxy
             .machines()
             .await?
@@ -59,7 +55,7 @@ impl Tailnet {
 
     /// The changes to the list, from now on. It subscribes, then reads the list once so
     /// accountd counts this connection among those it tells.
-    pub async fn watch(&self) -> Result<MachineChanges, TailnetError> {
+    pub async fn watch(&self) -> Result<MachineChanges, CallFailure> {
         let stream = self.proxy.receive_changed().await?;
         self.proxy.machines().await?;
         Ok(MachineChanges(stream))

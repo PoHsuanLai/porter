@@ -146,7 +146,7 @@ pub use removals::{Removals, RemovedAccount};
 #[cfg(feature = "dbus")]
 pub use spaces::{SpaceChanges, Spaces, SpacesError};
 #[cfg(feature = "dbus")]
-pub use tailnet::{MachineChanges, Tailnet, TailnetError};
+pub use tailnet::{MachineChanges, Tailnet};
 #[cfg(all(feature = "lending", feature = "dbus"))]
 pub use tailnet_lending::SessionUnits;
 #[cfg(feature = "lending")]
