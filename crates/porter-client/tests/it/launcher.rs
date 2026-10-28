@@ -12,7 +12,7 @@ use porter_capability::AgentProgram;
 use porter_capability::LoginOutcome;
 use porter_client::{AskKind, Launcher, LauncherError};
 use porter_core::DataClass;
-use porter_core::LauncherSession;
+use porter_core::SessionToken;
 use porter_dbus::BusStream;
 use porter_dbus::inference::LauncherFault;
 use porter_wire::Refusal;
@@ -108,7 +108,7 @@ async fn the_launcher_registers_hears_a_login_and_a_logout_and_reports_each_once
 #[tokio::test(flavor = "multi_thread")]
 async fn a_session_is_opened_and_ended_by_name() {
     let rig = rig(Sheets::Hang).await;
-    let session = LauncherSession::parse("sess-1").expect("session");
+    let session = SessionToken::parse("sess-1").expect("session");
     rig.launcher.begin_session(&session).await.expect("begun");
     assert_eq!(
         rig.fake.seen(|seen| seen.sessions.clone()),
@@ -121,7 +121,7 @@ async fn a_session_is_opened_and_ended_by_name() {
 #[tokio::test(flavor = "multi_thread")]
 async fn asking_for_an_agents_key_answers_the_chosen_account_and_its_permit() {
     let rig = rig(Sheets::Permit("permit-7")).await;
-    let session = LauncherSession::parse("sess-1").expect("session");
+    let session = SessionToken::parse("sess-1").expect("session");
     let key = rig
         .launcher
         .request_agent_key(&program("claude-code"), DataClass::Files, Some(&session))

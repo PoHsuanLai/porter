@@ -12,7 +12,7 @@ use super::host::LauncherHost;
 use super::shared::{AGENT_APP_PREFIX, Core};
 use crate::peers::Peers;
 use porter_capability::{AgentProgram, LlmFeature};
-use porter_core::LauncherSession;
+use porter_core::SessionToken;
 use porter_core::consent::Usage;
 use porter_core::{AppId, AppName, DataClass, Isolation};
 use porter_dbus::Details;
@@ -57,7 +57,7 @@ impl<H: LauncherHost, P: Peers> Core<H, P> {
         let session = match session.is_empty() {
             true => None,
             false => {
-                let session = LauncherSession::parse(session).map_err(RefusedError::invalid)?;
+                let session = SessionToken::parse(session).map_err(RefusedError::invalid)?;
                 if !self.launchers.session_open(&owner, &session) {
                     return Err(RefusedError::launcher(
                         LauncherFault::UnknownSession,
@@ -91,7 +91,7 @@ impl<H: LauncherHost, P: Peers> Core<H, P> {
             let _claim = claim;
             let reply = core
                 .host
-                .choose_for_agent(
+                .choose(
                     &agent,
                     llm_need(),
                     (class, Usage::Interactive),
@@ -118,7 +118,7 @@ impl<H: LauncherHost, P: Peers> Core<H, P> {
     async fn settle_session(
         &self,
         owner: &str,
-        session: Option<&LauncherSession>,
+        session: Option<&SessionToken>,
         reply: AccountsReply,
     ) -> AccountsReply {
         match (&reply, session) {

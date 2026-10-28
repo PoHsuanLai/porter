@@ -12,7 +12,11 @@ use porter_core::{AccountId, GrantId, ProviderId};
 use porter_ids::clock::Clock;
 use porter_provider::Provider;
 use porter_secrets::{Secrets, SecretsError};
-use porter_service::{AccountService, AuditSink, Registry, Sheets, SignInAs};
+use porter_service::AccountService;
+use porter_service_accounts::SignInAs;
+use porter_service_core::audit::AuditSink;
+use porter_service_core::registry::Registry;
+use porter_service_core::sheets::Sheets;
 use porter_wire::{AccountsReply, AccountsRequest};
 use porter_wire::{ParentWindow, Refusal};
 use std::future::Future;
@@ -229,8 +233,9 @@ impl<S: Sheets> Sheets for SyncSheets<S> {
 
     fn conversation(
         &self,
-        open: porter_service::SheetOpen,
-    ) -> impl Future<Output = Result<Self::Link, porter_service::SheetFault>> + Send {
+        open: porter_service_core::sheets::SheetOpen,
+    ) -> impl Future<Output = Result<Self::Link, porter_service_core::sheets::SheetFault>> + Send
+    {
         self.inner.conversation(open)
     }
 }

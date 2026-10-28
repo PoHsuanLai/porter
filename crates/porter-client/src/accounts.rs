@@ -4,18 +4,20 @@ use crate::authenticated::{AuthenticatedStream, Relayed};
 use crate::error::ClientError;
 #[cfg(feature = "dbus")]
 use crate::error::TransportError;
-use crate::found::{ConsentOffer, Found, found};
+use crate::found::ConsentOffer;
 use crate::transport::Transport;
 #[cfg(feature = "infer")]
 use porter_capability::Tier;
+#[cfg(feature = "infer")]
+use porter_core::DataClass;
 use porter_core::ProviderHint;
-use porter_core::consent::Usage;
 use porter_core::{AccountId, GrantId};
-use porter_core::{Candidate, DataClass, EndpointUrl};
+use porter_core::{Candidate, EndpointUrl};
 #[cfg(feature = "infer")]
 use porter_infer::{
     ClientFrame, InferEvent, InferReply, InferRequest, InferSession, OpenOptions, Readiness,
 };
+#[cfg(feature = "infer")]
 use porter_match::Need;
 use porter_tailnet::{ComputerCandidate, GuestAnswer, GuestRow};
 use porter_tailscale::NodeId;
@@ -25,7 +27,7 @@ use porter_wire::{AccountsReply, AccountsRequest};
 /// The app's connection to the account service.
 #[derive(Debug)]
 pub struct Accounts<T> {
-    transport: T,
+    pub(crate) transport: T,
 }
 
 #[cfg(feature = "dbus")]
@@ -62,30 +64,6 @@ impl<T: Transport> Accounts<T> {
     /// Over a transport the app built (`InProcess` for an app hosting the core).
     pub fn over(transport: T) -> Self {
         Self { transport }
-    }
-
-    /// Whether an account can meet `need` for this app, and which.
-    pub async fn find(
-        &self,
-        need: &Need,
-        class: DataClass,
-        usage: Usage,
-    ) -> Result<Found, ClientError> {
-        let candidates = self.transport.granted(need, class, usage).await?;
-        let offer = ConsentOffer {
-            need: need.clone(),
-            class,
-            usage,
-        };
-        if !candidates.is_empty() {
-            return Ok(found(
-                candidates,
-                porter_core::consent::Availability::Granted,
-                offer,
-            ));
-        }
-        let availability = self.transport.availability(need, class, usage).await?;
-        Ok(found(candidates, availability, offer))
     }
 
     /// Shows the chooser and consent sheet for `offer`; the account the user picked, granted.

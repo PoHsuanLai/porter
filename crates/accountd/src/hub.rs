@@ -9,7 +9,7 @@ use crate::state::state_slug;
 use ds_settings::schema::KeyPath;
 use porter_callers::CallerRole;
 use porter_core::AccountId;
-use porter_service::Registry;
+use porter_service_core::registry::Registry;
 
 /// One change a client may be told of.
 #[derive(Debug, Clone, PartialEq, Eq)]

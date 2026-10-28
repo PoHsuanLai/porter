@@ -41,7 +41,7 @@ pub struct Options {
     pub uses: Option<std::path::PathBuf>,
     /// The picker and the passwords behind `org.quire.Identities1`'s `Offer` and `TakePassword`;
     /// none refuses both as unavailable (`List`, `RegisterUse` and `Uses` need no desk).
-    pub identities: Option<Arc<dyn crate::identity_desk::IdentityDesk>>,
+    pub identities: Option<Arc<dyn porter_identities::IdentityDesk>>,
 }
 
 impl std::fmt::Debug for Options {
@@ -78,11 +78,11 @@ pub async fn serve_with<H: Host, C: Callers>(
     options: Options,
 ) -> zbus::Result<()> {
     let published = host.registry();
-    let (spaces, said) = crate::spaces::SpaceBook::open(options.spaces.as_deref()).await;
+    let (spaces, said) = porter_spaces::SpaceBook::open(options.spaces.as_deref()).await;
     if let Some(said) = said {
         eprintln!("accountd: {said}");
     }
-    let (uses, said) = crate::identities::UseBook::open(options.uses.as_deref()).await;
+    let (uses, said) = porter_identities::UseBook::open(options.uses.as_deref()).await;
     if let Some(said) = said {
         eprintln!("accountd: {said}");
     }
@@ -107,7 +107,7 @@ pub async fn serve_with<H: Host, C: Callers>(
         tailnet: options.tailnet,
         identity_desk: options.identities,
         uses: tokio::sync::Mutex::new(uses),
-        picks: crate::identities::Picks::default(),
+        picks: porter_identities::Picks::default(),
         publisher: OnceLock::new(),
     });
     crate::publish::start(&core);

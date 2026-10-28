@@ -27,7 +27,7 @@ use porter_fake_servers::{FakeGoogle, GoogleHandle, Running};
 use porter_ids::UnixSeconds;
 use porter_provider::Provider;
 use porter_secrets::{MemorySecrets, Secrets};
-use porter_service::Registry;
+use porter_service_core::registry::Registry;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use syncd::datasets::pim::{AccountdUnavailable, Wiring};

@@ -25,7 +25,8 @@ use porter_fake::{
 use porter_ids::UnixSeconds;
 use porter_ids::clock::FixedClock;
 use porter_secrets::{MemorySecrets, Secrets, SecretsError};
-use porter_service::{AccountService, Registry};
+use porter_service::AccountService;
+use porter_service_core::registry::Registry;
 use std::sync::Arc;
 use std::time::Duration;
 use test_kit::Scratch;

@@ -372,7 +372,7 @@ fn consent_values_round_trip() {
 
 #[test]
 fn a_session_scope_round_trips_with_its_session_and_the_old_scopes_keep_their_words() {
-    let session = LauncherSession::parse("sess-1").expect("session");
+    let session = SessionToken::parse("sess-1").expect("session");
     let scope = GrantScope::Session(session.clone());
     round_trip(&scope);
     round_trip(&Verdict::Granted {
@@ -435,7 +435,7 @@ fn a_consent_ask_names_its_session_only_when_it_has_one() {
         serde_json::from_str::<ConsentAsk>(&json(&ask)).expect("ask"),
         ask
     );
-    ask.session = Some(LauncherSession::parse("sess-1").expect("session"));
+    ask.session = Some(SessionToken::parse("sess-1").expect("session"));
     assert!(json(&ask).contains(r#""session":"sess-1""#));
     round_trip(&ask);
     // The ordinary consent leaves its purpose out; "Continue as" says so, and an identity (what

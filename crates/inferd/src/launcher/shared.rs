@@ -37,11 +37,11 @@ use porter_capability::{CapabilityKind, Toggle};
 use porter_core::consent::{Decision, GrantScope};
 use porter_core::{Account, AccountState, AppId, AuthKind};
 use porter_core::{AccountId, GrantId};
-use porter_core::{LauncherSession, ProcessCredentialId};
+use porter_core::{ProcessCredentialId, SessionToken};
 use porter_dbus::inference::LauncherFault;
 use porter_ids::word::{from_word, word as word_of};
-use porter_service::Registry;
-use porter_service::audit::{AuditEvent, CredentialEnd, Handoff};
+use porter_service_core::audit::{AuditEvent, CredentialEnd, Handoff};
+use porter_service_core::registry::Registry;
 use porter_sheets::{OpenSheets, RequestObjects};
 use porter_wire::Refusal;
 use std::sync::Arc;
@@ -283,7 +283,7 @@ impl<H: LauncherHost, P: Peers> Core<H, P> {
     /// `session_closed` and the permits are removed, audited. `tell` says the launcher is still
     /// connected to hear `ProcessCredentialRevoked`. The credentials end before the permits go,
     /// so none is ever reported as `grant_revoked`.
-    pub(crate) async fn close_session(self: &Arc<Self>, session: &LauncherSession, tell: bool) {
+    pub(crate) async fn close_session(self: &Arc<Self>, session: &SessionToken, tell: bool) {
         let grants: Vec<GrantId> = self
             .host
             .registry()

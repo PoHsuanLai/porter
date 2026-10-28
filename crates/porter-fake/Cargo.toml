@@ -17,8 +17,10 @@ porter-ids = { workspace = true }
 porter-provider = { workspace = true }
 porter-secrets = { workspace = true, features = ["testing"] }
 porter-service = { workspace = true }
+porter-service-core = { workspace = true }
 
 [dev-dependencies]
+porter-service-accounts = { workspace = true }
 test-kit = { workspace = true }
 tokio = { workspace = true }
 porter-match = { workspace = true }

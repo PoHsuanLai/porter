@@ -13,7 +13,7 @@ use porter_core::consent::{AskPurpose, ConsentAnswer, GrantScope};
 use porter_core::{AccountId, ProviderId};
 use porter_core::{Identity, IdentityAddress, IdentityId, IdentityKind, IdentityName};
 use porter_dbus::accounts::{IdentitiesProxy, identity_from_dbus};
-use porter_service::audit::AuditEvent;
+use porter_service_core::audit::AuditEvent;
 use porter_sheet::{SheetInput, SheetView};
 use porter_wire::Refusal;
 use std::io::Read;

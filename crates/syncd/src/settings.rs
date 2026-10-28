@@ -37,7 +37,7 @@ use porter_core::AccountId;
 use porter_core::{Account, AccountState, Family};
 use porter_drive::CacheLimit;
 use porter_families::set::ProviderNames;
-use porter_service::Registry;
+use porter_service_core::registry::Registry;
 use porter_wire::ParentWindow;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};

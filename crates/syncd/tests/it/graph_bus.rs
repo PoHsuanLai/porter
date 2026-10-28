@@ -37,7 +37,7 @@ use porter_http_relay::RelayStream;
 use porter_ids::UnixSeconds;
 use porter_provider::Provider;
 use porter_secrets::{MemorySecrets, Secrets};
-use porter_service::Registry;
+use porter_service_core::registry::Registry;
 use porter_sync::Clock;
 use porter_sync::ConflictRule;
 use std::collections::BTreeSet;

@@ -16,7 +16,6 @@
 use crate::callers::Callers;
 use crate::errors::RefusedError;
 use crate::host::Host;
-use crate::spaces::{CREATES_PER_WINDOW, SpaceFault};
 use crate::state::{Core, Standing};
 use porter_callers::CallerRole;
 use porter_core::{DesktopSpace, SpaceChange, SpaceLook, SpaceName};
@@ -25,7 +24,8 @@ use porter_dbus::accounts::{SpacesServed, SpacesServer};
 use porter_dbus::{Call, Details};
 use porter_ids::clock::Clock;
 use porter_ids::word::word as word_of;
-use porter_service::audit::AuditEvent;
+use porter_service_core::audit::AuditEvent;
+use porter_spaces::{CREATES_PER_WINDOW, SpaceFault, SpacesApi};
 use std::sync::Arc;
 use std::time::Instant;
 use zbus::message::Header;
@@ -51,7 +51,8 @@ fn fault(fault: SpaceFault) -> RefusedError {
             "Too many new Spaces at once: at most {CREATES_PER_WINDOW} a minute. Try again in a \
              minute."
         )),
-        SpaceFault::Unsaved => RefusedError::failed("The Spaces could not be saved."),
+        // Unsaved, and a fault a later porter adds.
+        _ => RefusedError::failed("The Spaces could not be saved."),
     }
 }
 

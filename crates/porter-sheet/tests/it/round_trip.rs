@@ -3,7 +3,7 @@
 
 use porter_capability::CapabilityKind;
 use porter_capability::{AbsentReason, KindToggle, Toggle};
-use porter_core::LauncherSession;
+use porter_core::SessionToken;
 use porter_core::consent::{AccountChoice, ConsentAnswer, ConsentAsk, Usage};
 use porter_core::{AccountId, ProviderId};
 use porter_core::{
@@ -216,7 +216,7 @@ fn every_sheet_view_round_trips() {
                     nextcloud.clone(),
                 )],
             )
-            .with_session(LauncherSession::parse("sess-1").expect("session"))
+            .with_session(SessionToken::parse("sess-1").expect("session"))
             .with_app_label(AppLabel("Photos".into())),
         ),
         SheetView::Providers(vec![ProviderRow {

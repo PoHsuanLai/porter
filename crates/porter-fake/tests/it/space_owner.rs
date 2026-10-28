@@ -20,7 +20,8 @@ use porter_fake::{
 use porter_ids::UnixSeconds;
 use porter_ids::clock::FixedClock;
 use porter_secrets::{MemorySecrets, Secrets};
-use porter_service::{AccountService, Registry};
+use porter_service::AccountService;
+use porter_service_core::registry::Registry;
 use porter_wire::Refusal;
 
 type Svc = AccountService<

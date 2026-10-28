@@ -5,7 +5,7 @@
 //! was. The trait keeps the bus object free of those six parameters, and lets a test host stand in
 //! for the service.
 
-use porter_core::LauncherSession;
+use porter_core::SessionToken;
 use porter_core::consent::Usage;
 use porter_core::store::RegistryStore;
 use porter_core::{AccountId, GrantId};
@@ -14,7 +14,11 @@ use porter_ids::clock::Clock;
 use porter_match::Need;
 use porter_provider::Provider;
 use porter_secrets::Secrets;
-use porter_service::{AccountService, AgentFault, AuditSink, Registry, Roster, Sheets};
+use porter_service::AccountService;
+use porter_service_accounts::{AgentFault, Roster};
+use porter_service_core::audit::AuditSink;
+use porter_service_core::registry::Registry;
+use porter_service_core::sheets::Sheets;
 use porter_wire::AccountsReply;
 use porter_wire::{ParentWindow, Refusal};
 use std::future::Future;
@@ -42,20 +46,20 @@ pub trait LauncherHost: Send + Sync + 'static {
     /// The consent sheet for an agent program's key: `agent` is the app
     /// `org.quire.Agent.<program>` the permit is held under, and `session` an open launcher
     /// session of the caller, which lets the sheet offer "This session only".
-    fn choose_for_agent(
+    fn choose(
         &self,
         agent: &AppId,
         need: Need,
         class: (DataClass, Usage),
         window: &ParentWindow,
-        session: Option<&LauncherSession>,
+        session: Option<&SessionToken>,
     ) -> impl Future<Output = AccountsReply> + Send;
 
     /// Removes the permits scoped to `session` (every session permit when none is named) and
     /// returns them.
     fn end_session_grants(
         &self,
-        session: Option<&LauncherSession>,
+        session: Option<&SessionToken>,
     ) -> impl Future<Output = Vec<GrantId>> + Send;
 
     /// The API key filed for `account`. A key that is gone or unreadable means signing in again
@@ -91,20 +95,20 @@ where
         AccountService::set_agent_state(self, account, state)
     }
 
-    fn choose_for_agent(
+    fn choose(
         &self,
         agent: &AppId,
         need: Need,
         class: (DataClass, Usage),
         window: &ParentWindow,
-        session: Option<&LauncherSession>,
+        session: Option<&SessionToken>,
     ) -> impl Future<Output = AccountsReply> + Send {
-        AccountService::choose_for_agent(self, agent, need, class, window, session)
+        AccountService::choose(self, agent, need, class, window, session)
     }
 
     fn end_session_grants(
         &self,
-        session: Option<&LauncherSession>,
+        session: Option<&SessionToken>,
     ) -> impl Future<Output = Vec<GrantId>> + Send {
         AccountService::end_session_grants(self, session)
     }

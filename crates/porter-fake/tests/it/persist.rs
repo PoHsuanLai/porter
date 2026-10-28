@@ -11,7 +11,8 @@ use porter_fake::{MemoryStore, ScriptedSheets, cloud_provider, llm_provider};
 use porter_ids::clock::FixedClock;
 use porter_ids::{Tokens, UnixSeconds};
 use porter_secrets::MemorySecrets;
-use porter_service::{AccountService, Registry};
+use porter_service::AccountService;
+use porter_service_core::registry::Registry;
 use std::sync::Mutex;
 use std::time::Duration;
 

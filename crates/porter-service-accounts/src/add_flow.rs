@@ -1,0 +1,699 @@
+//! Driving a provider's sign-in through the sheet (porter PLAN G4, G5, §2.4): the host half of
+//! the conversation. The sheet's pure machine (`porter_sheet::step`) says what to draw,
+//! what to tell the sign-in and when to store; this loop carries those out, and reports what the
+//! person did and what the sign-in said back to the machine.
+//!
+//! While the person is in the browser (or reading a code) the loop polls the sign-in and
+//! listens to the sheet at the same time, so closing the sheet ends the wait at once.
+
+use crate::Accounts;
+use crate::add_store::AllowFor;
+use crate::launcher::{Roster, program_of_spec};
+use crate::race::{Raced, race};
+use porter_capability::CapabilityKind;
+use porter_capability::KindToggle;
+use porter_core::ProviderHint;
+use porter_core::{AccountId, ProviderId};
+use porter_core::{AppId, AuthKind, ServiceEndpoint};
+use porter_provider::{
+    ConsentHistory, LoginHint, Provider, ProviderError, ProviderSpec, Readiness, SignIn,
+    SignInMode, SignInStart, SignInStep, Signed,
+};
+use porter_service_core::Ports;
+use porter_service_core::refusal::refusal_of;
+use porter_service_core::sheets::{SheetFault, SheetLink, SheetOpen, Sheets};
+use porter_sheet::{
+    Progress, ProviderRow, Purpose, RowKind, Sheet, SheetEffect, SheetEnd, SheetEvent, SignInFault,
+    SignInInput, Stage, step,
+};
+use porter_wire::AccountsReply;
+use porter_wire::{ParentWindow, Refusal};
+use std::collections::VecDeque;
+
+/// Who an add is for when the host already knows ("Continue as"): the provider the identity is
+/// with, the address its page opens on, and whether this client was signed in for that identity
+/// before.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SignInAs {
+    /// The provider the identity is with: the sign-in goes straight to it, with no provider list.
+    pub provider: ProviderId,
+    /// The address to open the provider's page on.
+    pub hint: LoginHint,
+    /// Whether the person agreed to this client for this identity before. `SignedInBefore` asks
+    /// for no consent screen; if the provider then returns nothing to keep, the sign-in is
+    /// started once more as `FirstSignIn`.
+    pub history: ConsentHistory,
+}
+
+impl SignInAs {
+    /// A sign-in with `provider` as the person at `hint`, with this `history`.
+    pub fn new(provider: ProviderId, hint: LoginHint, history: ConsentHistory) -> Self {
+        Self {
+            provider,
+            hint,
+            history,
+        }
+    }
+}
+
+/// What the sheet is for.
+pub(crate) enum Job {
+    /// A new account.
+    Add {
+        hint: ProviderHint,
+        allow: Option<AllowFor>,
+        identity: Option<SignInAs>,
+    },
+    /// The credential of an existing account again.
+    Reauthenticate {
+        account: AccountId,
+        provider: ProviderId,
+        /// The account's servers as stored, for the family to start from.
+        endpoints: Vec<ServiceEndpoint>,
+    },
+    /// The on-use access of `kinds` for an existing account, and a credential that holds it.
+    Extend {
+        account: AccountId,
+        provider: ProviderId,
+        /// The account's servers as stored: the family starts from them, and the answer must be
+        /// their login.
+        endpoints: Vec<ServiceEndpoint>,
+        kinds: Vec<CapabilityKind>,
+    },
+}
+
+/// How a conversation ended well.
+enum Stored {
+    Added(AccountId),
+    Reauthenticated,
+    /// Nothing stored: the sign-in showed this account, which was already here.
+    AlreadyThere(AccountId),
+}
+
+/// A sign-in that fails before it starts or answers.
+fn fault_of(error: ProviderError) -> SignInFault {
+    match error {
+        ProviderError::Unauthorized => SignInFault::Refused,
+        ProviderError::Forbidden => SignInFault::Forbidden,
+        ProviderError::Unreachable => SignInFault::Unreachable,
+        ProviderError::Unreadable => SignInFault::Unreadable,
+        // a variant a newer porter adds: the sign-in ends as unreadable
+        _ => SignInFault::Unreadable,
+    }
+}
+
+/// The provider list as the person reads it: the named providers by label (case does not count),
+/// then the generic "Other..." rows, mail first. The label is what is drawn, so it is what orders;
+/// the provider id (which sorted "Other ACP agent" before "Google") does not.
+pub(crate) fn ordered(mut rows: Vec<ProviderRow>) -> Vec<ProviderRow> {
+    rows.sort_by_cached_key(|row| {
+        (
+            row.kind == RowKind::Generic,
+            row.id.as_str() != "generic-imap",
+            row.label.to_lowercase(),
+            row.id.clone(),
+        )
+    });
+    rows
+}
+
+/// Providers a person can sign in to: not the ones with nothing to sign in.
+fn signable(spec: &ProviderSpec) -> bool {
+    !matches!(spec.auth.kind, AuthKind::None | AuthKind::LocalRuntime) && !unlisted(spec)
+}
+
+/// Whether the add list shows `provider` now: one a person can sign in to, and whose sign-in
+/// can start (an OAuth issuer with a client for this build; an agent whose program has a
+/// launcher, when the host keeps a roster). Asked each time a sheet opens, so a client set in
+/// Settings, or a launcher that registers, shows its row at the next one.
+fn listed<P: Provider>(provider: &P, roster: Option<&Roster>) -> bool {
+    signable(provider.spec())
+        && provider.readiness() == Readiness::Ready
+        && !launcherless(provider.spec(), roster)
+}
+
+/// An agent provider whose program no launcher has registered for, by a roster the host keeps:
+/// only the agent signs itself in, and with no launcher there is nobody to ask it.
+fn launcherless(spec: &ProviderSpec, roster: Option<&Roster>) -> bool {
+    match roster {
+        Some(roster) => {
+            spec.auth.kind == AuthKind::AgentLogin
+                && program_of_spec(spec).is_some_and(|program| !roster.has(&program))
+        }
+        None => false,
+    }
+}
+
+/// Providers whose file stays loaded (an account made from it still signs in again) but that the
+/// add list no longer shows: "Other email account" reaches a JMAP server too, through the
+/// protocol choice of its typed-server form.
+fn unlisted(spec: &ProviderSpec) -> bool {
+    spec.id.as_str() == "generic-jmap"
+}
+
+/// The conversation's own state: the sign-in in flight and what it produced.
+struct Run<S> {
+    signin: Option<S>,
+    signed: Option<Signed>,
+    /// Whether the sign-in is to be polled while the sheet is idle.
+    polling: bool,
+    /// Who the sign-in is for and with which consent history: what a retry changes.
+    identity: Option<SignInAs>,
+    stored: Option<Stored>,
+    /// The account the sign-in showed again, when it ended `AlreadyAdded`.
+    already: Option<AccountId>,
+}
+
+impl<E: Ports> Accounts<'_, E> {
+    /// Opens the add-account sheet, drives the sign-in through it, and answers `Added` with the
+    /// new account's id.
+    pub(crate) async fn run_add(
+        &self,
+        caller: &AppId,
+        hint: ProviderHint,
+        window: ParentWindow,
+        allow: Option<AllowFor>,
+        identity: Option<SignInAs>,
+    ) -> AccountsReply {
+        let job = Job::Add {
+            hint,
+            allow,
+            identity,
+        };
+        match self.drive(caller, window, &job).await {
+            Ok(Stored::Added(id)) => AccountsReply::Added(id),
+            // The app is told which account it is, and may ask for a grant of it.
+            Ok(Stored::AlreadyThere(id)) => AccountsReply::AlreadyAdded(id),
+            Ok(Stored::Reauthenticated) => AccountsReply::Refused(Refusal::Unavailable),
+            Err(refusal) => AccountsReply::Refused(refusal),
+        }
+    }
+
+    /// Runs a sign-in for `account` that asks for the on-use access of `kinds` alone, and files
+    /// the credential it ends with under the same id: the same person only, or nothing is kept.
+    pub(crate) async fn run_extend(
+        &self,
+        caller: &AppId,
+        account: &AccountId,
+        kinds: Vec<CapabilityKind>,
+        window: ParentWindow,
+    ) -> Result<(), Refusal> {
+        let (provider, endpoints) = {
+            let registry = self.ctx.lock();
+            let row = registry
+                .accounts
+                .iter()
+                .find(|a| a.id == *account)
+                .ok_or(Refusal::UnknownGrant)?;
+            (row.provider.clone(), row.endpoints.clone())
+        };
+        let asks = kinds.iter().all(|k| self.asks_on_use(&provider, *k));
+        if kinds.is_empty() || !asks {
+            return Err(Refusal::Unavailable);
+        }
+        let job = Job::Extend {
+            account: account.clone(),
+            provider,
+            endpoints,
+            kinds,
+        };
+        match self.drive(caller, window, &job).await {
+            Ok(Stored::Reauthenticated) => Ok(()),
+            Ok(Stored::Added(_) | Stored::AlreadyThere(_)) => Err(Refusal::Unavailable),
+            Err(refusal) => Err(refusal),
+        }
+    }
+
+    /// Runs the sign-in again for `account` and replaces its credential. Without `any_account`
+    /// `caller` must hold a grant for the account; with it (the sheet host and Settings) any
+    /// account is signed in again (accountd decides by role who may).
+    pub(crate) async fn run_reauthenticate(
+        &self,
+        caller: &AppId,
+        account: &AccountId,
+        window: ParentWindow,
+        any_account: bool,
+    ) -> AccountsReply {
+        let (provider, endpoints) = {
+            let registry = self.ctx.lock();
+            let held = registry.holds(caller, account);
+            let row = registry.accounts.iter().find(|a| a.id == *account);
+            match (held || any_account, row) {
+                (true, Some(row)) => (row.provider.clone(), row.endpoints.clone()),
+                _ => return AccountsReply::Refused(Refusal::UnknownGrant),
+            }
+        };
+        let job = Job::Reauthenticate {
+            account: account.clone(),
+            provider,
+            endpoints,
+        };
+        match self.drive(caller, window, &job).await {
+            Ok(Stored::Reauthenticated) => AccountsReply::Reauthenticated,
+            Ok(Stored::Added(_) | Stored::AlreadyThere(_)) => {
+                AccountsReply::Refused(Refusal::Unavailable)
+            }
+            Err(refusal) => AccountsReply::Refused(refusal),
+        }
+    }
+
+    async fn drive(
+        &self,
+        caller: &AppId,
+        window: ParentWindow,
+        job: &Job,
+    ) -> Result<Stored, Refusal> {
+        let rows = ordered(
+            self.ctx
+                .providers()
+                .iter()
+                .filter(|provider| listed(*provider, self.state.roster.get()))
+                .map(|provider| provider.spec().sheet_row())
+                .collect(),
+        );
+        let purpose = match job {
+            Job::Add { hint, allow, .. } => {
+                if let ProviderHint::Provider(id) = hint
+                    && !rows.iter().any(|row| row.id == *id)
+                {
+                    // An agent asked for by name that has no launcher is told so.
+                    let agent = self.ctx.provider_of(id).map(Provider::spec);
+                    return Err(match agent {
+                        Some(spec) if launcherless(spec, self.state.roster.get()) => {
+                            Refusal::NoLauncher
+                        }
+                        _ => Refusal::Unavailable,
+                    });
+                }
+                Purpose::Add {
+                    hint: hint.clone(),
+                    allow: allow.as_ref().map(|_| caller.clone()),
+                }
+            }
+            Job::Reauthenticate {
+                account, provider, ..
+            } => Purpose::Reauthenticate {
+                account: account.clone(),
+                provider: provider.clone(),
+            },
+            Job::Extend {
+                account, provider, ..
+            } => Purpose::Extend {
+                account: account.clone(),
+                provider: provider.clone(),
+            },
+        };
+        let rows = match job {
+            Job::Add { .. } => rows,
+            Job::Reauthenticate { .. } | Job::Extend { .. } => Vec::new(),
+        };
+        let own = match self.state.own_machines.get() {
+            Some(machines) => machines.read().await,
+            None => Vec::new(),
+        };
+        let mut sheet = Sheet::new(purpose, rows).with_own_machines(own);
+        let mut link = self
+            .ctx
+            .sheets()
+            .conversation(SheetOpen {
+                window,
+                view: sheet.view(),
+            })
+            .await
+            .map_err(left)?;
+        let mut run = Run {
+            signin: None,
+            signed: None,
+            polling: false,
+            identity: match job {
+                Job::Add { identity, .. } => identity.clone(),
+                Job::Reauthenticate { .. } | Job::Extend { .. } => None,
+            },
+            stored: None,
+            already: None,
+        };
+        let mut queue = VecDeque::new();
+        if matches!(sheet.stage, Stage::Working(_)) {
+            queue.push_back(SheetEffect::Feed(SignInInput::Start));
+        }
+        loop {
+            while let Some(effect) = queue.pop_front() {
+                let event = match effect {
+                    SheetEffect::Show(view) => {
+                        link.update(view).await.map_err(left)?;
+                        None
+                    }
+                    SheetEffect::Feed(input) => self.feed(&sheet, job, &mut run, input).await,
+                    SheetEffect::Store(choices) => {
+                        Some(self.store(caller, job, &sheet, &mut run, &choices).await)
+                    }
+                    // The host opens a page it is shown; showing the same page again opens it
+                    // again, through the host's own portal path.
+                    SheetEffect::OpenBrowser(_) => {
+                        link.update(sheet.view()).await.map_err(left)?;
+                        None
+                    }
+                    SheetEffect::Close(end) => {
+                        return finish(end, run.stored.take(), run.already.take());
+                    }
+                };
+                if let Some(event) = event {
+                    let (next, effects) = step(sheet, event);
+                    sheet = next;
+                    queue.extend(effects);
+                }
+            }
+            let event = self.wait(&mut link, &sheet, job, &mut run).await;
+            let (next, effects) = step(sheet, event);
+            sheet = next;
+            queue.extend(effects);
+        }
+    }
+
+    /// The next thing to tell the machine: what the person did or, while the sign-in is being
+    /// polled, what the poll found, whichever comes first.
+    async fn wait<L: SheetLink>(
+        &self,
+        link: &mut L,
+        sheet: &Sheet,
+        job: &Job,
+        run: &mut Run<<E::Provider as Provider>::SignIn>,
+    ) -> SheetEvent {
+        let polled = match (run.polling, run.signin.as_mut()) {
+            (true, Some(signin)) => {
+                match race(link.input(), signin.next(SignInInput::Poll)).await {
+                    Raced::First(input) => return person(input),
+                    Raced::Second(step) => step,
+                }
+            }
+            _ => return person(link.input().await),
+        };
+        run.polling = false;
+        self.settled(sheet, job, run, polled).await
+    }
+
+    /// What a sign-in's step is to the machine, after the one retry an identity's add owes: a
+    /// sign-in that skipped the consent screen (`SignedInBefore`) and ended `Unreadable` (the
+    /// provider handed back nothing to keep) starts again once as `FirstSignIn`.
+    async fn settled(
+        &self,
+        sheet: &Sheet,
+        job: &Job,
+        run: &mut Run<<E::Provider as Provider>::SignIn>,
+        step: SignInStep,
+    ) -> SheetEvent {
+        let retried = match (&step, job, run.identity.take()) {
+            (
+                SignInStep::Failed(SignInFault::Unreadable),
+                Job::Add { .. },
+                Some(SignInAs {
+                    provider,
+                    hint,
+                    history: ConsentHistory::SignedInBefore,
+                }),
+            ) => {
+                let again = SignInAs::new(provider, hint, ConsentHistory::FirstSignIn);
+                run.identity = Some(again.clone());
+                match stage_provider(&sheet.stage).and_then(|id| self.begin(id, job, Some(&again)))
+                {
+                    Some(Ok(mut signin)) => {
+                        let first = signin.next(SignInInput::Start).await;
+                        run.signin = Some(signin);
+                        Some(first)
+                    }
+                    Some(Err(_)) | None => None,
+                }
+            }
+            (_, _, identity) => {
+                run.identity = identity;
+                None
+            }
+        };
+        said(run, retried.unwrap_or(step))
+    }
+
+    /// Starts `provider`'s sign-in for `job`, as `identity` when the job is an add for one.
+    fn begin(
+        &self,
+        provider: &ProviderId,
+        job: &Job,
+        identity: Option<&SignInAs>,
+    ) -> Option<Result<<E::Provider as Provider>::SignIn, ProviderError>> {
+        self.ctx.provider_of(provider).map(|provider| {
+            let start = SignInStart::new(match job {
+                Job::Add { .. } => SignInMode::Add,
+                Job::Reauthenticate {
+                    account, endpoints, ..
+                } => SignInMode::Reauthenticate {
+                    account: account.clone(),
+                    endpoints: endpoints.clone(),
+                },
+                Job::Extend {
+                    account,
+                    endpoints,
+                    kinds,
+                    ..
+                } => SignInMode::Extend {
+                    account: account.clone(),
+                    endpoints: endpoints.clone(),
+                    kinds: kinds.clone(),
+                },
+            });
+            provider.sign_in(match (identity, job) {
+                (Some(SignInAs { hint, history, .. }), _) => {
+                    start.with_login_hint(hint.clone()).with_consent(*history)
+                }
+                // The page opens on the account's own address: the answer must be that person.
+                (None, Job::Extend { endpoints, .. }) => match login_hint_of(endpoints) {
+                    Some(hint) => start.with_login_hint(hint),
+                    None => start,
+                },
+                (None, _) => start,
+            })
+        })
+    }
+
+    /// Hands the sign-in what the machine asked it to be told.
+    async fn feed(
+        &self,
+        sheet: &Sheet,
+        job: &Job,
+        run: &mut Run<<E::Provider as Provider>::SignIn>,
+        input: SignInInput,
+    ) -> Option<SheetEvent> {
+        match input {
+            SignInInput::Poll => {
+                run.polling = true;
+                None
+            }
+            SignInInput::Cancel => {
+                run.polling = false;
+                if let Some(mut signin) = run.signin.take() {
+                    // The sheet is closing either way: how the sign-in took it is not asked.
+                    let _ = signin.next(SignInInput::Cancel).await;
+                }
+                None
+            }
+            SignInInput::Start => {
+                run.polling = false;
+                let Stage::Working(id) = &sheet.stage else {
+                    return None;
+                };
+                // An agent signs itself in through its launcher: with none for its program there
+                // is nobody to do it, and no account is made to wait for one. The list leaves
+                // such an agent out; this is for a launcher that left after the list was drawn.
+                if matches!(job, Job::Add { .. })
+                    && let Some(spec) = self.ctx.provider_of(id).map(Provider::spec)
+                    && launcherless(spec, self.state.roster.get())
+                {
+                    return Some(SheetEvent::SignIn(Progress::Failed(
+                        SignInFault::NoLauncher,
+                    )));
+                }
+                let started = self.begin(id, job, run.identity.as_ref());
+                let mut signin = match started {
+                    Some(Ok(signin)) => signin,
+                    Some(Err(error)) => {
+                        return Some(SheetEvent::SignIn(Progress::Failed(fault_of(error))));
+                    }
+                    None => {
+                        return Some(SheetEvent::SignIn(Progress::Failed(
+                            SignInFault::Unreadable,
+                        )));
+                    }
+                };
+                let first = signin.next(SignInInput::Start).await;
+                run.signin = Some(signin);
+                Some(self.settled(sheet, job, run, first).await)
+            }
+            other => {
+                let signin = run.signin.as_mut()?;
+                let step = signin.next(other).await;
+                // The same login twice is not a second account: the sign-in ends here, at the
+                // review, and what is stored stays as it is.
+                if let (
+                    Job::Add { .. },
+                    Stage::Working(provider) | Stage::Confirming { provider, .. },
+                ) = (job, &sheet.stage)
+                    && let Some(held) = self.already_added(provider, &step)
+                {
+                    run.already = Some(held);
+                    if let Some(mut signin) = run.signin.take() {
+                        let _ = signin.next(SignInInput::Cancel).await;
+                    }
+                    return Some(SheetEvent::SignIn(Progress::Failed(
+                        SignInFault::AlreadyAdded,
+                    )));
+                }
+                Some(self.settled(sheet, job, run, step).await)
+            }
+        }
+    }
+
+    /// Stores what the sign-in produced, as the job says.
+    async fn store(
+        &self,
+        caller: &AppId,
+        job: &Job,
+        sheet: &Sheet,
+        run: &mut Run<<E::Provider as Provider>::SignIn>,
+        choices: &[KindToggle],
+    ) -> SheetEvent {
+        let Some(signed) = run.signed.take() else {
+            return SheetEvent::StoreFailed;
+        };
+        let stored = match job {
+            Job::Add { allow, .. } => {
+                let spec = stage_provider(&sheet.stage)
+                    .and_then(|id| self.ctx.provider_of(id))
+                    .map(|provider| provider.spec().clone());
+                match spec {
+                    Some(spec) => self
+                        .store_new(caller, &spec, &signed, choices, allow.as_ref())
+                        .await
+                        .map(Stored::Added),
+                    None => Err(()),
+                }
+            }
+            Job::Reauthenticate { account, .. } => self
+                .store_renewed(caller, account, &signed)
+                .await
+                .map(|()| Stored::Reauthenticated),
+            Job::Extend {
+                account,
+                provider,
+                kinds,
+                ..
+            } => {
+                let given: Vec<porter_capability::Capability> = self
+                    .ctx
+                    .catalog()
+                    .get(provider)
+                    .map(|spec| {
+                        kinds
+                            .iter()
+                            .flat_map(|kind| spec.on_use_rows(*kind))
+                            .map(|row| row.capability.clone())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                self.store_extended(caller, account, &signed, &given)
+                    .await
+                    .map(|()| Stored::Reauthenticated)
+            }
+        };
+        match stored {
+            Ok(stored) => {
+                run.stored = Some(stored);
+                SheetEvent::Stored
+            }
+            Err(()) => SheetEvent::StoreFailed,
+        }
+    }
+}
+
+/// What a finished sheet answers.
+fn finish(
+    end: SheetEnd,
+    stored: Option<Stored>,
+    already: Option<AccountId>,
+) -> Result<Stored, Refusal> {
+    match (end, stored, already) {
+        (SheetEnd::Added, Some(stored), _) => Ok(stored),
+        (SheetEnd::Added, None, _) => Err(Refusal::Unavailable),
+        (SheetEnd::Dismissed, _, _) => Err(Refusal::Dismissed),
+        // The account is here already: the app is told which, not that it failed.
+        (SheetEnd::Failed(SignInFault::AlreadyAdded), _, Some(held)) => {
+            Ok(Stored::AlreadyThere(held))
+        }
+        (SheetEnd::Failed(fault), _, _) => Err(refusal_of(fault)),
+    }
+}
+
+/// What a sheet that could not go on answers: one its host closed or left with is the person
+/// leaving, as [`person`] reads it; no host at all is nobody to ask.
+fn left(fault: SheetFault) -> Refusal {
+    match fault {
+        SheetFault::Closed => Refusal::Dismissed,
+        _ => Refusal::Unavailable,
+    }
+}
+
+/// What the person did, as an event; a sheet that closed or went away is the person leaving.
+fn person(input: Result<porter_sheet::SheetInput, SheetFault>) -> SheetEvent {
+    match input {
+        Ok(input) => SheetEvent::Input(input),
+        // Closed or unavailable, and a fault a later porter adds: the person is gone.
+        Err(_) => SheetEvent::Left,
+    }
+}
+
+/// The address an account's servers sign in as, as a hint for the provider's page.
+fn login_hint_of(endpoints: &[ServiceEndpoint]) -> Option<LoginHint> {
+    endpoints
+        .iter()
+        .find_map(|e| LoginHint::parse(&e.login.0).ok())
+}
+
+/// The provider a sign-in under way is for.
+fn stage_provider(stage: &Stage) -> Option<&ProviderId> {
+    match stage {
+        Stage::Working(provider) | Stage::Confirming { provider, .. } => Some(provider),
+        _ => None,
+    }
+}
+
+/// What a sign-in's step is to the machine, keeping the credential here: `Done` leaves the
+/// signed account with the run and tells the machine only that it is done.
+fn said<S>(run: &mut Run<S>, step: SignInStep) -> SheetEvent {
+    match &step {
+        SignInStep::Done(signed) => run.signed = Some(signed.clone()),
+        SignInStep::OpenBrowser { .. } | SignInStep::ShowCode { .. } => run.polling = true,
+        _ => {}
+    }
+    SheetEvent::SignIn(step.progress())
+}
+
+impl<E: Ports> Accounts<'_, E> {
+    /// See [`AccountsApi::asks_on_use`](crate::AccountsApi::asks_on_use).
+    pub(crate) fn asks_on_use(&self, provider: &ProviderId, kind: CapabilityKind) -> bool {
+        self.ctx
+            .catalog()
+            .get(provider)
+            .is_some_and(|spec| spec.on_use_rows(kind).next().is_some())
+    }
+
+    /// See [`AccountsApi::add_and_allow`](crate::AccountsApi::add_and_allow).
+    pub(crate) async fn add_and_allow(
+        &self,
+        caller: &AppId,
+        hint: ProviderHint,
+        window: ParentWindow,
+        ask: AllowFor,
+    ) -> AccountsReply {
+        self.run_add(caller, hint, window, Some(ask), None).await
+    }
+}
+
+#[cfg(test)]
+mod tests;

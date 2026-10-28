@@ -43,7 +43,7 @@ use porter_core::GrantKey;
 use porter_core::consent::Usage;
 use porter_core::{Account, DataClass};
 use porter_provider::{ConsentHistory, LoginHint};
-use porter_service::SignInAs;
+use porter_service_accounts::SignInAs;
 use porter_wire::{AccountsReply, AccountsRequest};
 use porter_wire::{ParentWindow, Refusal};
 
@@ -170,7 +170,7 @@ impl<H: Hosted, D: Directory> Keep<H, D> {
     }
 
     /// The registry: the accounts syncd signed in and its own grants.
-    pub fn registry(&self) -> porter_service::Registry {
+    pub fn registry(&self) -> porter_service_core::registry::Registry {
         self.hosted.registry()
     }
 

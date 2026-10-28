@@ -141,7 +141,8 @@ use porter_fake::{MemoryStore, RecordingAudit, ScriptedSheets};
 use porter_families::DynProvider;
 use porter_ids::clock::FixedClock;
 use porter_secrets::{MemorySecrets, Secrets, SecretsError};
-use porter_service::{AccountService, SheetFault, SheetLink, SheetOpen, Sheets};
+use porter_service::AccountService;
+use porter_service_core::sheets::{SheetFault, SheetLink, SheetOpen, Sheets};
 use porter_wire::ParentWindow;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
@@ -343,7 +344,7 @@ pub fn service(providers: Vec<Box<dyn DynProvider>>, sheets: TestSheets) -> (Ser
     };
     let service = AccountService::new(
         providers,
-        porter_service::Registry::default(),
+        porter_service_core::registry::Registry::default(),
         kept.secrets.clone(),
         sheets,
         FixedClock(porter_fake::NOW),

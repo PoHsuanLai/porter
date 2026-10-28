@@ -7,7 +7,8 @@ use porter_core::{Credential, SecretKey, SecretPurpose, SecretText};
 use porter_ids::UnixSeconds;
 use porter_ids::clock::FixedClock;
 use porter_secrets::{MemorySecrets, Secrets};
-use porter_service::{AccountService, Registry};
+use porter_service::AccountService;
+use porter_service_core::registry::Registry;
 
 /// The instant the fake clock reads.
 pub const NOW: UnixSeconds = UnixSeconds(1_790_000_000);

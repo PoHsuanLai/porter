@@ -40,12 +40,12 @@
 //!
 //! - `org.quire.Spaces1` at `/org/quire/Spaces1`: the registry of desktop-wide Spaces, kept in
 //!   `spaces.json` (`spaces`, `spaces_object`). Any identified app lists and creates (at most
-//!   `CREATES_PER_WINDOW` a minute each); Settings and the shell rename, restyle and remove.
+//!   `porter_spaces::CREATES_PER_WINDOW` a minute each); Settings and the shell rename, restyle and remove.
 //!
 //! - `org.quire.Identities1` at `/org/quire/Identities1`: the identities signed in on this
 //!   machine, which are the registry's accounts of a sign-in kind (OAuth, a password, an app
 //!   password; `identities_object`). Any app lists them, `Offer`s "Continue as" (the picker is the
-//!   sheet `Choose` draws, `AskPurpose::ContinueAs`, through an [`IdentityDesk`]; the answer is the
+//!   sheet `Choose` draws, `AskPurpose::ContinueAs`, through a `porter_identities::IdentityDesk`; the answer is the
 //!   pick, never a token) and says it signed in with one (`RegisterUse`, kept in
 //!   `identity-uses.json` beside `registry.json`: `identities`); Settings and the shell read
 //!   `Uses`. `TakePassword` hands a `password` identity's password on a sealed descriptor, once, to
@@ -67,9 +67,7 @@ pub mod daemon;
 mod errors;
 mod host;
 mod hub;
-mod identities;
 mod identities_object;
-mod identity_desk;
 mod manager;
 mod open_sheets;
 pub mod paths;
@@ -79,7 +77,6 @@ mod request;
 mod roster;
 mod settings;
 mod settings_keys;
-mod spaces;
 mod spaces_object;
 mod state;
 mod store;
@@ -93,12 +90,10 @@ pub use core::{Options, serve, serve_with};
 pub use daemon::{Config, Daemon, StartError};
 pub use errors::RefusedError;
 pub use host::Host;
-pub use identity_desk::{IdentityDesk, SheetsDesk};
 #[doc(inline)]
 pub use porter_families::set::ProviderNames;
 #[doc(inline)]
 pub use porter_sheets::{AppNames, BusLink, BusSheets};
 pub use settings::settings_path;
-pub use spaces::{CREATE_WINDOW, CREATES_PER_WINDOW};
 pub use store::EXIT_REGISTRY_REFUSED;
 pub use tailnet::TailnetWatch;

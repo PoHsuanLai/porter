@@ -20,14 +20,17 @@ dependencies = [
  "porter-fs",
  "porter-http",
  "porter-http-reqwest",
+ "porter-identities",
  "porter-ids",
  "porter-match",
  "porter-oauth",
  "porter-provider",
  "porter-secrets",
  "porter-service",
+ "porter-service-core",
  "porter-sheet",
  "porter-sheets",
+ "porter-spaces",
  "porter-store",
  "porter-tailscale",
  "porter-wire",
@@ -1606,6 +1609,8 @@ dependencies = [
  "porter-router",
  "porter-secrets",
  "porter-service",
+ "porter-service-accounts",
+ "porter-service-core",
  "porter-sheet",
  "porter-sheets",
  "porter-store",
@@ -2593,7 +2598,9 @@ dependencies = [
  "porter-router",
  "porter-secrets",
  "porter-service",
+ "porter-service-core",
  "porter-sheet",
+ "porter-spaces",
  "porter-tailnet",
  "porter-tailscale",
  "porter-turns",
@@ -2756,6 +2763,8 @@ dependencies = [
  "porter-provider",
  "porter-secrets",
  "porter-service",
+ "porter-service-accounts",
+ "porter-service-core",
  "porter-sheet",
  "porter-wire",
  "test-kit",
@@ -2811,6 +2820,8 @@ dependencies = [
  "porter-proxy",
  "porter-secrets",
  "porter-service",
+ "porter-service-accounts",
+ "porter-service-core",
  "porter-sheet",
  "porter-tailscale",
  "porter-wire",
@@ -2929,6 +2940,23 @@ dependencies = [
  "reqwest 0.12.28",
  "rustls",
  "test-kit",
+ "tokio",
+]
+
+[[package]]
+name = "porter-identities"
+version = "0.1.0"
+dependencies = [
+ "porter-core",
+ "porter-fs",
+ "porter-ids",
+ "porter-secrets",
+ "porter-service-core",
+ "porter-wire",
+ "serde",
+ "serde_json",
+ "test-kit",
+ "thiserror",
  "tokio",
 ]
 
@@ -3061,6 +3089,7 @@ dependencies = [
  "porter-provider",
  "porter-secrets",
  "porter-service",
+ "porter-service-core",
  "porter-sync",
  "porter-wire",
  "rustix",
@@ -3131,12 +3160,58 @@ dependencies = [
  "porter-match",
  "porter-provider",
  "porter-secrets",
+ "porter-service-accounts",
+ "porter-service-core",
+ "porter-service-grants",
+ "porter-wire",
+]
+
+[[package]]
+name = "porter-service-accounts"
+version = "0.1.0"
+dependencies = [
+ "porter-capability",
+ "porter-core",
+ "porter-ids",
+ "porter-match",
+ "porter-provider",
+ "porter-secrets",
+ "porter-service-core",
  "porter-sheet",
  "porter-tailscale",
+ "porter-wire",
+]
+
+[[package]]
+name = "porter-service-core"
+version = "0.1.0"
+dependencies = [
+ "porter-capability",
+ "porter-core",
+ "porter-ids",
+ "porter-match",
+ "porter-provider",
+ "porter-secrets",
+ "porter-sheet",
  "porter-wire",
  "serde",
  "serde_json",
  "thiserror",
+]
+
+[[package]]
+name = "porter-service-grants"
+version = "0.1.0"
+dependencies = [
+ "porter-capability",
+ "porter-core",
+ "porter-ids",
+ "porter-match",
+ "porter-provider",
+ "porter-secrets",
+ "porter-service-accounts",
+ "porter-service-core",
+ "porter-wire",
 ]
 
 [[package]]
@@ -3163,13 +3238,27 @@ dependencies = [
  "porter-core",
  "porter-dbus",
  "porter-provider",
- "porter-service",
+ "porter-service-core",
  "porter-sheet",
  "porter-wire",
  "serde_json",
  "test-kit",
  "tokio",
  "zbus",
+]
+
+[[package]]
+name = "porter-spaces"
+version = "0.1.0"
+dependencies = [
+ "porter-core",
+ "porter-fs",
+ "porter-ids",
+ "serde",
+ "serde_json",
+ "test-kit",
+ "thiserror",
+ "tokio",
 ]
 
 [[package]]
@@ -4258,6 +4347,8 @@ dependencies = [
  "porter-provider",
  "porter-secrets",
  "porter-service",
+ "porter-service-accounts",
+ "porter-service-core",
  "porter-sheet",
  "porter-sheets",
  "porter-store",

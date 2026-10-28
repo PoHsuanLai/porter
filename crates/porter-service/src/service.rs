@@ -1,37 +1,58 @@
 //! The service: one request in, one reply out, for a caller the transport has identified. The
-//! facade a host holds; what it does is the domain modules', over the shared [`Ctx`].
+//! facade a host holds; what it does is the domains', over the shared [`Ctx`].
 
-use crate::add_flow::SignInAs;
-use crate::add_store::AllowFor;
-use crate::agent::AgentFault;
-use crate::audit::{AuditEvent, AuditSink, NoAudit};
-use crate::ctx::Ctx;
-use crate::launcher::{Launchers, Roster};
-use crate::local::LocalFault;
-use crate::own_machines::OwnMachines;
-use crate::registry::Registry;
-use crate::sheets::Sheets;
 use porter_capability::{CapabilityKind, Claim, Toggle};
-use porter_core::LauncherSession;
 use porter_core::ProviderHint;
 use porter_core::consent::{Availability, Grant, Usage};
 use porter_core::store::{NoStore, RegistryStore};
 use porter_core::{AccountId, GrantId, ProviderId};
 use porter_core::{
     AccountState, AgentState, AppId, Candidate, DataClass, EndpointUrl, RelayPlan, SecretText,
+    SessionToken,
 };
 use porter_ids::clock::Clock;
 use porter_match::Need;
 use porter_provider::{Provider, ProviderSpec, RevokeOutcome};
 use porter_secrets::{Secrets, SecretsError};
+use porter_service_accounts::{
+    Accounts, AccountsApi, AccountsState, AgentFault, AllowFor, Launchers, LocalFault, OwnMachines,
+    Roster, SignInAs,
+};
+use porter_service_core::audit::{AuditEvent, AuditSink, NoAudit};
+use porter_service_core::registry::Registry;
+use porter_service_core::sheets::Sheets;
+use porter_service_core::{Ctx, Parts};
+use porter_service_grants::{Grants, GrantsApi};
 use porter_wire::{AccountsReply, AccountsRequest};
 use porter_wire::{ParentWindow, Refusal};
 
 /// accountd's core over its seams. The store and the audit sink default to none: the registry
 /// then lives for the process, and nothing is logged.
-#[derive(Debug)]
-pub struct AccountService<P, S, U, K, R = NoStore, A = NoAudit> {
-    ctx: Ctx<P, S, U, K, R, A>,
+pub struct AccountService<P, S, U, K, R = NoStore, A = NoAudit>
+where
+    P: Provider,
+    S: Secrets,
+    U: Sheets,
+    K: Clock,
+    R: RegistryStore,
+    A: AuditSink,
+{
+    ctx: Ctx<Parts<P, S, U, K, R, A>>,
+    accounts: AccountsState,
+}
+
+impl<P, S, U, K, R, A> std::fmt::Debug for AccountService<P, S, U, K, R, A>
+where
+    P: Provider,
+    S: Secrets,
+    U: Sheets,
+    K: Clock,
+    R: RegistryStore,
+    A: AuditSink,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AccountService").finish_non_exhaustive()
+    }
 }
 
 impl<P: Provider, S: Secrets, U: Sheets, K: Clock> AccountService<P, S, U, K> {
@@ -39,15 +60,25 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock> AccountService<P, S, U, K> {
     pub fn new(providers: Vec<P>, registry: Registry, secrets: S, sheets: U, clock: K) -> Self {
         Self {
             ctx: Ctx::new(providers, registry, secrets, sheets, clock),
+            accounts: AccountsState::default(),
         }
     }
 }
 
-impl<P, S, U, K, R, A> AccountService<P, S, U, K, R, A> {
+impl<P, S, U, K, R, A> AccountService<P, S, U, K, R, A>
+where
+    P: Provider,
+    S: Secrets,
+    U: Sheets,
+    K: Clock,
+    R: RegistryStore,
+    A: AuditSink,
+{
     /// The same service saving its registry to `store` after every change.
     pub fn with_store<N: RegistryStore>(self, store: N) -> AccountService<P, S, U, K, N, A> {
         AccountService {
             ctx: self.ctx.with_store(store),
+            accounts: self.accounts,
         }
     }
 
@@ -55,6 +86,7 @@ impl<P, S, U, K, R, A> AccountService<P, S, U, K, R, A> {
     pub fn with_audit<N: AuditSink>(self, audit: N) -> AccountService<P, S, U, K, R, N> {
         AccountService {
             ctx: self.ctx.with_audit(audit),
+            accounts: self.accounts,
         }
     }
 
@@ -62,7 +94,7 @@ impl<P, S, U, K, R, A> AccountService<P, S, U, K, R, A> {
     /// AI server's address in an add sheet may be plain `http` to one of them. Set once; a
     /// service that is never told accepts plain `http` for this computer only.
     pub fn set_own_machines(&self, machines: OwnMachines) {
-        let _ = self.ctx.own_machines.set(machines);
+        self.accounts.set_own_machines(machines);
     }
 
     /// Tells the service which agent programs have a launcher, so that adding an agent account
@@ -70,7 +102,7 @@ impl<P, S, U, K, R, A> AccountService<P, S, U, K, R, A> {
     /// service that is never told (no launcher bus: an app hosting porter in process) adds
     /// agent accounts as it always did.
     pub fn set_launcher_roster(&self, roster: Roster) {
-        let _ = self.ctx.roster.set(roster);
+        self.accounts.set_launcher_roster(roster);
     }
 
     /// The same service knowing the local runtimes (`AuthKind::LocalRuntime`) among `specs`:
@@ -81,11 +113,15 @@ impl<P, S, U, K, R, A> AccountService<P, S, U, K, R, A> {
         self.ctx.add_local_runtimes(specs);
         self
     }
-}
 
-impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSink>
-    AccountService<P, S, U, K, R, A>
-{
+    fn accounts(&self) -> Accounts<'_, Parts<P, S, U, K, R, A>> {
+        Accounts::over(&self.ctx, &self.accounts)
+    }
+
+    fn grants_domain(&self) -> Grants<'_, Parts<P, S, U, K, R, A>> {
+        Grants::over(&self.ctx, self.accounts())
+    }
+
     /// A copy of the registry, for the host to persist and for the Settings module.
     pub fn registry(&self) -> Registry {
         self.ctx.lock().clone()
@@ -104,15 +140,16 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                 usage,
                 window,
             } => {
-                self.ctx
-                    .choose(caller, need, (class, usage), &window, None)
+                self.choose(caller, need, (class, usage), &window, None)
                     .await
             }
             AccountsRequest::AddAccount { hint, window } => {
-                self.ctx.add_account(caller, hint, window).await
+                self.accounts().add_account(caller, hint, window).await
             }
             AccountsRequest::Reauthenticate { account, window } => {
-                self.ctx.reauthenticate(caller, &account, window).await
+                self.accounts()
+                    .reauthenticate(caller, &account, window)
+                    .await
             }
             // a variant a newer porter adds: refused as unavailable
             _ => AccountsReply::Refused(Refusal::Unavailable),
@@ -127,7 +164,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         class: DataClass,
         usage: Usage,
     ) -> Vec<Candidate> {
-        self.ctx.candidates_of(caller, need, class, usage)
+        self.grants_domain().candidates(caller, need, class, usage)
     }
 
     /// Whether `need` can be met for `caller`, revealing no identity: an account fits and
@@ -139,18 +176,38 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         class: DataClass,
         usage: Usage,
     ) -> Availability {
-        self.ctx.availability_of(caller, need, class, usage)
+        self.grants_domain()
+            .availability(caller, need, class, usage)
     }
 
     /// The grants `caller` holds.
     pub fn grants(&self, caller: &AppId) -> Vec<Grant> {
-        self.ctx.grants_of(caller)
+        self.grants_domain().grants(caller)
     }
 
     /// Withdraws one of `caller`'s own grants; `UnknownGrant` when `caller` holds none of that
     /// id.
     pub async fn revoke(&self, caller: &AppId, grant: &GrantId) -> Result<(), Refusal> {
-        self.ctx.revoke(caller, grant).await
+        self.grants_domain().revoke(caller, grant).await
+    }
+
+    /// Shows the chooser and consent sheet for `need` and records the grant the person gives.
+    /// `session` is the open session the request was made in (the agent launcher's, for an agent
+    /// program's key: `caller` is then the app `org.quire.Agent.<program>`), which lets the
+    /// sheet offer "This session only". With a session "Add Account…" is not offered a second
+    /// route: it ends the request dismissed, since the account it would add and allow gets an
+    /// `Always` grant, not the session one.
+    pub async fn choose(
+        &self,
+        caller: &AppId,
+        need: Need,
+        class_usage: (DataClass, Usage),
+        window: &ParentWindow,
+        session: Option<&SessionToken>,
+    ) -> AccountsReply {
+        self.grants_domain()
+            .choose(caller, need, class_usage, window, session)
+            .await
     }
 
     /// The API key filed for `account`: the in-process read for a host that runs the agent
@@ -158,7 +215,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
     /// filed as another kind of credential) means signing in again (`NeedsReauth`); a store that
     /// is locked or unreachable is `Unavailable`.
     pub async fn api_key(&self, account: &AccountId) -> Result<SecretText, Refusal> {
-        self.ctx.api_key(account).await
+        self.accounts().api_key(account).await
     }
 
     /// Opens the add-account sheet for an identity the host already knows ("Continue as"): the
@@ -171,7 +228,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         identity: SignInAs,
         window: ParentWindow,
     ) -> AccountsReply {
-        self.ctx.sign_in_as(caller, identity, window).await
+        self.accounts().sign_in_as(caller, identity, window).await
     }
 
     /// Runs the sign-in again for any account, with no grant: for the sheet host and Settings.
@@ -181,7 +238,9 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         account: &AccountId,
         window: ParentWindow,
     ) -> AccountsReply {
-        self.ctx.reauthenticate_any(caller, account, window).await
+        self.accounts()
+            .reauthenticate_any(caller, account, window)
+            .await
     }
 
     /// Asks the person, in a sign-in of its own, for the access `account`'s provider asks only
@@ -206,14 +265,16 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         kinds: Vec<CapabilityKind>,
         window: ParentWindow,
     ) -> Result<(), Refusal> {
-        self.ctx.extend_access(caller, account, kinds, window).await
+        self.accounts()
+            .extend_access(caller, account, kinds, window)
+            .await
     }
 
     /// Whether `provider` asks some access of `kind` only when it is first used (`ask =
-    /// "on_use"`): what [`AccountService::extend_access`](crate::AccountService::extend_access) can ask an account of it for, and so whether a
-    /// host offers the switch that asks it ("Show in Files").
+    /// "on_use"`): what [`AccountService::extend_access`] can ask an account of it for, and so
+    /// whether a host offers the switch that asks it ("Show in Files").
     pub fn asks_on_use(&self, provider: &ProviderId, kind: CapabilityKind) -> bool {
-        self.ctx.asks_on_use(provider, kind)
+        self.accounts().asks_on_use(provider, kind)
     }
 
     /// Opens the add-account sheet as `AddAccount` does and, when it ends in an account that
@@ -226,7 +287,9 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         window: ParentWindow,
         ask: AllowFor,
     ) -> AccountsReply {
-        self.ctx.add_and_allow(caller, hint, window, ask).await
+        self.accounts()
+            .add_and_allow(caller, hint, window, ask)
+            .await
     }
 
     /// Records what the agent says of its own sign-in. Returns whether the account's state
@@ -236,7 +299,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         account: &AccountId,
         state: AgentState,
     ) -> Result<bool, AgentFault> {
-        self.ctx.set_agent_state(account, state).await
+        self.accounts().set_agent_state(account, state).await
     }
 
     /// Asks for an agent account's login for an app that holds a grant for it.
@@ -247,7 +310,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         window: ParentWindow,
         launchers: &impl Launchers,
     ) -> AccountsReply {
-        self.ctx
+        self.accounts()
             .login_agent(caller, account, window, launchers)
             .await
     }
@@ -260,7 +323,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         window: ParentWindow,
         launchers: &impl Launchers,
     ) -> AccountsReply {
-        self.ctx
+        self.accounts()
             .login_agent_any(caller, account, window, launchers)
             .await
     }
@@ -276,7 +339,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         models: Vec<Claim>,
         state: AccountState,
     ) -> Result<AccountId, LocalFault> {
-        self.ctx.report_local(provider, models, state).await
+        self.accounts().report_local(provider, models, state).await
     }
 
     /// Removes an account (PLAN §2.9): asks its provider to stop honouring the credential, best
@@ -287,7 +350,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         &self,
         id: &AccountId,
     ) -> Result<Option<RevokeOutcome>, SecretsError> {
-        self.ctx.remove_with_revoke(id).await
+        self.accounts().remove_with_revoke(id).await
     }
 
     /// Asks the provider what the account can do now and records it (the claims, with the
@@ -295,7 +358,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
     /// back from a session opened afterwards (`renewed`) and stored, so the next sign-in
     /// check does not present a token the issuer has since replaced.
     pub async fn rediscover(&self, id: &AccountId) -> Result<Vec<Claim>, Refusal> {
-        self.ctx.rediscover(id).await
+        self.accounts().rediscover(id).await
     }
 
     /// Switches one kind of one account on or off: the toggle row is kept, and the account's
@@ -308,25 +371,25 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         kind: CapabilityKind,
         toggle: Toggle,
     ) -> Result<(), Refusal> {
-        self.ctx.set_toggle(id, kind, toggle).await
+        self.accounts().set_toggle(id, kind, toggle).await
     }
 
     /// Records `event`, which the host did on the person's behalf (Settings' client id row),
     /// in the service's audit sink.
     pub fn audit_settings(&self, event: AuditEvent) {
-        self.ctx.audit_settings(event)
+        self.ctx.note(None, None, event);
     }
 
     /// Records `event`, which `app` caused and which concerns no account (a desktop-wide Space
     /// made, renamed or removed), in the service's audit sink.
     pub fn audit_app(&self, app: AppId, event: AuditEvent) {
-        self.ctx.audit_app(app, event)
+        self.ctx.note(Some(app), None, event);
     }
 
     /// Withdraws any grant, whoever holds it (Settings' "Revoke"). `UnknownGrant` when none has
     /// that id.
     pub async fn revoke_grant(&self, grant: &GrantId) -> Result<(), Refusal> {
-        self.ctx.revoke_grant(grant).await
+        self.grants_domain().revoke_grant(grant).await
     }
 
     /// Sets an account's state (`NeedsReauth` when its credential was refused, `Ok` again once
@@ -335,45 +398,26 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         self.ctx.set_state(id, state).await
     }
 
-    /// Spends `caller`'s grant when it is a `Once` one: the first use of any kind (a token
-    /// issued, a relay opened, a key read by the host that holds the secret) drops it, so a
-    /// second use asks again. A host that reads a key itself, as inferd does, calls this once
-    /// the read has succeeded.
+    /// Spends `caller`'s grant when it is a `Once` one: the first use of any kind (a relay
+    /// opened, a key read by the host that holds the secret) drops it, so a second use asks
+    /// again. A host that reads a key itself, as inferd does, calls this once the read has
+    /// succeeded.
     pub async fn spend_once(&self, caller: &AppId, grant: &GrantId) -> Result<(), Refusal> {
-        self.ctx.spend_once(caller, grant).await
+        self.grants_domain().spend_once(caller, grant).await
     }
 
     /// Removes the grants scoped to `session`, or every session grant when none is named (a
     /// starting accountd has no open session, so a session grant a file holds is one nobody can
     /// end). Audits each as `SessionGrantEnded`, saves, and returns the grants removed.
-    pub async fn end_session_grants(&self, session: Option<&LauncherSession>) -> Vec<GrantId> {
-        self.ctx.end_session_grants(session).await
-    }
-
-    /// The consent sheet for an agent program's key (`Peer.RequestAgentGrant`): `agent` is the
-    /// app `org.quire.Agent.<program>`, the grant is recorded under it, and `session`, which the
-    /// caller has checked is open and the launcher's, lets the sheet offer "This session only".
-    /// With a session "Add Account…" is not offered a second route: it ends the request
-    /// dismissed, since the account it would add and allow gets an `Always` grant, not the
-    /// session one.
-    pub async fn choose_for_agent(
-        &self,
-        agent: &AppId,
-        need: Need,
-        (class, usage): (DataClass, Usage),
-        window: &ParentWindow,
-        session: Option<&LauncherSession>,
-    ) -> AccountsReply {
-        self.ctx
-            .choose(agent, need, (class, usage), window, session)
-            .await
+    pub async fn end_session_grants(&self, session: Option<&SessionToken>) -> Vec<GrantId> {
+        self.grants_domain().end_session_grants(session).await
     }
 
     /// Removes an account and everything filed for it: its provider is asked to stop honouring
     /// the credential first (best effort, `remove_with_revoke` says what it answered), then the
     /// secrets, grants, toggles and the registry row go.
     pub async fn remove_account(&self, id: &AccountId) -> Result<(), SecretsError> {
-        self.ctx.remove_with_revoke(id).await.map(|_| ())
+        self.accounts().remove_with_revoke(id).await.map(|_| ())
     }
 
     /// What the relay for `OpenAuthenticated` is told: checks that `caller` holds the grant and
@@ -385,7 +429,9 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         grant: &GrantId,
         endpoint: &EndpointUrl,
     ) -> Result<RelayPlan, Refusal> {
-        self.ctx.open_authenticated(caller, grant, endpoint).await
+        self.grants_domain()
+            .open_authenticated(caller, grant, endpoint)
+            .await
     }
 
     /// What the relay for `OpenLinked` is told: checks that `caller` holds the grant and that
@@ -398,6 +444,8 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         grant: &GrantId,
         origin: &EndpointUrl,
     ) -> Result<RelayPlan, Refusal> {
-        self.ctx.open_linked(caller, grant, origin).await
+        self.grants_domain()
+            .open_linked(caller, grant, origin)
+            .await
     }
 }

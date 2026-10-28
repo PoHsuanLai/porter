@@ -11,17 +11,19 @@
 //! its keyring namespace is [`NAMESPACE`]. AI keys, agents and sync belong to inferd and syncd.
 
 use crate::paths::{HONOURS_PROC_ROOT, Paths};
-use crate::{FileAudit, Options, SheetsDesk, serve_with};
+use crate::{FileAudit, Options, serve_with};
 use porter_callers::choose_proc_root;
 use porter_callers::load_callers;
 use porter_callers::{CallerFileError, ProcCallers};
 use porter_daemon::xdg::PathError;
 use porter_dbus::BusTarget;
 use porter_families::set::{FamilyIo, ProviderNames, load_specs, served};
+use porter_identities::SheetsDesk;
 use porter_ids::clock::SystemClock;
 use porter_secrets::Namespace;
 use porter_secrets::keysel::{Chosen, KeysRefusal, Selection, select};
-use porter_service::{AccountService, Registry};
+use porter_service::AccountService;
+use porter_service_core::registry::Registry;
 use porter_sheet::ProviderGroup;
 use porter_sheets::{AppNames, BusSheets};
 use porter_store::FileStore;

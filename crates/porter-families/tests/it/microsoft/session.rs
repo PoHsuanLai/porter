@@ -300,7 +300,8 @@ mod service {
     use porter_fake::ScriptedSheets;
     use porter_ids::clock::FixedClock;
     use porter_secrets::{MemorySecrets, Secrets, SecretsError};
-    use porter_service::{AccountService, Registry};
+    use porter_service::AccountService;
+    use porter_service_core::registry::Registry;
     use std::sync::Arc;
 
     /// A store the test keeps a handle on after the service has one.

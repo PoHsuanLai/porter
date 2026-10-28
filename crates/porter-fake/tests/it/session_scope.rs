@@ -3,7 +3,7 @@
 //! session removes exactly its grants.
 
 use porter_capability::LlmFeature;
-use porter_core::LauncherSession;
+use porter_core::SessionToken;
 use porter_core::consent::{Decision, GrantScope, Usage};
 use porter_core::{AppId, AppName, DataClass, Isolation};
 use porter_fake::{
@@ -15,8 +15,9 @@ use porter_ids::clock::FixedClock;
 use porter_match::LlmNeed;
 use porter_match::Need;
 use porter_secrets::MemorySecrets;
-use porter_service::audit::AuditEvent;
-use porter_service::{AccountService, Registry};
+use porter_service::AccountService;
+use porter_service_core::audit::AuditEvent;
+use porter_service_core::registry::Registry;
 use porter_wire::{AccountsReply, AccountsRequest};
 use porter_wire::{ParentWindow, Refusal};
 use std::collections::BTreeSet;
@@ -30,8 +31,8 @@ type Svc = AccountService<
     RecordingAudit,
 >;
 
-fn session(id: &str) -> LauncherSession {
-    LauncherSession::parse(id).expect("session")
+fn session(id: &str) -> SessionToken {
+    SessionToken::parse(id).expect("session")
 }
 
 fn agent() -> AppId {
@@ -64,9 +65,9 @@ fn service(script: impl IntoIterator<Item = Scripted>) -> (Svc, AskLog, Recordin
     (service, log, audit)
 }
 
-async fn ask_for_agent(service: &Svc, open: Option<&LauncherSession>) -> AccountsReply {
+async fn ask_for_agent(service: &Svc, open: Option<&SessionToken>) -> AccountsReply {
     service
-        .choose_for_agent(
+        .choose(
             &agent(),
             llm(),
             (DataClass::Prompt, Usage::Interactive),

@@ -25,10 +25,11 @@ use porter_provider::{
     RevokeOutcome, SignIn, SignInMode, SignInStart, SignInStep, Signed, parse_provider,
 };
 use porter_secrets::{MemorySecrets, Secrets, SecretsError};
-use porter_service::audit::AuditEvent;
-use porter_service::{
-    AccountService, Registry, SheetFault, SheetLink, SheetOpen, Sheets, SignInAs,
-};
+use porter_service::AccountService;
+use porter_service_accounts::SignInAs;
+use porter_service_core::audit::AuditEvent;
+use porter_service_core::registry::Registry;
+use porter_service_core::sheets::{SheetFault, SheetLink, SheetOpen, Sheets};
 use porter_sheet::{
     Entry, FieldAnswer, FieldKind, FieldSpec, FieldValue, Presence, SheetInput, SheetView,
     SignInFault, SignInInput, UserCode,
@@ -733,14 +734,14 @@ fn agent_service(script: &Script, launchers: &'static [&'static str]) -> (Servic
     agent_service_with(
         script,
         vec![typist(), typist()],
-        porter_service::Roster::new(move |program| launchers.contains(&program.as_str())),
+        porter_service_accounts::Roster::new(move |program| launchers.contains(&program.as_str())),
     )
 }
 
 fn agent_service_with(
     script: &Script,
     people: Vec<Reactor>,
-    roster: porter_service::Roster,
+    roster: porter_service_accounts::Roster,
 ) -> (Service, Kept) {
     let spec = parse_provider(include_str!("../../../../providers/claude-code.toml"))
         .expect("the shipped file");
@@ -762,7 +763,7 @@ async fn an_agent_with_no_launcher_is_not_listed_until_one_registers() {
     let registered = Arc::new(Mutex::new(Vec::<String>::new()));
     let roster = {
         let registered = Arc::clone(&registered);
-        porter_service::Roster::new(move |program| {
+        porter_service_accounts::Roster::new(move |program| {
             registered
                 .lock()
                 .expect("roster")
@@ -816,7 +817,7 @@ async fn adding_an_agent_whose_launcher_left_ends_no_launcher_and_stores_nothing
     let asked = Arc::new(Mutex::new(0usize));
     let roster = {
         let asked = Arc::clone(&asked);
-        porter_service::Roster::new(move |_| {
+        porter_service_accounts::Roster::new(move |_| {
             let mut asked = asked.lock().expect("asked");
             *asked += 1;
             *asked == 1

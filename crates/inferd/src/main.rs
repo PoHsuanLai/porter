@@ -9,6 +9,9 @@
 //! environment's answers, then builds and runs the daemon, all in the library
 //! (`inferd::daemon`).
 
+// The daemon's future holds the service's, whose domain traits each wrap their async bodies.
+#![recursion_limit = "256"]
+
 use clap::{Parser, Subcommand};
 use inferd::shutdown::Signals;
 use inferd::{Config, Daemon};

@@ -6,7 +6,7 @@ use porter_fake::{Scripted, ScriptedSheets, fake_service};
 use porter_ids::UnixSeconds;
 use porter_match::Need;
 use porter_match::StorageNeed;
-use porter_service::audit::AuditEvent;
+use porter_service_core::audit::AuditEvent;
 use porter_wire::ParentWindow;
 use porter_wire::{AccountsReply, AccountsRequest};
 use test_kit::Scratch;

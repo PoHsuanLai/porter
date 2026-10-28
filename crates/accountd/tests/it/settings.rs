@@ -12,7 +12,7 @@ use porter_callers::CallerRole;
 use porter_core::{AccountState, SecretKey, SecretPurpose};
 use porter_dbus::accounts::IdentitiesProxy;
 use porter_secrets::{Secrets, SecretsError};
-use porter_service::audit::AuditEvent;
+use porter_service_core::audit::AuditEvent;
 use test_kit::Scratch;
 
 #[tokio::test(flavor = "multi_thread")]
@@ -385,7 +385,7 @@ async fn a_client_id_is_written_to_the_users_file_only_by_settings() {
         toml::Value::String(String::new())
     );
     // Both changes are audited, never with the id (sec-5); the refused one is not.
-    use porter_service::audit::ClientIdChange;
+    use porter_service_core::audit::ClientIdChange;
     let changed: Vec<_> = rig
         .audit
         .entries()

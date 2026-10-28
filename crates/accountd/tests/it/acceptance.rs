@@ -126,11 +126,7 @@ async fn acceptance_8_removal_leaves_nothing_and_the_reader_is_told() {
         "{told:?}"
     );
     // The audit names the removal.
-    assert!(
-        rig.audit
-            .entries()
-            .iter()
-            .any(|e| e.event == porter_service::audit::AuditEvent::Removed
-                && e.account == Some(storage_account().id))
-    );
+    assert!(rig.audit.entries().iter().any(|e| e.event
+        == porter_service_core::audit::AuditEvent::Removed
+        && e.account == Some(storage_account().id)));
 }

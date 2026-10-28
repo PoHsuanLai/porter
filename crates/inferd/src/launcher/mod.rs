@@ -31,7 +31,7 @@ use crate::peers::Peers;
 use porter_dbus::accounts::ServiceRoot;
 use porter_dbus::inference::INFERENCE_PATH;
 use porter_dbus::inference::LauncherServed;
-use porter_service::AuditSink;
+use porter_service_core::audit::AuditSink;
 use porter_sheets::{OpenSheets, RequestObjects};
 use std::path::PathBuf;
 use std::pin::Pin;

@@ -15,8 +15,8 @@ use porter_client::{
     Accounts, AiKeys, AiKeysError, ClientError, DbusTransport, Identities, IdentitiesError,
     InferSession, Launcher, LauncherError, OpenOptions,
 };
-use porter_core::LauncherSession;
 use porter_core::ProviderHint;
+use porter_core::SessionToken;
 use porter_core::audit::Handoff;
 use porter_core::consent::Usage;
 use porter_core::{AccountId, GrantId, ProviderId};
@@ -216,7 +216,7 @@ pub enum LauncherCommand {
         class: DataClass,
         /// A session to open first, for "this session only".
         #[arg(long, value_parser = session)]
-        session: Option<LauncherSession>,
+        session: Option<SessionToken>,
     },
     /// As the agent launcher: registers `program` and asks for a process credential under
     /// `permit` (`Launcher.IssueProcessCredential`). Prints its id, never the key.
@@ -253,8 +253,8 @@ fn permit(id: &str) -> Result<GrantId, String> {
     GrantId::parse(id).map_err(|e| format!("`{id}` is not a permit id: {e}"))
 }
 
-fn session(text: &str) -> Result<LauncherSession, String> {
-    LauncherSession::parse(text).map_err(|e| format!("`{text}` is not a session: {e}"))
+fn session(text: &str) -> Result<SessionToken, String> {
+    SessionToken::parse(text).map_err(|e| format!("`{text}` is not a session: {e}"))
 }
 
 fn handoff(text: &str) -> Result<Handoff, String> {
@@ -502,7 +502,7 @@ async fn launcher_request_key(
     connection: &zbus::Connection,
     program: &AgentProgram,
     class: DataClass,
-    session: Option<&LauncherSession>,
+    session: Option<&SessionToken>,
     emit: &mut impl FnMut(Value),
 ) -> bool {
     let key = async {

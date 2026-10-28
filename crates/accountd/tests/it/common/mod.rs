@@ -9,7 +9,7 @@ pub mod host;
 pub use host::SheetHost;
 pub use porter_fake::{mail_account, storage_account};
 
-use accountd::{BusSheets, Options, SheetsDesk, TableCallers, serve_with};
+use accountd::{BusSheets, Options, TableCallers, serve_with};
 use bus::PrivateBus;
 use host::HostLog;
 use porter_callers::{Caller, CallerRole};
@@ -20,9 +20,11 @@ use porter_fake::{
     FakeProvider, MemoryStore, RecordingAudit, cloud_provider, llm_account, llm_provider,
     mail_provider,
 };
+use porter_identities::SheetsDesk;
 use porter_ids::clock::FixedClock;
 use porter_secrets::{MemorySecrets, Secrets, SecretsError};
-use porter_service::{AccountService, Registry};
+use porter_service::AccountService;
+use porter_service_core::registry::Registry;
 use std::sync::Arc;
 use test_kit::Scratch;
 

@@ -1,0 +1,483 @@
+//! What accountd records about its own decisions (design/31 §4.5 "Audit", porter PLAN §2.3):
+//! one line per event, never a value. An entry names ids, kinds, audiences and endpoints; there
+//! is no field that could hold a secret, so a log of them cannot leak one.
+//!
+//! Where the line goes is a seam, [`AuditSink`], so the daemon appends `audit.jsonl`, an app
+//! hosting porter appends its own, and tests collect entries.
+
+pub use porter_core::audit::{CredentialEnd, Handoff};
+
+use porter_capability::LoginRequestId;
+use porter_capability::Toggle;
+use porter_capability::{AgentProgram, CapabilityKind};
+use porter_core::SessionToken;
+use porter_core::{AccountId, GrantId};
+use porter_core::{AgentState, AppId, Audience, DesktopSpace, EndpointUrl};
+use porter_ids::UnixSeconds;
+use serde::{Deserialize, Serialize};
+
+/// Receives one entry per audited event. It cannot fail the call that caused it: a log that
+/// cannot be written is the sink's to report, not the caller's.
+pub trait AuditSink: Send + Sync {
+    /// Records `entry`.
+    fn record(&self, entry: AuditEntry);
+}
+
+/// Records nothing.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NoAudit;
+
+impl AuditSink for NoAudit {
+    fn record(&self, _entry: AuditEntry) {}
+}
+
+/// One audited event, as a line of `audit.jsonl`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct AuditEntry {
+    /// When it happened.
+    pub at: UnixSeconds,
+    /// Who caused it; absent for what accountd does by itself (a renewal, a removal from
+    /// Settings, which names no app).
+    pub app: Option<AppId>,
+    /// The account it concerns, if any.
+    pub account: Option<AccountId>,
+    /// What happened.
+    pub event: AuditEvent,
+}
+
+impl AuditEntry {
+    /// An entry for `event` at `at`, caused by `app` and concerning `account` where there are
+    /// any.
+    pub fn new(
+        at: UnixSeconds,
+        app: Option<AppId>,
+        account: Option<AccountId>,
+        event: AuditEvent,
+    ) -> Self {
+        Self {
+            at,
+            app,
+            account,
+            event,
+        }
+    }
+
+    /// The entries of an `audit.jsonl` text. The file has no version of its own: a variant is
+    /// added when it is needed and an old line keeps reading. A line this build cannot read (a
+    /// kind a newer daemon wrote, or a damaged line) is skipped, so the lines around it are kept;
+    /// nothing is rewritten, the file stays as it was.
+    pub fn read_all(text: &str) -> Vec<AuditEntry> {
+        text.lines()
+            .filter_map(|line| serde_json::from_str(line).ok())
+            .collect()
+    }
+}
+
+/// What happened.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "v", rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum AuditEvent {
+    /// A grant was given.
+    Granted {
+        /// The grant.
+        grant: GrantId,
+        /// What it covers.
+        kind: CapabilityKind,
+    },
+    /// "Don't Allow" was stored.
+    Denied {
+        /// What was refused.
+        kind: CapabilityKind,
+    },
+    /// A grant was withdrawn.
+    Revoked {
+        /// The grant.
+        grant: GrantId,
+    },
+    /// A short-lived token was issued. Read, never written: nothing issues a token any more
+    /// (see `AccountService::open_authenticated` for what a relay mints), but a line an earlier
+    /// daemon wrote stays in the person's record, and is shown.
+    TokenIssued {
+        /// The grant it was issued under.
+        grant: GrantId,
+        /// The service it is for.
+        audience: Audience,
+    },
+    /// An authenticated relay was opened.
+    ProxyOpened {
+        /// The grant it was opened under.
+        grant: GrantId,
+        /// The only server it talks to.
+        endpoint: EndpointUrl,
+    },
+    /// An account was added.
+    SignedIn,
+    /// An account was signed in again.
+    Reauthed,
+    /// An account and everything filed for it was removed.
+    Removed,
+    /// `Peer.ResolveKey` released an account's API key (on a sealed memfd, to a porter daemon).
+    /// The entry's `app` is the app the grant is for, which for an agent route is
+    /// `org.quire.Agent.<program>`; `audience` repeats its name as the service the key was
+    /// resolved for. Never the key.
+    KeyResolved {
+        /// The grant the key was released under.
+        grant: GrantId,
+        /// Who the key was resolved for.
+        audience: Audience,
+    },
+    /// An agent account's state was set: by the launcher (`Peer.SetAgentState`), by the outcome of
+    /// a login or logout request it carried out, or by Settings' sign out. Written only when the
+    /// state changed.
+    AgentStateSet {
+        /// The state it is now.
+        state: AgentState,
+    },
+    /// accountd sent the launcher of `program` a request to sign the agent in. Nothing of the
+    /// login is ever recorded, only that it was asked.
+    AgentLoginAsked {
+        /// The request's id (`login-<n>`).
+        request: LoginRequestId,
+        /// The agent program asked to sign in.
+        program: AgentProgram,
+    },
+    /// accountd sent the launcher of `program` a request to sign the agent out.
+    AgentLogoutAsked {
+        /// The request's id (`login-<n>`).
+        request: LoginRequestId,
+        /// The agent program asked to sign out.
+        program: AgentProgram,
+    },
+    /// `Tokens.IssueProcessCredential` (P2, lane p2-handoff): an API key was handed to a process
+    /// the launcher spawns for `audience` (`org.quire.Agent.<program>`), by `handoff`. The entry's
+    /// `app` is the app the grant is for and `account` the account. Never the credential.
+    ProcessCredentialIssued {
+        /// Who it was handed to.
+        audience: Audience,
+        /// How it travelled.
+        handoff: Handoff,
+    },
+    /// A credential handed to a process is no longer valid (`reason` says why).
+    ProcessCredentialRevoked {
+        /// Who held it.
+        audience: Audience,
+        /// Why it ended.
+        reason: CredentialEnd,
+    },
+    /// A grant scoped to a launcher session ended with the session (`Peer.EndSession`, or the
+    /// launcher leaving the bus). The entry's `app` is the app the grant was for.
+    SessionGrantEnded {
+        /// The grant that was removed.
+        grant: GrantId,
+        /// The session that closed.
+        session: SessionToken,
+    },
+    /// A kind of an account was switched on or off (Settings' service row). The entry's
+    /// `account` is the account; `app` is absent (Settings acts for the person).
+    ServiceToggled {
+        /// The kind.
+        kind: CapabilityKind,
+        /// What it is now.
+        toggle: Toggle,
+    },
+    /// The person's own client id for an issuer was set or cleared (Settings' client row), so
+    /// the next sign-ins with that issuer present another app. Never the id itself.
+    ClientIdChanged {
+        /// The issuer's slug, as its Settings row names it (`microsoft`, `google`). porter-core
+        /// does not know the issuers (porter-provider's `Issuer` does); this is its word.
+        issuer: String,
+        /// Set or cleared.
+        change: ClientIdChange,
+    },
+    /// A desktop-wide Space was made (`Spaces1.Create`). The entry's `app` is the app that made
+    /// it. Never the name.
+    SpaceCreated {
+        /// The new Space.
+        space: DesktopSpace,
+    },
+    /// A desktop-wide Space was renamed (`Spaces1.Rename`, Settings or the shell). Never the name.
+    SpaceRenamed {
+        /// The Space.
+        space: DesktopSpace,
+    },
+    /// A desktop-wide Space was removed (`Spaces1.Remove`); each grant scoped to it ended and has
+    /// its own `revoked` entry.
+    SpaceRemoved {
+        /// The Space.
+        space: DesktopSpace,
+    },
+    /// `Identities1.TakePassword`: the password (or app password) of an identity the person
+    /// picked was handed to the app that offered "Continue as", on a sealed descriptor. The
+    /// entry's `app` is that app and `account` the identity's account. Never the password.
+    PasswordHandedOver,
+}
+
+/// What became of a client id.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ClientIdChange {
+    /// A client id of the person's own is set (or replaced).
+    Set,
+    /// The person's own client id is removed; the shipped one, if any, is used again.
+    Cleared,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use porter_core::{AppName, Isolation};
+
+    #[test]
+    fn entries_round_trip_and_pin_their_form() {
+        let entry = AuditEntry {
+            at: UnixSeconds(1_790_000_000),
+            app: Some(AppId {
+                name: AppName::parse("org.quire.Mail").expect("name"),
+                isolation: Isolation::Flatpak,
+            }),
+            account: Some(AccountId::parse("cloud").expect("id")),
+            event: AuditEvent::Granted {
+                grant: GrantId::parse("g1").expect("id"),
+                kind: CapabilityKind::Mail,
+            },
+        };
+        let json = serde_json::to_string(&entry).expect("json");
+        assert_eq!(
+            json,
+            concat!(
+                r#"{"at":1790000000,"app":{"name":"org.quire.Mail","isolation":"flatpak"},"#,
+                r#""account":"cloud","event":{"kind":"granted","v":{"grant":"g1","kind":"mail"}}}"#
+            )
+        );
+        assert_eq!(
+            serde_json::from_str::<AuditEntry>(&json).expect("entry"),
+            entry
+        );
+    }
+
+    #[test]
+    fn a_token_issued_line_an_earlier_daemon_wrote_still_reads() {
+        let line = r#"{"at":1790000000,"app":null,"account":"cloud","event":{"kind":"token_issued","v":{"grant":"g1","audience":"imap"}}}"#;
+        let entries = AuditEntry::read_all(line);
+        let [entry] = entries.as_slice() else {
+            panic!("one entry: {entries:?}")
+        };
+        assert_eq!(
+            entry.event,
+            AuditEvent::TokenIssued {
+                grant: GrantId::parse("g1").expect("id"),
+                audience: Audience("imap".into()),
+            }
+        );
+        assert_eq!(serde_json::to_string(entry).expect("json"), line);
+    }
+
+    #[test]
+    fn every_event_round_trips() {
+        let grant = GrantId::parse("g1").expect("id");
+        let events = [
+            AuditEvent::Granted {
+                grant: grant.clone(),
+                kind: CapabilityKind::Mail,
+            },
+            AuditEvent::Denied {
+                kind: CapabilityKind::Storage,
+            },
+            AuditEvent::Revoked {
+                grant: grant.clone(),
+            },
+            AuditEvent::ProxyOpened {
+                grant,
+                endpoint: EndpointUrl::parse("imaps://mail.example.org").expect("url"),
+            },
+            AuditEvent::SignedIn,
+            AuditEvent::Reauthed,
+            AuditEvent::Removed,
+            AuditEvent::KeyResolved {
+                grant: GrantId::parse("g1").expect("id"),
+                audience: Audience("org.quire.Agent.claude-code".into()),
+            },
+            AuditEvent::AgentStateSet {
+                state: AgentState::NeedsLogin,
+            },
+            AuditEvent::AgentLoginAsked {
+                request: LoginRequestId::parse("login-1").expect("id"),
+                program: AgentProgram::parse("claude-code").expect("program"),
+            },
+            AuditEvent::AgentLogoutAsked {
+                request: LoginRequestId::parse("login-2").expect("id"),
+                program: AgentProgram::parse("claude-code").expect("program"),
+            },
+            AuditEvent::ProcessCredentialIssued {
+                audience: Audience("org.quire.Agent.codex".into()),
+                handoff: Handoff::TmpfsFile,
+            },
+            AuditEvent::ProcessCredentialRevoked {
+                audience: Audience("org.quire.Agent.codex".into()),
+                reason: CredentialEnd::ProcessExited,
+            },
+            AuditEvent::ProcessCredentialRevoked {
+                audience: Audience("org.quire.Agent.codex".into()),
+                reason: CredentialEnd::SessionClosed,
+            },
+            AuditEvent::SessionGrantEnded {
+                grant: GrantId::parse("g2").expect("id"),
+                session: SessionToken::parse("sess-1").expect("session"),
+            },
+            AuditEvent::ServiceToggled {
+                kind: CapabilityKind::Contacts,
+                toggle: Toggle::Off,
+            },
+            AuditEvent::ClientIdChanged {
+                issuer: "microsoft".to_owned(),
+                change: ClientIdChange::Cleared,
+            },
+            AuditEvent::PasswordHandedOver,
+        ];
+        for event in events {
+            let entry = AuditEntry {
+                at: UnixSeconds(1),
+                app: None,
+                account: None,
+                event,
+            };
+            let json = serde_json::to_string(&entry).expect("json");
+            assert_eq!(
+                serde_json::from_str::<AuditEntry>(&json).expect("entry"),
+                entry
+            );
+        }
+    }
+
+    #[test]
+    fn a_line_an_earlier_daemon_wrote_for_an_adoption_is_skipped_and_the_rest_kept() {
+        let text = concat!(
+            r#"{"at":1790000000,"app":null,"account":"cloud","event":{"kind":"adopted"}}"#,
+            "\n",
+            r#"{"at":1790000001,"app":null,"account":"cloud","event":{"kind":"signed_in"}}"#,
+            "\n"
+        );
+        let entries = AuditEntry::read_all(text);
+        assert_eq!(
+            entries.iter().map(|e| e.at).collect::<Vec<_>>(),
+            [UnixSeconds(1790000001)]
+        );
+    }
+
+    #[test]
+    fn the_new_events_pin_their_form() {
+        let at = |event| {
+            serde_json::to_string(&AuditEntry {
+                at: UnixSeconds(1),
+                app: None,
+                account: None,
+                event,
+            })
+            .expect("json")
+        };
+        assert_eq!(
+            at(AuditEvent::AgentStateSet {
+                state: AgentState::Ready
+            }),
+            r#"{"at":1,"app":null,"account":null,"event":{"kind":"agent_state_set","v":{"state":"ready"}}}"#
+        );
+        assert_eq!(
+            at(AuditEvent::ProcessCredentialIssued {
+                audience: Audience("a".into()),
+                handoff: Handoff::Memfd
+            }),
+            r#"{"at":1,"app":null,"account":null,"event":{"kind":"process_credential_issued","v":{"audience":"a","handoff":"memfd"}}}"#
+        );
+        assert_eq!(
+            at(AuditEvent::ProcessCredentialRevoked {
+                audience: Audience("a".into()),
+                reason: CredentialEnd::LauncherGone
+            }),
+            r#"{"at":1,"app":null,"account":null,"event":{"kind":"process_credential_revoked","v":{"audience":"a","reason":"launcher_gone"}}}"#
+        );
+        assert_eq!(
+            at(AuditEvent::ProcessCredentialRevoked {
+                audience: Audience("a".into()),
+                reason: CredentialEnd::SessionClosed
+            }),
+            r#"{"at":1,"app":null,"account":null,"event":{"kind":"process_credential_revoked","v":{"audience":"a","reason":"session_closed"}}}"#
+        );
+        assert_eq!(
+            at(AuditEvent::SessionGrantEnded {
+                grant: GrantId::parse("g2").expect("id"),
+                session: SessionToken::parse("sess-1").expect("session"),
+            }),
+            r#"{"at":1,"app":null,"account":null,"event":{"kind":"session_grant_ended","v":{"grant":"g2","session":"sess-1"}}}"#
+        );
+        assert_eq!(
+            at(AuditEvent::ServiceToggled {
+                kind: CapabilityKind::Calendar,
+                toggle: Toggle::On,
+            }),
+            r#"{"at":1,"app":null,"account":null,"event":{"kind":"service_toggled","v":{"kind":"calendar","toggle":"on"}}}"#
+        );
+        assert_eq!(
+            at(AuditEvent::ClientIdChanged {
+                issuer: "microsoft".to_owned(),
+                change: ClientIdChange::Set,
+            }),
+            r#"{"at":1,"app":null,"account":null,"event":{"kind":"client_id_changed","v":{"issuer":"microsoft","change":"set"}}}"#
+        );
+        assert_eq!(
+            at(AuditEvent::PasswordHandedOver),
+            r#"{"at":1,"app":null,"account":null,"event":{"kind":"password_handed_over"}}"#
+        );
+        let space = || DesktopSpace::parse("space-1").expect("space");
+        for (event, kind) in [
+            (AuditEvent::SpaceCreated { space: space() }, "space_created"),
+            (AuditEvent::SpaceRenamed { space: space() }, "space_renamed"),
+            (AuditEvent::SpaceRemoved { space: space() }, "space_removed"),
+        ] {
+            let line = at(event.clone());
+            assert_eq!(
+                line,
+                format!(
+                    r#"{{"at":1,"app":null,"account":null,"event":{{"kind":"{kind}","v":{{"space":"space-1"}}}}}}"#
+                )
+            );
+            assert_eq!(AuditEntry::read_all(&line)[0].event, event);
+        }
+    }
+
+    #[test]
+    fn a_reader_skips_a_line_of_a_kind_from_a_newer_daemon_and_keeps_the_rest() {
+        let text = concat!(
+            r#"{"at":4,"app":null,"account":"cloud","event":{"kind":"signed_in"}}"#,
+            "\n",
+            r#"{"at":5,"app":null,"account":"cloud","event":{"kind":"from_the_future","v":{"x":1}}}"#,
+            "\n",
+            r#"{"at":6,"app":null,"account":"cloud","event":{"kind":"removed"}}"#,
+            "\n"
+        );
+        let entries = AuditEntry::read_all(text);
+        assert_eq!(
+            entries.iter().map(|e| e.at).collect::<Vec<_>>(),
+            [UnixSeconds(4), UnixSeconds(6)]
+        );
+    }
+
+    #[test]
+    fn lines_written_before_the_new_events_still_read() {
+        // The format of master cd48cce, one line per kind it wrote.
+        let lines = [
+            r#"{"at":1,"app":null,"account":"cloud","event":{"kind":"granted","v":{"grant":"g1","kind":"mail"}}}"#,
+            r#"{"at":1,"app":null,"account":null,"event":{"kind":"denied","v":{"kind":"storage"}}}"#,
+            r#"{"at":1,"app":null,"account":"cloud","event":{"kind":"revoked","v":{"grant":"g1"}}}"#,
+            r#"{"at":1,"app":null,"account":"cloud","event":{"kind":"token_issued","v":{"grant":"g1","audience":"resolve_key"}}}"#,
+            r#"{"at":1,"app":null,"account":"cloud","event":{"kind":"signed_in"}}"#,
+            r#"{"at":1,"app":null,"account":"cloud","event":{"kind":"reauthed"}}"#,
+            r#"{"at":1,"app":null,"account":"cloud","event":{"kind":"removed"}}"#,
+        ];
+        for line in lines {
+            let entry: AuditEntry = serde_json::from_str(line).expect(line);
+            assert_eq!(AuditEntry::read_all(line), [entry], "{line}");
+        }
+    }
+}

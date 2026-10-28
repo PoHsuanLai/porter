@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### The service is a facade over domains
+
+- porter-service is split. New crates: porter-service-core (`Ctx<E: Ports>`, the registry, the
+  audit trail, the sheets seam, the reach policy, the per-account turns at an issuer),
+  porter-service-accounts (`AccountsApi`), porter-service-grants (`GrantsApi`), porter-identities
+  (`UseBook`, `Picks`, the `IdentityDesk`) and porter-spaces (`SpaceBook`), the last two taken out of
+  accountd. `porter_service` keeps `AccountService`, which a host builds as before. `Ports` names
+  the six seams once, so the domains' impls carry one parameter in place of six; `Parts<P, S, U, K,
+  R, A>` is the `Ports` a host builds, and `AccountService` is still generic over the six.
+- Moved: `porter_service::{Registry}` is `porter_service_core::registry::Registry`;
+  `{audit::*, AuditSink, NoAudit}` are `porter_service_core::audit::*`; `{Sheets, SheetLink,
+  SheetOpen, SheetFault}` are `porter_service_core::sheets::*`; `{SignInAs, AllowFor, AgentFault,
+  Launchers, LoginEnd, NoLauncher, Roster, Waiting, program_of, LocalFault, MAX_LOCAL_CLAIMS,
+  OwnMachines}` are `porter_service_accounts::*`; `accountd::{IdentityDesk, SheetsDesk}` are
+  `porter_identities::*` and `accountd::{CREATES_PER_WINDOW, CREATE_WINDOW}` are
+  `porter_spaces::*`.
+- `LauncherSession` is `SessionToken`, with the same text on the wire and in `registry.json`:
+  consent only compares tokens and no longer names the agent launcher. `choose_for_agent` is
+  `AccountService::choose`, which takes the session.
+
 ### The wire carries only sheets
 
 - `AccountsRequest` is `Choose`, `AddAccount` and `Reauthenticate`, and `AccountsReply` is

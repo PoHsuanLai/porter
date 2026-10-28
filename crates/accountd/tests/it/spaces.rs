@@ -4,12 +4,13 @@
 
 use crate::common;
 
-use accountd::{CREATES_PER_WINDOW, Options};
+use accountd::Options;
 use common::*;
 use porter_callers::CallerRole;
 use porter_core::DesktopSpace;
 use porter_dbus::accounts::{SpaceChangedStream, SpacesProxy};
-use porter_service::audit::AuditEvent;
+use porter_service_core::audit::AuditEvent;
+use porter_spaces::CREATES_PER_WINDOW;
 use test_kit::Scratch;
 
 /// Options whose Spaces are kept in a directory of `scratch`.

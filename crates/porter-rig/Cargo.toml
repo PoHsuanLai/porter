@@ -46,6 +46,7 @@ accountd = { path = "../accountd" }
 porter-provider = { workspace = true }
 porter-secrets = { workspace = true, features = ["oo7"] }
 porter-service = { workspace = true }
+porter-service-core = { workspace = true }
 porter-sync = { workspace = true }
 rustix = { workspace = true }
 syncd = { path = "../syncd", features = ["testing"] }

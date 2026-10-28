@@ -4,15 +4,17 @@
 //! and the app asks them for an identity or a key permit:
 //!
 //! ```no_run
-//! use porter_client::{Accounts, ClientError, Found, Transport};
+//! # #![cfg(feature = "in-process")]
+//! use porter_client::{Accounts, ClientError, Found, HostedCore, InProcess};
 //! use porter_core::consent::Usage;
 //! use porter_wire::ParentWindow;
 //! use porter_core::{Candidate, DataClass};
 //! use porter_match::Need;
 //!
-//! // `accounts` is `Accounts::connect()` (D-Bus) or `Accounts::over(transport)`.
-//! async fn photos_account<T: Transport>(
-//!     accounts: &Accounts<T>,
+//! // `accounts` is `Accounts::over(InProcess::new(service, app))`: `find` is offered only
+//! // where the service is hosted.
+//! async fn photos_account<C: HostedCore>(
+//!     accounts: &Accounts<InProcess<C>>,
 //!     need: &Need,
 //!     window: &ParentWindow,
 //! ) -> Result<Option<Candidate>, ClientError> {
@@ -85,6 +87,8 @@ mod destination;
 #[cfg(feature = "engines")]
 pub mod engines;
 mod error;
+#[cfg(feature = "in-process")]
+mod find;
 mod found;
 #[cfg(feature = "dbus")]
 mod guests;

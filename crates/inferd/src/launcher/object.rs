@@ -16,10 +16,10 @@ use porter_capability::AgentProgram;
 use porter_capability::{LoginOutcome, LoginRequestId};
 use porter_core::AccountId;
 use porter_core::AgentState;
-use porter_core::LauncherSession;
+use porter_core::SessionToken;
 use porter_dbus::inference::LauncherServer;
 use porter_dbus::{Call, Details};
-use porter_service::{AgentFault, LoginEnd};
+use porter_service_accounts::{AgentFault, LoginEnd};
 use porter_wire::{ParentWindow, Refusal};
 use std::sync::Arc;
 use zbus::message::Header;
@@ -108,7 +108,7 @@ impl<H: LauncherHost, P: Peers> LauncherServer for LauncherObject<H, P> {
         session: String,
     ) -> Result<(), RefusedError> {
         let owner = self.0.launcher_of(&header).await?;
-        let session = LauncherSession::parse(&session).map_err(RefusedError::invalid)?;
+        let session = SessionToken::parse(&session).map_err(RefusedError::invalid)?;
         self.0
             .launchers
             .begin_session(&owner, session)
@@ -125,7 +125,7 @@ impl<H: LauncherHost, P: Peers> LauncherServer for LauncherObject<H, P> {
         session: String,
     ) -> Result<(), RefusedError> {
         let owner = self.0.launcher_of(&header).await?;
-        let session = LauncherSession::parse(&session).map_err(RefusedError::invalid)?;
+        let session = SessionToken::parse(&session).map_err(RefusedError::invalid)?;
         self.0
             .launchers
             .end_session(&owner, &session)

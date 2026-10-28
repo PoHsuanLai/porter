@@ -55,7 +55,7 @@ async fn too_many_new_spaces_and_a_stranger_are_told_apart() {
         .spaces()
         .await
         .expect("spaces");
-    for n in 0..accountd::CREATES_PER_WINDOW {
+    for n in 0..porter_spaces::CREATES_PER_WINDOW {
         app.create(&name(&format!("Space {n}")), &SpaceLook::default())
             .await
             .expect("create");

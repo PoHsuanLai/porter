@@ -13,8 +13,9 @@ use porter_core::{
 use porter_core::{AccountId, GrantId};
 use porter_ids::clock::Clock;
 use porter_secrets::{Secrets, SecretsError};
-use porter_service::audit::{AuditEntry, AuditEvent};
-use porter_service::{AuditSink, Registry};
+use porter_service_core::audit::AuditSink;
+use porter_service_core::audit::{AuditEntry, AuditEvent};
+use porter_service_core::registry::Registry;
 use porter_wire::Refusal;
 
 /// Reads API keys and notes each use.

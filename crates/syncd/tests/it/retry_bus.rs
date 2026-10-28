@@ -7,7 +7,7 @@ use crate::common::hosted::host;
 use porter_core::Candidate;
 use porter_fake::cloud_provider;
 use porter_secrets::MemorySecrets;
-use porter_service::Registry;
+use porter_service_core::registry::Registry;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use syncd::datasets::pim::{

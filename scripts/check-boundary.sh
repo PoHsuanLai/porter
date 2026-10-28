@@ -34,7 +34,12 @@ RULES=(
   "porter-bridge: $EFFECTS"
   "porter-router: $EFFECTS inferd"
   "porter-turns: zbus zvariant ureq oo7 keyring secret-service interprocess latchkey ds-settings inferd"
+  "porter-service-core: $EFFECTS"
+  "porter-service-accounts: $EFFECTS"
+  "porter-service-grants: $EFFECTS"
   "porter-service: $EFFECTS"
+  "porter-identities: zbus zvariant reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
+  "porter-spaces: zbus zvariant reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
   "porter-store: zbus zvariant reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
   "porter-client: $EFFECTS"
   "porter-sheets: reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
@@ -190,7 +195,7 @@ done
 # account service, its secrets and the provider catalogue. A bus-only consumer (`dbus` with no
 # default features) reaches none of them.
 in_process_leaked=0
-for dep in porter-service porter-secrets porter-provider; do
+for dep in porter-service porter-service-core porter-service-accounts porter-service-grants porter-secrets porter-provider; do
   if cargo tree -p porter-client --no-default-features --features dbus -i "$dep" -e normal,build 2>/dev/null | grep -q .; then
     echo "LEAK: porter-client[dbus] without in-process depends on $dep"
     cargo tree -p porter-client --no-default-features --features dbus -i "$dep" -e normal,build 2>/dev/null | head -20
@@ -199,7 +204,7 @@ for dep in porter-service porter-secrets porter-provider; do
   fi
 done
 if [ "$in_process_leaked" -eq 0 ]; then
-  echo "boundary holds: porter-client[dbus] without in-process reaches none of porter-service, porter-secrets, porter-provider"
+  echo "boundary holds: porter-client[dbus] without in-process reaches none of porter-service and its domains, porter-secrets, porter-provider"
 fi
 
 # ONE CLIENT: reqwest is named by porter-http-reqwest and by no other crate of this workspace. Every
@@ -330,17 +335,22 @@ EDGES=(
   "porter-secrets: keyring-chunked porter-core porter-capability porter-ids porter-fs"
   "porter-sync: porter-capability porter-ids porter-http"
   "porter-infer: porter-core porter-match porter-capability porter-ids cua-action model-provider"
-  "porter-service: porter-core porter-tailscale porter-match porter-capability porter-sheet porter-wire porter-ids porter-provider porter-secrets"
+  "porter-service-core: porter-core porter-match porter-capability porter-sheet porter-wire porter-ids porter-provider porter-secrets"
+  "porter-service-accounts: porter-service-core porter-core porter-tailscale porter-match porter-capability porter-sheet porter-wire porter-ids porter-provider porter-secrets"
+  "porter-service-grants: porter-service-core porter-service-accounts porter-core porter-match porter-capability porter-wire porter-ids porter-provider porter-secrets"
+  "porter-service: porter-service-core porter-service-accounts porter-service-grants porter-core porter-match porter-capability porter-wire porter-ids porter-provider porter-secrets"
   "porter-store: porter-core porter-capability porter-fs"
+  "porter-identities: porter-service-core porter-core porter-ids porter-fs porter-secrets porter-wire"
+  "porter-spaces: porter-core porter-ids porter-fs"
   "porter-router: porter-core porter-tailnet porter-tailscale porter-match porter-capability porter-ids porter-engines porter-infer cua-action engine-supervisor model-catalog model-http model-openai-compat model-provider speech-provider vision-prep"
   "porter-turns: porter-core porter-match porter-capability porter-ids porter-infer porter-bridge porter-router cua-action cua-parse cua-session cua-vendors engine-supervisor model-extract model-http model-openai-compat model-provider vision-prep"
   "porter-dbus-macros:"
   "porter-callers: porter-core"
   "porter-dbus: porter-core porter-dbus-macros porter-tailscale porter-match porter-wire porter-ids"
   "porter-bridge: porter-core porter-capability porter-match porter-ids porter-infer model-catalog model-openai-compat model-provider vision-prep"
-  "porter-sheets: porter-core porter-capability porter-sheet porter-wire porter-callers porter-dbus porter-provider porter-service"
-  "porter-client: porter-bridge porter-core porter-tailnet porter-tailscale porter-match porter-capability porter-wire porter-ids porter-callers porter-dbus porter-fs porter-infer porter-provider porter-proxy porter-secrets porter-service porter-turns model-http model-openai-compat model-provider model-wire"
-  "porter-fake: porter-core porter-capability porter-sheet porter-wire porter-ids porter-provider porter-secrets porter-service"
+  "porter-sheets: porter-core porter-capability porter-sheet porter-wire porter-callers porter-dbus porter-provider porter-service-core"
+  "porter-client: porter-bridge porter-core porter-tailnet porter-tailscale porter-match porter-capability porter-wire porter-ids porter-callers porter-dbus porter-fs porter-infer porter-provider porter-proxy porter-secrets porter-service porter-service-core porter-turns model-http model-openai-compat model-provider model-wire"
+  "porter-fake: porter-core porter-capability porter-sheet porter-wire porter-ids porter-provider porter-secrets porter-service porter-service-core"
   "test-kit:"
   "porter-fake-servers: dav-proto porter-core porter-ids porter-discover porter-fake porter-provider quickxorhash test-kit"
   "porter-http: porter-core porter-ids"
@@ -362,18 +372,18 @@ EDGES=(
   "porter-family-nextcloud: porter-family-kit nextcloud-proto dav-proto porter-core porter-capability porter-sheet porter-provider porter-http"
   "porter-family-generic: porter-family-kit generic-proto porter-core porter-capability porter-sheet porter-provider porter-http porter-discover porter-proxy"
   "porter-family-oauth: porter-family-kit oauth-probe-proto porter-core porter-capability porter-sheet porter-ids porter-provider porter-http porter-http-reqwest porter-oauth"
-  "accountd: ds-settings porter-core porter-match porter-capability porter-sheet porter-wire porter-ids porter-daemon porter-callers porter-dbus porter-families porter-family-oauth porter-fs porter-provider porter-secrets porter-service porter-sheets porter-store porter-tailscale"
+  "accountd: ds-settings porter-core porter-match porter-capability porter-sheet porter-wire porter-ids porter-daemon porter-callers porter-dbus porter-families porter-family-oauth porter-fs porter-identities porter-provider porter-secrets porter-service porter-service-core porter-sheets porter-spaces porter-store porter-tailscale"
   "storage-webdav: dav-proto porter-capability porter-ids porter-http porter-sync"
   "storage-graph: porter-capability porter-ids porter-http porter-sync"
   "storage-gdrive: porter-capability porter-ids porter-http porter-sync"
   "porter-drive: porter-capability porter-ids porter-fs porter-sync quickxorhash"
   "porter-drive-fuse: porter-drive porter-mountd"
   "porter-mountd:"
-  "syncd: dav-proto ds-settings porter-client porter-core porter-match porter-capability porter-sheet porter-wire porter-ids porter-daemon porter-callers porter-dbus porter-drive porter-drive-fuse porter-families porter-family-oauth porter-fs porter-http porter-http-relay porter-provider porter-secrets porter-service porter-sheets porter-store porter-sync storage-gdrive storage-graph storage-webdav windows-zones"
+  "syncd: dav-proto ds-settings porter-client porter-core porter-match porter-capability porter-sheet porter-wire porter-ids porter-daemon porter-callers porter-dbus porter-drive porter-drive-fuse porter-families porter-family-oauth porter-fs porter-http porter-http-relay porter-provider porter-secrets porter-service porter-service-accounts porter-service-core porter-sheets porter-store porter-sync storage-gdrive storage-graph storage-webdav windows-zones"
   "porter-rig: fake-secret-service porter-client porter-core porter-match porter-capability porter-wire porter-ids porter-callers porter-dbus porter-fake porter-fake-servers porter-infer test-kit"
   "fake-secret-service:"
   "syncd-fakes: porter-dbus"
-  "inferd: ds-settings porter-bridge porter-engines porter-families porter-family-oauth porter-secrets porter-service porter-sheets porter-store porter-router porter-turns porter-core porter-match porter-capability porter-sheet porter-wire porter-ids porter-daemon porter-callers porter-dbus porter-discover porter-fs porter-http porter-http-reqwest porter-infer porter-provider porter-tailnet porter-tailscale cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-host-client speech-provider vision-prep"
+  "inferd: ds-settings porter-bridge porter-engines porter-families porter-family-oauth porter-secrets porter-service porter-service-accounts porter-service-core porter-sheets porter-store porter-router porter-turns porter-core porter-match porter-capability porter-sheet porter-wire porter-ids porter-daemon porter-callers porter-dbus porter-discover porter-fs porter-http porter-http-reqwest porter-infer porter-provider porter-tailnet porter-tailscale cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-host-client speech-provider vision-prep"
 )
 for edge in "${EDGES[@]}"; do
   crate="${edge%%:*}"
@@ -438,7 +448,7 @@ done
 # of them (nor anything below them) may take it, even as a dev dependency: a dev-dependency
 # cycle makes the crate's own tests compile it twice. Their tests use `test-kit`, which knows
 # nothing of porter; tests that need the fakes live in porter-fake's own tests.
-for below in porter-core porter-provider porter-secrets porter-service; do
+for below in porter-core porter-provider porter-secrets porter-service-core porter-service-accounts porter-service-grants porter-service; do
   if cargo tree -p "$below" -e normal,build,dev --prefix none 2>/dev/null | grep -qx 'porter-fake v.*'; then
     echo "LEAK: $below reaches porter-fake, which depends on it (a dev-dependency cycle)"
     fail=1

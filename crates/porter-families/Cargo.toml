@@ -32,6 +32,8 @@ tokio = { workspace = true, features = ["rt", "macros", "net", "time", "io-util"
 porter-http-reqwest = { workspace = true }
 porter-secrets = { workspace = true, features = ["testing"] }
 porter-service = { workspace = true }
+porter-service-core = { workspace = true }
+porter-service-accounts = { workspace = true }
 porter-wire = { workspace = true }
 porter-match = { workspace = true }
 porter-discover = { workspace = true }

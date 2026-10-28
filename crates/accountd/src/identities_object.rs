@@ -24,7 +24,6 @@
 use crate::callers::Callers;
 use crate::errors::RefusedError;
 use crate::host::Host;
-use crate::identities::Unsaved;
 use crate::request::departed;
 use crate::state::{Core, Standing, hint};
 use porter_callers::CallerRole;
@@ -37,8 +36,9 @@ use porter_dbus::accounts::IDENTITIES_PATH;
 use porter_dbus::accounts::sheet::SheetKind;
 use porter_dbus::accounts::{IdentitiesServed, IdentitiesServer, identity_to_dbus};
 use porter_dbus::{Call, Details};
+use porter_identities::{IdentitiesApi, Unsaved};
 use porter_secrets::sealed_key;
-use porter_service::Registry;
+use porter_service_core::registry::Registry;
 use porter_wire::Refusal;
 use std::sync::Arc;
 use zbus::fdo::DBusProxy;

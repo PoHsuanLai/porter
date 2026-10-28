@@ -11,7 +11,7 @@ use common::*;
 use porter_callers::CallerRole;
 use porter_core::SecretText;
 use porter_dbus::accounts::{ManagerProxy, Sheet};
-use porter_service::{SheetFault, SheetLink, SheetOpen, Sheets};
+use porter_service_core::sheets::{SheetFault, SheetLink, SheetOpen, Sheets};
 use porter_sheet::{FieldAnswer, FieldKind, FieldValue, SheetInput, SheetView};
 use porter_wire::ParentWindow;
 use std::sync::Arc;

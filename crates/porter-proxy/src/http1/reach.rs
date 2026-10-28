@@ -1,5 +1,5 @@
 //! Where under its origin an HTTP relay may go: the plan's reach, which the service decided when
-//! it planned the relay (`porter_service`'s `reach`: a Nextcloud contacts grant stays under the
+//! it planned the relay (`porter_service_core`'s `reach`: a Nextcloud contacts grant stays under the
 //! address books, and so on), applied to each request's target here. The relay decides nothing
 //! about families or providers.
 //!

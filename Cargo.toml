@@ -19,7 +19,12 @@ members = [
   "crates/porter-mountd",
   "crates/porter-infer",
   "crates/porter-bridge",
+  "crates/porter-service-core",
+  "crates/porter-service-accounts",
+  "crates/porter-service-grants",
   "crates/porter-service",
+  "crates/porter-identities",
+  "crates/porter-spaces",
   "crates/porter-store",
   "crates/porter-dbus",
   "crates/porter-dbus-macros",
@@ -90,7 +95,12 @@ porter-drive-fuse = { path = "crates/porter-drive-fuse" }
 porter-mountd = { path = "crates/porter-mountd" }
 porter-infer    = { path = "crates/porter-infer" }
 porter-bridge   = { path = "crates/porter-bridge" }
+porter-service-core = { path = "crates/porter-service-core" }
+porter-service-accounts = { path = "crates/porter-service-accounts" }
+porter-service-grants = { path = "crates/porter-service-grants" }
 porter-service  = { path = "crates/porter-service" }
+porter-identities = { path = "crates/porter-identities" }
+porter-spaces   = { path = "crates/porter-spaces" }
 porter-store    = { path = "crates/porter-store" }
 porter-dbus     = { path = "crates/porter-dbus" }
 porter-dbus-macros = { path = "crates/porter-dbus-macros" }

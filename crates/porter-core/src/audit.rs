@@ -1,7 +1,7 @@
 //! The words for a credential handed to a spawned process (P2): how it travelled and why it
 //! ended. The bus, the launcher and the audit log share them, so they stay here where a bus client
 //! names them without the account service; the audit log itself, `AuditEntry` and `AuditEvent`, is
-//! `porter_service::audit`.
+//! `porter_service_core::audit`.
 
 use serde::{Deserialize, Serialize};
 

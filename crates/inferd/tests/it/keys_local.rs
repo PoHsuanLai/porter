@@ -22,8 +22,9 @@ use porter_fake::{
 use porter_families::set::ProviderNames;
 use porter_ids::clock::FixedClock;
 use porter_secrets::{MemorySecrets, Secrets, SecretsError};
-use porter_service::audit::AuditEvent;
-use porter_service::{AccountService, Registry};
+use porter_service::AccountService;
+use porter_service_core::audit::AuditEvent;
+use porter_service_core::registry::Registry;
 use porter_wire::ParentWindow;
 use porter_wire::{AccountsReply, AccountsRequest};
 use std::sync::Arc;

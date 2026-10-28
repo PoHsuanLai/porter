@@ -10,7 +10,7 @@
 
 use crate::datasets::pim::AccountdUnavailable;
 use porter_capability::{Access, Albums, Delta, LibraryRead, StorageScope};
-use porter_client::{Accounts, Found, Transport};
+use porter_client::{Accounts, Found, HostedCore, InProcess};
 use porter_core::consent::Usage;
 use porter_core::{Candidate, DataClass, Family, ServiceEndpoint};
 use porter_match::Need;
@@ -174,7 +174,9 @@ impl<T> ClientStorageGrants<T> {
     }
 }
 
-impl<T: Transport> StorageGrants for ClientStorageGrants<T> {
+impl<C: HostedCore, B: Send + Sync, H: Send + Sync> StorageGrants
+    for ClientStorageGrants<InProcess<C, B, H>>
+{
     async fn granted(&self, kind: StorageKind) -> Result<Vec<Candidate>, AccountdUnavailable> {
         // Google Photos: an account that uploads, or one that only picks (each scope stands
         // alone); the same grant answers both, and `seen` keeps one candidate per account.

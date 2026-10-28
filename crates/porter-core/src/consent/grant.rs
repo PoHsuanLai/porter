@@ -1,7 +1,7 @@
 //! A consent decision and what it covers (design/31 §4.5).
 
 use crate::GrantId;
-use crate::LauncherSession;
+use crate::SessionToken;
 use porter_ids::UnixSeconds;
 use serde::{Deserialize, Serialize};
 
@@ -30,18 +30,17 @@ pub enum Decision {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GrantScope {
-    /// For one use; accountd drops it after that use. A use is the first of any kind: a token
-    /// issued (`IssueToken`) or a relay opened (`OpenAuthenticated`, `OpenLinked`). Design/31
-    /// §5.4 wrote "the first token issued" before relays existed; the first relay spends it too.
+    /// For one use; the service drops it after that use. A use is the first of any kind: a relay
+    /// opened (`OpenAuthenticated`, `OpenLinked`) or a key read by the host that holds the
+    /// secret.
     Once,
     /// Until revoked in Settings.
     Always,
-    /// For one launcher session ("This session only", agent-session ask S4): from the answer
-    /// until the launcher that began the session ends it or leaves the bus. accountd removes the
-    /// grant then, ends every process credential issued under it, and forgets the grant across
-    /// a restart (sessions do not outlive accountd). Only the agent launcher can have one made,
-    /// for an agent program's key (`Peer.RequestAgentGrant`).
-    Session(LauncherSession),
+    /// For one session of the asking app ("This session only"): from the answer until whoever
+    /// hosts the session ends it. The service removes the grant then, and forgets it across a
+    /// restart (sessions do not outlive the service). Only an ask made inside a session can have
+    /// one made.
+    Session(SessionToken),
 }
 
 impl GrantScope {
@@ -57,7 +56,7 @@ impl GrantScope {
     }
 
     /// The session a session scope lasts for.
-    pub fn session(&self) -> Option<&LauncherSession> {
+    pub fn session(&self) -> Option<&SessionToken> {
         match self {
             GrantScope::Session(session) => Some(session),
             GrantScope::Once | GrantScope::Always => None,
@@ -66,7 +65,7 @@ impl GrantScope {
 
     /// The scope a word and an optional session stand for: `session` needs its session and the
     /// other two take none.
-    pub fn from_words(word: &str, session: Option<&LauncherSession>) -> Option<Self> {
+    pub fn from_words(word: &str, session: Option<&SessionToken>) -> Option<Self> {
         match (word, session) {
             ("once", None) => Some(GrantScope::Once),
             ("always", None) => Some(GrantScope::Always),

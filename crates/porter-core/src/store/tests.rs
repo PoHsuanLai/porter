@@ -1,5 +1,5 @@
 use super::*;
-use crate::LauncherSession;
+use crate::SessionToken;
 use crate::app_id::{AppName, Isolation};
 use crate::endpoint::{LoginName, ServiceEndpoint, Tls};
 use crate::restriction::{Restriction, TokenLifetime};
@@ -439,7 +439,7 @@ fn what_a_version_added_reads_as_what_it_was() {
     let eight = Persisted::from_json(AT_EIGHT).expect("eight");
     assert_eq!(
         eight.grants[0].scope,
-        GrantScope::Session(LauncherSession::parse("sess-1").expect("id"))
+        GrantScope::Session(SessionToken::parse("sess-1").expect("id"))
     );
 }
 
@@ -458,7 +458,7 @@ fn a_document_stored_at_vocabulary_ten_is_read_unchanged() {
 #[test]
 fn a_session_grant_survives_the_document_and_keeps_its_form() {
     let mut registry = filled();
-    registry.grants[0].scope = GrantScope::Session(LauncherSession::parse("sess-1").expect("id"));
+    registry.grants[0].scope = GrantScope::Session(SessionToken::parse("sess-1").expect("id"));
     let json = registry.to_json().expect("json");
     let document: Value = serde_json::from_str(&json).expect("value");
     assert_eq!(

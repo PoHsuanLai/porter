@@ -18,7 +18,7 @@ use porter_callers::{CallerRole, Callers};
 use porter_core::consent::{ConsentAnswer, ConsentAsk};
 use porter_dbus::accounts::AccountsSheetProxy;
 use porter_dbus::accounts::SHEET_BUS;
-use porter_service::{SheetFault, SheetLink, SheetOpen, Sheets};
+use porter_service_core::sheets::{SheetFault, SheetLink, SheetOpen, Sheets};
 use porter_sheet::{ReviewView, SheetInput, SheetView};
 use porter_wire::ParentWindow;
 use std::pin::Pin;

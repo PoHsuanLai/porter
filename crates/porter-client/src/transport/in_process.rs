@@ -35,7 +35,9 @@ use porter_infer::{OpenOptions, Readiness};
 use porter_match::Need;
 use porter_provider::Provider;
 use porter_secrets::Secrets;
-use porter_service::{AccountService, AuditSink, Sheets};
+use porter_service::AccountService;
+use porter_service_core::audit::AuditSink;
+use porter_service_core::sheets::Sheets;
 use porter_wire::Refusal;
 use porter_wire::{AccountsReply, AccountsRequest};
 use std::future::Future;
@@ -231,6 +233,21 @@ where
     }
 }
 
+impl<C, B, H> InProcess<C, B, H>
+where
+    C: HostedCore,
+{
+    /// The accounts that fit `need` for this app and that it holds a grant for.
+    pub(crate) fn granted(&self, need: &Need, class: DataClass, usage: Usage) -> Vec<Candidate> {
+        self.service.candidates(&self.app, need, class, usage)
+    }
+
+    /// Whether `need` can be met for this app, revealing no identity.
+    pub(crate) fn availability(&self, need: &Need, class: DataClass, usage: Usage) -> Availability {
+        self.service.availability(&self.app, need, class, usage)
+    }
+}
+
 /// Accounts alone: no broker to name.
 #[cfg(not(feature = "infer"))]
 impl<C, B, H> Transport for InProcess<C, B, H>
@@ -241,24 +258,6 @@ where
 {
     async fn call(&self, request: AccountsRequest) -> Result<AccountsReply, TransportError> {
         Ok(self.call_service(request).await)
-    }
-
-    async fn granted(
-        &self,
-        need: &Need,
-        class: DataClass,
-        usage: Usage,
-    ) -> Result<Vec<Candidate>, TransportError> {
-        Ok(self.service.candidates(&self.app, need, class, usage))
-    }
-
-    async fn availability(
-        &self,
-        need: &Need,
-        class: DataClass,
-        usage: Usage,
-    ) -> Result<Availability, TransportError> {
-        Ok(self.service.availability(&self.app, need, class, usage))
     }
 
     async fn open_authenticated(
@@ -289,24 +288,6 @@ where
 
     async fn call(&self, request: AccountsRequest) -> Result<AccountsReply, TransportError> {
         Ok(self.call_service(request).await)
-    }
-
-    async fn granted(
-        &self,
-        need: &Need,
-        class: DataClass,
-        usage: Usage,
-    ) -> Result<Vec<Candidate>, TransportError> {
-        Ok(self.service.candidates(&self.app, need, class, usage))
-    }
-
-    async fn availability(
-        &self,
-        need: &Need,
-        class: DataClass,
-        usage: Usage,
-    ) -> Result<Availability, TransportError> {
-        Ok(self.service.availability(&self.app, need, class, usage))
     }
 
     async fn open_authenticated(

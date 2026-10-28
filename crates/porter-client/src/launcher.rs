@@ -37,7 +37,7 @@ use porter_capability::{LoginOutcome, LoginRequestId};
 use porter_core::audit::Handoff;
 use porter_core::{AccountId, GrantId, ProviderId};
 use porter_core::{AccountLabel, Candidate, CoreError, DataClass, Restriction};
-use porter_core::{LauncherSession, ProcessCredentialId};
+use porter_core::{ProcessCredentialId, SessionToken};
 use porter_dbus::accounts::refusal_of;
 use porter_dbus::accounts::sheet::{SheetKind, reply_of};
 use porter_dbus::accounts::{ServiceRoot, Sheet, SheetError};
@@ -174,7 +174,7 @@ impl Launcher {
     /// registered a program, and ends at [`Launcher::end_session`] or when the connection
     /// leaves the bus. A session another connection holds is [`LauncherFault::SessionTaken`];
     /// beginning one this connection holds is a no-op.
-    pub async fn begin_session(&self, session: &LauncherSession) -> Result<(), LauncherError> {
+    pub async fn begin_session(&self, session: &SessionToken) -> Result<(), LauncherError> {
         Ok(self.launcher.begin_session(session.as_str()).await?)
     }
 
@@ -182,7 +182,7 @@ impl Launcher {
     /// the process credentials under them (`CredentialEnd::SessionClosed`), telling this
     /// connection of each in [`Launcher::revocations`] so the launcher can end the processes. A
     /// session that is not open for this connection is [`LauncherFault::UnknownSession`].
-    pub async fn end_session(&self, session: &LauncherSession) -> Result<(), LauncherError> {
+    pub async fn end_session(&self, session: &SessionToken) -> Result<(), LauncherError> {
         Ok(self.launcher.end_session(session.as_str()).await?)
     }
 
@@ -196,7 +196,7 @@ impl Launcher {
         &self,
         program: &AgentProgram,
         class: DataClass,
-        session: Option<&LauncherSession>,
+        session: Option<&SessionToken>,
     ) -> Result<KeyCandidate, LauncherError> {
         let mut listener = Sheet::subscribe_on(&self.connection, ServiceRoot::Inference).await?;
         // Armed before the call: a dropped call may already have made the sheet.
@@ -206,7 +206,7 @@ impl Launcher {
             .request_agent_key(
                 program.as_str(),
                 &slug(class)?,
-                session.map_or("", LauncherSession::as_str),
+                session.map_or("", SessionToken::as_str),
                 "",
                 &listener.options(),
             )

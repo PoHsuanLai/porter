@@ -15,7 +15,7 @@ use porter_core::consent::{Decision, GrantScope};
 use porter_dbus::accounts::ServiceRoot;
 use porter_dbus::accounts::refusal_error_name_in;
 use porter_dbus::inference::LauncherFault;
-use porter_service::audit::{AuditEvent, CredentialEnd};
+use porter_service_core::audit::{AuditEvent, CredentialEnd};
 use porter_wire::Refusal;
 use rustix::fs::{SealFlags, fcntl_get_seals};
 use std::io::Read;

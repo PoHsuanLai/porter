@@ -17,7 +17,7 @@ use porter_families::set::ProviderNames;
 use porter_ids::word::word as word_of;
 use porter_ids::word::{from_word, word};
 use porter_provider::Issuer;
-use porter_service::Registry;
+use porter_service_core::registry::Registry;
 use porter_sheet::ProviderGroup;
 use porter_sheets::AppNames;
 use std::collections::BTreeMap;

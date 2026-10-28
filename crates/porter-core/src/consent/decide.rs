@@ -13,7 +13,7 @@ pub enum Verdict {
     Granted {
         /// The grant that allows it.
         grant: GrantId,
-        /// Once (spent by this use), always, or for a launcher session.
+        /// Once (spent by this use), always, or for a session.
         scope: GrantScope,
     },
     /// Refused; the app is not prompted again.

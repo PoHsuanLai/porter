@@ -18,13 +18,13 @@ mod helper_id;
 mod identities;
 mod identity;
 mod ids;
-mod launcher_session;
 mod process_credential;
 mod protocol;
 mod provider_hint;
 mod restriction;
 pub mod scope;
 mod secret;
+mod session_token;
 mod space;
 mod space_record;
 pub mod store;
@@ -47,7 +47,6 @@ pub use helper_id::HelperId;
 pub use identities::{Identity, IdentityAddress, IdentityId, IdentityKind, IdentityName};
 pub use identity::{CgroupPath, ClaimedId, PeerFacts, PeerIdentity, SandboxFacts, identity_of};
 pub use ids::{AccountId, GrantId, ProviderId};
-pub use launcher_session::LauncherSession;
 pub use process_credential::ProcessCredentialId;
 pub use protocol::EndpointProtocol;
 pub use provider_hint::ProviderHint;
@@ -60,6 +59,7 @@ pub use secret::{
     Credential, GrantedScopes, SecretKey, SecretPurpose, SecretText, write_secret,
     write_secret_option,
 };
+pub use session_token::SessionToken;
 pub use space::{DesktopSpace, LocalSpace, SpaceId, SpaceKind, SpaceScope};
 pub use space_record::{
     DesktopSpaceRecord, SPACE_LOOK_MAX_BYTES, SPACE_NAME_MAX_CHARS, SpaceChange, SpaceLook,

@@ -17,7 +17,9 @@ use porter_ids::clock::SystemClock;
 use porter_provider::{Provider, ProviderSet, ProviderSpec};
 use porter_secrets::Namespace;
 use porter_secrets::keysel::{AnyKeys, Chosen, KeysRefusal, Selection};
-use porter_service::{AccountService, OwnMachines, Registry};
+use porter_service::AccountService;
+use porter_service_accounts::OwnMachines;
+use porter_service_core::registry::Registry;
 use porter_sheet::ProviderGroup;
 use porter_sheets::{AppNames, BusSheets};
 use porter_store::FileStore;
@@ -119,7 +121,7 @@ pub async fn load_registry(store: &FileStore) -> Result<Registry, KeysStartError
 }
 
 /// The key store, opened.
-pub struct Opened<C> {
+pub struct Opened<C: Callers> {
     /// The hosted service.
     pub service: Arc<KeyService<C>>,
     /// The accounts as the cloud turns ask for them.
@@ -132,7 +134,7 @@ pub struct Opened<C> {
     pub saved: Arc<Notify>,
 }
 
-impl<C> std::fmt::Debug for Opened<C> {
+impl<C: Callers> std::fmt::Debug for Opened<C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Opened").finish_non_exhaustive()
     }

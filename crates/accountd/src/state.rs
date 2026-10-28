@@ -12,7 +12,7 @@ use porter_core::ProviderHint;
 use porter_core::ProviderId;
 use porter_families::set::ProviderNames;
 use porter_ids::clock::Clock;
-use porter_service::Registry;
+use porter_service_core::registry::Registry;
 use porter_sheets::{AppNames, RequestObjects};
 use porter_wire::{ParentWindow, Refusal};
 use std::collections::BTreeMap;
@@ -63,16 +63,16 @@ pub(crate) struct Core<H, C> {
     /// The Request objects of the sheet methods (porter-sheets), at `Accounts1`'s root.
     pub(crate) requests: RequestObjects,
     /// The desktop-wide Spaces (`org.quire.Spaces1`).
-    pub(crate) spaces: tokio::sync::Mutex<crate::spaces::SpaceBook>,
+    pub(crate) spaces: tokio::sync::Mutex<porter_spaces::SpaceBook>,
     /// How Tailscale is followed (`org.quire.Tailnet1`); none lists no computers.
     pub(crate) tailnet: Option<crate::tailnet::TailnetWatch>,
     /// The identity picker and the passwords it may hand over (`org.quire.Identities1`); none
     /// refuses `Offer` and `TakePassword` as unavailable.
-    pub(crate) identity_desk: Option<Arc<dyn crate::identity_desk::IdentityDesk>>,
+    pub(crate) identity_desk: Option<Arc<dyn porter_identities::IdentityDesk>>,
     /// The apps that use each identity (`Identities1.RegisterUse`).
-    pub(crate) uses: tokio::sync::Mutex<crate::identities::UseBook>,
+    pub(crate) uses: tokio::sync::Mutex<porter_identities::UseBook>,
     /// What each connection just picked in `Identities1.Offer`.
-    pub(crate) picks: crate::identities::Picks,
+    pub(crate) picks: porter_identities::Picks,
     /// Asks the task that tells the clients (`publish`) to do so; each request carries the
     /// sender its answer comes back on.
     pub(crate) publisher: OnceLock<mpsc::UnboundedSender<oneshot::Sender<()>>>,

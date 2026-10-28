@@ -29,7 +29,7 @@ use porter_fake::{cloud_provider, storage_account};
 use porter_fake_servers::{FakeNextcloud, NextcloudHandle, Running};
 use porter_ids::UnixSeconds;
 use porter_secrets::{MemorySecrets, Secrets};
-use porter_service::Registry;
+use porter_service_core::registry::Registry;
 use porter_sync::Clock;
 use porter_sync::ConflictRule;
 use std::collections::BTreeSet;

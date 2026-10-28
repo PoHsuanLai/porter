@@ -13,7 +13,7 @@ use porter_core::AccountId;
 use porter_dbus::accounts::AccountServed;
 use porter_dbus::accounts::ManagerServed;
 use porter_dbus::accounts::{ACCOUNTS_PATH, account_path};
-use porter_service::Registry;
+use porter_service_core::registry::Registry;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;

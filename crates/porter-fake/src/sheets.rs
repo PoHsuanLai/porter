@@ -2,7 +2,7 @@
 //! consent answered from a script, and conversations that read their inputs from one.
 
 use porter_core::consent::{ConsentAnswer, ConsentAsk, GrantScope};
-use porter_service::{SheetFault, SheetLink, SheetOpen, Sheets};
+use porter_service_core::sheets::{SheetFault, SheetLink, SheetOpen, Sheets};
 use porter_sheet::{SheetInput, SheetView};
 use porter_wire::ParentWindow;
 use std::collections::VecDeque;

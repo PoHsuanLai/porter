@@ -8,7 +8,7 @@ use crate::launcher_rig::*;
 use porter_ids::word::word as word_of;
 
 use inferd::launcher::LoginTiming;
-use porter_core::LauncherSession;
+use porter_core::SessionToken;
 use porter_core::audit::CredentialEnd;
 use porter_core::consent::GrantScope;
 use porter_dbus::Details;
@@ -19,8 +19,8 @@ use porter_fake::Scripted;
 use porter_wire::AccountsReply;
 use zbus::export::futures_core::Stream;
 
-fn session(id: &str) -> LauncherSession {
-    LauncherSession::parse(id).expect("session")
+fn session(id: &str) -> SessionToken {
+    SessionToken::parse(id).expect("session")
 }
 
 fn fault(fault: LauncherFault) -> String {

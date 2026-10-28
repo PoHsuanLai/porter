@@ -16,7 +16,7 @@ porter-wire = { workspace = true }
 porter-callers = { workspace = true }
 porter-dbus = { workspace = true }
 porter-provider = { workspace = true }
-porter-service = { workspace = true }
+porter-service-core = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 zbus = { workspace = true }

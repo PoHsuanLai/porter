@@ -19,16 +19,15 @@ use porter_capability::AgentProgram;
 use porter_capability::LoginRequestId;
 use porter_core::AccountId;
 use porter_core::AppId;
-use porter_core::LauncherSession;
+use porter_core::SessionToken;
 use porter_dbus::inference::INFERENCE_PATH;
 use porter_dbus::inference::LauncherFault;
 use porter_ids::UnixSeconds;
 use porter_ids::clock::Clock;
 use porter_ids::clock::SystemClock;
-use porter_service::audit::{AuditEntry, AuditEvent};
-use porter_service::{
-    AuditSink, Launchers as LaunchersSeam, LoginEnd, NoLauncher, Roster, Waiting,
-};
+use porter_service_accounts::{Launchers as LaunchersSeam, LoginEnd, NoLauncher, Roster, Waiting};
+use porter_service_core::audit::AuditSink;
+use porter_service_core::audit::{AuditEntry, AuditEvent};
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::pin::Pin;
@@ -159,7 +158,7 @@ struct State {
     pending: BTreeMap<LoginRequestId, Pending>,
     /// The open launcher sessions and the connection (unique name) that began each: only that
     /// connection can end it, ask for a permit in it or issue a credential under it.
-    sessions: BTreeMap<LauncherSession, String>,
+    sessions: BTreeMap<SessionToken, String>,
 }
 
 /// What `Launchers::registry_changed` runs: the host's sweep of the credentials in force.
@@ -306,7 +305,7 @@ impl Launchers {
     pub(crate) fn begin_session(
         &self,
         owner: &str,
-        session: LauncherSession,
+        session: SessionToken,
     ) -> Result<(), LauncherFault> {
         let mut state = held(&self.state);
         if !state.programs.values().any(|holder| holder == owner) {
@@ -327,7 +326,7 @@ impl Launchers {
     pub(crate) fn end_session(
         &self,
         owner: &str,
-        session: &LauncherSession,
+        session: &SessionToken,
     ) -> Result<(), LauncherFault> {
         let mut state = held(&self.state);
         match state.sessions.get(session) {
@@ -340,7 +339,7 @@ impl Launchers {
     }
 
     /// Whether `session` is open and `owner`'s.
-    pub(crate) fn session_open(&self, owner: &str, session: &LauncherSession) -> bool {
+    pub(crate) fn session_open(&self, owner: &str, session: &SessionToken) -> bool {
         held(&self.state)
             .sessions
             .get(session)
@@ -349,11 +348,11 @@ impl Launchers {
 
     /// A connection left the bus: its programs are free, its sessions close (returned, for the
     /// caller to end what is under them) and its pending requests end.
-    pub(crate) fn left(&self, name: &str) -> Vec<LauncherSession> {
-        let (ended, closed): (Vec<Pending>, Vec<LauncherSession>) = {
+    pub(crate) fn left(&self, name: &str) -> Vec<SessionToken> {
+        let (ended, closed): (Vec<Pending>, Vec<SessionToken>) = {
             let mut state = held(&self.state);
             state.programs.retain(|_, holder| holder != name);
-            let closed: Vec<LauncherSession> = state
+            let closed: Vec<SessionToken> = state
                 .sessions
                 .iter()
                 .filter(|(_, holder)| holder.as_str() == name)

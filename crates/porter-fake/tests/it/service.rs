@@ -10,7 +10,7 @@ use porter_fake::{MemoryStore, NOW, RecordingAudit, Scripted, ScriptedSheets, fa
 use porter_ids::clock::FixedClock;
 use porter_match::Need;
 use porter_match::{MailNeed, StorageNeed};
-use porter_service::audit::AuditEvent;
+use porter_service_core::audit::AuditEvent;
 use porter_wire::ParentWindow;
 use porter_wire::Refusal;
 use porter_wire::{AccountsReply, AccountsRequest};
@@ -66,9 +66,9 @@ impl<P, S, U, R, A> Serves for porter_service::AccountService<P, S, U, FixedCloc
 where
     P: porter_provider::Provider,
     S: porter_secrets::Secrets,
-    U: porter_service::Sheets,
+    U: porter_service_core::sheets::Sheets,
     R: porter_core::store::RegistryStore,
-    A: porter_service::AuditSink,
+    A: porter_service_core::audit::AuditSink,
 {
     async fn serve(&self, app: &AppId, request: AccountsRequest) -> AccountsReply {
         self.handle(app, request).await
@@ -178,7 +178,7 @@ async fn an_opened_relay_is_audited_with_its_grant_and_endpoint_and_a_refused_on
     let service = fake_service(sheets).await.with_audit(audit.clone());
     let me = app("org.quire.Photos");
     let storage = granted(choose(&service, &me, files(), DataClass::Files).await);
-    let opened = |entries: Vec<porter_service::audit::AuditEntry>| {
+    let opened = |entries: Vec<porter_service_core::audit::AuditEntry>| {
         entries
             .into_iter()
             .filter(|e| matches!(e.event, AuditEvent::ProxyOpened { .. }))
@@ -223,7 +223,7 @@ async fn a_linked_relay_dials_only_an_origin_the_provider_file_declares_and_pres
     let me = app("org.quire.Photos");
     let storage = granted(choose(&service, &me, files(), DataClass::Files).await);
     let mailer = granted(choose(&service, &me, mail(), DataClass::Mail).await);
-    let opened = |entries: Vec<porter_service::audit::AuditEntry>| {
+    let opened = |entries: Vec<porter_service_core::audit::AuditEntry>| {
         entries
             .into_iter()
             .filter(|e| matches!(e.event, AuditEvent::ProxyOpened { .. }))
@@ -498,7 +498,7 @@ async fn a_service_starts_from_what_the_store_holds() {
     let me = app("org.quire.Photos");
     let storage = granted(choose(&service, &me, files(), DataClass::Files).await);
     let stored = first.stored().expect("saved");
-    let registry = porter_service::Registry::from_persisted(stored.clone());
+    let registry = porter_service_core::registry::Registry::from_persisted(stored.clone());
     assert_eq!(registry.persisted(), stored);
     assert_eq!(registry.grants[0].id, storage.grant);
 }

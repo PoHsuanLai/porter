@@ -40,7 +40,7 @@ pub trait Launcher {
     /// program a live connection already holds is `AlreadyRegistered` (`LauncherFault`);
     /// registering a program the caller holds is a no-op, and later calls add more programs.
     fn register_launcher(&self, programs: &[&str]) -> zbus::Result<()>;
-    /// Opens a launcher session (a `LauncherSession` id the launcher chose, usually an ACP
+    /// Opens a launcher session (a `SessionToken` id the launcher chose, usually an ACP
     /// session). Only a connection that registered a program may. The session belongs to this
     /// connection and ends at `EndSession` or when the connection leaves the bus. A session
     /// another connection holds is `SessionTaken`; beginning one this connection holds is a
