@@ -148,7 +148,7 @@ reaches `reqwest`, `hyper` and `tokio` (porter-http-reqwest); `tailnet` reaches 
 
 | Crate | Modules |
 | --- | --- |
-| `porter-ids` | `error` < `id`, `units`, `origin` < `weburl`, `clock`, `percent` |
+| `porter-ids` | `error` < `id`, `units`, `origin` < `weburl`, `clock`, `percent`, `word` |
 | `porter-wire` | `error` < `frame`, `request` < `reply` |
 | `porter-sheet` | `fields`, `group`, `input`, `mark`, `manual`, `progress`, `view` < `stage` (`machine`) ; `words` |
 | `porter-capability` | `terms`, `mail`, `pim`, `storage`, `photos`, `ai`, `agent`, `cua`, `sync_kinds`, `kind`, `model_id`, `ai_props`, `agent_login` < `offer` < `effective` ; `fixtures` (feature `testing`) |
@@ -160,8 +160,8 @@ reaches `reqwest`, `hyper` and `tokio` (porter-http-reqwest); `tailnet` reaches 
 | `syncd` | `paths`, `clock` ; `journal` (`schema`, `rows`) ; `dataset` (`memory`, feature `testing`) < `engine` (`pull`, `push`, `resolve`) < `driver` ; `scheduler` (`backoff`) ; `service` (`hub`, `status`, `errors`) < `object`, `storage` (`serve_storage`: `org.quire.Storage1`) ; `removal` (`wipe`) ; `keep` (`classes`, `hosted`, `audit`) < `settings` ; `webdav` (`RelayDial`, `webdav_replica`) ; `gdrive` (`gdrive_replica`) ; `datasets::pim` (`vdir`, `mirror` (`PimMirror`), `discover`, `plan`, `relay`, `grants`, `mirrors`, `supervisor`) ; `graph` (`graph_replica`, `LinkedDial`) ; `datasets::storage` (`folder` (`FolderDataset`), `grants`, `supervisor` (`StorageSupervisor`)) ; `datasets::drive` (`journal` (`DriveJournal`, `DriveEntry`), `listing` (`DriveReplica`, `list_once`, `keep_listing_told`, `Listed`, `Pass`), `files` (`LiveDrive`, `DriveSet`, `CacheKnob`)) ; `datasets::photos` (`google`: `api`, `ledger`, `upload` (`UploadReplica`), `picker` (`PhotosPicker`), `wiring`) |
 | `porter-http` | `error` < `message` < `seam` < `shared` ; `webdav`  |
 | `porter-http-relay` | `client` (`RelayHttp`, `Dial`, `RelayBody`, `RelayLimits`) ; `stream` (`RelayStream`) ; `accounts` (`RelayDial`) ; `routed` (`Routed`) |
-| `porter-http-reqwest` | one `lib`: `Limits`, `ReqwestHttp` (`send`, `stream`), `BodySink` and `Flow`, `TokioSleep` |
-| `porter-proxy` | `fault`, `step`, `connect` < `imap`, `smtp`, `pop3`, `http1` < `relay`; `tokio_stream` |
+| `porter-http-reqwest` | one `lib`: `Limits`, `ReqwestHttp` (`send`, `stream`), `BodySink` (answering `ControlFlow<()>`), `TokioSleep` |
+| `porter-proxy` | `fault`, `step`, `auth`, `connect` < `imap`, `smtp`, `pop3`, `http1` < `relay`; `tokio_stream` |
 | `porter-oauth` | `pkce`, `loopback`, `registry`, `renewal`, `device` < `exchange`; `loopback_io` |
 | `porter-discover` | `found`, `dns` < `autoconfig`, `well_known`, `ocs`, `probe` |
 | `dav-proto` | `names`, `error` < `multistatus`, `body` < `sync`, `carddav`, `http` |
@@ -176,7 +176,7 @@ reaches `reqwest`, `hyper` and `tokio` (porter-http-reqwest); `tailnet` reaches 
 | `porter-infer` | `ids`, `control`, `open`, `request`, `cua`, `speech`, `reply`, `error`, `readiness` < `event`, `session`, `choice` < `policy`, `spend`, `audit` < `route` < `pick`, `model` < `broker` |
 | `porter-service` | `sheets`, `audit` (the entries and the sink), `gate`, `race`, `token`, `audience`, `own_machines`, `launcher`, `registry` < `choose`, `reach`, `flight` (the per-account turns) < `ctx` (the shared state: `Ctx`, with `lock`, `persist`, `note`) < `add_store`, `agent`, `local` < `add_flow`, `agent_login` < `grants` < `issue` < `relay`, `manage` < `add` < `service` (the `AccountService` facade over `Ctx`; no module below it names it) |
 | `porter-store` | `location` < `file` |
-| `porter-client` | `error`, `found`, `authenticated`, `relays` < `transport` (`broker` (the `SessionHost` and `NoBroker`, with no service), `framed` (the fd `Open` returns), `in_process` (feature `in-process`), `dbus`; each with its session) < `accounts` ; `ai_keys`, `launcher`, `removals` (on `Identities::watch_removals`) and `identities` (feature `dbus`) over `porter-dbus` |
+| `porter-client` | `error`, `call_failure`, `found`, `authenticated`, `relays` < `transport` (`broker` (the `SessionHost` and `NoBroker`, with no service), `framed` (the fd `Open` returns), `in_process` (feature `in-process`), `dbus`; each with its session) < `accounts` ; `ai_keys`, `launcher`, `removals` (on `Identities::watch_removals`) and `identities` (feature `dbus`) over `porter-dbus` |
 | `porter-dbus` | `names`, `args` < `codec` < `service_root` < `sheet` < `pending`, `callers` < `callers_file` (feature `callers-file`) ; `manager`, `account`, `request`, `launcher_iface`, `keys`, `launcher` (the fault names), `refusal`, `sheet_backend`, `sync`, `spaces`, `identities` (the interface and its row codec), `inference`, `agents` < `introspect` |
 | `porter-router` | `audio`, `startup`, `swap`, `catalog` < `attached` (`config`, `key`, `target`, `not_ready`, `model`) < `local` < `router` (`placed`) < `pipeline` ; `session` (pure machine, with `audio`) < `carried` < `seams` ; `testkit` (feature `testing`) |
 | `porter-turns` | `bridge` (`request`), `tee` < `structured` (`limits`), `cua_step` < `cua_run` < `local` (`LocalTurns`), `turn` ; `pipeline` (stages over a `TurnRunner`), `audit` |
