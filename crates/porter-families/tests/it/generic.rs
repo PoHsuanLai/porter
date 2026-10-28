@@ -1064,10 +1064,10 @@ async fn dial(url: &str) -> tokio::io::BufReader<tokio::net::TcpStream> {
 #[tokio::test]
 async fn a_fixed_file_signs_in_to_the_servers_it_names_and_the_password_logs_in() {
     let accounts = Accounts::password("ada@fastmail.com", "app-pw");
-    let imap = FakeImap::bind(&Bind::Loopback, Tls::Plain, accounts.clone(), mailbox(1))
+    let imap = FakeImap::bind(&Bind::Port(0), Tls::Plain, accounts.clone(), mailbox(1))
         .await
         .expect("imap");
-    let smtp = FakeSmtp::bind(&Bind::Loopback, Tls::Plain, accounts)
+    let smtp = FakeSmtp::bind(&Bind::Port(0), Tls::Plain, accounts)
         .await
         .expect("smtp");
     let file = smtp.rewrite(&imap.rewrite(&brand("fastmail")));

@@ -208,14 +208,14 @@ impl Rig {
         };
         if options.imap {
             rig.imap =
-                Some(FakeImap::start(&Bind::Loopback, options.tls, accounts(), mailbox(3)).await?);
+                Some(FakeImap::start(&Bind::Port(0), options.tls, accounts(), mailbox(3)).await?);
         }
         if options.smtp {
-            rig.smtp = Some(FakeSmtp::start(&Bind::Loopback, options.tls, accounts()).await?);
+            rig.smtp = Some(FakeSmtp::start(&Bind::Port(0), options.tls, accounts()).await?);
         }
         if options.pop3 {
             rig.pop3 =
-                Some(FakePop3::start(&Bind::Loopback, options.tls, accounts(), mailbox(3)).await?);
+                Some(FakePop3::start(&Bind::Port(0), options.tls, accounts(), mailbox(3)).await?);
         }
         if options.dav {
             rig.dav = Some(FakeDav::start(DAV_USER, DAV_PASSWORD).await?);

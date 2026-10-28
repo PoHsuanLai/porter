@@ -56,7 +56,7 @@ impl FakeNextcloud {
     /// Binds a Nextcloud with one user, over plain HTTP on loopback (Nextcloud's URLs are
     /// absolute, so a Unix socket will not do).
     pub async fn bind(user: &str) -> io::Result<Self> {
-        let listener = Listener::bind(&Bind::Loopback, "nextcloud").await?;
+        let listener = Listener::bind(&Bind::Port(0), "nextcloud").await?;
         let port = crate::net::port_of(listener.address());
         let state = State {
             user: user.to_owned(),

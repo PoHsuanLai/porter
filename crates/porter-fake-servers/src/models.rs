@@ -113,7 +113,7 @@ impl FakeModels {
     /// Binds a server of this wire holding `models`; `key` (OpenAI wire) is the bearer token it
     /// requires.
     pub async fn bind(wire: Wire, models: Vec<ModelDef>, key: Option<&str>) -> io::Result<Self> {
-        Self::bind_on(&Bind::Loopback, wire, models, key).await
+        Self::bind_on(&Bind::Port(0), wire, models, key).await
     }
 
     /// `bind`, at `bind` (`Bind::Port` to come back where a stopped server was).

@@ -52,10 +52,10 @@ impl MailWorld {
             for tls in [Tls::Implicit, Tls::StartTls, Tls::Plain] {
                 let running = match imap {
                     true => {
-                        FakeImap::start(&Bind::Loopback, tls, accounts.clone(), mailbox(1)).await
+                        FakeImap::start(&Bind::Port(0), tls, accounts.clone(), mailbox(1)).await
                     }
                     false => {
-                        FakePop3::start(&Bind::Loopback, tls, accounts.clone(), mailbox(1)).await
+                        FakePop3::start(&Bind::Port(0), tls, accounts.clone(), mailbox(1)).await
                     }
                 }
                 .expect("fake mail server");

@@ -301,7 +301,7 @@ async fn a_chat_streams_over_the_socket_and_nothing_is_started() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_chat_streams_over_a_loopback_port_too() {
-    let lab = Lab::start(&Bind::Loopback, "lab", &[entries::SERVED], None).await;
+    let lab = Lab::start(&Bind::Port(0), "lab", &[entries::SERVED], None).await;
     let reach = Reach::Loopback {
         host: std::net::Ipv4Addr::LOCALHOST,
         port: model_http::Port(lab.port()),

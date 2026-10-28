@@ -37,7 +37,7 @@ pub struct FakeDav {
 impl FakeDav {
     /// Binds a server accepting `user` and `password`, over plain HTTP on loopback.
     pub async fn bind(user: &str, password: &str) -> io::Result<Self> {
-        let listener = Listener::bind(&Bind::Loopback, "dav").await?;
+        let listener = Listener::bind(&Bind::Port(0), "dav").await?;
         let port = crate::net::port_of(listener.address());
         let tree = Tree::with_collections(&[
             ("/dav", Kind::Container),

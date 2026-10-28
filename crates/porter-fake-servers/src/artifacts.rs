@@ -75,7 +75,7 @@ impl Drop for RunningArtifacts {
 /// # Errors
 /// When the port cannot be bound.
 pub async fn start_artifacts() -> io::Result<RunningArtifacts> {
-    let listener = Listener::bind(&Bind::Loopback, "artifacts").await?;
+    let listener = Listener::bind(&Bind::Port(0), "artifacts").await?;
     let shared = Shared {
         port: port_of(listener.address()),
         files: Arc::default(),

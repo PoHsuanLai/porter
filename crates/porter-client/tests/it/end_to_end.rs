@@ -422,7 +422,7 @@ async fn a_typed_pop3_server_is_added_through_the_sheet_and_found_by_a_mail_need
 
     // The password is tried at the POP3 server before the review, so one is running.
     let pop3 = FakePop3::start(
-        &Bind::Loopback,
+        &Bind::Port(0),
         porter_core::Tls::Plain,
         MailAccounts::password("ada.login", "s3cret"),
         mailbox(1),

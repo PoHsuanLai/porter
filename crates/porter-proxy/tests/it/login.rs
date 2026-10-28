@@ -53,9 +53,9 @@ impl Proto {
     async fn fake(self, tls: Tls) -> (Running<MailHandle>, u16) {
         let accounts = Accounts::password(USER, PASSWORD).with_bearer(TOKEN);
         let running = match self {
-            Proto::Imap => FakeImap::start(&Bind::Loopback, tls, accounts, mailbox(3)).await,
-            Proto::Pop3 => FakePop3::start(&Bind::Loopback, tls, accounts, mailbox(3)).await,
-            Proto::Smtp => FakeSmtp::start(&Bind::Loopback, tls, accounts).await,
+            Proto::Imap => FakeImap::start(&Bind::Port(0), tls, accounts, mailbox(3)).await,
+            Proto::Pop3 => FakePop3::start(&Bind::Port(0), tls, accounts, mailbox(3)).await,
+            Proto::Smtp => FakeSmtp::start(&Bind::Port(0), tls, accounts).await,
         }
         .expect("the fake starts");
         let port = port(running.address());

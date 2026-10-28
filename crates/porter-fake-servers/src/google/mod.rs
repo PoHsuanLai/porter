@@ -137,7 +137,7 @@ pub struct FakeGoogle {
 impl FakeGoogle {
     /// Binds APIs that accept every access token `issuer` has minted and not revoked.
     pub async fn bind(issuer: &IssuerHandle) -> io::Result<Self> {
-        let listener = Listener::bind(&Bind::Loopback, "google").await?;
+        let listener = Listener::bind(&Bind::Port(0), "google").await?;
         let port = crate::net::port_of(listener.address());
         let state = State {
             address: DEFAULT_ADDRESS.to_owned(),
@@ -159,7 +159,7 @@ impl FakeGoogle {
     /// with [`GoogleHandle::accept_bearer`]): what accountd's relay adds in a bus test. There is
     /// no issuer, so no scope is checked.
     pub async fn bind_fixed(token: &str) -> io::Result<Self> {
-        let listener = Listener::bind(&Bind::Loopback, "google").await?;
+        let listener = Listener::bind(&Bind::Port(0), "google").await?;
         let port = crate::net::port_of(listener.address());
         let state = State {
             address: DEFAULT_ADDRESS.to_owned(),

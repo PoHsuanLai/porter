@@ -26,7 +26,7 @@ fn smtp_plan(tls: Tls, port: u16, auth: porter_core::RelayAuth) -> porter_core::
 }
 
 async fn send_mail(tls: Tls) {
-    let fake = FakeSmtp::start(&Bind::Loopback, tls, accounts())
+    let fake = FakeSmtp::start(&Bind::Port(0), tls, accounts())
         .await
         .expect("smtp");
     let mut app = start(

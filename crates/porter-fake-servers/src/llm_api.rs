@@ -90,7 +90,7 @@ pub struct FakeLlmApi {
 impl FakeLlmApi {
     /// Binds on loopback a company that wants its key presented as `auth`.
     pub async fn bind(auth: Auth) -> io::Result<Self> {
-        let listener = Listener::bind(&Bind::Loopback, "llm-api").await?;
+        let listener = Listener::bind(&Bind::Port(0), "llm-api").await?;
         let port = crate::net::port_of(listener.address());
         Ok(Self {
             listener,

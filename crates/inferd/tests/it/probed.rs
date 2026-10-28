@@ -200,7 +200,7 @@ fn reports(world: &World) -> Vec<(String, String, usize)> {
 #[tokio::test(flavor = "multi_thread")]
 async fn acceptance_6_with_local_only_on_a_mail_summary_runs_on_the_probed_ollama_and_with_it_stopped_is_unavailable_and_never_goes_to_the_cloud()
  {
-    let ollama = fake_ollama(&Bind::Loopback).await;
+    let ollama = fake_ollama(&Bind::Port(0)).await;
     let port = port_of(&ollama);
     let world = world(port, LocalOnly::On).await;
     rescan(&world).await;

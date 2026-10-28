@@ -65,7 +65,7 @@ async fn a_propfind_reaches_the_server_with_the_relays_authorization() {
 async fn an_authorization_the_app_sends_never_reaches_the_server() {
     let seen: Seen<Request> = Seen::default();
     let recorded = seen.clone();
-    let listener = Listener::bind(&Bind::Loopback, "http").await.expect("bind");
+    let listener = Listener::bind(&Bind::Port(0), "http").await.expect("bind");
     let port = port(listener.address());
     let task = tokio::spawn(serve(
         listener,

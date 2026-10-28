@@ -34,9 +34,7 @@ impl Drop for FakeSieve {
 
 impl FakeSieve {
     pub async fn start() -> Self {
-        let listener = Listener::bind(&Bind::Loopback, "sieve")
-            .await
-            .expect("bind");
+        let listener = Listener::bind(&Bind::Port(0), "sieve").await.expect("bind");
         let address = listener.address().clone();
         let logins = Arc::new(Mutex::new(Vec::new()));
         let seen = Arc::clone(&logins);

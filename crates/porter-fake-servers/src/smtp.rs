@@ -6,7 +6,7 @@ use crate::mail::{
     Accounts, Lines, MailCtx, MailEvent, MailHandle, Mechanism, Secret, b64, decode_plain,
     decode_xoauth2, secure_enough, unb64,
 };
-use crate::net::{Bind, Listener, Peer};
+use crate::net::{Bind, Entry, Listener, Peer};
 use crate::seen::Running;
 use crate::shipped::point;
 use crate::tls;
@@ -110,12 +110,6 @@ async fn run(
             None => Ok(()),
         },
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-enum Entry {
-    Greet { secure: bool },
-    Resume,
 }
 
 /// The mail transaction in progress.

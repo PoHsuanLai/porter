@@ -28,7 +28,7 @@ fn challenge() -> String {
 
 /// The app's loopback redirect: records what the browser sent it.
 async fn catcher() -> (FakeAddress, Seen<String>, tokio::task::JoinHandle<()>) {
-    let listener = Listener::bind(&Bind::Loopback, "redirect")
+    let listener = Listener::bind(&Bind::Port(0), "redirect")
         .await
         .expect("bind");
     let address = listener.address().clone();

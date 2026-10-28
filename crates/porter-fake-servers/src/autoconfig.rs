@@ -64,7 +64,7 @@ pub struct FakeAutoconfig {
 impl FakeAutoconfig {
     /// Binds a server with no routes, on loopback.
     pub async fn bind() -> io::Result<Self> {
-        let listener = Listener::bind(&Bind::Loopback, "autoconfig").await?;
+        let listener = Listener::bind(&Bind::Port(0), "autoconfig").await?;
         let port = crate::net::port_of(listener.address());
         Ok(Self {
             listener,

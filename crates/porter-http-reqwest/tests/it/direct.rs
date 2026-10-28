@@ -27,7 +27,7 @@ impl Drop for Fake {
 }
 
 async fn fake(secure: bool, handler: impl Fn(Request) -> Response + Send + Sync + 'static) -> Fake {
-    let listener = Listener::bind(&Bind::Loopback, "http").await.expect("bind");
+    let listener = Listener::bind(&Bind::Port(0), "http").await.expect("bind");
     let port = port_of(listener.address());
     let acceptor = secure.then(tls::acceptor);
     let task = tokio::spawn(serve(listener, acceptor, Arc::new(handler)));

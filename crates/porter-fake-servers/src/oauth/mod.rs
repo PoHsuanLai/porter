@@ -163,7 +163,7 @@ pub struct FakeIssuer {
 impl FakeIssuer {
     /// Binds on loopback (an issuer's redirects are absolute URLs, so a Unix socket will not do).
     pub async fn bind() -> io::Result<Self> {
-        let listener = Listener::bind(&Bind::Loopback, "oauth").await?;
+        let listener = Listener::bind(&Bind::Port(0), "oauth").await?;
         let port = crate::net::port_of(listener.address());
         let state = State {
             counter: 0,

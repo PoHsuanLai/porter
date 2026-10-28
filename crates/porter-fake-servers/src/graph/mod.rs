@@ -79,7 +79,7 @@ fn names_of(path: &str) -> Vec<String> {
 impl FakeGraph {
     /// Binds a drive that accepts `Authorization: Bearer <token>`, over plain HTTP on loopback.
     pub async fn bind(token: &str) -> io::Result<Self> {
-        let listener = Listener::bind(&Bind::Loopback, "graph").await?;
+        let listener = Listener::bind(&Bind::Port(0), "graph").await?;
         let port = crate::net::port_of(listener.address());
         Ok(Self {
             listener,
@@ -101,7 +101,7 @@ impl FakeGraph {
     /// not serve them.
     pub async fn bind_linked(token: &str) -> io::Result<Self> {
         let mut fake = Self::bind(token).await?;
-        let links = Listener::bind(&Bind::Loopback, "graph-links").await?;
+        let links = Listener::bind(&Bind::Port(0), "graph-links").await?;
         fake.shared.link = Some(format!(
             "http://127.0.0.1:{}",
             crate::net::port_of(links.address())

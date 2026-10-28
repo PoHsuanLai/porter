@@ -89,7 +89,7 @@ impl super::GoogleHandle {
     /// Starts a second origin that serves the picked items' bytes at `/dl/<id>` and wants the
     /// account's bearer, and points the picked items' `baseUrl`s at it.
     pub async fn serve_media(&self) -> io::Result<Running<MediaOrigin>> {
-        let listener = Listener::bind(&Bind::Loopback, "google-media").await?;
+        let listener = Listener::bind(&Bind::Port(0), "google-media").await?;
         let base = format!(
             "http://127.0.0.1:{}",
             crate::net::port_of(listener.address())

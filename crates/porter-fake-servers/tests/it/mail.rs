@@ -70,7 +70,7 @@ fn last(lines: &[String]) -> &str {
 }
 
 async fn imap(tls_mode: Tls) -> Running<MailHandle> {
-    FakeImap::start(&Bind::Loopback, tls_mode, accounts(), mailbox(3))
+    FakeImap::start(&Bind::Port(0), tls_mode, accounts(), mailbox(3))
         .await
         .expect("imap")
 }
@@ -81,7 +81,7 @@ fn addr(running: &FakeImap) -> FakeAddress {
 
 #[tokio::test]
 async fn imap_starttls_refuses_login_in_the_clear_then_serves_a_session() {
-    let fake = FakeImap::bind(&Bind::Loopback, Tls::StartTls, accounts(), mailbox(3))
+    let fake = FakeImap::bind(&Bind::Port(0), Tls::StartTls, accounts(), mailbox(3))
         .await
         .expect("imap");
     let (address, handle) = (addr(&fake), fake.handle());
@@ -210,7 +210,7 @@ async fn imap_implicit_tls_takes_authenticate_plain_and_xoauth2() {
 
 #[tokio::test]
 async fn imap_login_with_literals_and_quoted_strings() {
-    let fake = FakeImap::bind(&Bind::Loopback, Tls::Plain, accounts(), mailbox(1))
+    let fake = FakeImap::bind(&Bind::Port(0), Tls::Plain, accounts(), mailbox(1))
         .await
         .expect("imap");
     let address = addr(&fake);
@@ -264,7 +264,7 @@ async fn reply<S: AsyncRead + AsyncWrite + Unpin>(lines: &mut Lines<S>, send: &s
 
 #[tokio::test]
 async fn smtp_starttls_authenticates_and_accepts_a_message() {
-    let fake = FakeSmtp::bind(&Bind::Loopback, Tls::StartTls, accounts())
+    let fake = FakeSmtp::bind(&Bind::Port(0), Tls::StartTls, accounts())
         .await
         .expect("smtp");
     let (address, handle) = (fake.address().clone(), fake.handle());
@@ -369,7 +369,7 @@ async fn smtp_starttls_authenticates_and_accepts_a_message() {
 
 #[tokio::test]
 async fn smtp_implicit_tls_greets_over_tls() {
-    let fake = FakeSmtp::bind(&Bind::Loopback, Tls::Implicit, accounts())
+    let fake = FakeSmtp::bind(&Bind::Port(0), Tls::Implicit, accounts())
         .await
         .expect("smtp");
     let (address, handle) = (fake.address().clone(), fake.handle());
@@ -391,7 +391,7 @@ async fn smtp_implicit_tls_greets_over_tls() {
 
 #[tokio::test]
 async fn a_client_that_does_not_trust_the_scratch_ca_fails_the_handshake() {
-    let fake = FakeImap::bind(&Bind::Loopback, Tls::Implicit, accounts(), mailbox(1))
+    let fake = FakeImap::bind(&Bind::Port(0), Tls::Implicit, accounts(), mailbox(1))
         .await
         .expect("imap");
     let (address, handle) = (addr(&fake), fake.handle());
@@ -418,7 +418,7 @@ async fn rewrite_points_mail_rows_at_the_fake() {
         "../../../porter-fake/providers/fake-mail.toml"
     ))
     .expect("file");
-    let fake = FakeImap::bind(&Bind::Loopback, Tls::Implicit, accounts(), mailbox(1))
+    let fake = FakeImap::bind(&Bind::Port(0), Tls::Implicit, accounts(), mailbox(1))
         .await
         .expect("imap");
     let FakeAddress::Loopback(port) = fake.address().clone() else {
