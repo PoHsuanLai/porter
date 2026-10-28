@@ -12,14 +12,14 @@ use crate::datasets::pim::{ClientGrants, PimConfig, PimSupervisor, Wiring};
 use crate::datasets::storage::DriveMount;
 use crate::datasets::storage::{ClientStorageGrants, StorageConfig, StorageSupervisor};
 use crate::keep::{FileAudit, Intent, Keep, SyncSheets, sync_app};
-use crate::paths::{BUILD, KeepPaths, PROC_GATE, Paths, rescan};
+use crate::paths::{BUILD, HONOURS_PROC_ROOT, KeepPaths, Paths, rescan};
 use crate::scheduler::{Network, Settings};
 use crate::service;
 use crate::service::{Access, Hub};
 use crate::settings::{SyncSettings, read_cache_limit, serve_settings};
 use porter_client::{Accounts, Identities, IdentitiesError, InProcess, PorterRelays};
 use porter_core::store::RegistryStore;
-use porter_daemon::ProcRoot;
+use porter_daemon::choose_proc_root;
 use porter_daemon::xdg::PathError;
 use porter_dbus::BusTarget;
 use porter_dbus::callers::{CallerFileError, ProcCallers};
@@ -164,7 +164,8 @@ impl Config {
     pub fn from_env() -> Result<Self, StartError> {
         let mut paths = Paths::resolve(|name| std::env::var(name).ok())?;
         // A test build may read another system caller table (a jail cannot write /etc).
-        let system = porter_daemon::SystemCallers::choose(PROC_GATE, |name| std::env::var_os(name));
+        let system =
+            porter_daemon::SystemCallers::choose(HONOURS_PROC_ROOT, |name| std::env::var_os(name));
         if let Some(line) = system.notice("syncd") {
             eprintln!("{line}");
         }
@@ -172,8 +173,10 @@ impl Config {
         let keep = KeepPaths::resolve(|name| std::env::var(name).ok())?;
         let keys_var = std::env::var(KEYS_VAR).ok();
         let keys = select(keys_var.as_deref())?;
-        let proc = ProcRoot::choose(PROC_GATE, PROC_ROOT_VAR, |name| std::env::var_os(name))
-            .into_fixture();
+        let proc = choose_proc_root(HONOURS_PROC_ROOT, PROC_ROOT_VAR, |name| {
+            std::env::var_os(name)
+        })
+        .into_honoured();
         // `SYNCD_RESCAN_S` shortens how often grants are read again, in a test build only.
         let rescan_var = std::env::var(RESCAN_VAR).ok();
         let pim = PimConfig::default();

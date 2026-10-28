@@ -233,11 +233,7 @@ pub const BUILD: Build = if cfg!(feature = "test-proc-root") {
 
 /// Whether this binary honours `SYNCD_PROC_ROOT`: only with the `test-proc-root` feature. A
 /// release build ignores the variable.
-pub const PROC_GATE: porter_daemon::ProcGate = if cfg!(feature = "test-proc-root") {
-    porter_daemon::ProcGate::Honour
-} else {
-    porter_daemon::ProcGate::Ignore
-};
+pub const HONOURS_PROC_ROOT: bool = cfg!(feature = "test-proc-root");
 
 /// How often the supervisors read grants again (`SYNCD_RESCAN_S`, whole seconds, at least 1),
 /// for a test build only, so a scenario need not wait the default ten minutes for a grant it

@@ -4,7 +4,7 @@
 //! launcher) come only from a system table under `/etc/porter`, which a person cannot write:
 //! accountd and syncd read [`CALLERS`], inferd reads [`INFERD_CALLERS`]. A jailed acceptance
 //! test cannot write `/etc` either, so a test build may be told to read another file instead.
-//! The switch is gated as the proc root is ([`ProcGate`]): a build with the daemon's
+//! The switch is gated as the proc root is ([`Override`]): a build with the daemon's
 //! `test-proc-root` feature honours the file's variable, every other build ignores it and says so
 //! once at start. An empty value is the same as no value.
 //!
@@ -13,7 +13,7 @@
 //! [`TABLE_DIRS`] that holds the file and that root holds ([`root_held`]). The list is fixed: who
 //! may claim a fixed role never depends on the person's environment.
 
-use crate::ProcGate;
+use crate::Override;
 use std::ffi::OsString;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
@@ -49,57 +49,44 @@ pub const INFERD_CALLERS: SystemFile = SystemFile {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SystemCallers {
     file: SystemFile,
-    choice: TableChoice,
+    choice: Override<PathBuf>,
     /// The system's file the search found (`file.path` when it found none).
     system: PathBuf,
 }
 
-/// What the variable did.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum TableChoice {
-    /// The system's file.
-    System,
-    /// A test's file. Only a build that honours the variable gets this.
-    Fake(PathBuf),
-    /// The variable was set, but this build ignores it: the system's file is read.
-    Ignored(PathBuf),
-}
-
 impl SystemCallers {
-    /// The choice for [`CALLERS`] under `gate`; see [`SystemCallers::choose_file`].
-    pub fn choose(gate: ProcGate, lookup: impl Fn(&str) -> Option<OsString>) -> Self {
-        Self::choose_file(CALLERS, gate, lookup)
+    /// The choice for [`CALLERS`] in a build that `honour`s the variable or not; see
+    /// [`SystemCallers::choose_file`].
+    pub fn choose(honour: bool, lookup: impl Fn(&str) -> Option<OsString>) -> Self {
+        Self::choose_file(CALLERS, honour, lookup)
     }
 
     /// The choice for `file`'s variable, which `lookup` finds (the daemon passes how it reads
-    /// its environment; a test passes a table), under `gate`.
+    /// its environment; a test passes a table), in a build that `honour`s it or not.
     ///
     /// The library reads no environment variable itself.
     pub fn choose_file(
         file: SystemFile,
-        gate: ProcGate,
+        honour: bool,
         lookup: impl Fn(&str) -> Option<OsString>,
     ) -> Self {
-        Self::choose_where(file, gate, lookup, root_held)
+        Self::choose_where(file, honour, lookup, root_held)
     }
 
     /// [`SystemCallers::choose_file`], with `held` telling which files root holds.
     pub fn choose_where(
         file: SystemFile,
-        gate: ProcGate,
+        honour: bool,
         lookup: impl Fn(&str) -> Option<OsString>,
         held: impl Fn(&Path) -> bool,
     ) -> Self {
-        let value = lookup(file.var).filter(|value| !value.is_empty());
-        let choice = match (gate, value) {
-            (_, None) => TableChoice::System,
-            (ProcGate::Honour, Some(path)) => TableChoice::Fake(PathBuf::from(path)),
-            (ProcGate::Ignore, Some(path)) => TableChoice::Ignored(PathBuf::from(path)),
-        };
+        let value = lookup(file.var)
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from);
+        let choice = Override::choose(honour, value);
         let system = match choice {
-            TableChoice::Fake(_) => PathBuf::from(file.path),
-            TableChoice::System | TableChoice::Ignored(_) => search(file, held),
+            Override::Honoured(_) => PathBuf::from(file.path),
+            Override::Unset | Override::Ignored(_) => search(file, held),
         };
         Self {
             file,
@@ -109,15 +96,15 @@ impl SystemCallers {
     }
 
     /// What the variable did.
-    pub fn choice(&self) -> &TableChoice {
+    pub fn choice(&self) -> &Override<PathBuf> {
         &self.choice
     }
 
     /// The file to read.
     pub fn path(&self) -> &Path {
         match &self.choice {
-            TableChoice::Fake(path) => path,
-            TableChoice::System | TableChoice::Ignored(_) => &self.system,
+            Override::Honoured(path) => path,
+            Override::Unset | Override::Ignored(_) => &self.system,
         }
     }
 
@@ -127,12 +114,12 @@ impl SystemCallers {
     pub fn notice(&self, daemon: &str) -> Option<String> {
         let SystemFile { path, var } = self.file;
         match &self.choice {
-            TableChoice::System => None,
-            TableChoice::Fake(file) => Some(format!(
+            Override::Unset => None,
+            Override::Honoured(file) => Some(format!(
                 "{daemon}: test system callers {}: read in place of {path}",
                 file.display()
             )),
-            TableChoice::Ignored(file) => Some(format!(
+            Override::Ignored(file) => Some(format!(
                 "{daemon}: {var}={} ignored: not a test-proc-root build",
                 file.display()
             )),
@@ -205,27 +192,19 @@ mod tests {
     fn only_a_build_that_honours_the_variable_reads_another_table() {
         let file = || PathBuf::from("/jail/callers.toml");
         let cases = [
-            (ProcGate::Honour, None, TableChoice::System),
-            (ProcGate::Honour, Some(""), TableChoice::System),
-            (
-                ProcGate::Honour,
-                Some("/jail/callers.toml"),
-                TableChoice::Fake(file()),
-            ),
-            (ProcGate::Ignore, None, TableChoice::System),
-            (ProcGate::Ignore, Some(""), TableChoice::System),
-            (
-                ProcGate::Ignore,
-                Some("/jail/callers.toml"),
-                TableChoice::Ignored(file()),
-            ),
+            (true, None, Override::Unset),
+            (true, Some(""), Override::Unset),
+            (true, Some("/jail/callers.toml"), Override::Honoured(file())),
+            (false, None, Override::Unset),
+            (false, Some(""), Override::Unset),
+            (false, Some("/jail/callers.toml"), Override::Ignored(file())),
         ];
         for system in [CALLERS, INFERD_CALLERS] {
-            for (gate, value, expected) in cases.clone() {
+            for (honour, value, expected) in cases.clone() {
                 // Nothing root holds is found by the search, so the system's path is the usual one.
                 let got = SystemCallers::choose_where(
                     system,
-                    gate,
+                    honour,
                     |name| {
                         (name == system.var)
                             .then(|| value.map(OsString::from))
@@ -233,15 +212,14 @@ mod tests {
                     },
                     |_| false,
                 );
-                assert_eq!(got.choice(), &expected, "{system:?} {gate:?} {value:?}");
-                let reads_test_table =
-                    gate == ProcGate::Honour && value.is_some_and(|v| !v.is_empty());
+                assert_eq!(got.choice(), &expected, "{system:?} {honour:?} {value:?}");
+                let reads_test_table = honour && value.is_some_and(|v| !v.is_empty());
                 let want = if reads_test_table {
                     file()
                 } else {
                     PathBuf::from(system.path)
                 };
-                assert_eq!(got.path(), want, "{system:?} {gate:?} {value:?}");
+                assert_eq!(got.path(), want, "{system:?} {honour:?} {value:?}");
                 assert_eq!(
                     got.notice("myd").is_some(),
                     value.is_some_and(|v| !v.is_empty())
@@ -252,9 +230,8 @@ mod tests {
 
     #[test]
     fn the_notice_names_the_program_and_the_files_own_variable() {
-        let ignored = |file| {
-            SystemCallers::choose_file(file, ProcGate::Ignore, |_| Some(OsString::from("/x")))
-        };
+        let ignored =
+            |file| SystemCallers::choose_file(file, false, |_| Some(OsString::from("/x")));
         assert_eq!(
             ignored(CALLERS).notice("myd").expect("line"),
             "myd: PORTER_SYSTEM_CALLERS=/x ignored: not a test-proc-root build"
@@ -275,7 +252,7 @@ mod tests {
                 (name == "XDG_DATA_DIRS" || name == "XDG_CONFIG_DIRS")
                     .then(|| OsString::from("/home/u/evil"))
             };
-            SystemCallers::choose_where(INFERD_CALLERS, ProcGate::Ignore, vars, held)
+            SystemCallers::choose_where(INFERD_CALLERS, false, vars, held)
                 .path()
                 .to_owned()
         };

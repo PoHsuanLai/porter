@@ -16,7 +16,7 @@ use crate::engines::Engines;
 use crate::hosts::{HealthProbe, HostCloser, NvidiaSmi, ProcessHost};
 use crate::installed::Installed;
 use crate::keys::{AccountRows, KeyAudit, KeysObject, KeysStartError};
-use crate::peers::{CallerTable, PROC_GATE, ProcPeers};
+use crate::peers::{CallerTable, HONOURS_PROC_ROOT, ProcPeers};
 use crate::replay::Replays;
 use crate::service::{Inference, serve_with_settings};
 use crate::settings::{ConfigFile, InferdSettings, LocalEngines, Reload, resolve};
@@ -27,7 +27,7 @@ use crate::toolproof::ToolProofs;
 use crate::watch::Watch;
 use engine_supervisor::EngineId;
 use model_catalog::EngineKind;
-use porter_daemon::ProcRoot;
+use porter_daemon::{ProcRoot, choose_proc_root, proc_notice};
 use porter_dbus::BusTarget;
 use porter_dbus::names::{INFERENCE_BUS, INFERENCE_PATH};
 use porter_http_reqwest::{Limits, ReqwestHttp};
@@ -106,7 +106,7 @@ impl Config {
             config_before: Some(dirs.config_before.clone()),
             dirs,
             tailscale: LocalApi::system(),
-            proc_root: ProcRoot::System,
+            proc_root: ProcRoot::Unset,
             callers_file: PathBuf::from(porter_daemon::INFERD_CALLERS.path),
             bus,
             keys: Selection::SecretService,
@@ -173,7 +173,9 @@ impl Config {
         if let Some(path) = std::env::var_os("PATH") {
             tailscale = tailscale.with_path(&path);
         }
-        let proc_root = ProcRoot::choose(PROC_GATE, PROC_ROOT_VAR, |name| std::env::var_os(name));
+        let proc_root = choose_proc_root(HONOURS_PROC_ROOT, PROC_ROOT_VAR, |name| {
+            std::env::var_os(name)
+        });
         let mut config = Self::new(dirs, BusTarget::Session);
         if let Some(path) = config_file {
             config = config.with_config_file(path);
@@ -183,7 +185,7 @@ impl Config {
         // A test build may read another system caller table (a jail cannot write /etc).
         let callers = porter_daemon::SystemCallers::choose_file(
             porter_daemon::INFERD_CALLERS,
-            PROC_GATE,
+            HONOURS_PROC_ROOT,
             |name| std::env::var_os(name),
         );
         if let Some(line) = callers.notice("inferd") {
@@ -509,7 +511,7 @@ impl Daemon {
             eprintln!("inferd: {path}: not accepted; using its default");
         }
         let connection = bus.connect().await?;
-        if let Some(line) = proc_root.notice("inferd", PROC_ROOT_VAR) {
+        if let Some(line) = proc_notice(&proc_root, "inferd", PROC_ROOT_VAR) {
             eprintln!("{line}");
         }
         let peers = Arc::new(ProcPeers::with_root(

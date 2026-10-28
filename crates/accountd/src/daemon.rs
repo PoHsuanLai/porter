@@ -10,9 +10,9 @@
 //! accountd holds identities, Spaces and Tailscale: its provider files are the internet ones, and
 //! its keyring namespace is [`NAMESPACE`]. AI keys, agents and sync belong to inferd and syncd.
 
-use crate::paths::{PROC_GATE, Paths};
+use crate::paths::{HONOURS_PROC_ROOT, Paths};
 use crate::{FileAudit, Options, SheetsDesk, load_callers, serve_with};
-use porter_daemon::ProcRoot;
+use porter_daemon::choose_proc_root;
 use porter_daemon::xdg::PathError;
 use porter_dbus::BusTarget;
 use porter_dbus::callers::{CallerFileError, ProcCallers};
@@ -94,15 +94,18 @@ impl Config {
     pub fn from_env(provider_dirs: &[PathBuf]) -> Result<Self, StartError> {
         let mut paths = Paths::resolve(|name| std::env::var(name).ok(), provider_dirs)?;
         // A test build may read another system caller table (a jail cannot write /etc).
-        let system = porter_daemon::SystemCallers::choose(PROC_GATE, |name| std::env::var_os(name));
+        let system =
+            porter_daemon::SystemCallers::choose(HONOURS_PROC_ROOT, |name| std::env::var_os(name));
         if let Some(line) = system.notice("accountd") {
             eprintln!("{line}");
         }
         paths.callers_system = system.path().to_owned();
         let keys_var = std::env::var(KEYS_VAR).ok();
         let keys = select(keys_var.as_deref())?;
-        let proc = ProcRoot::choose(PROC_GATE, PROC_ROOT_VAR, |name| std::env::var_os(name))
-            .into_fixture();
+        let proc = choose_proc_root(HONOURS_PROC_ROOT, PROC_ROOT_VAR, |name| {
+            std::env::var_os(name)
+        })
+        .into_honoured();
         Ok(Self {
             paths,
             keys,

@@ -5,7 +5,7 @@
 //! - [`ProcRoot`]: which `/proc` a daemon reads its callers from. The system's, unless a test
 //!   build is told to read a fixture tree. Which process a caller is decides what it may do, so
 //!   an environment variable must never be able to move this in a shipped build: the build says
-//!   whether it honours the variable ([`ProcGate`]), and a shipped build does not.
+//!   whether it honours the variable, and a shipped build does not.
 //! - [`Watch`]: a watch on one settings file, which survives the atomic rename an editor or the
 //!   Settings app writes it with.
 //! - [`xdg`]: the XDG base directories a daemon keeps its files under, resolved from the lookup
@@ -16,17 +16,17 @@
 //!
 //! ```
 //! use std::ffi::OsString;
-//! use porter_daemon::{ProcGate, ProcRoot};
+//! use porter_daemon::{choose_proc_root, proc_notice, proc_path};
 //!
-//! // The daemon's own build decides the gate; here, a test build.
+//! // The daemon's own build decides whether it honours the variable; here, a test build.
 //! let lookup = |name: &str| (name == "MYD_PROC_ROOT").then(|| OsString::from("/fixture/proc"));
-//! let root = ProcRoot::choose(ProcGate::Honour, "MYD_PROC_ROOT", lookup);
-//! assert_eq!(root.path(), std::path::Path::new("/fixture/proc"));
+//! let root = choose_proc_root(true, "MYD_PROC_ROOT", lookup);
+//! assert_eq!(proc_path(&root), std::path::Path::new("/fixture/proc"));
 //!
 //! // A shipped build ignores the same variable.
-//! let root = ProcRoot::choose(ProcGate::Ignore, "MYD_PROC_ROOT", lookup);
-//! assert_eq!(root.path(), std::path::Path::new("/proc"));
-//! assert!(root.notice("myd", "MYD_PROC_ROOT").is_some());
+//! let root = choose_proc_root(false, "MYD_PROC_ROOT", lookup);
+//! assert_eq!(proc_path(&root), std::path::Path::new("/proc"));
+//! assert!(proc_notice(&root, "myd", "MYD_PROC_ROOT").is_some());
 //! ```
 
 mod proc_root;
@@ -36,11 +36,11 @@ mod system_callers;
 mod watch;
 pub mod xdg;
 
-pub use proc_root::{ProcGate, ProcRoot};
+pub use proc_root::{Override, ProcRoot, choose_proc_root, proc_notice, proc_path};
 pub use registry::registry_words;
 pub use system_callers::{
     CALLERS, INFERD_CALLERS, SYSTEM_CALLERS, SYSTEM_CALLERS_VAR, SystemCallers, SystemFile,
-    TABLE_DIRS, TableChoice, held_by, held_under, root_held,
+    TABLE_DIRS, held_by, held_under, root_held,
 };
 #[cfg(feature = "watch")]
 pub use watch::{Watch, WatchError};

@@ -17,25 +17,6 @@ use porter_core::AccountId;
 use porter_core::{Credential, SecretKey};
 use std::path::PathBuf;
 
-/// Whether this build has the file key store.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum TestKeys {
-    /// Built with the `test-keys` feature.
-    Built,
-    /// The shipped build.
-    NotBuilt,
-}
-
-impl TestKeys {
-    /// What this build is.
-    pub const THIS_BUILD: TestKeys = if cfg!(feature = "test-keys") {
-        TestKeys::Built
-    } else {
-        TestKeys::NotBuilt
-    };
-}
-
 /// The choice, pure over the variable's value and the build.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -81,15 +62,16 @@ impl std::error::Error for KeysRefusal {}
 
 /// Chooses the key store for this build from the value of the daemon's variable.
 pub fn select(var_value: Option<&str>) -> Result<Selection, KeysRefusal> {
-    select_for(var_value, TestKeys::THIS_BUILD)
+    select_for(var_value, cfg!(feature = "test-keys"))
 }
 
-/// Chooses the key store, pure over the variable's value and `build`.
-pub fn select_for(var_value: Option<&str>, build: TestKeys) -> Result<Selection, KeysRefusal> {
-    match (var_value, build) {
+/// Chooses the key store, pure over the variable's value and whether the build has the file key
+/// store (`test_keys`: built with the `test-keys` feature; the shipped build is not).
+pub fn select_for(var_value: Option<&str>, test_keys: bool) -> Result<Selection, KeysRefusal> {
+    match (var_value, test_keys) {
         (None, _) => Ok(Selection::SecretService),
-        (Some(_), TestKeys::NotBuilt) => Ok(Selection::SecretServiceIgnoring),
-        (Some(value), TestKeys::Built) => {
+        (Some(_), false) => Ok(Selection::SecretServiceIgnoring),
+        (Some(value), true) => {
             let path = value
                 .strip_prefix("file:")
                 .filter(|path| !path.is_empty())
@@ -215,8 +197,8 @@ mod tests {
 
     #[test]
     fn unset_is_the_secret_service_in_every_build() {
-        for build in [TestKeys::Built, TestKeys::NotBuilt] {
-            assert_eq!(select_for(None, build), Ok(Selection::SecretService));
+        for test_keys in [true, false] {
+            assert_eq!(select_for(None, test_keys), Ok(Selection::SecretService));
         }
     }
 
@@ -224,7 +206,7 @@ mod tests {
     fn a_shipped_build_ignores_the_variable_whatever_it_says_and_never_repeats_it() {
         for value in ["file:/x/keys", "garbage", "", "file:relative"] {
             assert_eq!(
-                select_for(Some(value), TestKeys::NotBuilt),
+                select_for(Some(value), false),
                 Ok(Selection::SecretServiceIgnoring),
                 "{value}"
             );
@@ -255,7 +237,7 @@ mod tests {
             ("file:./keys", Err(KeysRefusal::NotAbsolute)),
         ];
         for (value, want) in cases {
-            assert_eq!(select_for(Some(value), TestKeys::Built), want, "{value}");
+            assert_eq!(select_for(Some(value), true), want, "{value}");
         }
     }
 

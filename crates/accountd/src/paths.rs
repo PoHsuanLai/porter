@@ -271,11 +271,7 @@ mod tests {
 /// Whether this binary honours `ACCOUNTD_PROC_ROOT`: only with the `test-proc-root` feature (the
 /// jailed and acceptance tests run processes outside service cgroups). A release build ignores
 /// the variable.
-pub const PROC_GATE: porter_daemon::ProcGate = if cfg!(feature = "test-proc-root") {
-    porter_daemon::ProcGate::Honour
-} else {
-    porter_daemon::ProcGate::Ignore
-};
+pub const HONOURS_PROC_ROOT: bool = cfg!(feature = "test-proc-root");
 
 #[cfg(test)]
 mod proc_root_tests {

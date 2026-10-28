@@ -6,91 +6,94 @@
 //! daemon believe a caller is somebody else, so it is gated by the build and not by the
 //! environment alone:
 //!
-//! - a build with the daemon's `test-proc-root` feature honours the variable ([`ProcGate::Honour`]);
-//! - every other build ignores it ([`ProcGate::Ignore`]), and says so once at start, so a person
+//! - a build with the daemon's `test-proc-root` feature honours the variable
+//!   ([`Override::Honoured`]);
+//! - every other build ignores it ([`Override::Ignored`]), and says so once at start, so a person
 //!   who set it by mistake is told it did nothing;
 //! - an empty value is the same as no value.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-/// Whether this build honours the proc-root variable. The daemon decides from its own feature:
-/// `ProcGate::Honour` in a build with `test-proc-root`, `ProcGate::Ignore` in every other.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum ProcGate {
-    /// The variable names the process tree.
-    Honour,
-    /// The variable is ignored.
-    Ignore,
-}
-
-/// Where a daemon reads its callers' processes from.
+/// What a variable that only a test build may use did.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum ProcRoot {
-    /// The system's `/proc`.
-    System,
-    /// A fixture tree: `<dir>/<pid>/cgroup`. Only a build that honours the variable gets this.
-    Fake(PathBuf),
-    /// The variable was set, but this build ignores it: the system's `/proc` is read.
-    Ignored(PathBuf),
+pub enum Override<T> {
+    /// The variable was not set (or was empty): the system's own is used.
+    Unset,
+    /// It was set and this build honours it: `T` is used in place of the system's.
+    Honoured(T),
+    /// It was set, but this build ignores it: the system's own is used.
+    Ignored(T),
 }
 
-impl ProcRoot {
-    /// The choice for the variable `name`, which `lookup` finds (the daemon passes how it reads
-    /// its environment; a test passes a table), under `gate`.
-    ///
-    /// The library reads no environment variable itself.
-    pub fn choose(gate: ProcGate, name: &str, lookup: impl Fn(&str) -> Option<OsString>) -> Self {
-        let value = lookup(name).filter(|value| !value.is_empty());
-        match (gate, value) {
-            (_, None) => Self::System,
-            (ProcGate::Honour, Some(dir)) => Self::Fake(PathBuf::from(dir)),
-            (ProcGate::Ignore, Some(dir)) => Self::Ignored(PathBuf::from(dir)),
+impl<T> Override<T> {
+    /// The choice for a variable whose non-empty value is `value`, in a build that `honour`s it
+    /// or not (the daemon decides from its own feature).
+    pub fn choose(honour: bool, value: Option<T>) -> Self {
+        match value {
+            None => Self::Unset,
+            Some(value) if honour => Self::Honoured(value),
+            Some(value) => Self::Ignored(value),
         }
     }
 
-    /// The directory to read callers from: the fixture tree, or `/proc`.
-    pub fn path(&self) -> &Path {
+    /// The value in use in place of the system's, when this build honoured the variable.
+    pub fn honoured(&self) -> Option<&T> {
         match self {
-            Self::Fake(dir) => dir,
-            Self::System | Self::Ignored(_) => Path::new("/proc"),
+            Self::Honoured(value) => Some(value),
+            Self::Unset | Self::Ignored(_) => None,
         }
     }
 
-    /// The fixture tree, when this build honoured the variable; `None` means the system's
-    /// `/proc`.
-    pub fn fixture(&self) -> Option<&Path> {
+    /// As [`Override::honoured`], taking the choice.
+    pub fn into_honoured(self) -> Option<T> {
         match self {
-            Self::Fake(dir) => Some(dir),
-            Self::System | Self::Ignored(_) => None,
+            Self::Honoured(value) => Some(value),
+            Self::Unset | Self::Ignored(_) => None,
         }
     }
+}
 
-    /// As [`ProcRoot::fixture`], taking the choice.
-    pub fn into_fixture(self) -> Option<PathBuf> {
-        match self {
-            Self::Fake(dir) => Some(dir),
-            Self::System | Self::Ignored(_) => None,
-        }
-    }
+/// Where a daemon reads its callers' processes from: the fixture tree (`<dir>/<pid>/cgroup`) a
+/// build that honours the variable was given, or the system's `/proc`.
+pub type ProcRoot = Override<PathBuf>;
 
-    /// The line for standard error at start, when the variable `var` was set: that a fixture is
-    /// being read, or that the variable was ignored. `daemon` is the program's name, which
-    /// begins the line.
-    pub fn notice(&self, daemon: &str, var: &str) -> Option<String> {
-        match self {
-            Self::System => None,
-            Self::Fake(dir) => Some(format!(
-                "{daemon}: test proc root {}: callers are read from it, not /proc",
-                dir.display()
-            )),
-            Self::Ignored(dir) => Some(format!(
-                "{daemon}: {var}={} ignored: not a test-proc-root build",
-                dir.display()
-            )),
-        }
+/// The choice for the variable `name`, which `lookup` finds (the daemon passes how it reads its
+/// environment; a test passes a table), in a build that `honour`s it or not.
+///
+/// The library reads no environment variable itself.
+pub fn choose_proc_root(
+    honour: bool,
+    name: &str,
+    lookup: impl Fn(&str) -> Option<OsString>,
+) -> ProcRoot {
+    Override::choose(
+        honour,
+        lookup(name)
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from),
+    )
+}
+
+/// The directory to read callers from: the fixture tree, or `/proc`.
+pub fn proc_path(root: &ProcRoot) -> &Path {
+    root.honoured()
+        .map_or_else(|| Path::new("/proc"), PathBuf::as_path)
+}
+
+/// The line for standard error at start, when the variable `var` was set: that a fixture is being
+/// read, or that the variable was ignored. `daemon` is the program's name, which begins the line.
+pub fn proc_notice(root: &ProcRoot, daemon: &str, var: &str) -> Option<String> {
+    match root {
+        Override::Unset => None,
+        Override::Honoured(dir) => Some(format!(
+            "{daemon}: test proc root {}: callers are read from it, not /proc",
+            dir.display()
+        )),
+        Override::Ignored(dir) => Some(format!(
+            "{daemon}: {var}={} ignored: not a test-proc-root build",
+            dir.display()
+        )),
     }
 }
 
@@ -104,27 +107,27 @@ mod tests {
     fn only_a_build_that_honours_the_variable_reads_the_fixture() {
         let dir = || PathBuf::from("/fake");
         let cases = [
-            (ProcGate::Honour, None, ProcRoot::System),
-            (ProcGate::Honour, Some(""), ProcRoot::System),
-            (ProcGate::Honour, Some("/fake"), ProcRoot::Fake(dir())),
-            (ProcGate::Ignore, None, ProcRoot::System),
-            (ProcGate::Ignore, Some(""), ProcRoot::System),
-            (ProcGate::Ignore, Some("/fake"), ProcRoot::Ignored(dir())),
+            (true, None, ProcRoot::Unset),
+            (true, Some(""), ProcRoot::Unset),
+            (true, Some("/fake"), ProcRoot::Honoured(dir())),
+            (false, None, ProcRoot::Unset),
+            (false, Some(""), ProcRoot::Unset),
+            (false, Some("/fake"), ProcRoot::Ignored(dir())),
         ];
-        for (gate, value, expected) in cases {
-            let got = ProcRoot::choose(gate, VAR, |name| {
+        for (honour, value, expected) in cases {
+            let got = choose_proc_root(honour, VAR, |name| {
                 assert_eq!(name, VAR);
                 value.map(OsString::from)
             });
-            assert_eq!(got, expected, "{gate:?} {value:?}");
-            let said = got.notice("myd", VAR);
+            assert_eq!(got, expected, "{honour:?} {value:?}");
+            let said = proc_notice(&got, "myd", VAR);
             assert_eq!(said.is_some(), value.is_some_and(|v| !v.is_empty()));
-            let reads_fixture = got.fixture().is_some();
-            assert_eq!(reads_fixture, gate == ProcGate::Honour && said.is_some());
+            let reads_fixture = got.honoured().is_some();
+            assert_eq!(reads_fixture, honour && said.is_some());
             assert_eq!(
-                got.path() == Path::new("/fake"),
+                proc_path(&got) == Path::new("/fake"),
                 reads_fixture,
-                "{gate:?} {value:?}"
+                "{honour:?} {value:?}"
             );
         }
     }
@@ -132,16 +135,16 @@ mod tests {
     #[test]
     fn the_notice_names_the_program_and_the_variable() {
         let ignored = ProcRoot::Ignored(PathBuf::from("/x"));
-        let line = ignored.notice("myd", VAR).expect("line");
+        let line = proc_notice(&ignored, "myd", VAR).expect("line");
         assert_eq!(
             line,
             "myd: MYD_PROC_ROOT=/x ignored: not a test-proc-root build"
         );
-        let fake = ProcRoot::Fake(PathBuf::from("/x"));
+        let fake = ProcRoot::Honoured(PathBuf::from("/x"));
         assert_eq!(
-            fake.notice("myd", VAR).expect("line"),
+            proc_notice(&fake, "myd", VAR).expect("line"),
             "myd: test proc root /x: callers are read from it, not /proc"
         );
-        assert_eq!(fake.into_fixture(), Some(PathBuf::from("/x")));
+        assert_eq!(fake.into_honoured(), Some(PathBuf::from("/x")));
     }
 }

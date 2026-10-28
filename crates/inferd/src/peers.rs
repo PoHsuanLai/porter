@@ -12,7 +12,7 @@
 //! names for it, or any identified app scope.
 
 use porter_core::{AppId, AppName};
-use porter_daemon::{ProcGate, ProcRoot};
+use porter_daemon::ProcRoot;
 use porter_dbus::BusConnection;
 use porter_dbus::callers::{CallerRole, CallerRow, Install, ProcCallers, installed};
 use serde::{Deserialize, Serialize};
@@ -364,13 +364,13 @@ pub struct ProcPeers {
 impl ProcPeers {
     /// Resolves senders on `connection` through `table`.
     pub fn new(connection: BusConnection, table: CallerTable) -> Self {
-        Self::with_root(connection, table, &ProcRoot::System)
+        Self::with_root(connection, table, &ProcRoot::Unset)
     }
 
     /// As [`ProcPeers::new`], reading the process tree `root` names.
     pub fn with_root(connection: BusConnection, table: CallerTable, root: &ProcRoot) -> Self {
         let rows = table.rows();
-        let callers = match root.fixture() {
+        let callers = match root.honoured() {
             #[cfg(feature = "test-proc-root")]
             Some(dir) => ProcCallers::with_proc_root(connection, rows, dir.to_path_buf()),
             _ => ProcCallers::new(connection, rows),
@@ -388,11 +388,7 @@ impl ProcPeers {
 }
 
 /// Whether this build honours `INFERD_PROC_ROOT`: only with the `test-proc-root` feature.
-pub const PROC_GATE: ProcGate = if cfg!(feature = "test-proc-root") {
-    ProcGate::Honour
-} else {
-    ProcGate::Ignore
-};
+pub const HONOURS_PROC_ROOT: bool = cfg!(feature = "test-proc-root");
 
 impl Peers for ProcPeers {
     async fn caller_of(&self, sender: &str) -> Option<Caller> {
