@@ -13,7 +13,7 @@ use porter_capability::LoginOutcome;
 use porter_client::{AskKind, Launcher, LauncherError};
 use porter_core::DataClass;
 use porter_core::LauncherSession;
-use porter_dbus::BusStream;
+use porter_dbus::{BusStream, LauncherFault};
 use porter_wire::Refusal;
 
 fn program(name: &str) -> AgentProgram {
@@ -94,7 +94,7 @@ async fn the_launcher_registers_hears_a_login_and_a_logout_and_reports_each_once
             rig.launcher
                 .report_login(&ask.request, LoginOutcome::Ready)
                 .await,
-            Err(LauncherError::UnknownRequest)
+            Err(LauncherError::Fault(LauncherFault::UnknownRequest))
         );
     }
     assert_eq!(

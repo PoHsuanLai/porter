@@ -10,7 +10,7 @@ use crate::common;
 use common::bus::PrivateBus;
 use common::eventually;
 use common::fake_inferd::{FakeInferd, Sheets};
-use porter_client::{AiKeys, AiKeysError};
+use porter_client::{AiKeys, AiKeysError, CallFailure};
 use porter_core::DataClass;
 use porter_core::ProviderHint;
 use porter_core::consent::Usage;
@@ -101,7 +101,7 @@ async fn every_way_a_sheet_can_end_is_a_typed_error() {
             &ParentWindow::Unparented
         )
         .await,
-        Err(AiKeysError::Unreachable)
+        Err(AiKeysError::Bus(CallFailure::Unreachable))
     );
 }
 
@@ -187,6 +187,6 @@ async fn a_daemon_that_leaves_mid_sheet_ends_the_wait() {
         .await
         .expect("the wait ends")
         .expect("task");
-    assert_eq!(ended, Err(AiKeysError::Unreachable));
+    assert_eq!(ended, Err(AiKeysError::Bus(CallFailure::Unreachable)));
     drop(rig.bus);
 }

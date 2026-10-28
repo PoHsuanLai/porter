@@ -19,15 +19,13 @@
 //! launcher, the computer-use daemon, the terminal and the compositor are refused.
 
 use crate::abandon::Abandon;
+use crate::call_failure::{CallFailure, bus_failure_from};
 use porter_core::ProviderHint;
 use porter_core::consent::Usage;
 use porter_core::{AccountId, KeyPermitId};
 use porter_core::{CoreError, DataClass};
 use porter_dbus::sheet::{SheetKind, reply_of};
-use porter_dbus::{
-    BusConnection, BusError, BusFailure, KeysProxy, ServiceRoot, Sheet, SheetError, classify,
-    is_invalid_args, refusal_of,
-};
+use porter_dbus::{BusConnection, BusError, KeysProxy, ServiceRoot, Sheet, SheetError, refusal_of};
 use porter_ids::IdError;
 use porter_wire::AccountsReply;
 use porter_wire::{ParentWindow, Refusal};
@@ -44,60 +42,33 @@ pub enum AiKeysError {
     /// `add_account` for a key the person already has: nothing was added.
     #[error("that account is already added")]
     AlreadyAdded(AccountId),
-    /// inferd does not know this caller, or this caller may not ask.
-    #[error("refused by inferd: {0}")]
-    Denied(String),
-    /// inferd refused an argument.
-    #[error("invalid argument: {0}")]
-    Invalid(String),
-    /// inferd is not there.
-    #[error("no inference service reachable")]
-    Unreachable,
-    /// inferd sent something that is not porter's protocol.
-    #[error("malformed: {0}")]
-    Malformed(String),
+    /// The call itself failed: the service is not there, refused the caller or an argument, or
+    /// sent something that is not porter's protocol.
+    #[error(transparent)]
+    Bus(CallFailure),
 }
 
 impl From<BusError> for AiKeysError {
     fn from(error: BusError) -> Self {
-        if let Some(refusal) = refusal_of(&error) {
-            return AiKeysError::Refused(refusal);
-        }
-        if is_invalid_args(&error) {
-            return AiKeysError::Invalid(error.to_string());
-        }
-        match classify(&error) {
-            BusFailure::NoDaemon => AiKeysError::Unreachable,
-            BusFailure::Denied(why) => AiKeysError::Denied(why),
-            BusFailure::Other(why) => AiKeysError::Malformed(why),
-            // a failure a later porter-dbus adds
-            _ => AiKeysError::Malformed("a bus failure this client does not know".into()),
+        match refusal_of(&error) {
+            Some(refusal) => AiKeysError::Refused(refusal),
+            None => AiKeysError::Bus(error.into()),
         }
     }
 }
 
-impl From<CoreError> for AiKeysError {
-    fn from(error: CoreError) -> Self {
-        AiKeysError::Malformed(error.to_string())
-    }
-}
-
-impl From<IdError> for AiKeysError {
-    fn from(error: IdError) -> Self {
-        AiKeysError::Malformed(error.to_string())
-    }
-}
+bus_failure_from!(AiKeysError: CallFailure, CoreError, IdError);
 
 impl From<SheetError> for AiKeysError {
     fn from(error: SheetError) -> Self {
         match error {
             SheetError::Bus(error) => error.into(),
-            SheetError::Gone => AiKeysError::Unreachable,
+            SheetError::Gone => CallFailure::Unreachable.into(),
             SheetError::Unreadable => {
-                AiKeysError::Malformed("a Response that is not (u, a{sv})".into())
+                CallFailure::Malformed("a Response that is not (u, a{sv})".into()).into()
             }
             // a failure a later porter-dbus adds
-            _ => AiKeysError::Malformed("a sheet failure this client does not know".into()),
+            _ => CallFailure::Malformed("a sheet failure this client does not know".into()).into(),
         }
     }
 }
@@ -106,7 +77,7 @@ impl From<SheetError> for AiKeysError {
 fn slug<T: serde::Serialize>(value: &T) -> Result<String, AiKeysError> {
     match serde_json::to_value(value) {
         Ok(serde_json::Value::String(text)) => Ok(text),
-        _ => Err(AiKeysError::Malformed("not a slug".into())),
+        _ => Err(CallFailure::Malformed("not a slug".into()).into()),
     }
 }
 
@@ -163,9 +134,9 @@ impl AiKeys {
             // The answer is the chosen key; its `grant` is the permit's id.
             AccountsReply::Chosen(candidate) => Ok(candidate.grant.into()),
             AccountsReply::Refused(refusal) => Err(AiKeysError::Refused(refusal)),
-            other => Err(AiKeysError::Malformed(format!(
-                "a key request answered with {other:?}"
-            ))),
+            other => {
+                Err(CallFailure::Malformed(format!("a key request answered with {other:?}")).into())
+            }
         }
     }
 
@@ -191,9 +162,10 @@ impl AiKeys {
             AccountsReply::Added(account) => Ok(account),
             AccountsReply::AlreadyAdded(account) => Err(AiKeysError::AlreadyAdded(account)),
             AccountsReply::Refused(refusal) => Err(AiKeysError::Refused(refusal)),
-            other => Err(AiKeysError::Malformed(format!(
+            other => Err(CallFailure::Malformed(format!(
                 "adding an account answered with {other:?}"
-            ))),
+            ))
+            .into()),
         }
     }
 

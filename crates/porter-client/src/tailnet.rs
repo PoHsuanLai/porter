@@ -11,47 +11,17 @@
 //! while changes.next().await.is_some() { /* read the list again */ }
 //! ```
 
-use porter_core::CoreError;
+use crate::call_failure::CallFailure;
 use porter_dbus::{
-    BusConnection, BusError, BusFailure, BusStream, TailnetChanged, TailnetChangedStream,
-    TailnetProxy, classify, machine_from_dbus,
+    BusConnection, BusStream, TailnetChanged, TailnetChangedStream, TailnetProxy, machine_from_dbus,
 };
 use porter_tailscale::Machine;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-/// Why a Tailnet call failed. More reasons may be added: match with a wildcard.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
-pub enum TailnetError {
-    /// accountd does not know this caller, or it is not the shell, Settings or the terminal.
-    #[error("refused by accountd: {0}")]
-    Denied(String),
-    /// accountd is not there.
-    #[error("no account service reachable")]
-    Unreachable,
-    /// accountd sent something that is not porter's protocol.
-    #[error("malformed: {0}")]
-    Malformed(String),
-}
-
-impl From<BusError> for TailnetError {
-    fn from(error: BusError) -> Self {
-        match classify(&error) {
-            BusFailure::NoDaemon => TailnetError::Unreachable,
-            BusFailure::Denied(why) => TailnetError::Denied(why),
-            BusFailure::Other(why) => TailnetError::Malformed(why),
-            // a failure a later porter-dbus adds
-            _ => TailnetError::Malformed("a bus failure this client does not know".into()),
-        }
-    }
-}
-
-impl From<CoreError> for TailnetError {
-    fn from(error: CoreError) -> Self {
-        TailnetError::Malformed(error.to_string())
-    }
-}
+/// Why a Tailnet call failed: the call itself did ([`CallFailure`]); the list has no reasons of
+/// its own. More reasons may be added: match with a wildcard.
+pub type TailnetError = CallFailure;
 
 /// accountd's list of the person's computers, as its callers see it.
 #[derive(Debug, Clone)]

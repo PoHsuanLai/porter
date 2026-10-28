@@ -6,7 +6,7 @@
 use crate::common;
 
 use common::accountd::{Daemon, named, photos};
-use porter_client::{DbusTransport, SpacesError};
+use porter_client::{CallFailure, DbusTransport, SpacesError};
 use porter_core::{SpaceChange, SpaceLook, SpaceName};
 
 fn name(text: &str) -> SpaceName {
@@ -69,5 +69,8 @@ async fn too_many_new_spaces_and_a_stranger_are_told_apart() {
         .spaces()
         .await
         .expect("spaces");
-    assert!(matches!(stranger.list().await, Err(SpacesError::Denied(_))));
+    assert!(matches!(
+        stranger.list().await,
+        Err(SpacesError::Bus(CallFailure::Denied(_)))
+    ));
 }

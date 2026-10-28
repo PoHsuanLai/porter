@@ -19,13 +19,13 @@
 //! while let Some(id) = removed.next().await { /* forget your own copies of it */ }
 //! ```
 
+use crate::call_failure::{CallFailure, bus_failure_from};
 use porter_core::ProviderHint;
 use porter_core::ProviderId;
 use porter_core::{AppName, CoreError, Identity, IdentityAddress, IdentityId, SecretText};
 use porter_dbus::{
-    BusConnection, BusError, BusFailure, BusStream, IdentitiesProxy, IdentityRemoved,
-    IdentityRemovedStream, classify, identity_from_dbus, is_invalid_args, is_limits_exceeded,
-    refusal_of,
+    BusConnection, BusError, BusStream, IdentitiesProxy, IdentityRemoved, IdentityRemovedStream,
+    identity_from_dbus, is_limits_exceeded, refusal_of,
 };
 use porter_ids::IdError;
 use porter_wire::{ParentWindow, Refusal};
@@ -46,13 +46,6 @@ pub enum IdentitiesError {
     /// This app has an identity picker open already.
     #[error("an identity picker is open already")]
     Busy,
-    /// accountd refused an argument (an identity that is not there, a provider that is not one).
-    #[error("invalid argument: {0}")]
-    Invalid(String),
-    /// accountd does not know this caller, or the call is not one it may make, or the password
-    /// was not picked for it just now.
-    #[error("refused by accountd: {0}")]
-    Denied(String),
     /// accountd refused the call for a reason it names.
     #[error("refused by accountd: {0:?}")]
     Refused(Refusal),
@@ -62,12 +55,10 @@ pub enum IdentitiesError {
     /// accountd is there but cannot do it now (no secret store, no way to show the picker).
     #[error("the account service cannot do that now")]
     Unavailable,
-    /// accountd is not there.
-    #[error("no account service reachable")]
-    Unreachable,
-    /// accountd sent something that is not porter's protocol, or could not save.
-    #[error("malformed: {0}")]
-    Malformed(String),
+    /// The call itself failed: the service is not there, refused the caller or an argument, or
+    /// sent something that is not porter's protocol.
+    #[error(transparent)]
+    Bus(CallFailure),
 }
 
 impl From<BusError> for IdentitiesError {
@@ -84,30 +75,11 @@ impl From<BusError> for IdentitiesError {
         if is_limits_exceeded(&error) {
             return IdentitiesError::Busy;
         }
-        if is_invalid_args(&error) {
-            return IdentitiesError::Invalid(error.to_string());
-        }
-        match classify(&error) {
-            BusFailure::NoDaemon => IdentitiesError::Unreachable,
-            BusFailure::Denied(why) => IdentitiesError::Denied(why),
-            BusFailure::Other(why) => IdentitiesError::Malformed(why),
-            // a failure a later porter-dbus adds
-            _ => IdentitiesError::Malformed("a bus failure this client does not know".into()),
-        }
+        IdentitiesError::Bus(error.into())
     }
 }
 
-impl From<CoreError> for IdentitiesError {
-    fn from(error: CoreError) -> Self {
-        IdentitiesError::Malformed(error.to_string())
-    }
-}
-
-impl From<IdError> for IdentitiesError {
-    fn from(error: IdError) -> Self {
-        IdentitiesError::Malformed(error.to_string())
-    }
-}
+bus_failure_from!(IdentitiesError: CallFailure, CoreError, IdError);
 
 /// The identity the person picked in `Identities::offer`: who to continue as. It holds no token.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -180,14 +152,14 @@ impl Identities {
 
     /// The password (or app password) of the identity the person just picked in this app's
     /// [`Identities::offer`]. It is handed over once per pick, only for a password identity, and
-    /// accountd records that it was; any other call is [`IdentitiesError::Denied`]. Keep it in
+    /// accountd records that it was; any other call is [`CallFailure::Denied`]. Keep it in
     /// the app's own secret store.
     pub async fn take_password(&self, id: &IdentityId) -> Result<SecretText, IdentitiesError> {
         let fd = self.proxy.take_password(id.as_str()).await?;
         let mut text = String::new();
         std::fs::File::from(std::os::fd::OwnedFd::from(fd))
             .read_to_string(&mut text)
-            .map_err(|why| IdentitiesError::Malformed(format!("the password: {why}")))?;
+            .map_err(|why| CallFailure::Malformed(format!("the password: {why}")))?;
         Ok(SecretText::new(text))
     }
 

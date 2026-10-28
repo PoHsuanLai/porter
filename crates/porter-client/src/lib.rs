@@ -74,6 +74,8 @@ mod accounts;
 #[cfg(feature = "dbus")]
 mod ai_keys;
 mod authenticated;
+#[cfg(feature = "dbus")]
+mod call_failure;
 #[cfg(feature = "infer")]
 mod computers;
 #[cfg(feature = "dbus")]
@@ -105,6 +107,8 @@ pub use accounts::Accounts;
 #[cfg(feature = "dbus")]
 pub use ai_keys::{AiKeys, AiKeysError};
 pub use authenticated::{AuthenticatedStream, Relayed};
+#[cfg(feature = "dbus")]
+pub use call_failure::CallFailure;
 #[cfg(feature = "infer")]
 pub use computers::{ComputerReach, NewComputer, NewComputerModel};
 #[cfg(feature = "dbus")]

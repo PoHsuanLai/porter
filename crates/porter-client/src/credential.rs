@@ -23,6 +23,7 @@
 //! URL. A memfd keeps the key out of `/proc/<pid>/environ`; delivering it as text in the child's
 //! environment ([`Delivery::Value`]) puts it back there, readable by processes of the same user.
 
+use crate::call_failure::CallFailure;
 use crate::launcher::LauncherError;
 use porter_capability::EnvName;
 use porter_core::ProcessCredentialId;
@@ -252,7 +253,10 @@ impl Revocations {
         Ok(Revoked {
             id: ProcessCredentialId::parse(&args.id)?,
             reason: CredentialEnd::from_word(&args.reason).ok_or_else(|| {
-                LauncherError::Malformed(format!("`{}` is not a reason", args.reason))
+                LauncherError::Bus(CallFailure::Malformed(format!(
+                    "`{}` is not a reason",
+                    args.reason
+                )))
             })?,
         })
     }

@@ -5,6 +5,7 @@
 //! gives each removal as the account's object-path segment, the spelling that names an app's
 //! directories. The signal is accountd's, and only a connection accountd knows is told.
 
+use crate::call_failure::CallFailure;
 use crate::error::TransportError;
 use crate::identities::{Identities, IdentitiesError, IdentityRemovals};
 use porter_core::AccountId;
@@ -47,8 +48,8 @@ pub struct Removals {
 
 fn transport(error: IdentitiesError) -> TransportError {
     match error {
-        IdentitiesError::Unreachable => TransportError::Unreachable,
-        IdentitiesError::Denied(why) => TransportError::Denied(why),
+        IdentitiesError::Bus(CallFailure::Unreachable) => TransportError::Unreachable,
+        IdentitiesError::Bus(CallFailure::Denied(why)) => TransportError::Denied(why),
         other => TransportError::Malformed(other.to_string()),
     }
 }

@@ -13,11 +13,12 @@
 //! while let Some(change) = changes.next().await { /* (id, SpaceChange) */ }
 //! ```
 
+use crate::call_failure::{CallFailure, bus_failure_from};
 use porter_core::{CoreError, DesktopSpace, DesktopSpaceRecord, SpaceChange, SpaceLook, SpaceName};
 use porter_dbus::names::{SPACE_KEY_CREATED, SPACE_KEY_LOOK, SPACE_KEY_NAME};
 use porter_dbus::{
-    BusConnection, BusError, BusFailure, BusStream, Details, SpaceChanged, SpaceChangedStream,
-    SpacesProxy, classify, is_invalid_args, is_limits_exceeded,
+    BusConnection, BusError, BusStream, Details, SpaceChanged, SpaceChangedStream, SpacesProxy,
+    is_limits_exceeded,
 };
 use porter_ids::{IdError, UnixSeconds};
 use std::pin::Pin;
@@ -30,18 +31,10 @@ pub enum SpacesError {
     /// The app made too many Spaces within the last minute; try again later.
     #[error("too many new Spaces at once")]
     TooMany,
-    /// accountd refused an argument (a name or look out of bounds, a Space that is not there).
-    #[error("invalid argument: {0}")]
-    Invalid(String),
-    /// accountd does not know this caller, or the call needs Settings or the shell.
-    #[error("refused by accountd: {0}")]
-    Denied(String),
-    /// accountd is not there.
-    #[error("no account service reachable")]
-    Unreachable,
-    /// accountd sent something that is not porter's protocol, or could not save.
-    #[error("malformed: {0}")]
-    Malformed(String),
+    /// The call itself failed: the service is not there, refused the caller or an argument, or
+    /// sent something that is not porter's protocol.
+    #[error(transparent)]
+    Bus(CallFailure),
 }
 
 impl From<BusError> for SpacesError {
@@ -49,30 +42,11 @@ impl From<BusError> for SpacesError {
         if is_limits_exceeded(&error) {
             return SpacesError::TooMany;
         }
-        if is_invalid_args(&error) {
-            return SpacesError::Invalid(error.to_string());
-        }
-        match classify(&error) {
-            BusFailure::NoDaemon => SpacesError::Unreachable,
-            BusFailure::Denied(why) => SpacesError::Denied(why),
-            BusFailure::Other(why) => SpacesError::Malformed(why),
-            // a failure a later porter-dbus adds
-            _ => SpacesError::Malformed("a bus failure this client does not know".into()),
-        }
+        SpacesError::Bus(error.into())
     }
 }
 
-impl From<CoreError> for SpacesError {
-    fn from(error: CoreError) -> Self {
-        SpacesError::Malformed(error.to_string())
-    }
-}
-
-impl From<IdError> for SpacesError {
-    fn from(error: IdError) -> Self {
-        SpacesError::Malformed(error.to_string())
-    }
-}
+bus_failure_from!(SpacesError: CallFailure, CoreError, IdError);
 
 /// accountd's registry of desktop-wide Spaces, as an app sees it.
 #[derive(Debug, Clone)]
@@ -85,7 +59,7 @@ fn text(details: &Details, key: &str) -> Result<String, SpacesError> {
         .get(key)
         .and_then(|v| v.try_clone().ok())
         .and_then(|v| String::try_from(v).ok())
-        .ok_or_else(|| SpacesError::Malformed(format!("a Space without `{key}`")))
+        .ok_or_else(|| CallFailure::Malformed(format!("a Space without `{key}`")).into())
 }
 
 fn record(id: &str, details: &Details) -> Result<DesktopSpaceRecord, SpacesError> {
@@ -93,7 +67,7 @@ fn record(id: &str, details: &Details) -> Result<DesktopSpaceRecord, SpacesError
         .get(SPACE_KEY_CREATED)
         .and_then(|v| v.try_clone().ok())
         .and_then(|v| i64::try_from(v).ok())
-        .ok_or_else(|| SpacesError::Malformed("a Space without `created`".into()))?;
+        .ok_or_else(|| CallFailure::Malformed("a Space without `created`".into()))?;
     Ok(DesktopSpaceRecord {
         id: DesktopSpace::parse(id)?,
         name: SpaceName::parse(&text(details, SPACE_KEY_NAME)?)?,
@@ -156,7 +130,7 @@ pub struct SpaceChanges(SpaceChangedStream);
 fn change(signal: SpaceChanged) -> Result<(DesktopSpace, SpaceChange), SpacesError> {
     let args = signal.args()?;
     let what = SpaceChange::from_word(args.what)
-        .ok_or_else(|| SpacesError::Malformed(format!("a change `{}`", args.what)))?;
+        .ok_or_else(|| CallFailure::Malformed(format!("a change `{}`", args.what)))?;
     Ok((DesktopSpace::parse(args.id)?, what))
 }
 

@@ -14,7 +14,7 @@ use porter_client::credential::{ChildKey, ChildKeyError, CredentialHandle, Deliv
 use porter_client::{Launcher, LauncherError};
 use porter_core::KeyPermitId;
 use porter_core::audit::{CredentialEnd, Handoff};
-use porter_dbus::BusStream;
+use porter_dbus::{BusStream, LauncherFault};
 use porter_wire::Refusal;
 use std::io::Read;
 use std::os::fd::AsFd;
@@ -122,7 +122,7 @@ async fn a_memfd_credential_sets_a_child_up_by_value_or_by_an_inherited_descript
         .expect("revoked");
     assert_eq!(
         rig.launcher.revoke_credential(credential.id()).await,
-        Err(LauncherError::UnknownCredential)
+        Err(LauncherError::Fault(LauncherFault::UnknownCredential))
     );
 }
 
@@ -212,7 +212,7 @@ async fn a_refusal_is_a_typed_error_and_a_key_is_never_part_of_it() {
         rig.launcher
             .issue_credential(&permit("g-once"), &program(), Handoff::Memfd)
             .await,
-        Err(LauncherError::OnceGrant)
+        Err(LauncherError::Fault(LauncherFault::OnceGrant))
     ));
     assert!(matches!(
         rig.launcher

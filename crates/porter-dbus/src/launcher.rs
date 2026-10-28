@@ -33,6 +33,23 @@ pub enum LauncherFault {
     UnknownSession,
 }
 
+impl std::fmt::Display for LauncherFault {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            LauncherFault::AlreadyRegistered => "another launcher already holds a program",
+            LauncherFault::UnknownRequest => "no such request for this connection",
+            LauncherFault::NotRegistered => "this connection has not registered that program",
+            LauncherFault::OnceGrant => "a once permit cannot back a process credential",
+            LauncherFault::NotAKeyAccount => "the account holds no API key to hand over",
+            LauncherFault::UnknownCredential => "no such credential for this connection",
+            LauncherFault::SessionTaken => "another launcher holds that session",
+            LauncherFault::UnknownSession => "no such open session for this connection",
+        })
+    }
+}
+
+impl std::error::Error for LauncherFault {}
+
 impl LauncherFault {
     /// Every fault, so the table is total by construction.
     pub const ALL: [LauncherFault; 8] = [

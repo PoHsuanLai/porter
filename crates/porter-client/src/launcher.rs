@@ -12,7 +12,7 @@
 //! [`crate::credential`]).
 //!
 //! The caller must be known to inferd as the agent launcher (`CallerRole::AgentLauncher`, a row
-//! of inferd's caller table a machine writes); any other caller is [`LauncherError::Denied`].
+//! of inferd's caller table a machine writes); any other caller is [`CallFailure::Denied`].
 //!
 //! ```ignore
 //! let launcher = Launcher::connect(&connection).await?;
@@ -29,6 +29,7 @@
 //! ```
 
 use crate::abandon::Abandon;
+use crate::call_failure::{CallFailure, bus_failure_from};
 use crate::credential::{CredentialHandle, ProcessCredential, Revocations};
 use porter_capability::AgentProgram;
 use porter_capability::{Capability, Subject};
@@ -40,9 +41,8 @@ use porter_core::{LauncherSession, ProcessCredentialId};
 use porter_dbus::sheet::{SheetKind, reply_of};
 use porter_dbus::{
     AgentLoginRequested, AgentLoginRequestedStream, AgentLogoutRequested,
-    AgentLogoutRequestedStream, BusConnection, BusError, BusFailure, BusStream, LauncherFault,
-    LauncherProxy, ServiceRoot, Sheet, SheetError, classify, is_invalid_args, launcher_fault_of,
-    refusal_of, zvariant::Value,
+    AgentLogoutRequestedStream, BusConnection, BusError, BusStream, LauncherFault, LauncherProxy,
+    ServiceRoot, Sheet, SheetError, launcher_fault_of, refusal_of, zvariant::Value,
 };
 use porter_ids::IdError;
 use porter_wire::AccountsReply;
@@ -55,93 +55,32 @@ use std::task::{Context, Poll};
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum LauncherError {
-    /// A live connection already launches one of the programs (first wins).
-    #[error("another launcher already holds a program")]
-    AlreadyRegistered,
-    /// No such request for this connection: it was never made, was answered already, expired, or
-    /// was sent to another connection.
-    #[error("no such request for this connection")]
-    UnknownRequest,
-    /// `issue_credential` for a program this connection has not registered.
-    #[error("this connection has not registered that program")]
-    NotRegistered,
-    /// `issue_credential` under a `Once` permit: it is spent by its first use, so it cannot back a
-    /// key a process holds for its life. Ask the person for an always permit.
-    #[error("a once permit cannot back a process credential")]
-    OnceGrant,
-    /// `issue_credential` for an account that holds no API key (an OAuth account, an agent that
-    /// signs itself in, a local runtime).
-    #[error("the account holds no API key to hand over")]
-    NotAKeyAccount,
-    /// `revoke_credential` for a credential this connection was not issued: never made, ended
-    /// already (inferd may have ended it: see [`crate::Revocations`]), or another's.
-    #[error("no such credential for this connection")]
-    UnknownCredential,
-    /// `begin_session` for a session id another live connection holds.
-    #[error("another launcher holds that session")]
-    SessionTaken,
-    /// `end_session`, `request_agent_key` or `issue_credential` for a session that is not open
-    /// for this connection: never begun, ended already, or another connection's.
-    #[error("no such open session for this connection")]
-    UnknownSession,
+    /// inferd refused the call for a reason of the launcher interface (a request, a program, a
+    /// permit, a credential or a session that is not the connection's to use).
+    #[error("{0}")]
+    Fault(LauncherFault),
     /// inferd refused the permit or the account for a reason an app also meets: `UnknownGrant`,
     /// `AudienceNotGranted` (the permit is not for `org.quire.Agent.<program>`), `NeedsReauth`,
     /// `Denied` (the person turned the account off), `Unavailable`.
     #[error("refused: {0:?}")]
     Refused(Refusal),
-    /// inferd does not know this caller as the agent launcher.
-    #[error("refused by inferd: {0}")]
-    Denied(String),
-    /// inferd refused an argument (a program or an id that is not one).
-    #[error("invalid argument: {0}")]
-    Invalid(String),
-    /// inferd is not there.
-    #[error("no inference service reachable")]
-    Unreachable,
-    /// inferd sent something that is not porter's protocol.
-    #[error("malformed: {0}")]
-    Malformed(String),
+    /// The call itself failed: inferd is not there, did not know the caller as the agent
+    /// launcher, refused an argument, or sent something that is not porter's protocol.
+    #[error(transparent)]
+    Bus(CallFailure),
 }
 
 impl From<BusError> for LauncherError {
     fn from(error: BusError) -> Self {
         match (launcher_fault_of(&error), refusal_of(&error)) {
-            (Some(LauncherFault::AlreadyRegistered), _) => LauncherError::AlreadyRegistered,
-            (Some(LauncherFault::UnknownRequest), _) => LauncherError::UnknownRequest,
-            (Some(LauncherFault::NotRegistered), _) => LauncherError::NotRegistered,
-            (Some(LauncherFault::OnceGrant), _) => LauncherError::OnceGrant,
-            (Some(LauncherFault::NotAKeyAccount), _) => LauncherError::NotAKeyAccount,
-            (Some(LauncherFault::UnknownCredential), _) => LauncherError::UnknownCredential,
-            (Some(LauncherFault::SessionTaken), _) => LauncherError::SessionTaken,
-            (Some(LauncherFault::UnknownSession), _) => LauncherError::UnknownSession,
-            // a fault a later porter-dbus adds
-            (Some(_), _) => {
-                LauncherError::Malformed("a launcher fault this client does not know".into())
-            }
+            (Some(fault), _) => LauncherError::Fault(fault),
             (None, Some(refusal)) => LauncherError::Refused(refusal),
-            (None, None) if is_invalid_args(&error) => LauncherError::Invalid(error.to_string()),
-            (None, None) => match classify(&error) {
-                BusFailure::NoDaemon => LauncherError::Unreachable,
-                BusFailure::Denied(why) => LauncherError::Denied(why),
-                BusFailure::Other(why) => LauncherError::Malformed(why),
-                // a failure a later porter-dbus adds
-                _ => LauncherError::Malformed("a bus failure this client does not know".into()),
-            },
+            (None, None) => LauncherError::Bus(error.into()),
         }
     }
 }
 
-impl From<CoreError> for LauncherError {
-    fn from(error: CoreError) -> Self {
-        LauncherError::Malformed(error.to_string())
-    }
-}
-
-impl From<IdError> for LauncherError {
-    fn from(error: IdError) -> Self {
-        LauncherError::Malformed(error.to_string())
-    }
-}
+bus_failure_from!(LauncherError: CallFailure, CoreError, IdError);
 
 /// What inferd asks of the launcher.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -212,7 +151,7 @@ pub struct Launcher {
 fn slug(class: DataClass) -> Result<String, LauncherError> {
     match serde_json::to_value(class) {
         Ok(serde_json::Value::String(slug)) => Ok(slug),
-        _ => Err(LauncherError::Malformed("a data class with no slug".into())),
+        _ => Err(CallFailure::Malformed("a data class with no slug".into()).into()),
     }
 }
 
@@ -229,7 +168,7 @@ impl Launcher {
     /// Opens `session`, the span a permit "for this session only" lasts (the launcher names it,
     /// usually from an ACP session id). It belongs to this connection, which must have
     /// registered a program, and ends at [`Launcher::end_session`] or when the connection
-    /// leaves the bus. A session another connection holds is [`LauncherError::SessionTaken`];
+    /// leaves the bus. A session another connection holds is [`LauncherFault::SessionTaken`];
     /// beginning one this connection holds is a no-op.
     pub async fn begin_session(&self, session: &LauncherSession) -> Result<(), LauncherError> {
         Ok(self.launcher.begin_session(session.as_str()).await?)
@@ -238,7 +177,7 @@ impl Launcher {
     /// Ends a session this connection began: inferd removes the permits scoped to it and ends
     /// the process credentials under them (`CredentialEnd::SessionClosed`), telling this
     /// connection of each in [`Launcher::revocations`] so the launcher can end the processes. A
-    /// session that is not open for this connection is [`LauncherError::UnknownSession`].
+    /// session that is not open for this connection is [`LauncherFault::UnknownSession`].
     pub async fn end_session(&self, session: &LauncherSession) -> Result<(), LauncherError> {
         Ok(self.launcher.end_session(session.as_str()).await?)
     }
@@ -281,20 +220,21 @@ impl Launcher {
             .await
             .map_err(|error| match error {
                 SheetError::Bus(error) => LauncherError::from(error),
-                SheetError::Gone => LauncherError::Unreachable,
+                SheetError::Gone => CallFailure::Unreachable.into(),
                 SheetError::Unreadable => {
-                    LauncherError::Malformed("a Response that is not (u, a{sv})".into())
+                    CallFailure::Malformed("a Response that is not (u, a{sv})".into()).into()
                 }
                 // a failure a later porter-dbus adds
-                _ => LauncherError::Malformed("a sheet failure this client does not know".into()),
+                _ => CallFailure::Malformed("a sheet failure this client does not know".into())
+                    .into(),
             })?;
         abandon.0 = None;
         match reply_of(SheetKind::Choose, code, results)? {
             AccountsReply::Chosen(candidate) => Ok(candidate.into()),
             AccountsReply::Refused(refusal) => Err(LauncherError::Refused(refusal)),
-            other => Err(LauncherError::Malformed(format!(
-                "a chooser answered with {other:?}"
-            ))),
+            other => {
+                Err(CallFailure::Malformed(format!("a chooser answered with {other:?}")).into())
+            }
         }
     }
 
@@ -323,15 +263,16 @@ impl Launcher {
             (Handoff::Memfd, Value::Fd(fd)) => CredentialHandle::Memfd(
                 fd.as_fd()
                     .try_clone_to_owned()
-                    .map_err(|why| LauncherError::Malformed(why.to_string()))?,
+                    .map_err(|why| CallFailure::Malformed(why.to_string()))?,
             ),
             (Handoff::TmpfsFile, Value::Str(path)) => {
                 CredentialHandle::TmpfsFile(path.as_str().into())
             }
             _ => {
-                return Err(LauncherError::Malformed(
+                return Err(CallFailure::Malformed(
                     "the handle is not the kind asked for".to_owned(),
-                ));
+                )
+                .into());
             }
         };
         Ok(ProcessCredential::new(id, handle))
@@ -339,7 +280,7 @@ impl Launcher {
 
     /// Ends a credential this connection was issued, because the process that held it exited or
     /// was killed: a tmpfs file is unlinked and inferd forgets it. Not for a credential inferd
-    /// ended itself (that is [`LauncherError::UnknownCredential`]).
+    /// ended itself (that is [`LauncherFault::UnknownCredential`]).
     pub async fn revoke_credential(&self, id: &ProcessCredentialId) -> Result<(), LauncherError> {
         Ok(self.launcher.revoke_process_credential(id.as_str()).await?)
     }
@@ -354,7 +295,7 @@ impl Launcher {
     }
 
     /// Registers the programs this connection launches, for as long as it lives. A program
-    /// another live connection holds is [`LauncherError::AlreadyRegistered`] and none of the list
+    /// another live connection holds is [`LauncherFault::AlreadyRegistered`] and none of the list
     /// is taken; registering a program this connection holds is a no-op, and a later call adds
     /// more.
     pub async fn register(&self, programs: &[AgentProgram]) -> Result<(), LauncherError> {
