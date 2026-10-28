@@ -2,9 +2,9 @@
 
 use crate::auth_kind::AuthKind;
 use crate::endpoint::ServiceEndpoint;
-use crate::id::{AccountId, ProviderId};
 use crate::offer::Claim;
 use crate::restriction::Restriction;
+use crate::{AccountId, ProviderId};
 use serde::{Deserialize, Serialize};
 
 /// An account: a provider, a person's credential for it, what it can do and where it is.

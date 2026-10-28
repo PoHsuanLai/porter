@@ -4,7 +4,9 @@ use crate::control::StopReason;
 use crate::cua::CuaStepReply;
 use crate::error::{InferRefusal, ModelError};
 use crate::scores::OptionScores;
-use porter_core::{AccountId, Locality, ModelId, Tokens};
+use porter_core::Locality;
+use porter_core::{AccountId, ModelId};
+use porter_ids::Tokens;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 

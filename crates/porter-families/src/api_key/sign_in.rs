@@ -8,11 +8,10 @@ use crate::key::{
 use porter_core::sheet::{
     Entry, FieldAnswer, FieldKind, FieldSpec, FieldValue, Presence, SignInFault, SignInInput,
 };
-use porter_core::{
-    Family, LoginName, SecretText, ServiceEndpoint, Tls, UrlScheme, server_address_shape,
-};
+use porter_core::{Family, LoginName, SecretText, ServiceEndpoint, Tls, server_address_shape};
 use porter_http::Http;
 use porter_http_reqwest::ReqwestHttp;
+use porter_ids::UrlScheme;
 use porter_provider::{ProviderSpec, SignIn, SignInMode, SignInStep, Signed};
 use std::sync::Arc;
 

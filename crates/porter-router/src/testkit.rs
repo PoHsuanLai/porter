@@ -65,7 +65,9 @@ pub fn models(scratch: &Scratch) -> Vec<LocalModel> {
 /// A model of an account that is not on this computer, for routing tests that must not reach it.
 pub fn cloud_card() -> porter_infer::ModelCard {
     use porter_core::capability::{Capability, LlmCap, LlmFeature, LlmWire};
-    use porter_core::{AccountId, Billing, Locality, ModelId, Tokens};
+    use porter_core::{AccountId, ModelId};
+    use porter_core::{Billing, Locality};
+    use porter_ids::Tokens;
     porter_infer::ModelCard {
         account: AccountId::parse("anthropic").expect("id"),
         model: ModelId::parse("sonnet").expect("id"),

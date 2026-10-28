@@ -6,7 +6,8 @@
 //! Secret Service's attributes):
 //!
 //! ```
-//! use porter_core::{AccountId, SecretKey, SecretPurpose};
+//! use porter_core::{SecretKey, SecretPurpose};
+//! use porter_core::AccountId;
 //! use porter_secrets::{Namespace, SERVICE, attributes, attributes_in};
 //!
 //! let key = SecretKey {

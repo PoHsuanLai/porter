@@ -2,7 +2,8 @@
 //! key goes with every request.
 
 use model_openai_compat::Flavor;
-use porter_core::{AccountId, ModelId, Tokens};
+use porter_core::{AccountId, ModelId};
+use porter_ids::Tokens;
 use std::fmt;
 
 /// What the app calls an engine in its routing table: the id grammar (`[a-z0-9]` then
@@ -13,7 +14,7 @@ pub struct EngineId(String);
 impl EngineId {
     /// The id named `text`.
     pub fn parse(text: &str) -> Result<Self, EngineError> {
-        match porter_core::is_id(text) {
+        match porter_ids::is_id(text) {
             true => Ok(Self(text.to_owned())),
             false => Err(EngineError::Id(text.to_owned())),
         }

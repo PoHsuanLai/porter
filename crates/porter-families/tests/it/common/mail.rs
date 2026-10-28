@@ -4,9 +4,10 @@
 //! security on this computer.
 #![allow(dead_code)]
 
-use porter_core::{EndpointProtocol, Origin, Tls};
+use porter_core::{EndpointProtocol, Tls};
 use porter_fake_servers::net::{Bind, port_of};
 use porter_fake_servers::{Accounts, FakeImap, FakePop3, MailHandle, Running, mailbox, tls};
+use porter_ids::Origin;
 use porter_proxy::{Connect, ConnectFault, NetStream, RustlsConnect};
 
 /// The fakes, kept running for as long as this is held.
@@ -103,7 +104,7 @@ impl Wire {
     }
 
     fn here(&self, origin: &Origin, tls: Tls) -> Origin {
-        let ports = match origin.scheme.protocol() {
+        let ports = match EndpointProtocol::of_scheme(origin.scheme) {
             EndpointProtocol::Pop3 => self.pop3,
             _ => self.imap,
         };

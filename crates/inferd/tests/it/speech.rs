@@ -405,7 +405,7 @@ async fn a_hear_then_answer_pipeline_hears_on_the_speech_host_and_answers_on_a_t
     };
     let need = Need::Llm(porter_core::need::LlmNeed::new(
         [porter_core::capability::LlmFeature::Chat].into(),
-        porter_core::Tokens(1000),
+        porter_ids::Tokens(1000),
     ));
     let planned = plan(
         &shape,

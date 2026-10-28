@@ -14,7 +14,7 @@ path = "src/bin/porter-engine-helper.rs"
 
 [dependencies]
 porter-engines = { workspace = true }
-porter-core = { workspace = true }
+porter-ids = { workspace = true }
 porter-http = { workspace = true }
 porter-http-reqwest = { workspace = true }
 # The archives are unpacked in process (`extract`), never by the system's `tar`.

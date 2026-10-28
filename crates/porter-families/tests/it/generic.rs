@@ -7,9 +7,10 @@ use crate::common;
 
 use common::mail::{MailWorld, Wire};
 use common::{Fakes, Place, all_on, drive, plain, secret};
+use porter_core::AccountId;
 use porter_core::capability::CapabilityKind;
 use porter_core::sheet::{FieldAnswer, FieldKind, SignInFault, SignInInput};
-use porter_core::{AccountId, Credential, Family, Offer, SecretPurpose, SecretText, Tls};
+use porter_core::{Credential, Family, Offer, SecretPurpose, SecretText, Tls};
 use porter_discover::{MxRecord, SrvRecord};
 use porter_fake::FakeServer;
 use porter_fake_servers::net::Bind;
@@ -1418,7 +1419,7 @@ impl porter_proxy::Connect for Counted {
 
     async fn dial(
         &self,
-        origin: &porter_core::Origin,
+        origin: &porter_ids::Origin,
         tls: Tls,
     ) -> Result<porter_proxy::NetStream, porter_proxy::ConnectFault> {
         self.dials.fetch_add(1, std::sync::atomic::Ordering::SeqCst);

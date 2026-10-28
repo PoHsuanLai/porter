@@ -48,10 +48,11 @@ use crate::paths::AccountDir;
 use crate::scheduler::next_look;
 use crate::service::{Access, DatasetName};
 use porter_client::Transport;
-use porter_core::{AppName, Candidate, EndpointUrl, WebUrl};
+use porter_core::{AppName, Candidate, EndpointUrl};
 use porter_dbus::DriveState;
 use porter_drive::{CacheLimit, Drive, DriveConfig, FreeSpace, ReplicaSource};
 use porter_drive_fuse::{DriveFs, Mounter, Now};
+use porter_ids::WebUrl;
 use porter_sync::{DriveWrite, Replica};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
@@ -287,7 +288,7 @@ where
             let folders = drive_folders(&candidates);
             for candidate in &candidates {
                 let Some(account) =
-                    AccountDir::parse(&porter_core::object_segment(&candidate.account))
+                    AccountDir::parse(&porter_ids::object_segment(candidate.account.as_str()))
                 else {
                     continue;
                 };

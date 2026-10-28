@@ -1,9 +1,9 @@
 use super::*;
-use porter_core::UnixSeconds;
 use porter_core::capability::StorageScope;
 use porter_core::consent::{GrantKey, Usage};
 use porter_core::{DataClass, SpaceScope};
 use porter_fake::llm_account;
+use porter_ids::UnixSeconds;
 
 fn registry() -> Registry {
     let account = llm_account();

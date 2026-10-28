@@ -17,7 +17,8 @@ use model_openai_compat::OpenAiCodec;
 use model_provider as sp;
 use model_provider::{Provider, Retrying};
 use model_wire::Driver;
-use porter_core::{AppId, Tokens};
+use porter_core::AppId;
+use porter_ids::Tokens;
 use porter_infer::{
     ChatReply, ChatRequest, ChatSink, EmbedReply, EmbedRequest, Flow, InferRefusal, Knob, Model,
     ModelCard, ModelError, ServedBy, SpendVerdict, TaskRequest, TokenUsage, TurnError,

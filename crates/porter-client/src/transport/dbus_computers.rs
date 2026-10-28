@@ -5,10 +5,10 @@
 
 use super::dbus::{DbusTransport, Rows, bus_error};
 use crate::error::TransportError;
+use porter_core::NodeId;
 use porter_core::lending::{
     Approval, CandidateModel, ComputerCandidate, GuestAnswer, GuestRow, RowState,
 };
-use porter_core::{NodeId, UnixSeconds};
 use porter_dbus::names::{
     CANDIDATE_KEY_MODELS, CANDIDATE_KEY_NAME, CANDIDATE_KEY_NEEDS_APPROVAL, GUEST_KEY_NAME,
     GUEST_KEY_SINCE, GUEST_KEY_STATE,
@@ -16,6 +16,7 @@ use porter_dbus::names::{
 use porter_dbus::{
     Details, InferenceProxy, LocalEngine, RunningModel, local_engine_from_dbus, running_from_dbus,
 };
+use porter_ids::UnixSeconds;
 
 impl DbusTransport {
     async fn inference_proxy(&self) -> Result<InferenceProxy<'static>, TransportError> {

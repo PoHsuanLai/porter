@@ -5,7 +5,8 @@
 use crate::error::InferRefusal;
 use crate::policy::{LocalOnly, Policy};
 use crate::spend::SpendVerdict;
-use porter_core::{AccountId, Billing, DataClass, Locality, ModelId};
+use porter_core::{AccountId, ModelId};
+use porter_core::{Billing, DataClass, Locality};
 
 /// What routing needs to know about the request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

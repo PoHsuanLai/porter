@@ -2,8 +2,8 @@
 //! the check that a link the server handed back (a delta link) is still this server's. Paths
 //! start at the root the replica was given: the app folder or the drive's own root.
 
-use porter_core::WebUrl;
-use porter_core::percent::encode_unreserved;
+use porter_ids::WebUrl;
+use porter_ids::percent::encode_unreserved;
 use porter_sync::ItemPath;
 
 /// Graph's version prefix and the signed-in user's drive.

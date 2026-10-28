@@ -2,8 +2,9 @@
 //! a socket or builds a TLS configuration itself, so the same machines run against a real host
 //! and a fake server with a scratch CA.
 
+use porter_core::Tls;
 use porter_core::stream::ByteStream;
-use porter_core::{Origin, Tls};
+use porter_ids::Origin;
 use std::future::Future;
 
 /// Why a connection could not be made.

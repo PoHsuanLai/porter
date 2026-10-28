@@ -104,7 +104,7 @@ fn class_and_tier_slugs_parse_and_anything_else_is_an_invalid_argument() {
 
 #[test]
 fn a_hardware_note_is_a_row_of_its_kind_its_sentence_and_its_numbers() {
-    use porter_core::{Bytes, Count};
+    use porter_ids::{Bytes, Count};
     use porter_infer::HardwareNote;
     let notes = [
         HardwareNote::ModelShared { helpers: Count(2) },

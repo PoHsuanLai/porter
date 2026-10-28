@@ -1,8 +1,8 @@
 //! What a status the replica did not expect means to the contract: a write that was refused
 //! ([`PutRefused`]). The statuses every HTTP replica reads alike are porter-sync's `status`.
 
-use porter_core::UnixSeconds;
 use porter_http::http::Response;
+use porter_ids::UnixSeconds;
 use porter_sync::PutRefused;
 use porter_sync::status::retry_after;
 

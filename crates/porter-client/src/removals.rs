@@ -7,9 +7,10 @@
 
 use crate::error::TransportError;
 use crate::identities::{Identities, IdentitiesError, IdentityRemovals};
-use porter_core::{AccountId, object_segment};
+use porter_core::AccountId;
 use porter_dbus::BusConnection;
 use porter_dbus::names::ACCOUNTS_PATH;
+use porter_ids::object_segment;
 use zbus::export::futures_core::Stream;
 
 /// An identity accountd has removed, as the object-path segment its account was served at.
@@ -80,7 +81,7 @@ impl Removals {
                 continue;
             };
             return Some(RemovedAccount {
-                segment: object_segment(&account),
+                segment: object_segment(account.as_str()),
             });
         }
     }

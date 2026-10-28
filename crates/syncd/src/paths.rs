@@ -1,6 +1,6 @@
 //! Where syncd reads and writes, resolved from the environment (PLAN §2.3): the one place the
 //! daemon names a path, so a test can give it scratch directories. An account is named on disk
-//! by its object-path segment (`porter_core::object_segment`), the form the account's
+//! by its object-path segment (`porter_ids::object_segment`), the form the account's
 //! directories are named in, so a wipe needs no map back to the id.
 
 pub use porter_daemon::xdg::PathError;

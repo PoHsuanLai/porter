@@ -40,8 +40,9 @@ use crate::authenticated::Relayed;
 #[cfg(feature = "infer")]
 use crate::computers::NewComputer;
 use crate::error::TransportError;
+use porter_core::GrantId;
 use porter_core::lending::{ComputerCandidate, GuestAnswer, GuestRow};
-use porter_core::{AccountsReply, AccountsRequest, EndpointUrl, GrantId, NodeId};
+use porter_core::{AccountsReply, AccountsRequest, EndpointUrl, NodeId};
 #[cfg(feature = "infer")]
 use porter_core::{DataClass, Need, Tier};
 #[cfg(feature = "infer")]

@@ -31,8 +31,9 @@ use ds_settings::schema::{
     ActionLabel, ActionWeight, AgentSetting, Exposure, Help, KeyKind, KeyPath, KeySpec, Label,
     LiveAction, Note, Page, Section, WordLabels,
 };
+use porter_core::AccountId;
 use porter_core::wire::ParentWindow;
-use porter_core::{Account, AccountId, AccountState, Family, Toggle};
+use porter_core::{Account, AccountState, Family, Toggle};
 use porter_dbus::callers::{CallerRole, Callers};
 use porter_drive::CacheLimit;
 use porter_families::set::ProviderNames;

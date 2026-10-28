@@ -11,9 +11,9 @@
 use super::accountd::AccountVerdict;
 use model_catalog::{Locality, ModelEntry, ProviderId, Reach, Wire, reachable};
 use porter_core::consent::Verdict;
-use porter_core::{
-    AccountId, AccountState, Billing, GrantId, Locality as Where, MicroUsd, ModelId, PriceTable,
-};
+use porter_core::{AccountId, GrantId, ModelId};
+use porter_core::{AccountState, Billing, Locality as Where, PriceTable};
+use porter_ids::MicroUsd;
 use porter_infer::{ModelCard, ModelRef, Permit};
 use std::collections::BTreeSet;
 

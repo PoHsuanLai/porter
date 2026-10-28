@@ -4,7 +4,8 @@
 //! app reaches such a host through `OpenLinked`, which adds no credential; the provider file
 //! names which hosts that may be, so the daemon is never an open proxy.
 
-use porter_core::{CoreError, Origin};
+use porter_core::CoreError;
+use porter_ids::Origin;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 

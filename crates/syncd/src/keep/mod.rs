@@ -37,12 +37,11 @@ use crate::paths::{AccountDir, Paths};
 use crate::removal;
 use crate::service::Hub;
 use porter_client::IdentitiesError;
+use porter_core::AccountId;
 use porter_core::consent::GrantKey;
 use porter_core::consent::Usage;
 use porter_core::wire::{ParentWindow, Refusal};
-use porter_core::{
-    Account, AccountId, AccountsReply, AccountsRequest, CapabilityKind, DataClass, Toggle,
-};
+use porter_core::{Account, AccountsReply, AccountsRequest, CapabilityKind, DataClass, Toggle};
 use porter_provider::{ConsentHistory, LoginHint};
 use porter_service::SignInAs;
 
@@ -122,7 +121,7 @@ impl Continued {
 
 /// The folder an account's journals, cache and drive are kept under, and its drive's id.
 fn drive_dir(account: &AccountId) -> Option<AccountDir> {
-    AccountDir::parse(&porter_core::object_segment(account))
+    AccountDir::parse(&porter_ids::object_segment(account.as_str()))
 }
 
 /// syncd's accounts over the service it hosts and the directory of identities.

@@ -5,7 +5,7 @@ use crate::capability::{
     MailTransport, Offered, QuotaReport, StorageCap, StorageScope,
 };
 use crate::offer::{Claim, Offer, Provenance, Subject};
-use crate::units::Tokens;
+use porter_ids::Tokens;
 
 pub(crate) fn storage(access: Access, delta: Delta, scope: StorageScope) -> Capability {
     Capability::Storage(StorageCap {

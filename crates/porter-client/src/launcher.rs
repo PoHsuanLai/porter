@@ -33,10 +33,10 @@ use crate::credential::{CredentialHandle, ProcessCredential, Revocations};
 use porter_core::audit::Handoff;
 use porter_core::capability::AgentProgram;
 use porter_core::wire::Refusal;
+use porter_core::{AccountId, KeyPermitId, ProviderId};
 use porter_core::{
-    AccountId, AccountLabel, AccountsReply, Candidate, Capability, CoreError, DataClass,
-    KeyPermitId, LauncherSession, LoginOutcome, LoginRequestId, ProcessCredentialId, ProviderId,
-    Restriction, Subject,
+    AccountLabel, AccountsReply, Candidate, Capability, CoreError, DataClass, LauncherSession,
+    LoginOutcome, LoginRequestId, ProcessCredentialId, Restriction, Subject,
 };
 use porter_dbus::sheet::{SheetKind, reply_of};
 use porter_dbus::{
@@ -45,6 +45,7 @@ use porter_dbus::{
     LauncherProxy, ServiceRoot, Sheet, SheetError, classify, is_invalid_args, launcher_fault_of,
     refusal_of, zvariant::Value,
 };
+use porter_ids::IdError;
 use std::os::fd::AsFd;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -131,6 +132,12 @@ impl From<BusError> for LauncherError {
 
 impl From<CoreError> for LauncherError {
     fn from(error: CoreError) -> Self {
+        LauncherError::Malformed(error.to_string())
+    }
+}
+
+impl From<IdError> for LauncherError {
+    fn from(error: IdError) -> Self {
         LauncherError::Malformed(error.to_string())
     }
 }

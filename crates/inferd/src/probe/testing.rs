@@ -1,9 +1,11 @@
 //! Values the unit tests of the probe, the book, the report and the watch share.
 
 use super::{Found, Probed, Runtime};
+use porter_core::ModelId;
 use porter_core::capability::{Capability, EmbedCap, EmbedPrompts, LlmCap, LlmFeature, LlmWire};
 use porter_core::capability::{Modality, PrefixText};
-use porter_core::{Claim, Count, Dims, ModelId, Offer, Provenance, Subject, Tokens};
+use porter_core::{Claim, Offer, Provenance, Subject};
+use porter_ids::{Count, Dims, Tokens};
 use porter_provider::Port;
 
 fn claim(id: &ModelId, capability: Capability) -> Claim {

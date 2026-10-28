@@ -21,9 +21,10 @@ use super::fields::{
     Entry, FieldAnswer, FieldKind, FieldSpec, FieldValue, Presence, first_missing,
 };
 use super::view::{FieldProblem, ProblemKind};
-use crate::endpoint::{EndpointUrl, UrlScheme, server_address, server_address_shape};
 use crate::secret::SecretText;
 use crate::tailnet::{Machine, is_one_of_mine};
+use crate::{endpoint::EndpointUrl, endpoint::server_address, endpoint::server_address_shape};
+use porter_ids::UrlScheme;
 use serde::{Deserialize, Serialize};
 
 /// How a mail server speaks.

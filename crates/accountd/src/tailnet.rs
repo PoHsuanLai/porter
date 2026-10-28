@@ -20,7 +20,8 @@
 //! answer settles it.
 
 use crate::host::Host;
-use porter_core::{AccountId, AccountState, AuthKind, Machine};
+use porter_core::AccountId;
+use porter_core::{AccountState, AuthKind, Machine};
 use porter_tailscale::{LocalApi, Standing, Status, TailscaleError};
 use std::time::Duration;
 

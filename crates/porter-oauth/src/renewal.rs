@@ -4,8 +4,9 @@
 //! it, and only the issuer's own refusal is a reason to sign in again.
 
 use crate::exchange::{ExchangeFault, refresh};
-use porter_core::{Credential, GrantedScopes, UnixSeconds};
+use porter_core::{Credential, GrantedScopes};
 use porter_http::Http;
+use porter_ids::UnixSeconds;
 use porter_provider::{ClientEntry, IssuerEndpoints};
 
 /// How long before expiry a token counts as due.

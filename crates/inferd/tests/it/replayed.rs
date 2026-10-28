@@ -10,7 +10,8 @@ use porter_client::InferSession;
 use porter_core::capability::LlmFeature;
 use porter_core::consent::Usage;
 use porter_core::need::LlmNeed;
-use porter_core::{DataClass, Need, Tier, Tokens};
+use porter_core::{DataClass, Need, Tier};
+use porter_ids::Tokens;
 use porter_infer::{
     ChatMessage, ChatRequest, ClientFrame, InferEvent, InferReply, InferRequest, JsonSchemaText,
     JsonText, MessagePart, Role as ChatRole, StopReason, ToolDecl, ToolName,

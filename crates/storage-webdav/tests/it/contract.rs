@@ -9,7 +9,7 @@ use common::{Flavor, Replica, Server};
 use porter_core::capability::{
     Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope,
 };
-use porter_core::{Bytes, UnixSeconds};
+use porter_ids::{Bytes, UnixSeconds};
 use porter_sync::{
     BaseVersion, Blob, ByteRange, Change, Conflict, Cursor, ItemPath, MemoryReplica, More, PutItem,
     PutRefused, PutTarget, Quota, RemoteId, RemoteSide, Replica as _, ReplicaError, Tombstone,

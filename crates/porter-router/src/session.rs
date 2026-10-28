@@ -301,9 +301,9 @@ mod step_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_core::Tokens;
     use porter_core::capability::CuaEnv;
     use porter_core::need::{CuaNeed, DimsNeed, EmbedNeed, LlmNeed, SpeechNeed};
+    use porter_ids::Tokens;
 
     fn llm() -> Need {
         Need::Llm(LlmNeed::new(Default::default(), Tokens(1)))

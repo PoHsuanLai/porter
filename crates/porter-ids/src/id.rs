@@ -1,12 +1,10 @@
-//! Identifiers: opaque, stable, ASCII slugs, parsed once where they enter.
+//! The grammar of an id, and the macro that declares one: opaque, stable, ASCII slugs, parsed
+//! once where they enter. The ids themselves are declared, with [`slug_id!`], by the crate that
+//! owns the concept they name.
 //!
 //! One grammar for every id (`[a-z0-9]` then `[a-z0-9._-]`, at most 64 bytes) so an id is
-//! always safe in a file name, a Secret Service attribute and, after [`crate::object_segment`],
+//! always safe in a file name, a Secret Service attribute and, after [`object_segment`],
 //! a D-Bus object path. A UUID in its hyphenated lowercase form is a valid id.
-
-use crate::error::CoreError;
-use serde::{Deserialize, Serialize};
-use std::fmt;
 
 /// The longest id, in bytes.
 const MAX_LEN: usize = 64;
@@ -14,11 +12,6 @@ const MAX_LEN: usize = 64;
 /// Whether `text` is a well-formed id (the one grammar every id of ours shares; crates that
 /// mint ids of their own, such as `prov`, check with this).
 pub fn is_id(text: &str) -> bool {
-    well_formed(text)
-}
-
-/// Whether `text` is a well-formed id.
-pub(crate) fn well_formed(text: &str) -> bool {
     let mut bytes = text.bytes();
     let first_ok = bytes
         .next()
@@ -30,20 +23,24 @@ pub(crate) fn well_formed(text: &str) -> bool {
         })
 }
 
+/// Declares an id type in the one slug grammar ([`is_id`]): a `String` newtype whose `parse` is
+/// the only way in, whose serde form is its text, and whose `Display` writes the text. The
+/// field is private to the module that declares it, and the caller depends on `serde`.
+#[macro_export]
 macro_rules! slug_id {
     ($(#[$doc:meta])* $name:ident, $what:literal) => {
         $(#[$doc])*
-        #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+        #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, ::serde::Serialize, ::serde::Deserialize)]
         #[serde(try_from = "String", into = "String")]
         pub struct $name(String);
 
         impl $name {
             /// The id written as `text`, or why it is not one.
-            pub fn parse(text: &str) -> Result<Self, CoreError> {
-                if $crate::id::well_formed(text) {
+            pub fn parse(text: &str) -> Result<Self, $crate::IdError> {
+                if $crate::is_id(text) {
                     Ok(Self(text.to_owned()))
                 } else {
-                    Err(CoreError::MalformedId { what: $what, text: text.to_owned() })
+                    Err($crate::IdError::malformed($what, text))
                 }
             }
 
@@ -54,8 +51,8 @@ macro_rules! slug_id {
         }
 
         impl TryFrom<String> for $name {
-            type Error = CoreError;
-            fn try_from(text: String) -> Result<Self, CoreError> {
+            type Error = $crate::IdError;
+            fn try_from(text: String) -> Result<Self, $crate::IdError> {
                 Self::parse(&text)
             }
         }
@@ -66,62 +63,20 @@ macro_rules! slug_id {
             }
         }
 
-        impl fmt::Display for $name {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        impl ::std::fmt::Display for $name {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
                 f.write_str(&self.0)
             }
         }
     };
-}
-pub(crate) use slug_id;
-
-slug_id!(
-    /// One configured account (a row in accountd's registry, or a discovered local runtime).
-    AccountId,
-    "account id"
-);
-slug_id!(
-    /// One provider declaration (`providers/<id>.toml`).
-    ProviderId,
-    "provider id"
-);
-slug_id!(
-    /// One consent decision, named so an app can revoke it and Settings can list it.
-    GrantId,
-    "grant id"
-);
-slug_id!(
-    /// One person's yes for an app to use one of their AI keys: what the key host (inferd) keeps
-    /// in its registry as a grant of kind Llm. The same text as the [`GrantId`] it is stored under.
-    KeyPermitId,
-    "key permit id"
-);
-slug_id!(
-    /// One model an AI account serves (`llama3.2`, `claude-sonnet-4-5`).
-    ModelId,
-    "model id"
-);
-
-impl From<GrantId> for KeyPermitId {
-    fn from(grant: GrantId) -> Self {
-        Self(grant.into())
-    }
-}
-
-impl From<KeyPermitId> for GrantId {
-    fn from(permit: KeyPermitId) -> Self {
-        // Both are the one id grammar, so the text is always a well-formed grant id.
-        GrantId::parse(permit.as_str()).expect("a permit id is a grant id")
-    }
 }
 
 /// The id as one D-Bus object path segment (`[A-Za-z0-9_]`): `.` and `-` become `_`.
 ///
 /// Two ids differing only in those characters share a segment; accountd refuses the second
 /// (it never mints such ids itself).
-pub fn object_segment(id: &AccountId) -> String {
-    id.as_str()
-        .chars()
+pub fn object_segment(id: &str) -> String {
+    id.chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
         .collect()
 }
@@ -129,6 +84,12 @@ pub fn object_segment(id: &AccountId) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    slug_id!(
+        /// An id of the tests.
+        TestId,
+        "test id"
+    );
 
     const CASES: &[(&str, &str, bool)] = &[
         ("plain", "nextcloud", true),
@@ -149,19 +110,18 @@ mod tests {
     #[test]
     fn ids_parse_only_the_slug_grammar() {
         for (name, text, ok) in CASES {
-            assert_eq!(AccountId::parse(text).is_ok(), *ok, "{name}");
+            assert_eq!(TestId::parse(text).is_ok(), *ok, "{name}");
         }
     }
 
     #[test]
     fn a_malformed_id_does_not_deserialize() {
-        let parsed: Result<ProviderId, _> = serde_json::from_str("\"Not An Id\"");
+        let parsed: Result<TestId, _> = serde_json::from_str("\"Not An Id\"");
         assert!(parsed.is_err());
     }
 
     #[test]
     fn object_segment_keeps_only_path_characters() {
-        let id = AccountId::parse("67e55044-10b1.x").expect("valid id");
-        assert_eq!(object_segment(&id), "67e55044_10b1_x");
+        assert_eq!(object_segment("67e55044-10b1.x"), "67e55044_10b1_x");
     }
 }

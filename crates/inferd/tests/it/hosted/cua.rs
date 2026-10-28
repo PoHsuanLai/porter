@@ -113,7 +113,7 @@ async fn a_cua_step_with_a_memfd_frame_round_trips_to_a_window_space_action() {
 
     // The audit says a frame was sent for the step and none for the begin; never the frame.
     let images: Vec<_> = world.audit.entries().iter().map(|e| e.images).collect();
-    assert_eq!(images, vec![porter_core::Count(0), porter_core::Count(1)]);
+    assert_eq!(images, vec![porter_ids::Count(0), porter_ids::Count(1)]);
 }
 
 #[tokio::test(flavor = "multi_thread")]

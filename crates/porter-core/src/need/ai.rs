@@ -3,7 +3,7 @@
 //! Each need grows by adding a minimum, so each is `#[non_exhaustive]` and built with `new`.
 
 use crate::capability::{CuaEnv, ImageMode, LlmFeature, Modality, SpeechMode};
-use crate::units::{Count, Dims, Px, Tokens};
+use porter_ids::{Count, Dims, Px, Tokens};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 

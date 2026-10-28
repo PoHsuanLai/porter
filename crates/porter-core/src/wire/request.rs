@@ -4,9 +4,9 @@
 use crate::consent::Usage;
 use crate::data_class::DataClass;
 use crate::endpoint::EndpointUrl;
-use crate::id::{AccountId, GrantId, ProviderId};
 use crate::need::Need;
 use crate::token::Audience;
+use crate::{AccountId, GrantId, ProviderId};
 use serde::{Deserialize, Serialize};
 
 /// One request to accountd (design/31 §4.4; the D-Bus methods carry the same values).

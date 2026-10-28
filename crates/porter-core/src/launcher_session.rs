@@ -3,10 +3,7 @@
 //! the agent under, mapped to this grammar) and tells accountd when it begins and ends
 //! (`Peer.BeginSession`, `Peer.EndSession`).
 
-use crate::error::CoreError;
-use crate::id::slug_id;
-use serde::{Deserialize, Serialize};
-use std::fmt;
+use porter_ids::slug_id;
 
 slug_id!(
     /// One launcher session. The same grammar as every id of ours (lowercase letters, digits,

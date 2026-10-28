@@ -49,7 +49,7 @@ use crate::listing::{Listing, ListingError};
 use crate::sink::Sink;
 use crate::source::Source;
 use fetch::Transfer;
-use porter_core::UnixSeconds;
+use porter_ids::UnixSeconds;
 use porter_sync::{ItemKind, RemoteId};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};

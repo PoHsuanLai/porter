@@ -10,7 +10,8 @@
 //!     .await?;                                    // PlaceId: computer:studio
 //! ```
 
-use porter_core::{ModelId, SecretText};
+use porter_core::ModelId;
+use porter_core::SecretText;
 use std::path::PathBuf;
 
 /// How a model on another computer is reached from this one: a connection already open on this

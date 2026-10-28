@@ -6,8 +6,8 @@
 //! loopback redirect, a local model server). No user info, no fragment; the text is ASCII with
 //! nothing a header or a command line would choke on. Its serde form is the text.
 
-use crate::endpoint::{EndpointUrl, Origin, UrlScheme, split_authority};
-use crate::error::CoreError;
+use crate::error::IdError;
+use crate::origin::{Origin, UrlScheme, split_authority};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -21,11 +21,8 @@ pub struct WebUrl(String);
 
 impl WebUrl {
     /// The URL written as `text`, or why it is not a web URL.
-    pub fn parse(text: &str) -> Result<Self, CoreError> {
-        let bad = || CoreError::MalformedId {
-            what: "web url",
-            text: text.to_owned(),
-        };
+    pub fn parse(text: &str) -> Result<Self, IdError> {
+        let bad = || IdError::malformed("web url", text);
         let usable = text.len() <= MAX_LEN
             && text.bytes().all(|b| b.is_ascii_graphic())
             && !text.contains('#');
@@ -95,17 +92,9 @@ fn split(text: &str) -> Option<(Origin, &str)> {
     Some((Origin { scheme, host, port }, tail))
 }
 
-impl TryFrom<&EndpointUrl> for WebUrl {
-    type Error = CoreError;
-    /// An endpoint URL that is a web URL: `https`, or `http` to this computer.
-    fn try_from(url: &EndpointUrl) -> Result<Self, CoreError> {
-        Self::parse(url.as_str())
-    }
-}
-
 impl TryFrom<String> for WebUrl {
-    type Error = CoreError;
-    fn try_from(text: String) -> Result<Self, CoreError> {
+    type Error = IdError;
+    fn try_from(text: String) -> Result<Self, IdError> {
         Self::parse(&text)
     }
 }

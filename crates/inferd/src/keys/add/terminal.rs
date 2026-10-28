@@ -6,13 +6,14 @@
 //! The terminal itself is a seam (`Terminal`): standard input and output in the binary, a script
 //! in tests.
 
+use porter_core::AccountId;
 use porter_core::consent::{ConsentAnswer, ConsentAsk, GrantScope};
 use porter_core::sheet::{
     Entry, FieldAnswer, FieldKind, FieldSpec, FieldValue, Presence, ServiceChoice, ServiceState,
     SheetInput, SheetView, refit,
 };
 use porter_core::wire::ParentWindow;
-use porter_core::{AccountId, SecretText, Toggle};
+use porter_core::{SecretText, Toggle};
 use porter_service::{SheetFault, SheetLink, SheetOpen, Sheets};
 use std::io::{BufRead, IsTerminal, Write};
 use std::sync::{Arc, Mutex, PoisonError};

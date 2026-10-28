@@ -2,7 +2,9 @@ use super::*;
 use crate::policy::{ClassFloor, Floor, LocalOnly};
 use crate::route::Permit;
 use crate::spend::SpendVerdict;
-use porter_core::{AccountId, Billing, DataClass, Locality, MicroUsd, ModelId, PriceTable};
+use porter_core::{AccountId, ModelId};
+use porter_core::{Billing, DataClass, Locality, PriceTable};
+use porter_ids::MicroUsd;
 
 pub(super) fn mref(name: &str) -> ModelRef {
     ModelRef {

@@ -20,9 +20,10 @@ use crate::dns::{Dns, DnsFault};
 use crate::found::{DiscoverFault, Found, SearchOptions, Source, StartTlsOnly};
 use crate::mx::{ProviderLead, ispdb_candidates, lookup_mx, provider_leads};
 use crate::srv::{found_from_srv_with, lookup_srv};
-use porter_core::{Tls, WebUrl};
+use porter_core::Tls;
 use porter_http::http::Method;
 use porter_http::{Http, HttpError, request};
+use porter_ids::WebUrl;
 use porter_provider::{DomainMatch, ProviderSet};
 use std::fmt;
 

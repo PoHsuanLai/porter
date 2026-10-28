@@ -2,10 +2,10 @@
 //! token made into a media item. Pure over any [`Http`]; in syncd the `Http` is a relay that adds
 //! the bearer.
 
-use porter_core::{UnixSeconds, WebUrl};
 use porter_http::http::request::Builder;
 use porter_http::http::{Method, Response, StatusCode};
 use porter_http::{HeaderText, Http, request};
+use porter_ids::{UnixSeconds, WebUrl};
 use porter_sync::Clock;
 use serde::Deserialize;
 

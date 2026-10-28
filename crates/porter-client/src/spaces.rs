@@ -13,14 +13,13 @@
 //! while let Some(change) = changes.next().await { /* (id, SpaceChange) */ }
 //! ```
 
-use porter_core::{
-    CoreError, DesktopSpace, DesktopSpaceRecord, SpaceChange, SpaceLook, SpaceName, UnixSeconds,
-};
+use porter_core::{CoreError, DesktopSpace, DesktopSpaceRecord, SpaceChange, SpaceLook, SpaceName};
 use porter_dbus::names::{SPACE_KEY_CREATED, SPACE_KEY_LOOK, SPACE_KEY_NAME};
 use porter_dbus::{
     BusConnection, BusError, BusFailure, BusStream, Details, SpaceChanged, SpaceChangedStream,
     SpacesProxy, classify, is_invalid_args, is_limits_exceeded,
 };
+use porter_ids::{IdError, UnixSeconds};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -65,6 +64,12 @@ impl From<BusError> for SpacesError {
 
 impl From<CoreError> for SpacesError {
     fn from(error: CoreError) -> Self {
+        SpacesError::Malformed(error.to_string())
+    }
+}
+
+impl From<IdError> for SpacesError {
+    fn from(error: IdError) -> Self {
         SpacesError::Malformed(error.to_string())
     }
 }

@@ -1,7 +1,7 @@
 //! What an account says it can do, and how that is known (design/31 §2.4).
 
+use crate::ModelId;
 use crate::capability::{Capability, CapabilityKind};
-use crate::id::ModelId;
 use serde::{Deserialize, Serialize};
 
 /// A kind an account has, with its parameters, or lacks, with the reason the UI shows (G9).

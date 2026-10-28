@@ -4,9 +4,9 @@
 //! (a throttle spelled as a `403`, a locked item) stay in that vendor's crate, on top of these.
 
 use crate::refusal::{PutRefused, ReplicaError, RetryAfter};
-use porter_core::UnixSeconds;
 use porter_http::http::Response;
 use porter_http::{HeaderText, HttpError};
+use porter_ids::UnixSeconds;
 
 /// How long to wait when the server did not say.
 pub const RETRY: RetryAfter = RetryAfter(30);

@@ -5,8 +5,9 @@ use crate::io::{Io, SharedDns};
 use crate::password::declared;
 use porter_core::capability::{Capability, MailCap, MailTransport};
 use porter_core::sheet::{Hop, MailServers, Security, SignInFault};
-use porter_core::{Claim, EndpointUrl, Family, LoginName, Offer, ServiceEndpoint, Tls, UrlScheme};
+use porter_core::{Claim, EndpointUrl, Family, LoginName, Offer, ServiceEndpoint, Tls};
 use porter_discover::{Found, Outcome, Source, discover_mail};
+use porter_ids::UrlScheme;
 use porter_provider::{DomainName, ProviderSet, ProviderSpec};
 
 /// What looking for a mail server came to.

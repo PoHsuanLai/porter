@@ -7,10 +7,11 @@
 use crate::io::Io;
 use crate::password::{fault_of, join, parse_server};
 use porter_core::sheet::SignInFault;
-use porter_core::{EndpointUrl, LoginName, SecretText, WebUrl};
+use porter_core::{EndpointUrl, LoginName, SecretText};
 use porter_http::http::header::{ACCEPT, CONTENT_TYPE, USER_AGENT};
 use porter_http::http::{Method, Request, StatusCode};
 use porter_http::{Http, HttpError, request_to};
+use porter_ids::WebUrl;
 use serde_json::Value;
 
 /// What the server named for a flow just started.

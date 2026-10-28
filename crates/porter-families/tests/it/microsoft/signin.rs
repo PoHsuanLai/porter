@@ -1,9 +1,9 @@
 use super::rig::*;
+use porter_core::AccountId;
 use porter_core::capability::CapabilityKind as K;
 use porter_core::sheet::{ServiceChoice, SignInFault, SignInInput};
 use porter_core::{
-    AbsentReason, AccountId, Credential, Family, Offer, Provenance, SecretPurpose, TenantConsent,
-    Toggle,
+    AbsentReason, Credential, Family, Offer, Provenance, SecretPurpose, TenantConsent, Toggle,
 };
 use porter_fake_servers::{Consent, IssuerEvent, TokenResult};
 use porter_provider::{LoginHint, Provider, SignIn, SignInMode, SignInStart, SignInStep};
@@ -267,7 +267,7 @@ async fn a_client_id_written_after_start_is_used_by_the_next_sign_in() {
             graph: std::sync::Arc::clone(&rig.graph),
         },
         porter_oauth::ClientRegistry::default(),
-        porter_core::clock::SystemClock,
+        porter_ids::clock::SystemClock,
     )
     .with_channel(porter_provider::ClientChannel::Development)
     .with_files(files.clone());

@@ -10,6 +10,7 @@ use crate::error::CoreError;
 use crate::family::Family;
 use crate::protocol::EndpointProtocol;
 use crate::secret::SecretText;
+use porter_ids::{IdError, Origin, UrlScheme, WebUrl, split_authority};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -50,123 +51,11 @@ pub enum Tls {
 #[serde(transparent)]
 pub struct LoginName(pub String);
 
-/// The schemes an endpoint URL may have.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum UrlScheme {
-    /// `http`.
-    Http,
-    /// `https`.
-    Https,
-    /// `imap`.
-    Imap,
-    /// `imaps`.
-    Imaps,
-    /// `smtp`.
-    Smtp,
-    /// `smtps`.
-    Smtps,
-    /// `sieve` (ManageSieve, STARTTLS).
-    Sieve,
-    /// `sieves` (ManageSieve over TLS from the first byte).
-    Sieves,
-    /// `pop3` (POP3, STARTTLS as `STLS`).
-    Pop3,
-    /// `pop3s` (POP3 over TLS from the first byte).
-    Pop3s,
-}
-
-impl UrlScheme {
-    fn parse(text: &str) -> Option<Self> {
-        match text {
-            "http" => Some(UrlScheme::Http),
-            "https" => Some(UrlScheme::Https),
-            "imap" => Some(UrlScheme::Imap),
-            "imaps" => Some(UrlScheme::Imaps),
-            "smtp" => Some(UrlScheme::Smtp),
-            "smtps" => Some(UrlScheme::Smtps),
-            "sieve" => Some(UrlScheme::Sieve),
-            "sieves" => Some(UrlScheme::Sieves),
-            "pop3" => Some(UrlScheme::Pop3),
-            "pop3s" => Some(UrlScheme::Pop3s),
-            _ => None,
-        }
-    }
-
-    fn text(self) -> &'static str {
-        match self {
-            UrlScheme::Http => "http",
-            UrlScheme::Https => "https",
-            UrlScheme::Imap => "imap",
-            UrlScheme::Imaps => "imaps",
-            UrlScheme::Smtp => "smtp",
-            UrlScheme::Smtps => "smtps",
-            UrlScheme::Sieve => "sieve",
-            UrlScheme::Sieves => "sieves",
-            UrlScheme::Pop3 => "pop3",
-            UrlScheme::Pop3s => "pop3s",
-        }
-    }
-
-    /// The protocol this scheme names.
-    pub fn protocol(self) -> EndpointProtocol {
-        match self {
-            UrlScheme::Http | UrlScheme::Https => EndpointProtocol::Http,
-            UrlScheme::Imap | UrlScheme::Imaps => EndpointProtocol::Imap,
-            UrlScheme::Smtp | UrlScheme::Smtps => EndpointProtocol::Smtp,
-            UrlScheme::Sieve | UrlScheme::Sieves => EndpointProtocol::Sieve,
-            UrlScheme::Pop3 | UrlScheme::Pop3s => EndpointProtocol::Pop3,
-        }
-    }
-
-    /// The port used when the URL names none.
-    pub fn default_port(self) -> u16 {
-        match self {
-            UrlScheme::Http => 80,
-            UrlScheme::Https => 443,
-            UrlScheme::Imap => 143,
-            UrlScheme::Imaps => 993,
-            UrlScheme::Smtp => 587,
-            UrlScheme::Smtps => 465,
-            UrlScheme::Sieve | UrlScheme::Sieves => 4190,
-            UrlScheme::Pop3 => 110,
-            UrlScheme::Pop3s => 995,
-        }
-    }
-
-    /// The security a scheme allows: `https`, `imaps` and `smtps` are TLS from the first byte,
-    /// `http` has no upgrade, and `imap`, `smtp`, `sieve` and `pop3` upgrade with STARTTLS or
-    /// stay plain.
-    fn admits(self, tls: Tls) -> bool {
-        match self {
-            UrlScheme::Https
-            | UrlScheme::Imaps
-            | UrlScheme::Smtps
-            | UrlScheme::Sieves
-            | UrlScheme::Pop3s => tls == Tls::Implicit,
-            UrlScheme::Http => tls == Tls::Plain,
-            UrlScheme::Imap | UrlScheme::Smtp | UrlScheme::Sieve | UrlScheme::Pop3 => {
-                matches!(tls, Tls::StartTls | Tls::Plain)
-            }
-        }
-    }
-}
-
 /// An endpoint's URL: `scheme://host[:port][/path]`, with no user info, query or fragment.
 /// Its serde form is the text.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct EndpointUrl(String);
-
-/// Scheme, host and port: what "the same server" means.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Origin {
-    /// The scheme.
-    pub scheme: UrlScheme,
-    /// The host in lower case, an IPv6 literal without its brackets.
-    pub host: String,
-    /// The port, the scheme's default when the URL named none.
-    pub port: u16,
-}
 
 impl EndpointUrl {
     /// The URL written as `text`, or why it is not an endpoint URL.
@@ -224,23 +113,29 @@ impl EndpointUrl {
     }
 }
 
-/// `host[:port]` or `[v6][:port]`; the host is never empty.
-pub(crate) fn split_authority(authority: &str) -> Option<(&str, Option<&str>)> {
-    let (host, port) = match authority.strip_prefix('[') {
-        Some(bracketed) => {
-            let (host, after) = bracketed.split_once(']')?;
-            (host, after.strip_prefix(':'))
+impl TryFrom<&EndpointUrl> for WebUrl {
+    type Error = IdError;
+    /// An endpoint URL that is a web URL: `https`, or `http` to this computer.
+    fn try_from(url: &EndpointUrl) -> Result<Self, IdError> {
+        Self::parse(url.as_str())
+    }
+}
+
+/// The security a scheme allows: `https`, `imaps` and `smtps` are TLS from the first byte,
+/// `http` has no upgrade, and `imap`, `smtp`, `sieve` and `pop3` upgrade with STARTTLS or
+/// stay plain.
+fn admits(scheme: UrlScheme, tls: Tls) -> bool {
+    match scheme {
+        UrlScheme::Https
+        | UrlScheme::Imaps
+        | UrlScheme::Smtps
+        | UrlScheme::Sieves
+        | UrlScheme::Pop3s => tls == Tls::Implicit,
+        UrlScheme::Http => tls == Tls::Plain,
+        UrlScheme::Imap | UrlScheme::Smtp | UrlScheme::Sieve | UrlScheme::Pop3 => {
+            matches!(tls, Tls::StartTls | Tls::Plain)
         }
-        None => match authority.split_once(':') {
-            Some((host, port)) => (host, Some(port)),
-            None => (authority, None),
-        },
-    };
-    let host_ok = !host.is_empty()
-        && host
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_' | b':'));
-    host_ok.then_some((host, port))
+    }
 }
 
 impl TryFrom<String> for EndpointUrl {
@@ -259,44 +154,6 @@ impl From<EndpointUrl> for String {
 impl fmt::Display for EndpointUrl {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
-    }
-}
-
-impl Origin {
-    /// Whether the host is this computer (`localhost`, `127.0.0.0/8`, `::1`).
-    pub fn is_loopback(&self) -> bool {
-        self.host == "localhost"
-            || self
-                .host
-                .parse::<std::net::IpAddr>()
-                .is_ok_and(|ip| ip.is_loopback())
-    }
-
-    /// Whether the host is an address only a tailnet hands out: one in Tailscale's ranges
-    /// (100.64.0.0/10, fd7a:115c:a1e0::/48), a MagicDNS name under `.ts.net`, or a MagicDNS
-    /// short name (one label, no dot), which only a tailnet's resolver answers for.
-    pub fn is_tailnet(&self) -> bool {
-        match self.host.parse::<std::net::IpAddr>() {
-            Ok(std::net::IpAddr::V4(ip)) => {
-                let [a, b, ..] = ip.octets();
-                a == 100 && (64..128).contains(&b)
-            }
-            Ok(std::net::IpAddr::V6(ip)) => {
-                let s = ip.segments();
-                s[0] == 0xfd7a && s[1] == 0x115c && s[2] == 0xa1e0
-            }
-            Err(_) => {
-                let host = self.host.trim_end_matches('.');
-                host.ends_with(".ts.net")
-                    || (!host.is_empty() && !host.contains('.') && host != "localhost")
-            }
-        }
-    }
-}
-
-impl fmt::Display for Origin {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}://{}:{}", self.scheme.text(), self.host, self.port)
     }
 }
 
@@ -336,11 +193,11 @@ impl ServiceEndpoint {
         let origin = self.url.origin();
         if self
             .protocol()
-            .is_some_and(|p| p != origin.scheme.protocol())
+            .is_some_and(|p| p != EndpointProtocol::of_scheme(origin.scheme))
         {
             return Err(EndpointFault::SchemeMismatch);
         }
-        if !origin.scheme.admits(self.tls) {
+        if !admits(origin.scheme, self.tls) {
             return Err(EndpointFault::TlsMismatch);
         }
         let own_server = self.family == Family::ChatCompletions && origin.is_tailnet();

@@ -17,9 +17,11 @@ use crate::supervise::{Snapshot, Supervised};
 use crate::toolproof::{ToolProofs, asks_for_tools};
 use engine_supervisor::{EngineId, EngineState, MonoMs};
 use model_catalog::Licence;
+use porter_core::AccountId;
 use porter_core::capability::SpeechMode;
 use porter_core::consent::{Availability, Usage};
-use porter_core::{AccountId, AppId, DataClass, Locality, MicroUsd, Need, Tier};
+use porter_core::{AppId, DataClass, Locality, Need, Tier};
+use porter_ids::MicroUsd;
 use porter_infer::{
     Asker, InferRefusal, LicenceClass, ModelCard, ModelRef, Period, Permit, PickRefusal,
     PlaceRefusal, Policy, Readiness, ServedBy, Slot, SpendScope, SpendVerdict, SwapCost, TierMap,

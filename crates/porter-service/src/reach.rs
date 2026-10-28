@@ -87,7 +87,7 @@ fn confined(family: Family) -> bool {
 /// `%XX` escapes decoded to bytes; `None` for a malformed one (a `%` without two hex digits),
 /// which a server may read as it likes.
 fn decoded(text: &str) -> Option<Vec<u8>> {
-    porter_core::percent::is_well_formed(text).then(|| porter_core::percent::decode_bytes(text))
+    porter_ids::percent::is_well_formed(text).then(|| porter_ids::percent::decode_bytes(text))
 }
 
 fn trimmed(mut path: Vec<u8>) -> Vec<u8> {

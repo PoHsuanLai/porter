@@ -2,9 +2,9 @@
 //! replica, with a scripted HTTP seam in place of a server: no network, no socket. The fixtures
 //! are written from Microsoft's documentation, not recorded from a live account.
 
-use porter_core::{Bytes, UnixSeconds, WebUrl};
 use porter_http::http::{Request, Response};
 use porter_http::{HeaderText, Http, HttpError};
+use porter_ids::{Bytes, UnixSeconds, WebUrl};
 use porter_sync::{
     Anchor, BaseVersion, Blob, Change, ContentHash, Cursor, ItemKind, ItemPath, More, PutItem,
     PutTarget, Quota, RemoteId, RemoteItem, RemoteVersion, Replica, ReplicaError, RetryAfter,

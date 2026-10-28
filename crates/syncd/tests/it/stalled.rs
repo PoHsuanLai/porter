@@ -5,11 +5,11 @@
 //! the pieces' spacing are virtual; with no kernel I/O the clock can only advance when every
 //! task waits on a timer), so a loaded machine cannot make a gap longer than the idle time.
 
-use porter_core::WebUrl;
 use porter_core::stream::{ByteStream, duplex};
 use porter_http::http::{Method, Request};
 use porter_http::{Http, HttpError, request};
 use porter_http_relay::{Dial, RelayHttp, RelayLimits, RelayStream};
+use porter_ids::WebUrl;
 use std::sync::Mutex;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};

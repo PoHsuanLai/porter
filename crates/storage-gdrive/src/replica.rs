@@ -7,10 +7,10 @@ use crate::refuse::{export_error, read_error};
 use porter_core::capability::{
     Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope,
 };
-use porter_core::{Bytes, WebUrl};
 use porter_http::http::header::{ACCEPT, HeaderValue, RANGE};
 use porter_http::http::{Method, Request, Response};
 use porter_http::{Http, request};
+use porter_ids::{Bytes, WebUrl};
 use porter_sync::Clock;
 use porter_sync::status::unreached;
 use porter_sync::{
@@ -226,7 +226,7 @@ impl<H: Http> GdriveReplica<H> {
             .api(
                 &format!(
                     "files/{}/export",
-                    porter_core::percent::encode_unreserved(&id.0)
+                    porter_ids::percent::encode_unreserved(&id.0)
                 ),
                 &[("mimeType", mime)],
             )

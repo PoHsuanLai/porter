@@ -173,7 +173,7 @@ fn conventional(server: &EndpointUrl, tree: &str, user: &str) -> Option<Endpoint
 /// The user id at the end of a principal path (`/remote.php/dav/principals/users/ada/`), decoded.
 fn user_of(path: &str) -> Option<String> {
     let last = path.trim_end_matches('/').rsplit('/').next()?;
-    let decoded = porter_core::percent::decode_strict(last)?;
+    let decoded = porter_ids::percent::decode_strict(last)?;
     (!decoded.is_empty()).then_some(decoded)
 }
 

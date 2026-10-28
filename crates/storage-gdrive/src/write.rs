@@ -181,7 +181,7 @@ impl<H: Http> GdriveReplica<H> {
         id: &str,
         bytes: Vec<u8>,
     ) -> Result<Response<Vec<u8>>, PutRefused> {
-        let path = format!("files/{}", porter_core::percent::encode_unreserved(id));
+        let path = format!("files/{}", porter_ids::percent::encode_unreserved(id));
         let url = self
             .addr
             .upload(&path, &[("uploadType", "media"), ("fields", FILE_FIELDS)])

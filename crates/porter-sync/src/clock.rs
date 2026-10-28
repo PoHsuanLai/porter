@@ -1,9 +1,9 @@
 //! The replica's clock: it dates the tombstones a replica reports when the server keeps no
 //! deletion time of its own. A replica holds and clones one, so it is a value over the shared
-//! `porter_core::clock::Clock` seam; whoever builds the replica says which clock it reads.
+//! `porter_ids::clock::Clock` seam; whoever builds the replica says which clock it reads.
 
-use porter_core::UnixSeconds;
-use porter_core::clock::{Clock as CoreClock, FixedClock};
+use porter_ids::UnixSeconds;
+use porter_ids::{clock::Clock as CoreClock, clock::FixedClock};
 use std::fmt;
 use std::sync::Arc;
 

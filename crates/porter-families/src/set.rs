@@ -20,11 +20,11 @@ use crate::{
     AgentLoginProvider, ApiKeyProvider, ClientFiles, FamilyProvider, GenericProvider, GoogleEnv,
     GoogleProvider, MicrosoftEnv, MicrosoftProvider, NextcloudProvider, SharedDns, TailnetProvider,
 };
-use porter_core::clock::Clock;
 use porter_core::{AuthKind, EndpointUrl};
 use porter_discover::{Dns, DnsFault, HickoryDns, MxRecord, SrvRecord};
 use porter_http::{SharedHttp, SharedSleep};
 use porter_http_reqwest::{ReqwestHttp, TokioSleep};
+use porter_ids::clock::Clock;
 use porter_provider::{
     DomainName, Issuer, ProviderFileError, ProviderSet, ProviderSpec, parse_provider,
 };
@@ -345,9 +345,9 @@ mod tests {
                 shipped: PathBuf::from("/nonexistent/clients.toml"),
                 own: PathBuf::from("/nonexistent/own-clients.toml"),
             },
-            Arc::new(porter_core::clock::FixedClock::new(
-                porter_core::UnixSeconds(0),
-            )),
+            Arc::new(porter_ids::clock::FixedClock::new(porter_ids::UnixSeconds(
+                0,
+            ))),
         )
         .with_clients(
             SharedHttp::new(ReqwestHttp::new()),

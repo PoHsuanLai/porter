@@ -9,8 +9,9 @@ use crate::testing::scratch;
 use porter_core::capability::{
     Access as Rights, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope,
 };
-use porter_core::{AppId, AppName, Isolation, UnixSeconds};
+use porter_core::{AppId, AppName, Isolation};
 use porter_dbus::callers::{Caller, CallerRole};
+use porter_ids::UnixSeconds;
 use porter_sync::MemoryReplica;
 use std::path::Path;
 use std::sync::Arc;

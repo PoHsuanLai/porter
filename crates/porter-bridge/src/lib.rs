@@ -19,7 +19,8 @@ pub use request::{
 pub use scores::{NoScores, choice_scores, option_scores, turn_scores};
 
 use model_provider::{Attempt, RetryPolicy, WaitMs};
-use porter_core::{CoreError, ModelId};
+use porter_core::ModelId;
+use porter_ids::IdError;
 
 /// How a request to an engine is retried, by the daemon and by an app that hosts the engines
 /// itself alike: three attempts, a quarter of a second doubling to four seconds.
@@ -32,7 +33,7 @@ pub const ENGINE_RETRY: RetryPolicy = RetryPolicy {
 /// The porter `ModelId` for the name an engine serves a model under (`Hcompany/Holo-3.1-4B`
 /// becomes `hcompany-holo-3.1-4b`): lower case, every character outside the id grammar becomes
 /// `-`, runs collapse, ends are trimmed, at most 64 bytes.
-pub fn model_id_of(served_name: &str) -> Result<ModelId, CoreError> {
+pub fn model_id_of(served_name: &str) -> Result<ModelId, IdError> {
     let mut slug = String::new();
     for c in served_name.chars().flat_map(char::to_lowercase) {
         let keep = c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '.' | '_');

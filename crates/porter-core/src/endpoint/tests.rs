@@ -352,3 +352,17 @@ fn a_relay_plan_never_shows_its_credential() {
     };
     assert!(!format!("{plan:?}").contains("hunter2"));
 }
+
+#[test]
+fn an_endpoint_url_converts_when_it_is_a_web_url() {
+    let cases = [
+        ("https://cloud.example/remote.php/dav/", true),
+        ("http://127.0.0.1:8080/", true),
+        ("http://cloud.example/", false),
+        ("imaps://mail.example:993", false),
+    ];
+    for (text, ok) in cases {
+        let endpoint = EndpointUrl::parse(text).expect(text);
+        assert_eq!(WebUrl::try_from(&endpoint).is_ok(), ok, "{text}");
+    }
+}

@@ -29,7 +29,7 @@ use crate::attached::relay_socket;
 use crate::engines::Engines;
 use crate::settings::TailnetServe;
 use porter_core::NodeId;
-use porter_core::clock::Clock;
+use porter_ids::clock::Clock;
 use porter_tailnet::{
     Config, Dialer, GuestEvent, Guests, Lending, Listening, Observer, OnFault, Relay, Timing, lend,
 };

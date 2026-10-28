@@ -9,7 +9,7 @@ use crate::refusal::{Conflict, PutRefused, RemoteSide, ReplicaError};
 use crate::replica::Replica;
 use crate::transfer::{Blob, ByteRange, PutItem, PutTarget};
 use porter_core::capability::StorageCap;
-use porter_core::{Bytes, UnixSeconds};
+use porter_ids::{Bytes, UnixSeconds};
 use std::collections::BTreeMap;
 use std::sync::{Mutex, MutexGuard};
 

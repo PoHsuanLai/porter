@@ -4,7 +4,9 @@ use crate::{
     ChatReply, ChatRequest, ChatSink, EmbedReply, EmbedRequest, EmbedVector, InferEvent,
     MessagePart, Model, ModelCard, ServedBy, StopReason, TaskRequest, TokenUsage, TurnError,
 };
-use porter_core::{AccountId, Billing, Capability, Locality, ModelId, Tokens};
+use porter_core::{AccountId, ModelId};
+use porter_core::{Billing, Capability, Locality};
+use porter_ids::Tokens;
 
 /// An on-device model of the fake runtime.
 #[derive(Debug, Clone)]

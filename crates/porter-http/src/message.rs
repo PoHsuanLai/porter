@@ -6,7 +6,8 @@ use crate::error::HttpError;
 use http::header::{HeaderMap, HeaderName, HeaderValue};
 use http::request::Builder;
 use http::{Method, Request, Response};
-use porter_core::{EndpointUrl, UnixSeconds, UrlScheme, WebUrl};
+use porter_core::EndpointUrl;
+use porter_ids::{UnixSeconds, UrlScheme, WebUrl};
 
 /// A request to `url`: the builder with its method and URI set, to which the caller adds headers
 /// and a body. The URI is the URL's text; a URL the `http` crate does not take as a URI fails

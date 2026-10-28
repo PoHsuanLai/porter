@@ -9,7 +9,8 @@
 use crate::cloud::accountd::Boxed;
 use crate::probe::Runtime;
 use crate::probed::Standing;
-use porter_core::{AccountId, Claim};
+use porter_core::AccountId;
+use porter_core::Claim;
 use std::fmt::Debug;
 
 /// Why a report was not taken.

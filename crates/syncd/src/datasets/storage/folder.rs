@@ -9,7 +9,7 @@
 
 use crate::dataset::{Dataset, DatasetError, DatasetId, fingerprint};
 use crate::datasets::photos::cas::{self, hash_file};
-use porter_core::Bytes;
+use porter_ids::Bytes;
 use porter_sync::{Blob, ConflictRule, ContentHash, ItemPath, LocalId, Scanned};
 use std::io;
 use std::path::{Component, Path, PathBuf};

@@ -11,9 +11,9 @@
 //! second field.
 
 use crate::attached::ComputerError;
-use porter_core::Bytes;
 use porter_dbus::PLACE_ERROR_PREFIX;
 use porter_dbus::names::COMPUTER_ERROR_PREFIX;
+use porter_ids::Bytes;
 use porter_infer::{HardwareNote, NoPlaceReason, PlaceRefusal};
 use zbus::DBusError;
 use zbus::fdo;

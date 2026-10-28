@@ -5,10 +5,9 @@
 
 use crate::account::Account;
 use crate::auth_kind::AuthKind;
-use crate::error::CoreError;
-use crate::id::{AccountId, ProviderId, slug_id};
+use crate::{AccountId, ProviderId};
+use porter_ids::slug_id;
 use serde::{Deserialize, Serialize};
-use std::fmt;
 
 slug_id!(
     /// One identity signed in on this machine. It is the id of the registry account it is, and a

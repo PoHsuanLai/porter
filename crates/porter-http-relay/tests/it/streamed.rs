@@ -3,10 +3,10 @@
 
 use crate::server::{Seen, read_request};
 use hyper::body::{Body, Bytes, Frame, SizeHint};
-use porter_core::WebUrl;
 use porter_http::http::{Method, StatusCode};
 use porter_http::{Http, HttpError, request};
 use porter_http_relay::{Dial, RelayHttp, RelayLimits, RelayStream};
+use porter_ids::WebUrl;
 use std::convert::Infallible;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};

@@ -11,7 +11,7 @@ use super::hlc::DeviceId;
 use super::library::{PhotoLibrary, manifest_dir};
 use super::originals::blocking;
 use crate::dataset::{Dataset, DatasetError, DatasetId, fingerprint};
-use porter_core::Bytes;
+use porter_ids::Bytes;
 use porter_sync::{Blob, ConflictRule, ItemPath, LocalId, Scanned};
 use std::io;
 

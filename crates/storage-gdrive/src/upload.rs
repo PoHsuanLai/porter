@@ -31,7 +31,7 @@ impl<H: Http> GdriveReplica<H> {
         let start = match over {
             None => self.addr.upload("files", &pairs),
             Some(id) => self.addr.upload(
-                &format!("files/{}", porter_core::percent::encode_unreserved(id)),
+                &format!("files/{}", porter_ids::percent::encode_unreserved(id)),
                 &pairs,
             ),
         };

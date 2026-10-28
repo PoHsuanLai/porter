@@ -25,10 +25,12 @@ use crate::datasets::pim::discover::{DiscoverError, Found};
 use crate::datasets::pim::relay::pim_http;
 use json::{Calendar, CalendarPage, Event, EventPage};
 use porter_client::{Accounts, Transport};
-use porter_core::{Bytes, EndpointUrl, GrantId, UnixSeconds, WebUrl};
+use porter_core::EndpointUrl;
+use porter_core::GrantId;
 use porter_http::http::{Method, Response};
 use porter_http::{HeaderText, Http, HttpError, request};
 use porter_http_relay::{RelayDial, RelayHttp};
+use porter_ids::{Bytes, UnixSeconds, WebUrl};
 use porter_sync::{Clock, DELETED};
 use porter_sync::{
     ItemKind, ItemPath, More, RemoteId, RemoteItem, RemoteVersion, ReplicaError, RetryAfter,
@@ -94,15 +96,15 @@ pub(super) fn origin(base: &WebUrl) -> String {
 
 /// What a Graph or Google id keeps in a path segment: the unreserved characters and `=`, which
 /// the ids' base64 padding uses.
-const ID_SEGMENT: &porter_core::percent::AsciiSet = &porter_core::percent::UNRESERVED.remove(b'=');
+const ID_SEGMENT: &porter_ids::percent::AsciiSet = &porter_ids::percent::UNRESERVED.remove(b'=');
 
 /// A path segment: everything but unreserved characters and `=` percent-encoded.
 pub(super) fn encode(segment: &str) -> String {
-    porter_core::percent::encode(segment, ID_SEGMENT)
+    porter_ids::percent::encode(segment, ID_SEGMENT)
 }
 
 pub(super) fn decode(segment: &str) -> String {
-    porter_core::percent::decode(segment)
+    porter_ids::percent::decode(segment)
 }
 
 /// The directory name of a calendar: stable (a rename must not move it) and short (Graph's ids

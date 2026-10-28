@@ -11,9 +11,9 @@ use engine_supervisor::{FakeGpu, FakeReadyProbe, GpuMemory, Probe, SupervisorCon
 use model_catalog::MiB;
 use porter_core::capability::{Capability, LlmCap, LlmFeature, LlmWire};
 use porter_core::need::LlmNeed;
-use porter_core::{
-    AccountId, Billing, DataClass, Locality, MicroUsd, ModelId, Need, Permille, Tier, Tokens,
-};
+use porter_core::{AccountId, ModelId};
+use porter_core::{Billing, DataClass, Locality, Need, Tier};
+use porter_ids::{MicroUsd, Permille, Tokens};
 use porter_infer::{
     AutoEvict, EngineLoad, InferRefusal, LicenceClass, LocalOnly, ModelCard, ModelRef, Pick,
     PickRefusal, Policy, Readiness, ShowReason, Slot, SwapCost, Why,

@@ -1,8 +1,8 @@
 //! What accountd answers.
 
+use crate::AccountId;
 use crate::candidate::Candidate;
 use crate::consent::{Availability, Grant};
-use crate::id::AccountId;
 use crate::token::IssuedToken;
 use serde::{Deserialize, Serialize};
 

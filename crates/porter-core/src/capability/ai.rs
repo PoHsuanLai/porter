@@ -2,7 +2,7 @@
 //! sets of variants, never flags.
 
 use crate::error::CoreError;
-use crate::units::{Count, Dims, Px, Tokens};
+use porter_ids::{Count, Dims, Px, Tokens};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 

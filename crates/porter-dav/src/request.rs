@@ -2,10 +2,10 @@
 //! bodies are dav-proto's.
 
 use dav_proto::{Depth, SyncLevel};
-use porter_core::WebUrl;
 use porter_http::http::header::CONTENT_TYPE;
 use porter_http::http::{Method, Request};
 use porter_http::{HttpError, request, webdav};
+use porter_ids::WebUrl;
 
 const XML: &str = "application/xml; charset=utf-8";
 

@@ -112,7 +112,7 @@ pub trait Feed: Send + Sync + 'static {
     fn quota(&self) -> impl Future<Output = Result<porter_sync::Quota, ReplicaError>> + Send {
         async {
             Ok(porter_sync::Quota {
-                used: porter_core::Bytes(0),
+                used: porter_ids::Bytes(0),
                 total: None,
             })
         }

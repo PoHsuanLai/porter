@@ -205,12 +205,12 @@ impl Tasks {
         let response = match parts.as_slice() {
             ["users", "@me", "lists"] => self.lists(request),
             ["lists", list, "tasks"] => {
-                self.tasks_list(&porter_core::percent::decode(list), request)
+                self.tasks_list(&porter_ids::percent::decode(list), request)
             }
             ["lists", list, "tasks", id] => {
                 let (list, id) = (
-                    porter_core::percent::decode(list),
-                    porter_core::percent::decode(id),
+                    porter_ids::percent::decode(list),
+                    porter_ids::percent::decode(id),
                 );
                 self.rows
                     .iter()

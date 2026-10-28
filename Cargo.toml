@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+  "crates/porter-ids",
   "crates/porter-core",
   "crates/porter-fs",
   "crates/quickxorhash",
@@ -59,6 +60,7 @@ repository = "https://github.com/PoHsuanLai/porter"
 publish = false
 
 [workspace.dependencies]
+porter-ids      = { path = "crates/porter-ids" }
 porter-core     = { path = "crates/porter-core" }
 porter-fs        = { path = "crates/porter-fs" }
 quickxorhash    = { path = "crates/quickxorhash" }

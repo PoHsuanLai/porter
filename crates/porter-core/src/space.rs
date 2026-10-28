@@ -22,7 +22,7 @@
 
 use crate::app_id::AppName;
 use crate::error::CoreError;
-use crate::id::well_formed;
+use porter_ids::is_id;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -69,7 +69,7 @@ pub struct DesktopSpace(String);
 impl DesktopSpace {
     /// The id written as `text`, or why it is not one.
     pub fn parse(text: &str) -> Result<Self, CoreError> {
-        match well_formed(text) && text != SpaceId::DESKTOP {
+        match is_id(text) && text != SpaceId::DESKTOP {
             true => Ok(Self(text.to_owned())),
             false => Err(CoreError::MalformedId {
                 what: "desktop space id",
@@ -124,7 +124,7 @@ impl SpaceId {
     /// The id written as `text`, or why it is not one: `desktop`, a slug, or
     /// `app:<app name>:<n>`.
     pub fn parse(text: &str) -> Result<Self, CoreError> {
-        match well_formed(text) || app_parts(text).is_some() {
+        match is_id(text) || app_parts(text).is_some() {
             true => Ok(Self(text.to_owned())),
             false => Err(CoreError::MalformedId {
                 what: "space id",

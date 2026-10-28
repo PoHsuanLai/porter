@@ -9,9 +9,9 @@
 
 use super::PimKind;
 use dav_proto::{Depth, Multistatus, names, parse_multistatus};
-use porter_core::WebUrl;
 use porter_dav::{Home, collections, current_user_principal, home_set, propfind};
 use porter_http::{Http, HttpError};
+use porter_ids::WebUrl;
 
 /// Apple's calendar colour property, which Nextcloud, iCloud and Radicale all serve.
 pub const CALENDAR_COLOR: &str = "http://apple.com/ns/ical/calendar-color";
@@ -89,7 +89,7 @@ fn segment_of(url: &WebUrl) -> String {
         .split('/')
         .rfind(|part| !part.is_empty())
         .unwrap_or("collection");
-    porter_core::percent::decode(last)
+    porter_ids::percent::decode(last)
 }
 
 async fn ask<H: Http>(
@@ -403,6 +403,6 @@ mod tests {
                 .as_str(),
             "https://other.test/x/"
         );
-        assert_eq!(porter_core::percent::decode("a%20b%2Fc%zz"), "a b/c%zz");
+        assert_eq!(porter_ids::percent::decode("a%20b%2Fc%zz"), "a b/c%zz");
     }
 }

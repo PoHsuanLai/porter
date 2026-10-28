@@ -4,7 +4,7 @@
 
 use crate::admit::Priority;
 use engine_supervisor::EngineId;
-use porter_core::Bytes;
+use porter_ids::Bytes;
 use porter_infer::{HardwareFacts, MemoryFacts, ModelError};
 
 /// Whether the engine behind a request is serving now.

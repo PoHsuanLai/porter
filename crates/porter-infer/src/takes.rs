@@ -140,7 +140,7 @@ pub const NO_MODEL_SEES_SCREEN: &str =
 mod tests {
     use super::*;
     use porter_core::capability::{CuaBatching, CuaCap, CuaEnv, LlmCap, LlmWire, Offered};
-    use porter_core::{Px, Tokens};
+    use porter_ids::{Px, Tokens};
 
     fn llm(features: &[LlmFeature]) -> Capability {
         Capability::Llm(LlmCap {

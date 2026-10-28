@@ -124,8 +124,10 @@ fn probe() -> porter_core::AppId {
 /// A registry file as the accounts service wrote it before the split: an identity (a password
 /// account), an AI key, a grant for the probe app and a switch.
 fn seed(home: &Path) {
+    use porter_core::GrantId;
     use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
-    use porter_core::{DataClass, GrantId, SpaceScope, UnixSeconds};
+    use porter_core::{DataClass, SpaceScope};
+    use porter_ids::UnixSeconds;
     let mut account = porter_fake::storage_account();
     account.auth = AuthKind::Password;
     let mut key = porter_fake::llm_account();

@@ -8,7 +8,8 @@ use crate::pick::{AutoMode, Pick};
 use crate::readiness::Readiness;
 use crate::route::TierChoice;
 use crate::slot::Slot;
-use porter_core::{AccountId, Billing, Locality, ModelId, Tier};
+use porter_core::{AccountId, ModelId};
+use porter_core::{Billing, Locality, Tier};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 

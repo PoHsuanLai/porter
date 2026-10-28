@@ -2,8 +2,8 @@
 //! they take, and the dataset's folder below the root the replica was given (the app data folder
 //! or My Drive).
 
-use porter_core::percent::encode_unreserved;
-use porter_core::{Origin, WebUrl};
+use porter_ids::percent::encode_unreserved;
+use porter_ids::{Origin, WebUrl};
 use porter_sync::ItemPath;
 
 /// The fields every file answer is asked for.

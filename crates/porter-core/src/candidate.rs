@@ -3,9 +3,9 @@
 use crate::account::AccountLabel;
 use crate::capability::Capability;
 use crate::endpoint::ServiceEndpoint;
-use crate::id::{AccountId, GrantId, ProviderId};
 use crate::offer::Subject;
 use crate::restriction::Restriction;
+use crate::{AccountId, GrantId, ProviderId};
 use serde::{Deserialize, Serialize};
 
 /// One granted account that meets a need: what an app renders and then uses.

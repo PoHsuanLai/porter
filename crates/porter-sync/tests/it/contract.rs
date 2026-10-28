@@ -4,7 +4,7 @@
 use porter_core::capability::{
     Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope,
 };
-use porter_core::{Bytes, UnixSeconds};
+use porter_ids::{Bytes, UnixSeconds};
 use porter_sync::{
     BaseVersion, Blob, ByteRange, Change, ChangePage, Conflict, Cursor, ItemPath, MemoryReplica,
     More, PutItem, PutRefused, PutTarget, Quota, RemoteId, RemoteSide, Replica, ReplicaError,
@@ -208,8 +208,8 @@ async fn a_range_fetch_returns_only_that_span() {
         .await
         .expect("put");
     let span = porter_sync::ByteRange::Span {
-        start: porter_core::Bytes(2),
-        len: porter_core::Bytes(3),
+        start: porter_ids::Bytes(2),
+        len: porter_ids::Bytes(3),
     };
     assert_eq!(replica.fetch(&id, span).await, Ok(Blob(b"234".to_vec())));
 }

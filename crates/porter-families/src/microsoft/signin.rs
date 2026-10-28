@@ -18,9 +18,10 @@ use porter_core::capability::{Capability, CapabilityKind, Offered};
 use porter_core::sheet::{SignInFault, SignInInput};
 use porter_core::{
     AccountLabel, Credential, EndpointUrl, Family, GrantedScopes, LoginName, Offer, Restriction,
-    SecretPurpose, ServiceEndpoint, TenantConsent, Tls, WebUrl,
+    SecretPurpose, ServiceEndpoint, TenantConsent, Tls,
 };
 use porter_http::Http;
+use porter_ids::WebUrl;
 use porter_oauth::{
     AuthCode, AuthorizeAsk, ExchangeFault, LoopbackFault, LoopbackServer, OAuthState, Pkce,
     TokenResponse, authorize_url_for, endpoints_of, exchange_code_scoped, redeem_scope,
@@ -347,8 +348,8 @@ fn endpoints_for(spec: &ProviderSpec, found: &Found) -> Vec<ServiceEndpoint> {
     };
     let endpoint = |family, url: EndpointUrl| {
         let tls = match url.origin().scheme {
-            porter_core::UrlScheme::Imap | porter_core::UrlScheme::Smtp => Tls::StartTls,
-            porter_core::UrlScheme::Http => Tls::Plain,
+            porter_ids::UrlScheme::Imap | porter_ids::UrlScheme::Smtp => Tls::StartTls,
+            porter_ids::UrlScheme::Http => Tls::Plain,
             _ => Tls::Implicit,
         };
         ServiceEndpoint {

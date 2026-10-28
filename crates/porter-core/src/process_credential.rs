@@ -3,7 +3,7 @@
 //! when accountd ends one. It is not a secret and it is never derived from one.
 
 use crate::error::CoreError;
-use crate::id::is_id;
+use porter_ids::is_id;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 

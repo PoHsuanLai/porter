@@ -3,7 +3,7 @@
 //! `ManualClock` is here because a test shares it through an `Arc` and sets it with `&self`,
 //! which porter_core's `FixedClock` (set with `&mut self`) cannot do.
 
-use porter_core::clock::{Clock, SystemClock};
+use porter_ids::{clock::Clock, clock::SystemClock};
 
 /// The system clock, running `scale` times faster than real time (see
 /// `scheduler::Settings::time_scale`); with a scale of 1 it is exactly [`SystemClock`]. Every
@@ -23,15 +23,15 @@ impl Wall {
 }
 
 impl Clock for Wall {
-    fn now(&self) -> porter_core::UnixSeconds {
+    fn now(&self) -> porter_ids::UnixSeconds {
         if self.scale == 1 {
             return SystemClock.now();
         }
-        static START: std::sync::OnceLock<(std::time::Instant, porter_core::UnixSeconds)> =
+        static START: std::sync::OnceLock<(std::time::Instant, porter_ids::UnixSeconds)> =
             std::sync::OnceLock::new();
         let (began, at) = START.get_or_init(|| (std::time::Instant::now(), SystemClock.now()));
         let passed = began.elapsed().as_millis() * u128::from(self.scale) / 1000;
-        porter_core::UnixSeconds(at.0.saturating_add(i64::try_from(passed).unwrap_or(i64::MAX)))
+        porter_ids::UnixSeconds(at.0.saturating_add(i64::try_from(passed).unwrap_or(i64::MAX)))
     }
 }
 
@@ -52,7 +52,7 @@ impl ManualClock {
 }
 
 impl Clock for ManualClock {
-    fn now(&self) -> porter_core::UnixSeconds {
-        porter_core::UnixSeconds(self.0.load(std::sync::atomic::Ordering::Relaxed))
+    fn now(&self) -> porter_ids::UnixSeconds {
+        porter_ids::UnixSeconds(self.0.load(std::sync::atomic::Ordering::Relaxed))
     }
 }

@@ -58,7 +58,7 @@ async fn a_look_that_could_not_ask_for_grants_says_it_was_not_whole_and_the_next
         settings: Settings::quick(),
         network,
         owners: Access::default(),
-        clock: porter_sync::Clock::new(porter_core::clock::SystemClock),
+        clock: porter_sync::Clock::new(porter_ids::clock::SystemClock),
         nonce: "t1".to_owned(),
         millis: Arc::new(syncd::datasets::photos::ManualMillis::at(1_700_000_000_000)),
     };

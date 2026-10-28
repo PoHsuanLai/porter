@@ -14,11 +14,13 @@ use model_catalog::{CatalogKind, ModelEntry, merge_catalogs, parse_entry};
 use model_provider::{
     Caps, Constraint, CuaSupport, EmbedCaps, InputKind, Support, ToolSupport, Zoom,
 };
+use porter_core::ModelId;
 use porter_core::capability::{
     Capability, CuaBatching, CuaCap, CuaEnv, EmbedCap, EmbedPrompts, LanguageSet, LanguageTag,
     LlmCap, LlmFeature, LlmWire, Modality, Offered, PrefixText, SpeechCap, SpeechMode,
 };
-use porter_core::{Claim, Count, Dims, ModelId, Offer, Provenance, Px, Subject, Tokens};
+use porter_core::{Claim, Offer, Provenance, Subject};
+use porter_ids::{Count, Dims, Px, Tokens};
 use speech_provider::{LangSet, SpeechDir};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};

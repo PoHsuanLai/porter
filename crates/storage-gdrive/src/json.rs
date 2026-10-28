@@ -1,6 +1,6 @@
 //! What Drive's JSON says, read as far as the replica needs.
 
-use porter_core::WebUrl;
+use porter_ids::WebUrl;
 use porter_sync::{ContentHash, ItemKind};
 use serde::Deserialize;
 

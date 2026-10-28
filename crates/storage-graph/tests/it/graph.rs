@@ -6,10 +6,10 @@
 use crate::common;
 
 use common::{Replica, Server, TOKEN, TcpDial};
-use porter_core::{Bytes, WebUrl};
 use porter_fake_servers::graph::{CHUNK_UNIT, Knobs};
 use porter_fake_servers::{GraphHandle, Hit};
 use porter_http_relay::{RelayHttp, RelayLimits};
+use porter_ids::{Bytes, WebUrl};
 use porter_sync::Clock;
 use porter_sync::{
     BaseVersion, Blob, ByteRange, Change, Conflict, Cursor, ItemPath, PutItem, PutRefused,

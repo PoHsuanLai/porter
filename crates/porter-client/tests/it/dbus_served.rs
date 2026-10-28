@@ -13,7 +13,9 @@ use porter_client::{Accounts, ClientError, DbusTransport, InferSession};
 use porter_core::capability::CuaEnv;
 use porter_core::consent::Usage;
 use porter_core::need::{CuaNeed, DimsNeed, EmbedNeed};
-use porter_core::{AccountId, DataClass, Dims, Locality, ModelId, Need, Tier, Tokens};
+use porter_core::{AccountId, ModelId};
+use porter_core::{DataClass, Locality, Need, Tier};
+use porter_ids::{Dims, Tokens};
 use porter_infer::testing::{Script, ScriptStep};
 use porter_infer::{
     AttachIndex, ClientFrame, CuaBegin, CuaStepReply, EmbedReply, EmbedRequest, EmbedRole,

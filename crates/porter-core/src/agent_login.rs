@@ -5,7 +5,7 @@
 //! tunnel the login through the outcome.
 
 use crate::error::CoreError;
-use crate::id::is_id;
+use porter_ids::is_id;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 

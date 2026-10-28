@@ -2,7 +2,7 @@
 
 use crate::anchor::Anchor;
 use crate::item::{RemoteId, RemoteItem, RemoteVersion};
-use porter_core::UnixSeconds;
+use porter_ids::UnixSeconds;
 use serde::{Deserialize, Serialize};
 
 /// One change.

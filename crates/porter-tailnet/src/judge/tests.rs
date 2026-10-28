@@ -1,6 +1,6 @@
 use super::*;
 use crate::guests::{AskOutcome, GuestAnswer, GuestEvent};
-use porter_core::UnixSeconds;
+use porter_ids::UnixSeconds;
 use porter_tailscale::{User, UserId, WhoIsNode};
 use std::sync::{Arc, Mutex};
 

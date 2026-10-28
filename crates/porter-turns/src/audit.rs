@@ -8,8 +8,9 @@
 //! `images` and `audio_ms` come from what the session server counted of the request
 //! (`serve::Carried`); the reply alone could not say.
 
-use porter_core::clock::Clock;
-use porter_core::{AppId, Bytes, Tokens};
+use porter_core::AppId;
+use porter_ids::clock::Clock;
+use porter_ids::{Bytes, Tokens};
 use porter_infer::{AuditEntry, InferReply, ServedBy, TokenUsage, Why};
 use porter_router::carried::Carried;
 use porter_router::seams::AuditSink;

@@ -14,7 +14,7 @@ use super::PimKind;
 use super::vdir::{self, Meta};
 use crate::dataset::{Dataset, DatasetError, DatasetId, Direction, fingerprint};
 use crate::journal::{Journal, Op};
-use porter_core::Bytes;
+use porter_ids::Bytes;
 use porter_sync::{Blob, ConflictRule, ContentHash, ItemPath, ItemState, LocalId, Scanned};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;

@@ -8,7 +8,7 @@ use crate::capability::{CuaBatching, CuaCap, CuaEnv, LlmWire};
 use crate::fixtures::{llm, mail, storage};
 use crate::need::AgentNeed;
 use crate::need::{CuaNeed, LlmNeed, MailNeed, PhotosNeed, StorageNeed};
-use crate::units::{Px, Tokens};
+use porter_ids::{Px, Tokens};
 
 fn agent(program: &str, base_url_env: Option<&str>, protocols: &[AgentProtocol]) -> Offer {
     present(Capability::Agent(Box::new(AgentCap {

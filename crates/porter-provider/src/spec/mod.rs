@@ -12,9 +12,10 @@ pub use linked::{AuthOrigin, LinkedOrigin};
 pub use matching::{DomainMatch, DomainName, Matching};
 
 use porter_core::AuthKind;
+use porter_core::ProviderId;
 use porter_core::capability::{Ask, StorageScope};
 use porter_core::sheet::{MarkFace, ProviderGroup, ProviderKind, ProviderRow, RowKind};
-use porter_core::{Billing, Capability, CapabilityKind, Family, Locality, ProviderId};
+use porter_core::{Billing, Capability, CapabilityKind, Family, Locality};
 use serde::{Deserialize, Serialize};
 
 /// One provider, as its file declares it.

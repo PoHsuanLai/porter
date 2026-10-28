@@ -4,10 +4,12 @@
 //! service is refused by the fake as Google refuses it.
 
 use super::rig::*;
+use porter_core::AccountId;
 use porter_core::sheet::SignInInput;
-use porter_core::{AccountId, Credential, SecretText, UnixSeconds};
+use porter_core::{Credential, SecretText};
 use porter_http::Http;
 use porter_http::http::Method;
+use porter_ids::UnixSeconds;
 use porter_provider::{Presented, Provider, ProviderSession, SignIn, SignInStep};
 
 fn account() -> AccountId {
@@ -71,7 +73,7 @@ async fn call(
     extra: &[(&str, &str)],
 ) -> u16 {
     let url = format!("{}{path}", rig.google.api.base_url());
-    let url = porter_core::WebUrl::parse(&url).expect("url");
+    let url = porter_ids::WebUrl::parse(&url).expect("url");
     let mut request =
         porter_http::request(method, &url).header("Authorization", format!("Bearer {token}"));
     for (name, value) in extra {

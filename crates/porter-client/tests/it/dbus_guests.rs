@@ -13,8 +13,8 @@ use porter_client::{
     Accounts, ClientError, ComputerReason, DbusTransport, GuestAnswer, GuestChange, GuestRow,
     NodeId, TransportError,
 };
-use porter_core::UnixSeconds;
 use porter_dbus::{BusStream, Details};
+use porter_ids::UnixSeconds;
 use std::sync::{Arc, Mutex};
 use zbus::fdo;
 use zbus::object_server::SignalEmitter;
@@ -450,7 +450,8 @@ async fn candidates_decode_with_their_models_and_approval() {
 mod computers {
     use super::*;
     use porter_client::{ComputerName, ComputerReach, NewComputer, NewComputerModel};
-    use porter_core::{ModelId, SecretText};
+    use porter_core::ModelId;
+    use porter_core::SecretText;
 
     fn place_row(id: &str, kind: &str, name: &str) -> (String, Details) {
         (

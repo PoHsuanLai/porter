@@ -57,7 +57,7 @@ impl<H> std::fmt::Debug for MicrosoftEnv<H> {
 impl<H: Http> MicrosoftEnv<H> {
     /// An environment over `http` with `clock` for the time and the system's randomness,
     /// `registry` for the clients, the stable channel and a two-second poll.
-    pub fn new<C: porter_core::clock::Clock + 'static>(
+    pub fn new<C: porter_ids::clock::Clock + 'static>(
         http: H,
         registry: ClientRegistry,
         clock: C,
@@ -113,7 +113,7 @@ impl<H: Http + Default> MicrosoftEnv<H> {
     /// The environment of a daemon reading its clients from `files` (the shipped clients file
     /// and the person's own, read again at every use: a damaged file reads as empty, so the
     /// sign-in says it needs a client id rather than guessing one) and the time from `clock`.
-    pub fn with_client_files<C: porter_core::clock::Clock + 'static>(
+    pub fn with_client_files<C: porter_ids::clock::Clock + 'static>(
         files: ClientFiles,
         clock: C,
     ) -> Self {

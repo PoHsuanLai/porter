@@ -36,7 +36,7 @@ pub async fn relay<A: ByteStream, C: Connect>(plan: RelayPlan, app: A, connect: 
         server: Some(server),
         host: origin.host.clone(),
     };
-    match origin.scheme.protocol() {
+    match EndpointProtocol::of_scheme(origin.scheme) {
         EndpointProtocol::Imap => run(ImapRelay::new(plan), ends, connect).await,
         EndpointProtocol::Smtp => run(SmtpRelay::new(plan), ends, connect).await,
         EndpointProtocol::Http => run(HttpRelay::new(plan), ends, connect).await,

@@ -6,7 +6,7 @@
 //! lending computer's own dependencies.
 
 use crate::tailnet::NodeId;
-use crate::units::UnixSeconds;
+use porter_ids::UnixSeconds;
 
 /// The person's answer to a computer: what `AnswerGuest` takes, as a word.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

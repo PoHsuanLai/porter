@@ -1,14 +1,15 @@
 //! The rig the Microsoft tests share: a fake issuer on loopback, an in-process Graph, and an
 //! `Http` that sends issuer URLs over the loopback and Graph URLs to the in-process table.
 
+use porter_core::Audience;
 use porter_core::sheet::SignInInput;
-use porter_core::{Audience, UnixSeconds};
 use porter_fake_servers::browser::split_loopback;
 use porter_fake_servers::http::{Scheme, send};
 use porter_fake_servers::{FakeIssuer, IssuerHandle, Running, shipped};
 use porter_families::{MicrosoftEnv, MicrosoftProvider};
 use porter_http::http::{Request, Response};
 use porter_http::{Http, HttpError};
+use porter_ids::UnixSeconds;
 use porter_oauth::ClientRegistry;
 use porter_provider::{
     ClientChannel, ClientEntry, ClientId, ClientsFile, Issuer, ProviderSpec, SignIn, SignInMode,
@@ -183,7 +184,7 @@ impl Rig {
             },
             ClientRegistry::layered(ClientsFile { clients }, ClientsFile::default()),
             // The clock is replaced below by the counting one.
-            porter_core::clock::FixedClock::new(UnixSeconds(0)),
+            porter_ids::clock::FixedClock::new(UnixSeconds(0)),
         )
         .with_channel(ClientChannel::Development)
         .with_poll_slice(Duration::from_millis(20))

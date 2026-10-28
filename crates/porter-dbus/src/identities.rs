@@ -13,9 +13,8 @@
 
 use crate::args::Details;
 use crate::json_value::bad;
-use porter_core::{
-    CoreError, Identity, IdentityAddress, IdentityId, IdentityKind, IdentityName, ProviderId,
-};
+use porter_core::ProviderId;
+use porter_core::{CoreError, Identity, IdentityAddress, IdentityId, IdentityKind, IdentityName};
 use zbus::fdo;
 use zbus::object_server::SignalEmitter;
 use zbus::zvariant::{OwnedFd, OwnedValue, Value};

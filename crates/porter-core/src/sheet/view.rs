@@ -5,11 +5,11 @@ use super::fields::{FieldKind, FieldSpec};
 use super::group::ProviderGroup;
 use super::mark::MarkFace;
 use super::progress::{Review, SignInFault, UserCode};
+use crate::ProviderId;
 use crate::app_id::{AppId, AppLabel};
 use crate::consent::ConsentAsk;
 use crate::endpoint::EndpointUrl;
-use crate::id::ProviderId;
-use crate::weburl::WebUrl;
+use porter_ids::WebUrl;
 use serde::{Deserialize, Serialize};
 
 /// One provider in the list the person picks from.

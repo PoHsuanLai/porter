@@ -1,21 +1,7 @@
 //! porter's pure vocabulary: accounts, the capability vocabulary and how a need meets an offer,
 //! consent, credentials' filing, and the wire protocol. No runtime, no file system, no I/O: the
-//! file writer lives in `porter-fs`. The time is one seam, [`clock`]: its [`clock::SystemClock`]
-//! reads the wall clock only when a daemon calls it.
-//!
-//! Every id is parsed once where it enters, so the rest of the code holds a value that is already
-//! safe in a file name and, after [`object_segment`], in a D-Bus object path:
-//!
-//! ```
-//! use porter_core::{AccountId, object_segment};
-//!
-//! let id = AccountId::parse("work.nextcloud").expect("a well-formed id");
-//! assert_eq!(id.as_str(), "work.nextcloud");
-//! // On the bus the id is one path segment: `.` and `-` become `_`.
-//! assert_eq!(object_segment(&id), "work_nextcloud");
-//! // Capital letters are not in the grammar.
-//! assert!(AccountId::parse("Work").is_err());
-//! ```
+//! file writer lives in `porter-fs`. The ids, units, URLs, the clock and percent-encoding it is
+//! built from are in `porter-ids`.
 
 mod account;
 mod agent_login;
@@ -25,7 +11,6 @@ pub mod audit;
 mod auth_kind;
 mod candidate;
 pub mod capability;
-pub mod clock;
 pub mod consent;
 mod data_class;
 mod effective;
@@ -35,15 +20,14 @@ mod family;
 #[cfg(test)]
 mod fixtures;
 mod helper_id;
-mod id;
 mod identities;
 mod identity;
+mod ids;
 mod launcher_session;
 pub mod lending;
 mod matching;
 pub mod need;
 mod offer;
-pub mod percent;
 mod process_credential;
 mod protocol;
 mod restriction;
@@ -56,8 +40,6 @@ pub mod store;
 pub mod stream;
 mod tailnet;
 pub mod token;
-mod units;
-mod weburl;
 pub mod wire;
 
 pub use account::{Account, AccountLabel, AccountState, AgentState};
@@ -70,16 +52,15 @@ pub use capability::{Capability, CapabilityKind};
 pub use data_class::DataClass;
 pub use effective::{KindToggle, Toggle, effective};
 pub use endpoint::{
-    EndpointFault, EndpointUrl, LoginName, Origin, PathReach, Reach, ReachMethods, RelayAuth,
-    RelayPlan, ServerAddress, ServerAddressFault, ServiceEndpoint, Tls, UrlScheme, server_address,
-    server_address_shape,
+    EndpointFault, EndpointUrl, LoginName, PathReach, Reach, ReachMethods, RelayAuth, RelayPlan,
+    ServerAddress, ServerAddressFault, ServiceEndpoint, Tls, server_address, server_address_shape,
 };
 pub use error::CoreError;
 pub use family::Family;
 pub use helper_id::HelperId;
-pub use id::{AccountId, GrantId, KeyPermitId, ModelId, ProviderId, is_id, object_segment};
 pub use identities::{Identity, IdentityAddress, IdentityId, IdentityKind, IdentityName};
 pub use identity::{CgroupPath, ClaimedId, PeerFacts, PeerIdentity, SandboxFacts, identity_of};
+pub use ids::{AccountId, GrantId, KeyPermitId, ModelId, ProviderId};
 pub use launcher_session::LauncherSession;
 pub use matching::{Match, Shortfall, matches};
 pub use need::Need;
@@ -102,6 +83,4 @@ pub use space_record::{
 };
 pub use tailnet::{Machine, MachineLink, MachineOwner, MachineSsh, NodeId};
 pub use token::{Audience, IssuedToken, TokenKind};
-pub use units::{Bytes, Count, Dims, MicroUsd, Permille, Px, Tokens, UnixSeconds};
-pub use weburl::WebUrl;
 pub use wire::{AccountsReply, AccountsRequest};

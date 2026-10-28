@@ -4,12 +4,12 @@
 //! document's shape. A version that did not change it has no row: the document is read as it
 //! was and only its version moves.
 
+use crate::AccountId;
 use crate::account::Account;
 use crate::auth_kind::AuthKind;
 use crate::capability::{CapabilityKind, VocabVersion};
 use crate::consent::Grant;
 use crate::effective::Toggle;
-use crate::id::AccountId;
 use crate::identities::IdentityKind;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

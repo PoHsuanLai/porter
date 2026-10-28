@@ -11,10 +11,11 @@
 use super::apis_of;
 use super::scopes::Granted;
 use porter_core::capability::{Capability, CapabilityKind};
-use porter_core::{AbsentReason, Claim, EndpointUrl, Family, Offer, Provenance, Subject, WebUrl};
+use porter_core::{AbsentReason, Claim, EndpointUrl, Family, Offer, Provenance, Subject};
 use porter_http::http::header::{ACCEPT, AUTHORIZATION};
 use porter_http::http::{Method, Response};
 use porter_http::{Http, SensitiveHeader, request};
+use porter_ids::WebUrl;
 use porter_oauth::MailRights;
 use porter_provider::{ProviderError, ProviderSpec};
 use serde::Deserialize;

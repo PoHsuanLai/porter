@@ -5,13 +5,13 @@ use super::super::{DeviceId, ManualMillis, PhotoLibrary, PhotoMetadata, PhotoOri
 use crate::engine::{Engine, Report};
 use crate::journal::Journal;
 use crate::testing::scratch;
-use porter_core::clock::SystemClock;
-use porter_core::{UnixSeconds, WebUrl};
 use porter_fake_servers::{DavHandle, FakeDav, Running};
 use porter_http::http::header::{AUTHORIZATION, HeaderValue};
 use porter_http::http::{Request, Response};
 use porter_http::{Http, HttpError};
 use porter_http_relay::{Dial, RelayHttp, RelayLimits};
+use porter_ids::clock::SystemClock;
+use porter_ids::{UnixSeconds, WebUrl};
 use porter_sync::Clock;
 use std::future::Future;
 use std::path::PathBuf;

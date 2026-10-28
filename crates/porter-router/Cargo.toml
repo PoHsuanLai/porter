@@ -14,7 +14,9 @@ publish.workspace = true
 testing = []
 
 [dependencies]
+porter-tailnet = { workspace = true }
 porter-core = { workspace = true }
+porter-ids = { workspace = true }
 porter-engines = { workspace = true }
 porter-infer = { workspace = true }
 cua-action = { workspace = true }

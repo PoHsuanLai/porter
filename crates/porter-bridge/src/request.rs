@@ -185,7 +185,7 @@ fn tool_choice(choice: &pi::ToolChoice) -> Result<sp::ToolChoice, BridgeError> {
     })
 }
 
-fn milli(permille: porter_core::Permille) -> sp::Milli {
+fn milli(permille: porter_ids::Permille) -> sp::Milli {
     sp::Milli(u16::try_from(permille.0).unwrap_or(u16::MAX))
 }
 

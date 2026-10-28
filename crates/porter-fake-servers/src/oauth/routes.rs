@@ -77,7 +77,7 @@ fn authorize(shared: &Shared, request: &Request) -> Response {
     let back = |query: String| {
         let sep = if redirect_uri.contains('?') { '&' } else { '?' };
         let state = state_param.as_deref().map_or(String::new(), |s| {
-            format!("&state={}", porter_core::percent::encode_unreserved(s))
+            format!("&state={}", porter_ids::percent::encode_unreserved(s))
         });
         Response::redirect(&format!("{redirect_uri}{sep}{query}{state}"))
     };

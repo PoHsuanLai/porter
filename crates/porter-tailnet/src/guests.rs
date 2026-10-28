@@ -9,8 +9,9 @@
 //! person may want back. The questions still waiting are kept in memory only: after a restart
 //! the computer asks again when it next wants a model.
 
-use porter_core::{NodeId, UnixSeconds};
+use porter_core::NodeId;
 use porter_fs::atomic::AtomicWrite;
+use porter_ids::UnixSeconds;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

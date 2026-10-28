@@ -3,7 +3,7 @@
 use super::{Compared, Engine, Halt, Outcome, Report, conflict_of, halt, provisional};
 use crate::dataset::{Dataset, Direction, fingerprint};
 use crate::journal::Op;
-use porter_core::clock::Clock;
+use porter_ids::clock::Clock;
 use porter_sync::{
     Acknowledgement, Anchor, BaseVersion, Blob, ByteRange, Change, Cursor, ItemState, JournalItem,
     More, RemoteId, RemoteItem, RemoteSide, Replica, ReplicaError, StoredAnchor, Tombstone,

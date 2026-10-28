@@ -8,7 +8,8 @@
 //! engines build that list.
 
 use super::{Decided, Listed, Unchosen, choose, chosen_for, fits};
-use porter_core::{DataClass, ModelId, Need, Tier};
+use porter_core::ModelId;
+use porter_core::{DataClass, Need, Tier};
 use porter_infer::{
     AutoPolicy, InferRefusal, NoPlaceReason, PickRefusal, PlaceId, PlaceRefusal, Policy, RouteAsk,
     RouteCandidate, TierChoice, TierMap, admit,

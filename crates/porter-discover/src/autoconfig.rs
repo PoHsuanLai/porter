@@ -21,7 +21,8 @@ use crate::found::{
     SearchOptions, Source, StartTlsOnly,
 };
 use crate::mail::{imap_claim, imap_endpoint, smtp_endpoint};
-use porter_core::{LoginName, ServiceEndpoint, Tls, WebUrl};
+use porter_core::{LoginName, ServiceEndpoint, Tls};
+use porter_ids::WebUrl;
 use porter_provider::DomainName;
 
 /// Where the public ISPDB is served; the domain is appended.
@@ -34,7 +35,7 @@ pub const ISPDB: &str = "https://autoconfig.thunderbird.net/v1.1/";
 pub fn autoconfig_urls(domain: &DomainName, address: &str) -> Vec<WebUrl> {
     let query = format!(
         "?emailaddress={}",
-        porter_core::percent::encode_unreserved(address)
+        porter_ids::percent::encode_unreserved(address)
     );
     [
         format!("https://autoconfig.{domain}/mail/config-v1.1.xml{query}"),

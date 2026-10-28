@@ -26,7 +26,9 @@ use model_http::{
     HttpStatus, HttpTarget, Port, Proxy, ResponseHead, RouteRoot, Secret, Timeouts, TlsRoots,
     Transport, UrlPath, Verb, WaitMs,
 };
-use porter_core::{AccountId, ModelId, SecretText, ServiceEndpoint, UnixSeconds, UrlScheme};
+use porter_core::{AccountId, ModelId};
+use porter_core::{SecretText, ServiceEndpoint};
+use porter_ids::{UnixSeconds, UrlScheme};
 use porter_infer::Takes;
 use porter_router::catalog::{capabilities_of, parse_entry_text};
 use std::collections::BTreeMap;

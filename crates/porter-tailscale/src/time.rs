@@ -1,7 +1,7 @@
 //! Go's `time.Time` as Tailscale writes it (RFC 3339, with a fraction and an offset), read to
 //! whole Unix seconds by `UnixSeconds::from_rfc3339` (chrono).
 
-use porter_core::UnixSeconds;
+use porter_ids::UnixSeconds;
 
 /// The instant `text` names, in Unix seconds; `None` for text that is not an RFC 3339 time, and
 /// for a time before 1970, which is how Go writes "never" (`0001-01-01T00:00:00Z`).

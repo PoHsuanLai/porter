@@ -7,7 +7,7 @@
 //! family says which it is from the client's row (`testing = true`) and, where it knows when the
 //! person signed in, from the age of the sign-in.
 
-use porter_core::UnixSeconds;
+use porter_ids::UnixSeconds;
 use porter_oauth::AppReview;
 
 /// Seconds a refresh token of a client in testing lasts.

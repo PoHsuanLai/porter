@@ -11,8 +11,9 @@
 //! - A `spaces.json` that cannot be read is never written over: the list is served empty and
 //!   every change is refused until the person mends or moves the file.
 
-use porter_core::{AppName, DesktopSpace, DesktopSpaceRecord, SpaceLook, SpaceName, UnixSeconds};
+use porter_core::{AppName, DesktopSpace, DesktopSpaceRecord, SpaceLook, SpaceName};
 use porter_fs::atomic::AtomicFile;
+use porter_ids::UnixSeconds;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, VecDeque};
 use std::path::PathBuf;

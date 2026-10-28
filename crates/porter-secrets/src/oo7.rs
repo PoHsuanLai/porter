@@ -6,7 +6,8 @@ use crate::attributes::attributes_in;
 use crate::error::SecretsError;
 use crate::namespace::Namespace;
 use crate::secrets::{PutOutcome, Secrets};
-use porter_core::{AccountId, Credential, SecretKey};
+use porter_core::AccountId;
+use porter_core::{Credential, SecretKey};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use zeroize::Zeroizing;
@@ -358,7 +359,8 @@ impl Secrets for Oo7NamedSecrets {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_core::{SecretText, UnixSeconds};
+    use porter_core::SecretText;
+    use porter_ids::UnixSeconds;
     use std::sync::atomic::{AtomicU32, Ordering};
 
     /// A daemon that answers only the keyrings opened since it started: the `n`th open is

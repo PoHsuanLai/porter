@@ -1,6 +1,7 @@
 //! The in-memory store keeps the `Secrets` contract the daemon relies on.
 
-use porter_core::{AccountId, Credential, SecretKey, SecretPurpose, SecretText};
+use porter_core::AccountId;
+use porter_core::{Credential, SecretKey, SecretPurpose, SecretText};
 use porter_secrets::{MemorySecrets, Secrets, SecretsError};
 
 fn key(account: &str, purpose: SecretPurpose) -> SecretKey {

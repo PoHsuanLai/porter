@@ -7,12 +7,12 @@
 //! connection that outlasts the retries leaves the part for the next try.
 
 use crate::progress::{CancelToken, Meter};
-use porter_core::{UrlScheme, WebUrl};
 use porter_engines::{Artifact, file_digest, hex};
 use porter_http::http::header::RANGE;
 use porter_http::http::{HeaderMap, Method, StatusCode};
 use porter_http::{HeaderText, HttpError, request};
 use porter_http_reqwest::{BodySink, Flow, ReqwestHttp};
+use porter_ids::{UrlScheme, WebUrl};
 use sha2::{Digest, Sha256};
 use std::ffi::OsString;
 use std::fs::{File, OpenOptions};

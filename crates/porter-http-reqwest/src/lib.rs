@@ -9,9 +9,9 @@
 //!
 //! This is the only crate in porter that names reqwest (`scripts/check-boundary.sh`).
 
-use porter_core::{Origin, UrlScheme};
 use porter_http::HttpError;
 use porter_http::http::{HeaderMap, Request, Response, StatusCode, Uri};
+use porter_ids::{Origin, UrlScheme};
 use reqwest::redirect::Policy;
 use reqwest::{Certificate, Client};
 use std::error::Error;

@@ -3,13 +3,13 @@
 //! checked.
 
 use porter_core::EndpointUrl;
-use porter_core::WebUrl;
 use porter_fake_servers::http::{Request, Response, serve};
 use porter_fake_servers::net::{Bind, Listener, port_of};
 use porter_fake_servers::tls;
 use porter_http::http::{self, Method, StatusCode};
 use porter_http::{HeaderText, Http, HttpError, request, request_to};
 use porter_http_reqwest::{Limits, ReqwestHttp};
+use porter_ids::WebUrl;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;

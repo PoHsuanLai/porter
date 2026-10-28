@@ -10,9 +10,8 @@
 
 mod sign_in;
 
-use porter_core::{
-    Account, AccountId, Audience, Claim, Credential, IssuedToken, Offer, Provenance, Subject,
-};
+use porter_core::AccountId;
+use porter_core::{Account, Audience, Claim, Credential, IssuedToken, Offer, Provenance, Subject};
 use porter_provider::{
     Presented, Provider, ProviderError, ProviderSession, ProviderSpec, RevokeOutcome, SignInStart,
 };

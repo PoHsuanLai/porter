@@ -17,9 +17,9 @@ use crate::entry::{Entry, Kind, entries};
 use crate::replica::WebDavReplica;
 use crate::requests;
 use dav_proto::{Multistatus, SyncEnd, parse_multistatus, parse_sync_collection, token_expired};
-use porter_core::Bytes;
 use porter_http::Http;
 use porter_http::http::Response;
+use porter_ids::Bytes;
 use porter_sync::DELETED;
 use porter_sync::status::{read_error, unreached};
 use porter_sync::{
@@ -457,7 +457,7 @@ fn diff(
     root: &crate::path::Root,
     known: &Known,
     now: &[Entry],
-    at: porter_core::UnixSeconds,
+    at: porter_ids::UnixSeconds,
 ) -> Vec<Change> {
     let changed: Vec<Entry> = now
         .iter()

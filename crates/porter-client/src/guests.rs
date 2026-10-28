@@ -21,12 +21,13 @@
 
 use crate::error::TransportError;
 use crate::transport::bus_error;
+use porter_core::NodeId;
 use porter_core::lending::GuestAsk;
-use porter_core::{NodeId, UnixSeconds};
 use porter_dbus::names::{GUEST_KEY_NAME, GUEST_KEY_SINCE};
 use porter_dbus::{
     BusConnection, BusStream, Details, GuestAsksStream, GuestsChangedStream, InferenceProxy,
 };
+use porter_ids::UnixSeconds;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 

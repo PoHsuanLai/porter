@@ -71,7 +71,7 @@ where
             let mut granted: Vec<AccountDir> = Vec::new();
             for candidate in &candidates {
                 let Some(account) =
-                    AccountDir::parse(&porter_core::object_segment(&candidate.account))
+                    AccountDir::parse(&porter_ids::object_segment(candidate.account.as_str()))
                 else {
                     continue;
                 };

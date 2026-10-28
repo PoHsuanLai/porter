@@ -2,10 +2,10 @@
 //! reopen after a lapsed credential, a kept connection the server closed, and the response cap.
 
 use crate::server::{After, Seen, serve};
-use porter_core::WebUrl;
 use porter_http::http::{Method, Request, StatusCode};
 use porter_http::{Http, HttpError, request};
 use porter_http_relay::{Dial, RelayHttp, RelayLimits};
+use porter_ids::WebUrl;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};

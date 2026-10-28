@@ -9,7 +9,7 @@ use crate::peers::Caller;
 use crate::seats::Gate;
 use engine_supervisor::{EngineId, EngineState};
 use model_catalog::{GpuNeed, MiB};
-use porter_core::Bytes;
+use porter_ids::Bytes;
 use porter_infer::{HardwareFacts, HardwareNote, MemoryFacts, ModelRef, hardware_notes};
 use porter_router::local::LocalModel;
 use porter_router::router::Unchosen;

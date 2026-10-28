@@ -10,7 +10,9 @@
 //! - `account:<account id>`, a cloud AI account accountd holds.
 
 use crate::takes::Takes;
-use porter_core::{AccountId, CoreError, Locality, is_id};
+use porter_core::AccountId;
+use porter_core::{CoreError, Locality};
+use porter_ids::is_id;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 

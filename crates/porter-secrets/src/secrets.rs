@@ -1,7 +1,8 @@
 //! The store seam: the Secret Service (oo7), a platform keyring, or the in-memory fake.
 
 use crate::error::SecretsError;
-use porter_core::{AccountId, Credential, SecretKey};
+use porter_core::AccountId;
+use porter_core::{Credential, SecretKey};
 use std::future::Future;
 
 /// What [`Secrets::put_if_absent`] did.

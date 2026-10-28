@@ -1,7 +1,9 @@
 //! Spend caps (design/31 §5.5): per account and per app, daily and monthly, warn then stop.
 
 use crate::reply::TokenUsage;
-use porter_core::{AccountId, AppId, MicroUsd, Permille, PriceTable};
+use porter_core::AccountId;
+use porter_core::{AppId, PriceTable};
+use porter_ids::{MicroUsd, Permille};
 use serde::{Deserialize, Serialize};
 
 /// Who a cap limits.
@@ -74,7 +76,8 @@ pub fn spend_verdict(cap: &SpendCap, spent: MicroUsd, estimate: MicroUsd) -> Spe
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_core::{AccountId, Tokens};
+    use porter_core::AccountId;
+    use porter_ids::Tokens;
 
     fn cap(limit: u64) -> SpendCap {
         SpendCap {

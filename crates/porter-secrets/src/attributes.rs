@@ -35,7 +35,8 @@ pub fn attributes_in(namespace: &Namespace, key: &SecretKey) -> SecretAttributes
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_core::{AccountId, CapabilityKind, SecretPurpose};
+    use porter_core::AccountId;
+    use porter_core::{CapabilityKind, SecretPurpose};
 
     #[test]
     fn purposes_are_filed_by_their_serde_form() {

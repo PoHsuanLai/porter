@@ -118,7 +118,7 @@ fn on_input(sheet: Sheet, input: SheetInput) -> (Sheet, Vec<SheetEffect>) {
 
 /// One step back: to the provider list where the person chose from it, else the provider's
 /// sign-in starts over from its first question.
-fn back(sheet: Sheet, provider: crate::id::ProviderId, cancel: bool) -> (Sheet, Vec<SheetEffect>) {
+fn back(sheet: Sheet, provider: crate::ProviderId, cancel: bool) -> (Sheet, Vec<SheetEffect>) {
     let listed = matches!(
         sheet.purpose,
         Purpose::Add {
@@ -138,11 +138,7 @@ fn back(sheet: Sheet, provider: crate::id::ProviderId, cancel: bool) -> (Sheet, 
 }
 
 /// Starts the provider's sign-in again from its first question.
-fn restart(
-    sheet: Sheet,
-    provider: crate::id::ProviderId,
-    cancel: bool,
-) -> (Sheet, Vec<SheetEffect>) {
+fn restart(sheet: Sheet, provider: crate::ProviderId, cancel: bool) -> (Sheet, Vec<SheetEffect>) {
     let (sheet, mut effects) = to(sheet, Stage::Working(provider));
     if cancel {
         effects.push(SheetEffect::Feed(SignInInput::Cancel));

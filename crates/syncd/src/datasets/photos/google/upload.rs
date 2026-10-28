@@ -18,11 +18,11 @@
 use super::api::{AlbumId, ApiError, MediaId, PhotosApi};
 use super::ledger::{Entry, Kept, LedgerError};
 use crate::dataset::fingerprint;
-use porter_core::Bytes;
 use porter_core::capability::{
     Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope,
 };
 use porter_http::Http;
+use porter_ids::Bytes;
 use porter_sync::DELETED;
 use porter_sync::{
     Anchor, BaseVersion, Blob, ByteRange, ChangePage, Cursor, More, PutItem, PutRefused, PutTarget,

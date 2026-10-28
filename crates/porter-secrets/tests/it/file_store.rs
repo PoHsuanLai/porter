@@ -2,7 +2,8 @@
 //! and the rename, and writers that race. The shared `Secrets` contract is in `contract.rs`.
 #![cfg(unix)]
 
-use porter_core::{AccountId, Credential, SecretKey, SecretPurpose, SecretText};
+use porter_core::AccountId;
+use porter_core::{Credential, SecretKey, SecretPurpose, SecretText};
 use porter_secrets::{FileSecrets, FileSecretsError, Namespace, PutOutcome, Secrets, SecretsError};
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;

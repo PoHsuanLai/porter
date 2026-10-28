@@ -7,15 +7,16 @@
 //! credential itself.
 
 use base64::Engine;
+use porter_core::ServiceEndpoint;
 use porter_core::capability::CapabilityKind;
 use porter_core::sheet::{
     Entry, FieldAnswer, FieldKind, FieldSpec, FieldValue, Presence, SignInFault,
 };
 use porter_core::{Claim, Credential, EndpointUrl, Offer, Provenance, SecretText, Subject, Tls};
-use porter_core::{ServiceEndpoint, UrlScheme};
 use porter_http::HttpError;
 use porter_http::http::Request;
 use porter_http::http::header::{AUTHORIZATION, HeaderValue};
+use porter_ids::UrlScheme;
 use porter_provider::{Presented, ProviderError, ProviderSpec};
 
 /// A form field.
@@ -142,7 +143,7 @@ fn root_of(url: &EndpointUrl) -> &str {
 
 /// A path segment, percent-encoded (an `@` or a space in a user id is not a URL character).
 pub(crate) fn segment(text: &str) -> String {
-    porter_core::percent::encode_unreserved(text)
+    porter_ids::percent::encode_unreserved(text)
 }
 
 /// The TLS mode a URL's scheme means.

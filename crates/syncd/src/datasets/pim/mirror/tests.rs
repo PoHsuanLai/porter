@@ -2,7 +2,7 @@ use super::*;
 use crate::datasets::pim::items_in;
 use crate::journal::Journal;
 use crate::testing::scratch;
-use porter_core::UnixSeconds;
+use porter_ids::UnixSeconds;
 use porter_sync::{
     Anchor, BaseVersion, Conflict, RemoteId, RemoteSide, RemoteVersion, StoredAnchor,
     StoredConflict,

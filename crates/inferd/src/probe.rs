@@ -16,7 +16,8 @@ pub mod entry;
 pub mod names;
 
 use names::{Listing, pair};
-use porter_core::{Claim, ModelId, Offer, Subject};
+use porter_core::ModelId;
+use porter_core::{Claim, Offer, Subject};
 use porter_discover::probe_ports;
 use porter_http::Http;
 use porter_provider::Port;

@@ -1,5 +1,5 @@
 use super::*;
-use porter_core::Count;
+use porter_ids::Count;
 
 fn memory(free: u64, one_more: u64) -> Option<MemoryFacts> {
     Some(MemoryFacts {

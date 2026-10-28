@@ -147,7 +147,7 @@ fn only_a_choice_of_two_or_more_with_the_knob_set_asks_the_engine() {
     let two = sp::OutputShape::Choice(options(&["a", "b"]));
     let one = sp::OutputShape::Choice(options(&["a"]));
     let on = pi::Knob::Set(pi::ScoreOptions {
-        top_k: porter_core::Count(5),
+        top_k: porter_ids::Count(5),
     });
     assert_eq!(
         choice_scores(&control(on), &two),
@@ -172,7 +172,7 @@ fn the_number_of_candidates_asked_for_is_held_to_what_the_engines_take() {
     let ask = |k| {
         choice_scores(
             &control(pi::Knob::Set(pi::ScoreOptions {
-                top_k: porter_core::Count(k),
+                top_k: porter_ids::Count(k),
             })),
             &two,
         )

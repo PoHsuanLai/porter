@@ -1,7 +1,7 @@
 //! What both protocol readers share: the parsed request, the words of a refusal to map a feature,
 //! the stop and usage vocabularies, and the event-stream writer both renderers implement.
 
-use porter_core::{Permille, Tokens};
+use porter_ids::{Permille, Tokens};
 use porter_infer::{
     ChatReply, ChatRequest, Effort, Knob, Reasoning, Sampling, StopReason, TokenUsage, ToolCallPart,
 };
@@ -61,7 +61,7 @@ pub fn sampling_of(
         temperature: permille(temperature.unwrap_or(default_temperature)),
         top_p: top_p.map_or(Knob::Off, |p| Knob::Set(permille(p))),
         top_k: top_k.map_or(Knob::Off, |k| {
-            Knob::Set(porter_core::Count(u32::try_from(k).unwrap_or(u32::MAX)))
+            Knob::Set(porter_ids::Count(u32::try_from(k).unwrap_or(u32::MAX)))
         }),
         min_p: Knob::Off,
         seed: Knob::Off,

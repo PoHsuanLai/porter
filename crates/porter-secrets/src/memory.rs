@@ -2,7 +2,8 @@
 
 use crate::error::SecretsError;
 use crate::secrets::{PutOutcome, Secrets};
-use porter_core::{AccountId, Credential, SecretKey};
+use porter_core::AccountId;
+use porter_core::{Credential, SecretKey};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::sync::{Mutex, MutexGuard};

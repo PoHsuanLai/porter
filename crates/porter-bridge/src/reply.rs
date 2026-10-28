@@ -3,7 +3,7 @@
 //! meet on the way out.
 
 use model_provider as sp;
-use porter_core::{Dims, Tokens};
+use porter_ids::{Dims, Tokens};
 use porter_infer as pi;
 
 use crate::scores::{NoScores, option_scores};

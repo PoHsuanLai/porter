@@ -13,10 +13,10 @@
 //! a plain token or refused, a file name is cut to its last component and made unique.
 
 use crate::datasets::photos::cas;
-use porter_core::WebUrl;
 use porter_http::http::request::Builder;
 use porter_http::http::{Method, Response};
 use porter_http::{Http, request};
+use porter_ids::WebUrl;
 use serde::Deserialize;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -158,7 +158,7 @@ struct FileWire {
 
 /// A query value with everything but unreserved characters percent-encoded.
 fn encode(text: &str) -> String {
-    porter_core::percent::encode_unreserved(text)
+    porter_ids::percent::encode_unreserved(text)
 }
 
 /// `"1s"`, `"600.5s"` as a duration; anything else is `None`.

@@ -6,10 +6,10 @@ use crate::json::{DriveInfo, DriveItem};
 use porter_core::capability::{
     Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope,
 };
-use porter_core::{Bytes, WebUrl};
 use porter_http::http::header::{ACCEPT, HeaderValue, RANGE};
 use porter_http::http::{Method, Request, Response};
 use porter_http::{HeaderText, Http, request};
+use porter_ids::{Bytes, WebUrl};
 use porter_sync::Clock;
 use porter_sync::status::{read_error, unreached};
 use porter_sync::{

@@ -11,11 +11,12 @@ use crate::callers::Callers;
 use crate::errors::RefusedError;
 use crate::host::Host;
 use crate::state::{Core, Standing, state_slug, window};
-use porter_core::{Account, AccountState, AccountsRequest, object_segment};
+use porter_core::{Account, AccountState, AccountsRequest};
 use porter_dbus::callers::{Caller, CallerRole};
 use porter_dbus::names::{ACCOUNTS_PATH, account_path};
 use porter_dbus::sheet::SheetKind;
 use porter_dbus::{Details, to_vardict};
+use porter_ids::object_segment;
 use std::sync::Arc;
 use zbus::ObjectServer;
 use zbus::fdo;
@@ -33,7 +34,7 @@ impl<H, C> AccountObject<H, C> {
 }
 
 /// The closed word for why `account` needs signing in again, or empty.
-pub(crate) fn reauth_reason_word(account: &Account, now: porter_core::UnixSeconds) -> &'static str {
+pub(crate) fn reauth_reason_word(account: &Account, now: porter_ids::UnixSeconds) -> &'static str {
     match account.state {
         AccountState::NeedsReauth => account
             .restriction
@@ -66,7 +67,7 @@ fn account_at<'a>(accounts: &'a [Account], path: &str) -> Option<&'a Account> {
     let segment = path.strip_prefix(&format!("{ACCOUNTS_PATH}/account/"))?;
     accounts
         .iter()
-        .find(|account| object_segment(&account.id) == segment)
+        .find(|account| object_segment(account.id.as_str()) == segment)
 }
 
 /// Whether `caller` may see accounts: only the shell, which tells the person when an account

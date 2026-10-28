@@ -17,7 +17,8 @@ use super::{
 use crate::config::InferdConfig;
 use crate::structured::AiConfig;
 use model_provider::Tokens;
-use porter_core::{DataClass, Permille, Tier};
+use porter_core::{DataClass, Tier};
+use porter_ids::Permille;
 use porter_infer::{
     AutoRow, ClassFloor, DescribeImages, Floor, LocalOnly, ModelRef, Policy, PoolRow, Slot,
     TierMap, TierRow,

@@ -1,6 +1,6 @@
 //! Every stored or wire type of porter-sync survives its serde form (the journal stores them).
 
-use porter_core::{Bytes, UnixSeconds};
+use porter_ids::{Bytes, UnixSeconds};
 use porter_sync::{
     Anchor, BaseVersion, Change, ChangePage, Conflict, ConflictRule, ContentHash, Cursor,
     DatasetKind, ItemKind, ItemPath, More, Quota, RemoteId, RemoteItem, RemoteSide, RemoteVersion,

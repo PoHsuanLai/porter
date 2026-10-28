@@ -4,7 +4,7 @@
 
 use super::ai::LlmWire;
 use super::terms::Offered;
-use crate::units::Px;
+use porter_ids::Px;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 

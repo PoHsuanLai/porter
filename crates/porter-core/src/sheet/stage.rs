@@ -9,10 +9,10 @@ use super::progress::{Progress, Review, ServiceChoice, SignInFault, SignInInput,
 use super::view::{FieldProblem, ProviderRow, ReviewView, SheetView, SignInView};
 use crate::app_id::AppId;
 use crate::endpoint::EndpointUrl;
-use crate::id::{AccountId, ProviderId};
 use crate::tailnet::Machine;
-use crate::weburl::WebUrl;
 use crate::wire::ProviderHint;
+use crate::{AccountId, ProviderId};
+use porter_ids::WebUrl;
 
 /// What the sheet was opened for.
 #[derive(Debug, Clone, PartialEq, Eq)]

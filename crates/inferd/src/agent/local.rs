@@ -18,7 +18,7 @@ use super::token::random_hex;
 use super::wire::{Parsed, SseOut, only_thought};
 use super::{anthropic, openai};
 use crate::runner::{Pin, Pinned, Turns};
-use porter_core::Tokens;
+use porter_ids::Tokens;
 use porter_infer::{
     ChatReply, InferEvent, InferReply, InferRequest, ModelError, Readiness, ServedBy, TokenUsage,
 };

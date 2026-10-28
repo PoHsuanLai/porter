@@ -16,8 +16,9 @@ use porter_client::InferSession;
 use porter_core::capability::LlmFeature;
 use porter_core::consent::Usage;
 use porter_core::need::LlmNeed;
-use porter_core::{AppId, AppName, DataClass, Isolation, MicroUsd, Need, Tier, Tokens};
+use porter_core::{AppId, AppName, DataClass, Isolation, Need, Tier};
 use porter_dbus::InferenceProxy;
+use porter_ids::{MicroUsd, Tokens};
 use porter_infer::{
     ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRefusal, InferReply, InferRequest,
     LocalOnly, MessagePart, ModelError, OpenOptions, Policy, Role as ChatRole, StopReason,

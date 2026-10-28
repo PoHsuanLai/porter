@@ -10,7 +10,7 @@ publish.workspace = true
 
 [dependencies]
 dav-proto = { workspace = true }
-porter-core = { workspace = true }
+porter-ids = { workspace = true }
 porter-http = { workspace = true }
 
 [dev-dependencies]

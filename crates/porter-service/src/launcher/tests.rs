@@ -1,8 +1,7 @@
 use super::*;
+use porter_core::ProviderId;
 use porter_core::capability::AgentCap;
-use porter_core::{
-    AccountLabel, AccountState, AuthKind, Claim, Provenance, ProviderId, Restriction,
-};
+use porter_core::{AccountLabel, AccountState, AuthKind, Claim, Provenance, Restriction};
 
 fn agent_claim(program: &str) -> Claim {
     Claim {

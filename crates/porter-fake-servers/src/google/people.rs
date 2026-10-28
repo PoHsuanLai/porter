@@ -162,7 +162,7 @@ impl People {
         let response = match parts.as_slice() {
             ["people", "me", "connections"] => self.connections(request),
             ["people", id] => {
-                let resource = format!("people/{}", porter_core::percent::decode(id));
+                let resource = format!("people/{}", porter_ids::percent::decode(id));
                 self.rows
                     .iter()
                     .find(|r| r.resource == resource)

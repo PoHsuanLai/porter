@@ -3,10 +3,10 @@
 
 use crate::entry::CONTENT_LENGTH;
 use dav_proto::{Depth, SyncLevel, names};
-use porter_core::WebUrl;
 use porter_dav::{propfind, report_sync_collection};
 use porter_http::HttpError;
 use porter_http::http::Request;
+use porter_ids::WebUrl;
 
 /// A PROPFIND at depth 1 of what a listing needs.
 pub fn list(url: WebUrl) -> Result<Request<Vec<u8>>, HttpError> {

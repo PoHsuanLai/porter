@@ -8,8 +8,10 @@
 //! the replica is built here over the collection's own URL; the relay only checks the origin.
 
 use porter_client::{Accounts, Transport};
-use porter_core::{EndpointUrl, GrantId, WebUrl};
+use porter_core::EndpointUrl;
+use porter_core::GrantId;
 use porter_http_relay::{RelayDial, RelayHttp, RelayLimits};
+use porter_ids::WebUrl;
 use porter_sync::Clock;
 use std::sync::Arc;
 use storage_webdav::WebDavReplica;

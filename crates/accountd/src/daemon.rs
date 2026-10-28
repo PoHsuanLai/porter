@@ -12,13 +12,13 @@
 
 use crate::paths::{PROC_GATE, Paths};
 use crate::{FileAudit, Options, SheetsDesk, load_callers, serve_with};
-use porter_core::clock::SystemClock;
 use porter_core::sheet::ProviderGroup;
 use porter_daemon::ProcRoot;
 use porter_daemon::xdg::PathError;
 use porter_dbus::BusTarget;
 use porter_dbus::callers::{CallerFileError, ProcCallers};
 use porter_families::set::{FamilyIo, ProviderNames, load_specs, served};
+use porter_ids::clock::SystemClock;
 use porter_secrets::Namespace;
 use porter_secrets::keysel::{Chosen, KeysRefusal, Selection, select};
 use porter_service::{AccountService, Registry};
@@ -203,7 +203,7 @@ impl Daemon {
         let io = FamilyIo::system(
             porter_provider::ProviderSet::layered(loaded.specs.clone(), Vec::new()),
             paths.client_files(),
-            Arc::new(porter_core::clock::SystemClock),
+            Arc::new(porter_ids::clock::SystemClock),
         )
         .with_tailscale(tailscale(&paths));
         // accountd serves the internet providers (identities and Tailscale); the AI and agent

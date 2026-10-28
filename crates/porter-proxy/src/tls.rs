@@ -3,8 +3,9 @@
 //! platform's (`rustls-native-certs`), and `webpki-roots` when the platform offers none.
 
 use crate::connect::{Connect, ConnectFault};
+use porter_core::Tls;
 use porter_core::stream::ByteStream;
-use porter_core::{Origin, Tls};
+use porter_ids::Origin;
 use rustls_pki_types::{CertificateDer, ServerName};
 use std::io;
 use std::net::SocketAddr;
@@ -175,7 +176,7 @@ impl Connect for RustlsConnect {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_core::UrlScheme;
+    use porter_ids::UrlScheme;
     use tokio::net::TcpListener;
 
     #[test]

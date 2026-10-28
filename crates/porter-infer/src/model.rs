@@ -10,7 +10,8 @@ use crate::error::{InferRefusal, ModelError};
 use crate::event::{Flow, InferEvent};
 use crate::reply::{ChatReply, EmbedReply, InferReply};
 use crate::request::{ChatRequest, EmbedRequest, InferRequest, TaskRequest};
-use porter_core::{AccountId, Billing, Capability, Locality, ModelId};
+use porter_core::{AccountId, ModelId};
+use porter_core::{Billing, Capability, Locality};
 use std::future::Future;
 
 /// What routing knows about one model.

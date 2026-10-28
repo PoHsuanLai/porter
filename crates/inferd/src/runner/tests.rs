@@ -1,7 +1,8 @@
 use super::*;
 use crate::testkit::{Scratch, models};
 use porter_core::consent::Usage;
-use porter_core::{AccountId, DataClass, Locality, ModelId};
+use porter_core::{AccountId, ModelId};
+use porter_core::{DataClass, Locality};
 use porter_infer::{
     ChatMessage, ChatRequest, ImagePart, ImageSource, MessagePart, Role, SpeakRequest,
     TranscribeBegin, TranscribeMode, VoiceName,

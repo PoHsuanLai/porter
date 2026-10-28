@@ -25,8 +25,10 @@ use model_http::{
     BodySink, ChunkFlow, Exchange, Framing, HttpError, JsonBody, ResponseHead, RouteRoot,
     Transport, UrlPath, Verb,
 };
+use porter_core::Locality;
 use porter_core::consent::{Usage, Verdict};
-use porter_core::{AccountId, Locality, ModelId, Tokens};
+use porter_core::{AccountId, ModelId};
+use porter_ids::Tokens;
 use porter_infer::{ServedBy, TokenUsage};
 use serde_json::Value;
 use tokio::io::AsyncWrite;

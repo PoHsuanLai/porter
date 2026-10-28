@@ -1,9 +1,9 @@
 //! Recorded multistatus fixtures (the shapes Nextcloud and Sabre-based servers answer) through
 //! the replica, with a scripted HTTP seam in place of a server: no network, no socket.
 
-use porter_core::{Bytes, UnixSeconds, WebUrl};
 use porter_http::http::{Request, Response};
 use porter_http::{Http, HttpError};
+use porter_ids::{Bytes, UnixSeconds, WebUrl};
 use porter_sync::Clock;
 use porter_sync::{
     Change, Cursor, Quota, RemoteId, RemoteVersion, Replica, ReplicaError, RetryAfter,

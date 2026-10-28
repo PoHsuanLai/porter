@@ -1,6 +1,6 @@
 //! The wire types the rig amendment added: pinned JSON, round trips, and the redaction rules.
 
-use porter_core::{Count, Permille, Tokens};
+use porter_ids::{Count, Permille, Tokens};
 use porter_infer::*;
 use serde::Serialize;
 use serde::de::DeserializeOwned;

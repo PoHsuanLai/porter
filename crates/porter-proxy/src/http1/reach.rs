@@ -13,7 +13,7 @@ use porter_core::{ReachMethods, RelayPlan};
 /// `%XX` escapes decoded to bytes; `None` for a malformed one (a `%` without two hex digits),
 /// which a server may read as it likes.
 fn decoded(text: &str) -> Option<Vec<u8>> {
-    porter_core::percent::is_well_formed(text).then(|| porter_core::percent::decode_bytes(text))
+    porter_ids::percent::is_well_formed(text).then(|| porter_ids::percent::decode_bytes(text))
 }
 
 /// `path` decoded, when the server cannot read it as another path than the relay does.

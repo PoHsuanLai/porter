@@ -4,7 +4,8 @@
 
 use crate::args::Details;
 use crate::json_value::bad;
-use porter_core::{CoreError, Machine, MachineLink, MachineOwner, MachineSsh, NodeId, UnixSeconds};
+use porter_core::{CoreError, Machine, MachineLink, MachineOwner, MachineSsh, NodeId};
+use porter_ids::UnixSeconds;
 use std::net::IpAddr;
 use zbus::zvariant::{OwnedValue, Value};
 

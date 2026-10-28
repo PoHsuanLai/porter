@@ -8,9 +8,11 @@
 //! lists one name and the probe found one model, they are the same model.
 
 use super::{Probed, Runtime, model_of};
-use porter_core::{Claim, ModelId, WebUrl};
+use porter_core::Claim;
+use porter_core::ModelId;
 use porter_http::http::Method;
 use porter_http::{Http, request};
+use porter_ids::WebUrl;
 use porter_provider::Port;
 use serde_json::Value;
 

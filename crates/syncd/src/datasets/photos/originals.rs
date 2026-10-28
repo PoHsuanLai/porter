@@ -9,7 +9,7 @@
 use super::cas::{self, ContentId};
 use super::library::{PhotoLibrary, originals_dir};
 use crate::dataset::{Dataset, DatasetError, DatasetId};
-use porter_core::Bytes;
+use porter_ids::Bytes;
 use porter_sync::{Blob, ConflictRule, ContentHash, ItemPath, LocalId, Scanned};
 use std::io;
 use std::path::Path;

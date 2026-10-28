@@ -1,5 +1,7 @@
 use super::*;
-use porter_core::{AccountId, Locality, ModelId, Tokens};
+use porter_core::Locality;
+use porter_core::{AccountId, ModelId};
+use porter_ids::Tokens;
 use porter_infer::{JsonText, ServedBy, TokenUsage, ToolCallId, ToolName};
 
 fn reply(

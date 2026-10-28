@@ -142,7 +142,7 @@ fn route(drive: &Drive, path: &str) -> Option<(Address, String)> {
                 let names = names
                     .split('/')
                     .filter(|s| !s.is_empty())
-                    .map(porter_core::percent::decode)
+                    .map(porter_ids::percent::decode)
                     .collect();
                 Some((
                     Address::Below(from, names),
@@ -162,16 +162,16 @@ fn route(drive: &Drive, path: &str) -> Option<(Address, String)> {
         let names = names
             .split('/')
             .filter(|s| !s.is_empty())
-            .map(porter_core::percent::decode)
+            .map(porter_ids::percent::decode)
             .collect();
         return Some((
-            Address::Below(porter_core::percent::decode(id), names),
+            Address::Below(porter_ids::percent::decode(id), names),
             op.trim_start_matches('/').to_owned(),
         ));
     }
     let (id, op) = rest.split_once('/').unwrap_or((rest, ""));
     Some((
-        Address::Item(porter_core::percent::decode(id)),
+        Address::Item(porter_ids::percent::decode(id)),
         op.to_owned(),
     ))
 }

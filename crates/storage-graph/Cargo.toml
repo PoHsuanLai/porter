@@ -12,6 +12,7 @@ publish.workspace = true
 base64 = { workspace = true }
 hex = { workspace = true }
 porter-core = { workspace = true }
+porter-ids = { workspace = true }
 porter-http = { workspace = true }
 porter-sync = { workspace = true }
 serde = { workspace = true }

@@ -12,7 +12,9 @@ use porter_client::{
 };
 use porter_core::consent::Usage;
 use porter_core::need::{DimsNeed, EmbedNeed, LlmNeed};
-use porter_core::{AccountId, DataClass, Dims, ModelId, Need, Permille, Tier, Tokens};
+use porter_core::{AccountId, ModelId};
+use porter_core::{DataClass, Need, Tier};
+use porter_ids::{Dims, Permille, Tokens};
 use porter_infer::testing::{Script, ScriptStep};
 use porter_infer::{
     AttachIndex, ChatControl, ChatMessage, ChatReply, ChatRequest, ClientFrame, EmbedReply,

@@ -2,7 +2,8 @@
 //! option and result keys their methods take and give, and the error-name prefixes their
 //! refusals use.
 
-use porter_core::{AccountId, object_segment};
+use porter_core::AccountId;
+use porter_ids::object_segment;
 
 /// accountd's bus name.
 pub const ACCOUNTS_BUS: &str = "org.quire.Accounts1";
@@ -180,7 +181,7 @@ pub const PLACE_KEY_TAKES: &str = "takes";
 
 /// The object path of one account (`org.quire.Accounts1.Account`).
 pub fn account_path(id: &AccountId) -> String {
-    format!("{ACCOUNTS_PATH}/account/{}", object_segment(id))
+    format!("{ACCOUNTS_PATH}/account/{}", object_segment(id.as_str()))
 }
 
 #[cfg(test)]

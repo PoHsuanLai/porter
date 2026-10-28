@@ -9,12 +9,13 @@
 //! ([`own_server`]) and the key, which such a server may not need, is kept as an empty key when
 //! there is none, so the account always has its one secret. An empty key is presented as no key.
 
+use porter_core::AccountId;
 use porter_core::Capability;
 use porter_core::capability::CapabilityKind;
 use porter_core::sheet::SignInFault;
 use porter_core::{
-    AccountId, AccountLabel, Audience, Claim, Credential, EndpointUrl, Family, IssuedToken, Offer,
-    Provenance, Restriction, SecretPurpose, SecretText, ServiceEndpoint, Subject,
+    AccountLabel, Audience, Claim, Credential, EndpointUrl, Family, IssuedToken, Offer, Provenance,
+    Restriction, SecretPurpose, SecretText, ServiceEndpoint, Subject,
 };
 use porter_http::http::Method;
 use porter_http::http::header::{ACCEPT, AUTHORIZATION, HeaderName};
@@ -297,7 +298,7 @@ mod tests {
 
     #[test]
     fn each_company_gets_its_documented_header() {
-        let url = porter_core::WebUrl::parse("https://api.example.org/v1/models").expect("url");
+        let url = porter_ids::WebUrl::parse("https://api.example.org/v1/models").expect("url");
         let key = SecretText::new("KEY");
         let headers = |family| {
             present_key(porter_http::request(Method::GET, &url), family, &key)

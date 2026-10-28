@@ -23,7 +23,7 @@ use crate::bridge;
 use crate::tee::{Echo, Tee};
 use model_extract::{ExtractFailure, Extracted, ShapedSession, ToolsPresent, choose};
 use model_provider::{ChoiceText, Flow, JsonText, Provider, SchemaText, Shape, TurnRequest};
-use porter_core::Tokens;
+use porter_ids::Tokens;
 use porter_infer::{self as pi, InferEvent, ModelError};
 use porter_router::local::LocalModel;
 

@@ -104,7 +104,7 @@ fn an_app_form_never_reads_as_a_slug_nor_a_slug_as_the_app_form() {
     // The app form holds `:`, which no slug may; so no text is both.
     let space = SpaceId::app(&app("org.quire.Photos"), LocalSpace(1));
     assert!(DesktopSpace::parse(space.as_str()).is_err());
-    assert!(!crate::id::is_id(space.as_str()));
+    assert!(!porter_ids::is_id(space.as_str()));
     // A slug that starts like the prefix is still a slug.
     assert!(matches!(id("app").kind(), SpaceKind::Linked(_)));
     assert!(matches!(id("app.photos-1").kind(), SpaceKind::Linked(_)));

@@ -254,9 +254,10 @@ impl<C: Callers> Sheets for BusSheets<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use porter_core::ProviderId;
     use porter_core::consent::{AccountChoice, Usage};
     use porter_core::{
-        AccountLabel, AppId, AppLabel, AppName, CapabilityKind, DataClass, Isolation, ProviderId,
+        AccountLabel, AppId, AppLabel, AppName, CapabilityKind, DataClass, Isolation,
     };
     use porter_dbus::callers::{AppTitle, CallerRow, CallerTable};
 

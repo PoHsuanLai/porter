@@ -1,6 +1,6 @@
 use super::*;
 use crate::testing::scratch;
-use porter_core::{Bytes, UnixSeconds};
+use porter_ids::{Bytes, UnixSeconds};
 use porter_sync::{
     Acknowledgement, Anchor, BaseVersion, Conflict, ContentHash, ItemPath, ItemState, RemoteSide,
     RemoteVersion, Tombstone, TombstoneOrigin,

@@ -4,8 +4,8 @@
 //! (open in an Office app there, or checked out).
 
 use crate::json::ErrorBody;
-use porter_core::UnixSeconds;
 use porter_http::http::Response;
+use porter_ids::UnixSeconds;
 use porter_sync::PutRefused;
 use porter_sync::status::retry_after;
 

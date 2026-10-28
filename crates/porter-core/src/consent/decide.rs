@@ -2,7 +2,7 @@
 //! app may learn about a need without holding a grant.
 
 use super::grant::{Decision, Grant, GrantKey, GrantScope};
-use crate::id::GrantId;
+use crate::GrantId;
 use serde::{Deserialize, Serialize};
 
 /// What the consent store says for one key.

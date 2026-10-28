@@ -27,11 +27,10 @@ use crate::host::Host;
 use crate::identities::UseFault;
 use crate::request::departed;
 use crate::state::{Core, Standing, hint};
+use porter_core::AccountId;
 use porter_core::consent::{AccountChoice, AskPurpose, ConsentAnswer, ConsentAsk, Usage};
 use porter_core::wire::{ProviderHint, Refusal};
-use porter_core::{
-    AccountId, AccountLabel, CapabilityKind, DataClass, Identity, IdentityId, IdentityKind,
-};
+use porter_core::{AccountLabel, CapabilityKind, DataClass, Identity, IdentityId, IdentityKind};
 use porter_dbus::callers::CallerRole;
 use porter_dbus::names::IDENTITIES_PATH;
 use porter_dbus::sheet::SheetKind;

@@ -1,9 +1,9 @@
 //! Credentials and where they are filed (design/31 §4.6). These values live in accountd and
 //! the secret store only: no wire type carries a [`Credential`].
 
+use crate::AccountId;
 use crate::capability::CapabilityKind;
-use crate::id::AccountId;
-use crate::units::UnixSeconds;
+use porter_ids::UnixSeconds;
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 use std::fmt;

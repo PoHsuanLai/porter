@@ -1,7 +1,7 @@
 //! The properties beside every AI capability (design/31 §2.3): where it runs, which tier the
 //! user mapped it to, and what it costs.
 
-use crate::units::MicroUsd;
+use porter_ids::MicroUsd;
 use serde::{Deserialize, Serialize};
 
 /// Where a model runs. Ordered by closeness: routing prefers the smallest.

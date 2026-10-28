@@ -62,7 +62,8 @@ mod tests {
     use super::*;
     use porter_core::capability::{Access, Delta, QuotaReport, StorageScope};
     use porter_core::need::StorageNeed;
-    use porter_core::{AccountLabel, Capability, GrantId, ProviderId, Restriction, Subject};
+    use porter_core::{AccountLabel, Capability, Restriction, Subject};
+    use porter_core::{GrantId, ProviderId};
 
     fn offer() -> ConsentOffer {
         let need = Need::Storage(StorageNeed::new(

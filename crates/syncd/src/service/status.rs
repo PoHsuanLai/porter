@@ -137,7 +137,7 @@ pub fn conflict_details(stored: &StoredConflict) -> Details {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_core::{Bytes, UnixSeconds};
+    use porter_ids::{Bytes, UnixSeconds};
     use porter_sync::{Conflict, LocalId, RemoteId, RemoteVersion};
 
     fn text(details: &Details, key: &str) -> Option<String> {

@@ -3,7 +3,7 @@
 
 use crate::error::CoreError;
 use crate::space::DesktopSpace;
-use crate::units::UnixSeconds;
+use porter_ids::UnixSeconds;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 

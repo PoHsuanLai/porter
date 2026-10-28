@@ -19,15 +19,15 @@
 //! while let Some(id) = removed.next().await { /* forget your own copies of it */ }
 //! ```
 
+use porter_core::ProviderId;
 use porter_core::wire::{ParentWindow, ProviderHint, Refusal};
-use porter_core::{
-    AppName, CoreError, Identity, IdentityAddress, IdentityId, ProviderId, SecretText,
-};
+use porter_core::{AppName, CoreError, Identity, IdentityAddress, IdentityId, SecretText};
 use porter_dbus::{
     BusConnection, BusError, BusFailure, BusStream, IdentitiesProxy, IdentityRemoved,
     IdentityRemovedStream, classify, identity_from_dbus, is_invalid_args, is_limits_exceeded,
     refusal_of,
 };
+use porter_ids::IdError;
 use std::io::Read;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -98,6 +98,12 @@ impl From<BusError> for IdentitiesError {
 
 impl From<CoreError> for IdentitiesError {
     fn from(error: CoreError) -> Self {
+        IdentitiesError::Malformed(error.to_string())
+    }
+}
+
+impl From<IdError> for IdentitiesError {
+    fn from(error: IdError) -> Self {
         IdentitiesError::Malformed(error.to_string())
     }
 }

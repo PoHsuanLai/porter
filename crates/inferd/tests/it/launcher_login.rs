@@ -7,10 +7,11 @@ use crate::launcher_register::error_name;
 use crate::launcher_rig::*;
 
 use inferd::launcher::LoginTiming;
+use porter_core::AccountId;
 use porter_core::capability::AgentProgram;
-use porter_core::clock::Clock;
-use porter_core::{AccountId, AccountState, LoginOutcome};
+use porter_core::{AccountState, LoginOutcome};
 use porter_dbus::{LauncherFault, ServiceRoot};
+use porter_ids::clock::Clock;
 use porter_service::audit::AuditEvent;
 use porter_service::{Launchers as _, LoginEnd};
 use std::sync::Arc;
@@ -22,8 +23,8 @@ use zbus::export::futures_core::Stream;
 struct TestClock(AtomicI64);
 
 impl Clock for TestClock {
-    fn now(&self) -> porter_core::UnixSeconds {
-        porter_core::UnixSeconds(self.0.load(Ordering::SeqCst))
+    fn now(&self) -> porter_ids::UnixSeconds {
+        porter_ids::UnixSeconds(self.0.load(Ordering::SeqCst))
     }
 }
 

@@ -25,11 +25,11 @@ use crate::json::{File, GeneratedIds};
 use crate::refuse::write_error;
 use crate::replica::GdriveReplica;
 use crate::write::Target;
-use porter_core::WebUrl;
-use porter_core::percent::encode_unreserved;
 use porter_http::http::header::CONTENT_TYPE;
 use porter_http::http::{Method, Response};
 use porter_http::{HeaderText, Http, request};
+use porter_ids::WebUrl;
+use porter_ids::percent::encode_unreserved;
 use porter_sync::status::{refused, write_unreached};
 use porter_sync::{
     BaseVersion, Conflict, DriveWrite, Found, Place, PutRefused, RemoteId, RemoteSide,

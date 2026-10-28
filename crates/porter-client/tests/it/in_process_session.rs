@@ -7,9 +7,10 @@ use porter_client::{
     Accounts, ClientError, InProcess, InferSession, NoBroker, SessionHost, TransportError,
 };
 use porter_core::need::LlmNeed;
-use porter_core::{AppId, AppName, DataClass, Isolation, Need, Tier, Tokens};
+use porter_core::{AppId, AppName, DataClass, Isolation, Need, Tier};
 use porter_fake::fake_service;
 use porter_fake::{FakeService, ScriptedSheets};
+use porter_ids::Tokens;
 use porter_infer::testing::{FakeInferSession, Script, ScriptStep};
 use porter_infer::{
     ChatControl, ChatReply, ClientFrame, InferEvent, InferReply, InferRequest, OpenOptions,

@@ -2,7 +2,8 @@
 //! directory, and the keyring store over keyring-core's mock. Nothing here touches the user's
 //! keyring: the Secret Service is never opened.
 
-use porter_core::{AccountId, CapabilityKind, Credential, SecretKey, SecretPurpose, SecretText};
+use porter_core::AccountId;
+use porter_core::{CapabilityKind, Credential, SecretKey, SecretPurpose, SecretText};
 use porter_secrets::{MemorySecrets, Namespace, PutOutcome, Secrets, SecretsError, StoreSecrets};
 use std::sync::Arc;
 
@@ -102,7 +103,7 @@ async fn contract<F: Fixture>(fixture: F) {
             Credential::OAuth {
                 access: SecretText::new("a"),
                 refresh: SecretText::new("r"),
-                expires_at: porter_core::UnixSeconds(9),
+                expires_at: porter_ids::UnixSeconds(9),
                 granted: Default::default(),
             },
         ),

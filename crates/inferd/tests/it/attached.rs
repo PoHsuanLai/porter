@@ -12,11 +12,13 @@ use hosting::{bus, entries};
 use inferd::attached::{Attached, KeyFileProblem, NotReady, Place, Reach};
 use inferd::settings::{MyNetwork, Settings};
 use porter_client::InferSession;
+use porter_core::ModelId;
 use porter_core::capability::LlmFeature;
 use porter_core::consent::Usage;
 use porter_core::need::LlmNeed;
-use porter_core::{DataClass, Locality, ModelId, Need, Tier, Tokens};
+use porter_core::{DataClass, Locality, Need, Tier};
 use porter_fake_servers::net::Bind;
+use porter_ids::Tokens;
 use porter_infer::{
     ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRefusal, InferReply, InferRequest,
     MessagePart, ModelRef, Role as ChatRole,

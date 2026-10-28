@@ -6,7 +6,9 @@ pub(super) use crate::session::{
 use porter_core::capability::{CuaEnv, LanguageTag, SpeechMode};
 use porter_core::consent::Usage;
 use porter_core::need::{CuaNeed, LlmNeed, SpeechNeed};
-use porter_core::{AccountId, DataClass, Locality, ModelId, Need, Tier, Tokens};
+use porter_core::{AccountId, ModelId};
+use porter_core::{DataClass, Locality, Need, Tier};
+use porter_ids::Tokens;
 use porter_infer::{
     AudioFrame, AudioRate, Base64Bytes, ClientFrame, CuaBegin, CuaStepReply, InferEvent,
     InferRefusal, InferReply, InferRequest, LangPick, ModelError, ModelRef, Readiness, RequestKind,

@@ -13,8 +13,8 @@ use hosting::rig::{AgentsPlan, World};
 use inferd::peers::{Caller, Role};
 use inferd::settings::AgentEndpoint;
 use inferd::settings::SpendLine;
-use porter_core::MicroUsd;
 use porter_dbus::{AgentsProxy, Details};
+use porter_ids::MicroUsd;
 use porter_infer::{Period, Policy, SpendScope};
 use serde_json::json;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -424,7 +424,7 @@ async fn only_the_agent_launcher_may_open_an_endpoint() {
         .session(
             &porter_core::Need::Llm(porter_core::need::LlmNeed::new(
                 [porter_core::capability::LlmFeature::Chat].into(),
-                porter_core::Tokens(10),
+                porter_ids::Tokens(10),
             )),
             porter_core::DataClass::Prompt,
             porter_core::Tier::Balanced,
@@ -590,9 +590,9 @@ async fn over_the_spend_cap_the_agent_is_told_to_stop_and_nothing_is_sent_or_cou
         &agent_app(),
         &porter_core::AccountId::parse("anthropic").expect("id"),
         porter_infer::TokenUsage {
-            input: porter_core::Tokens(0),
-            output: porter_core::Tokens(0),
-            cached: porter_core::Tokens(0),
+            input: porter_ids::Tokens(0),
+            output: porter_ids::Tokens(0),
+            cached: porter_ids::Tokens(0),
         },
         MicroUsd(44_940),
         cloud.now(),
@@ -618,9 +618,9 @@ async fn over_the_spend_cap_the_agent_is_told_to_stop_and_nothing_is_sent_or_cou
         &agent_app(),
         &porter_core::AccountId::parse("openai").expect("id"),
         porter_infer::TokenUsage {
-            input: porter_core::Tokens(0),
-            output: porter_core::Tokens(0),
-            cached: porter_core::Tokens(0),
+            input: porter_ids::Tokens(0),
+            output: porter_ids::Tokens(0),
+            cached: porter_ids::Tokens(0),
         },
         MicroUsd(9_900),
         cloud.now(),

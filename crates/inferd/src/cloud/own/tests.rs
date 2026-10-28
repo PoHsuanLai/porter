@@ -1,6 +1,7 @@
 use super::*;
+use porter_core::GrantId;
 use porter_core::consent::{GrantScope, Verdict};
-use porter_core::{EndpointUrl, Family, GrantId, LoginName, Tls};
+use porter_core::{EndpointUrl, Family, LoginName, Tls};
 
 fn account(id: &str) -> AccountId {
     AccountId::parse(id).expect("id")

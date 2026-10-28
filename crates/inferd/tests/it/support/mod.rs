@@ -2,7 +2,9 @@
 //! started turn hands the test a sender, and the turn yields whatever the test pushes.
 
 use porter_core::wire::{FrameRead, decode_frame, encode_frame};
-use porter_core::{AccountId, DataClass, Locality, ModelId, Need, Tier, Tokens};
+use porter_core::{AccountId, ModelId};
+use porter_core::{DataClass, Locality, Need, Tier};
+use porter_ids::Tokens;
 use porter_infer::{
     AudioFrame, ClientFrame, InferEvent, InferRefusal, InferReply, InferRequest, ModelRef,
     Readiness, ServedBy,

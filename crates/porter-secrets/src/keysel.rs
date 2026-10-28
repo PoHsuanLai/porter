@@ -13,7 +13,8 @@
 //! needs `test-keys` on a unix target as well.
 
 use crate::{Namespace, Oo7NamedSecrets, Oo7Secrets, PutOutcome, Secrets, SecretsError};
-use porter_core::{AccountId, Credential, SecretKey};
+use porter_core::AccountId;
+use porter_core::{Credential, SecretKey};
 use std::path::PathBuf;
 
 /// Whether this build has the file key store.

@@ -2,7 +2,7 @@
 //! protocol, checked before anything is sent.
 
 use super::*;
-use crate::id::ProviderId;
+use crate::ProviderId;
 use crate::sheet::fields::{FieldAnswer, FieldKind, FieldSpec, FieldValue};
 use crate::sheet::input::SheetInput;
 use crate::sheet::manual::{Protocol, manual_form};

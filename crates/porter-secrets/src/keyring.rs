@@ -27,7 +27,8 @@ use crate::secrets::{PutOutcome, Secrets};
 use keyring_chunked::{ChunkedStore, Limit};
 use keyring_core::api::CredentialStoreApi;
 use keyring_core::{CredentialStore, Error};
-use porter_core::{AccountId, Credential, SecretKey};
+use porter_core::AccountId;
+use porter_core::{Credential, SecretKey};
 use std::sync::Arc;
 use thread::off_thread;
 

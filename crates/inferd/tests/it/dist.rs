@@ -422,7 +422,7 @@ fn the_cap_rows_are_cents_from_zero_and_default_to_no_cap() {
     }
     assert_eq!(
         settings::cents_to_limit(250),
-        Some(porter_core::MicroUsd(2_500_000))
+        Some(porter_ids::MicroUsd(2_500_000))
     );
     assert_eq!(settings::cents_to_limit(0), None);
 }

@@ -4,7 +4,7 @@
 //! `porter-tailscale`.
 
 use crate::error::CoreError;
-use crate::units::UnixSeconds;
+use porter_ids::UnixSeconds;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::net::IpAddr;

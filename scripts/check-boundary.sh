@@ -20,6 +20,7 @@ cd "$(dirname "$0")/.."
 # porter's own: std, rustix and listenfd only (no network, keyring or account data).
 EFFECTS="zbus zvariant tokio reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
 RULES=(
+  "porter-ids: $EFFECTS toml"
   "porter-core: $EFFECTS toml"
   "porter-fs: $EFFECTS"
   "porter-provider: $EFFECTS"
@@ -51,7 +52,7 @@ RULES=(
   "storage-graph: $EFFECTS"
   "storage-gdrive: $EFFECTS"
   "porter-drive: zbus zvariant reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
-  "porter-mountd: $EFFECTS fuser porter-core porter-fs porter-http porter-secrets porter-service porter-client porter-sync porter-drive porter-drive-fuse"
+  "porter-mountd: $EFFECTS fuser porter-ids porter-core porter-fs porter-http porter-secrets porter-service porter-client porter-sync porter-drive porter-drive-fuse"
   "porter-drive-fuse: zbus zvariant reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
   "porter-dbus: reqwest hyper ureq oo7 keyring secret-service ds-settings"
 )
@@ -105,14 +106,14 @@ declare -A FAMILY_FORBIDS=(
   [set]="$DIRECT_FORBIDS"
 )
 declare -A FAMILY_EDGES=(
-  [nextcloud]="dav-proto porter-core porter-dav porter-discover porter-http porter-provider"
-  [generic]="dav-proto porter-core porter-dav porter-discover porter-http porter-provider porter-proxy"
-  [microsoft]="porter-core porter-discover porter-http porter-http-reqwest porter-oauth porter-provider"
-  [google]="porter-core porter-http porter-http-reqwest porter-oauth porter-provider"
-  [api_key]="porter-core porter-http porter-http-reqwest porter-provider"
-  [agent_login]="porter-core porter-http porter-provider"
-  [tailnet]="porter-core porter-http porter-provider porter-tailscale"
-  [set]="dav-proto porter-core porter-dav porter-discover porter-http porter-http-reqwest porter-oauth porter-provider porter-proxy porter-tailscale"
+  [nextcloud]="dav-proto porter-core porter-ids porter-dav porter-discover porter-http porter-provider"
+  [generic]="dav-proto porter-core porter-ids porter-dav porter-discover porter-http porter-provider porter-proxy"
+  [microsoft]="porter-core porter-ids porter-discover porter-http porter-http-reqwest porter-oauth porter-provider"
+  [google]="porter-core porter-ids porter-http porter-http-reqwest porter-oauth porter-provider"
+  [api_key]="porter-core porter-ids porter-http porter-http-reqwest porter-provider"
+  [agent_login]="porter-core porter-ids porter-http porter-provider"
+  [tailnet]="porter-core porter-ids porter-http porter-provider porter-tailscale"
+  [set]="dav-proto porter-core porter-ids porter-dav porter-discover porter-http porter-http-reqwest porter-oauth porter-provider porter-proxy porter-tailscale"
 )
 family_features=$(awk '/^\[features\]/{f=1;next} /^\[/{f=0} f && /^[A-Za-z0-9_-]+ *=/{sub(/ *=.*/,""); if ($0!="default") print}' crates/porter-families/Cargo.toml)
 for feature in $family_features; do
@@ -185,7 +186,7 @@ fi
 STD_EFFECTS='std::(fs|io|env|process|net|os)\b|\b(File|Command|TcpStream|UnixStream)::'
 PURE_FILES=(
   "crates/porter-core/src/identity.rs"
-  "crates/porter-core/src/clock.rs"
+  "crates/porter-ids/src/clock.rs"
 )
 for file in "${PURE_FILES[@]}"; do
   if [ ! -f "$file" ]; then
@@ -199,14 +200,17 @@ for file in "${PURE_FILES[@]}"; do
   fi
 done
 
-# porter-core's source is pure: its file writer is porter-fs, so no file, process or environment
-# access is named anywhere in the crate (a dependency rule cannot see std's own modules).
-if grep -rnE 'std::(fs|process|env)\b' crates/porter-core/src; then
-  echo "LEAK: porter-core's source reaches std's file, process or environment access"
-  fail=1
-else
-  echo "pure: porter-core's source names no std::fs, std::process or std::env"
-fi
+# porter-core's and porter-ids' source is pure: the file writer is porter-fs, so no file, process or
+# environment access is named anywhere in either crate (a dependency rule cannot see std's own
+# modules).
+for pure in porter-ids porter-core; do
+  if grep -rnE 'std::(fs|process|env)\b' "crates/$pure/src"; then
+    echo "LEAK: $pure's source reaches std's file, process or environment access"
+    fail=1
+  else
+    echo "pure: $pure's source names no std::fs, std::process or std::env"
+  fi
+done
 
 # The three daemons' libraries read the environment in no function but `from_env` (the daemon's
 # `Config::from_env` and the directory helpers it calls), so a program that runs a daemon inside
@@ -260,7 +264,7 @@ ratchet() {
     echo "deleted: $what is not in any crate"
   fi
 }
-ratchet "a hand-rolled percent encoder or decoder" 'fn percent_(en|de)code\b' "" "porter_core::percent"
+ratchet "a hand-rolled percent encoder or decoder" 'fn percent_(en|de)code\b' "" "porter_ids::percent"
 ratchet "hand-rolled civil-date arithmetic" '(days_from_civil|civil_from_days|719_468)' "" "chrono"
 ratchet "a hand-written MD5 (its first round constant)" '0xd76aa478' "" "md-5"
 ratchet "a second Windows-to-IANA zone table" 'Pacific Standard Time", *"America/Los_Angeles' "crates/windows-zones/" "windows_zones::iana"
@@ -270,52 +274,53 @@ ratchet "an XOAUTH2 format string" '(\\x01|\\u\{1\})auth=Bearer|auth=Bearer \{|"
 # dependencies (all features), and nothing else. A dependency not listed is a leak; so is one
 # the crate no longer has, so the table stays exact. Dev dependencies are outside it.
 EDGES=(
-  "porter-core:"
+  "porter-ids: porter-core"
+  "porter-core: porter-ids"
   "porter-daemon:"
   "porter-fs:"
   "quickxorhash:"
   "windows-zones:"
   "keyring-chunked:"
-  "porter-provider: porter-core"
-  "porter-secrets: keyring-chunked porter-core porter-fs"
-  "porter-sync: porter-core porter-http"
-  "porter-infer: porter-core cua-action"
-  "porter-service: porter-core porter-provider porter-secrets"
+  "porter-provider: porter-core porter-ids"
+  "porter-secrets: keyring-chunked porter-core porter-ids porter-fs"
+  "porter-sync: porter-core porter-ids porter-http"
+  "porter-infer: porter-core porter-ids cua-action"
+  "porter-service: porter-core porter-ids porter-provider porter-secrets"
   "porter-store: porter-core porter-fs"
-  "porter-router: porter-core porter-engines porter-infer cua-action engine-supervisor model-catalog model-http model-openai-compat model-provider speech-provider vision-prep"
-  "porter-turns: porter-core porter-infer porter-bridge porter-router cua-action cua-parse cua-session cua-vendors engine-supervisor model-extract model-http model-openai-compat model-provider vision-prep"
-  "porter-dbus: porter-core"
-  "porter-bridge: porter-core porter-infer model-catalog model-openai-compat model-provider vision-prep"
+  "porter-router: porter-core porter-ids porter-engines porter-infer cua-action engine-supervisor model-catalog model-http model-openai-compat model-provider speech-provider vision-prep"
+  "porter-turns: porter-core porter-ids porter-infer porter-bridge porter-router cua-action cua-parse cua-session cua-vendors engine-supervisor model-extract model-http model-openai-compat model-provider vision-prep"
+  "porter-dbus: porter-core porter-ids"
+  "porter-bridge: porter-core porter-ids porter-infer model-catalog model-openai-compat model-provider vision-prep"
   "porter-sheets: porter-core porter-dbus porter-provider porter-service"
-  "porter-client: porter-bridge porter-core porter-dbus porter-fs porter-infer porter-provider porter-proxy porter-secrets porter-service porter-turns model-http model-openai-compat model-provider model-wire"
-  "porter-fake: porter-core porter-provider porter-secrets porter-service"
+  "porter-client: porter-bridge porter-core porter-ids porter-dbus porter-fs porter-infer porter-provider porter-proxy porter-secrets porter-service porter-turns model-http model-openai-compat model-provider model-wire"
+  "porter-fake: porter-core porter-ids porter-provider porter-secrets porter-service"
   "test-kit:"
-  "porter-fake-servers: dav-proto porter-core porter-discover porter-fake porter-provider quickxorhash test-kit"
-  "porter-http: porter-core"
-  "porter-http-reqwest: porter-core porter-http"
-  "porter-http-relay: porter-client porter-core porter-http"
+  "porter-fake-servers: dav-proto porter-core porter-ids porter-discover porter-fake porter-provider quickxorhash test-kit"
+  "porter-http: porter-core porter-ids"
+  "porter-http-reqwest: porter-ids porter-http"
+  "porter-http-relay: porter-client porter-core porter-ids porter-http"
   "porter-engines:"
-  "porter-engines-install: porter-core porter-engines porter-http porter-http-reqwest"
-  "porter-proxy: porter-core"
-  "porter-oauth: porter-core porter-http porter-provider"
-  "porter-discover: porter-core porter-http porter-provider"
-  "porter-tailscale: porter-core"
-  "porter-tailnet: porter-core porter-fs porter-tailscale"
+  "porter-engines-install: porter-ids porter-engines porter-http porter-http-reqwest"
+  "porter-proxy: porter-core porter-ids"
+  "porter-oauth: porter-core porter-ids porter-http porter-provider"
+  "porter-discover: porter-core porter-ids porter-http porter-provider"
+  "porter-tailscale: porter-core porter-ids"
+  "porter-tailnet: porter-core porter-ids porter-fs porter-tailscale"
   "dav-proto:"
-  "porter-dav: dav-proto porter-core porter-http"
-  "porter-families: dav-proto porter-core porter-dav porter-discover porter-http porter-http-reqwest porter-oauth porter-provider porter-proxy porter-tailscale"
-  "accountd: ds-settings porter-core porter-daemon porter-dbus porter-families porter-fs porter-provider porter-secrets porter-service porter-sheets porter-store porter-tailscale"
-  "storage-webdav: dav-proto porter-core porter-dav porter-http porter-sync"
-  "storage-graph: porter-core porter-http porter-sync"
-  "storage-gdrive: porter-core porter-http porter-sync"
-  "porter-drive: porter-core porter-fs porter-sync quickxorhash"
+  "porter-dav: dav-proto porter-ids porter-http"
+  "porter-families: dav-proto porter-core porter-ids porter-dav porter-discover porter-http porter-http-reqwest porter-oauth porter-provider porter-proxy porter-tailscale"
+  "accountd: ds-settings porter-core porter-ids porter-daemon porter-dbus porter-families porter-fs porter-provider porter-secrets porter-service porter-sheets porter-store porter-tailscale"
+  "storage-webdav: dav-proto porter-core porter-ids porter-dav porter-http porter-sync"
+  "storage-graph: porter-core porter-ids porter-http porter-sync"
+  "storage-gdrive: porter-core porter-ids porter-http porter-sync"
+  "porter-drive: porter-core porter-ids porter-fs porter-sync quickxorhash"
   "porter-drive-fuse: porter-drive porter-mountd"
   "porter-mountd:"
-  "syncd: dav-proto ds-settings porter-client porter-core porter-daemon porter-dav porter-dbus porter-drive porter-drive-fuse porter-families porter-fs porter-http porter-http-relay porter-provider porter-secrets porter-service porter-sheets porter-store porter-sync storage-gdrive storage-graph storage-webdav windows-zones"
-  "porter-rig: fake-secret-service porter-client porter-core porter-dbus porter-fake porter-fake-servers porter-infer test-kit"
+  "syncd: dav-proto ds-settings porter-client porter-core porter-ids porter-daemon porter-dav porter-dbus porter-drive porter-drive-fuse porter-families porter-fs porter-http porter-http-relay porter-provider porter-secrets porter-service porter-sheets porter-store porter-sync storage-gdrive storage-graph storage-webdav windows-zones"
+  "porter-rig: fake-secret-service porter-client porter-core porter-ids porter-dbus porter-fake porter-fake-servers porter-infer test-kit"
   "fake-secret-service:"
   "syncd-fakes: porter-dbus"
-  "inferd: ds-settings porter-bridge porter-engines porter-families porter-secrets porter-service porter-sheets porter-store porter-router porter-turns porter-core porter-daemon porter-dbus porter-discover porter-fs porter-http porter-http-reqwest porter-infer porter-provider porter-tailnet porter-tailscale cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-host-client speech-provider vision-prep"
+  "inferd: ds-settings porter-bridge porter-engines porter-families porter-secrets porter-service porter-sheets porter-store porter-router porter-turns porter-core porter-ids porter-daemon porter-dbus porter-discover porter-fs porter-http porter-http-reqwest porter-infer porter-provider porter-tailnet porter-tailscale cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-host-client speech-provider vision-prep"
 )
 for edge in "${EDGES[@]}"; do
   crate="${edge%%:*}"

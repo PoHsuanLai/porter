@@ -5,7 +5,8 @@ use super::reach;
 use crate::fault::RelayFault;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
-use porter_core::{Origin, RelayAuth, RelayPlan, UrlScheme};
+use porter_core::{RelayAuth, RelayPlan};
+use porter_ids::{Origin, UrlScheme};
 
 /// How the request's body is framed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

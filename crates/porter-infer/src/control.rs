@@ -6,7 +6,7 @@
 
 use crate::ids::{OpaqueText, SignatureText, ToolName};
 use crate::scores::ScoreOptions;
-use porter_core::{Count, Permille, Tokens};
+use porter_ids::{Count, Permille, Tokens};
 use serde::{Deserialize, Serialize};
 
 /// A setting that is either left to the model's catalog default or set to a value. Written out in

@@ -6,13 +6,15 @@
 //! first that answers decides; a port that refuses or answers nothing readable is skipped.
 //! Everything is `127.0.0.1`, plain HTTP: the only plain endpoint porter allows is loopback.
 
+use porter_core::ModelId;
 use porter_core::capability::{
     Capability, EmbedCap, EmbedPrompts, LlmCap, LlmFeature, LlmWire, Modality, PrefixText,
 };
-use porter_core::{Claim, Count, Dims, ModelId, Offer, Provenance, Subject, Tokens, WebUrl};
+use porter_core::{Claim, Offer, Provenance, Subject};
 use porter_http::http::Method;
 use porter_http::http::header::CONTENT_TYPE;
 use porter_http::{Http, request};
+use porter_ids::{Count, Dims, Tokens, WebUrl};
 use porter_provider::Port;
 use serde_json::{Value, json};
 use std::collections::BTreeSet;

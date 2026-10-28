@@ -1,7 +1,7 @@
 //! KeyValue and Push (design/31 §2.2): the kinds syncd plans with.
 
 use super::terms::Delta;
-use crate::units::Bytes;
+use porter_ids::Bytes;
 use serde::{Deserialize, Serialize};
 
 /// Small encrypted items (the settings log, design/31 §6.4), served natively or by syncd over

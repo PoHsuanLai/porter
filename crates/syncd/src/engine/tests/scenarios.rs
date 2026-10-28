@@ -3,7 +3,7 @@ use crate::dataset::{Dataset, DatasetError, DatasetId, MemoryDataset};
 use crate::engine::{Engine, Outcome};
 use crate::journal::Journal;
 use porter_core::capability::{Delta, HashKind, QuotaReport};
-use porter_core::{Bytes, WebUrl};
+use porter_ids::{Bytes, WebUrl};
 use porter_sync::{
     Acknowledgement, BaseVersion, Blob, Change, ConflictRule, ItemKind, ItemPath, ItemState,
     LocalId, PutRefused, RemoteId, RemoteItem, RemoteSide, RemoteVersion, ReplicaError, Resolution,

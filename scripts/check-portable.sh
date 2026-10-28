@@ -49,6 +49,7 @@ check() {
 }
 
 check "porter-client --no-default-features" porter-client "$BUS|$INFER" --no-default-features
+check "porter-ids" porter-ids "$BUS"
 check "porter-core" porter-core "$BUS"
 check "porter-provider" porter-provider "$BUS"
 check "porter-secrets --no-default-features" porter-secrets "$BUS" --no-default-features

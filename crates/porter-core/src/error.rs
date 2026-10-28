@@ -19,3 +19,12 @@ pub enum CoreError {
     #[error("frame of {0} bytes exceeds the limit")]
     FrameTooLong(usize),
 }
+
+impl From<porter_ids::IdError> for CoreError {
+    fn from(error: porter_ids::IdError) -> Self {
+        CoreError::MalformedId {
+            what: error.what(),
+            text: error.text().to_owned(),
+        }
+    }
+}
