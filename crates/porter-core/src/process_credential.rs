@@ -5,7 +5,6 @@
 use porter_ids::IdError;
 use porter_ids::is_id;
 use serde::{Deserialize, Serialize};
-use std::fmt;
 
 /// One handed-off credential. The same grammar as every id of ours, so it is also safe as a
 /// single path segment (the tmpfs file lives in a directory of this name).
@@ -21,31 +20,9 @@ impl ProcessCredentialId {
             false => Err(IdError::malformed("process credential id", text)),
         }
     }
-
-    /// The id as written.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
 }
 
-impl TryFrom<String> for ProcessCredentialId {
-    type Error = IdError;
-    fn try_from(text: String) -> Result<Self, IdError> {
-        Self::parse(&text)
-    }
-}
-
-impl From<ProcessCredentialId> for String {
-    fn from(id: ProcessCredentialId) -> String {
-        id.0.into()
-    }
-}
-
-impl fmt::Display for ProcessCredentialId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
+porter_ids::string_newtype!(ProcessCredentialId, IdError);
 
 #[cfg(test)]
 mod tests {

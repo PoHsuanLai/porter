@@ -133,25 +133,9 @@ impl ClaimedId {
             })
         }
     }
-
-    /// The id's text.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
 }
 
-impl TryFrom<String> for ClaimedId {
-    type Error = CoreError;
-    fn try_from(text: String) -> Result<Self, CoreError> {
-        Self::parse(&text)
-    }
-}
-
-impl From<ClaimedId> for String {
-    fn from(id: ClaimedId) -> String {
-        id.0
-    }
-}
+porter_ids::string_newtype!(ClaimedId, CoreError);
 
 #[cfg(test)]
 mod tests;

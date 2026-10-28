@@ -12,7 +12,6 @@ use crate::secret::SecretText;
 use porter_capability::CapabilityKind;
 use porter_ids::{IdError, Origin, UrlScheme, WebUrl, split_authority};
 use serde::{Deserialize, Serialize};
-use std::fmt;
 
 mod reach;
 mod server_address;
@@ -78,11 +77,6 @@ impl EndpointUrl {
         }
     }
 
-    /// The URL's text.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-
     /// The scheme, host and port.
     pub fn origin(&self) -> Origin {
         // `parse` checked the split, and no other constructor exists.
@@ -140,24 +134,7 @@ fn admits(scheme: UrlScheme, tls: Tls) -> bool {
     }
 }
 
-impl TryFrom<String> for EndpointUrl {
-    type Error = CoreError;
-    fn try_from(text: String) -> Result<Self, CoreError> {
-        Self::parse(&text)
-    }
-}
-
-impl From<EndpointUrl> for String {
-    fn from(url: EndpointUrl) -> String {
-        url.0
-    }
-}
-
-impl fmt::Display for EndpointUrl {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
+porter_ids::string_newtype!(EndpointUrl, CoreError);
 
 /// Why an endpoint is not one porter will use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]

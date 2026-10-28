@@ -5,7 +5,6 @@ use crate::error::CoreError;
 use crate::space::DesktopSpace;
 use porter_ids::UnixSeconds;
 use serde::{Deserialize, Serialize};
-use std::fmt;
 
 /// The longest Space name, in characters.
 pub const SPACE_NAME_MAX_CHARS: usize = 64;
@@ -32,31 +31,9 @@ impl SpaceName {
             }),
         }
     }
-
-    /// The name's text.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
 }
 
-impl TryFrom<String> for SpaceName {
-    type Error = CoreError;
-    fn try_from(text: String) -> Result<Self, CoreError> {
-        Self::parse(&text)
-    }
-}
-
-impl From<SpaceName> for String {
-    fn from(name: SpaceName) -> String {
-        name.0
-    }
-}
-
-impl fmt::Display for SpaceName {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
+porter_ids::string_newtype!(SpaceName, CoreError);
 
 /// How a Space looks (a colour, a symbol), as quire's Spaces kit writes it (compact JSON of its
 /// `SpaceLook`). Opaque to porter: kept and handed back as it came, never parsed; only its
@@ -76,25 +53,9 @@ impl SpaceLook {
             }),
         }
     }
-
-    /// The look's text.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
 }
 
-impl TryFrom<String> for SpaceLook {
-    type Error = CoreError;
-    fn try_from(text: String) -> Result<Self, CoreError> {
-        Self::parse(&text)
-    }
-}
-
-impl From<SpaceLook> for String {
-    fn from(look: SpaceLook) -> String {
-        look.0
-    }
-}
+porter_ids::string_newtype!(SpaceLook, CoreError);
 
 /// One desktop-wide Space.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]

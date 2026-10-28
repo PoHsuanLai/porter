@@ -153,18 +153,7 @@ impl LanguageTag {
     }
 }
 
-impl TryFrom<String> for LanguageTag {
-    type Error = IdError;
-    fn try_from(text: String) -> Result<Self, IdError> {
-        Self::parse(&text)
-    }
-}
-
-impl From<LanguageTag> for String {
-    fn from(tag: LanguageTag) -> String {
-        tag.0
-    }
-}
+porter_ids::string_newtype!(LanguageTag, IdError);
 
 /// An image generator (a hosted model or a ComfyUI workflow).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]

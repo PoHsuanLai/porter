@@ -4,7 +4,6 @@
 
 use porter_ids::IdError;
 use serde::{Deserialize, Serialize};
-use std::fmt;
 
 /// One of the person's helpers. Opaque to porter (docket mints and owns it): 1 to 128 bytes, no
 /// control characters.
@@ -21,28 +20,6 @@ impl HelperId {
             Err(IdError::malformed("helper id", text))
         }
     }
-
-    /// The id's text.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
 }
 
-impl TryFrom<String> for HelperId {
-    type Error = IdError;
-    fn try_from(text: String) -> Result<Self, IdError> {
-        Self::parse(&text)
-    }
-}
-
-impl From<HelperId> for String {
-    fn from(id: HelperId) -> String {
-        id.0
-    }
-}
-
-impl fmt::Display for HelperId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
+porter_ids::string_newtype!(HelperId, IdError);

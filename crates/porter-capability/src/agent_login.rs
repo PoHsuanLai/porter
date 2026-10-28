@@ -8,7 +8,6 @@ use porter_ids::IdError;
 use porter_ids::is_id;
 use porter_ids::word::{from_word, word as word_of};
 use serde::{Deserialize, Serialize};
-use std::fmt;
 
 /// The id of one request for a login or a logout, made by accountd and sent to one launcher
 /// alone. The same grammar as every id of ours.
@@ -24,31 +23,9 @@ impl LoginRequestId {
             false => Err(IdError::malformed("login request id", text)),
         }
     }
-
-    /// The id as written.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
 }
 
-impl TryFrom<String> for LoginRequestId {
-    type Error = IdError;
-    fn try_from(text: String) -> Result<Self, IdError> {
-        Self::parse(&text)
-    }
-}
-
-impl From<LoginRequestId> for String {
-    fn from(id: LoginRequestId) -> String {
-        id.0.into()
-    }
-}
-
-impl fmt::Display for LoginRequestId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
+porter_ids::string_newtype!(LoginRequestId, IdError);
 
 /// Why the launcher could not finish a login or a logout: a coarse word from a closed set. It
 /// says nothing of how the agent failed.

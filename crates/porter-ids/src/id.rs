@@ -23,6 +23,41 @@ pub fn is_id(text: &str) -> bool {
         })
 }
 
+/// The text-newtype items every validated string shares, for a tuple struct `Name(String)` (or
+/// `Name(Box<str>)`) whose `parse(&str) -> Result<Self, $error>` holds the rule: `as_str`,
+/// `TryFrom<String>` (so serde's `try_from = "String"` runs `parse`), `From<Name> for String`
+/// and `Display`. The one place those four are written.
+#[macro_export]
+macro_rules! string_newtype {
+    ($name:ident, $error:ty) => {
+        impl $name {
+            /// The text as written.
+            pub fn as_str(&self) -> &str {
+                &self.0
+            }
+        }
+
+        impl TryFrom<String> for $name {
+            type Error = $error;
+            fn try_from(text: String) -> Result<Self, $error> {
+                Self::parse(&text)
+            }
+        }
+
+        impl From<$name> for String {
+            fn from(value: $name) -> String {
+                value.0.into()
+            }
+        }
+
+        impl ::std::fmt::Display for $name {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                f.write_str(&self.0)
+            }
+        }
+    };
+}
+
 /// Declares an id type in the one slug grammar ([`is_id`]): a `String` newtype whose `parse` is
 /// the only way in, whose serde form is its text, and whose `Display` writes the text. The
 /// field is private to the module that declares it, and the caller depends on `serde`.
@@ -43,31 +78,9 @@ macro_rules! slug_id {
                     Err($crate::IdError::malformed($what, text))
                 }
             }
-
-            /// The id's text.
-            pub fn as_str(&self) -> &str {
-                &self.0
-            }
         }
 
-        impl TryFrom<String> for $name {
-            type Error = $crate::IdError;
-            fn try_from(text: String) -> Result<Self, $crate::IdError> {
-                Self::parse(&text)
-            }
-        }
-
-        impl From<$name> for String {
-            fn from(id: $name) -> String {
-                id.0
-            }
-        }
-
-        impl ::std::fmt::Display for $name {
-            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-                f.write_str(&self.0)
-            }
-        }
+        $crate::string_newtype!($name, $crate::IdError);
     };
 }
 

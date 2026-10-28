@@ -28,31 +28,9 @@ impl AgentProgram {
             Err(IdError::malformed("agent program", text))
         }
     }
-
-    /// The name as written.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
 }
 
-impl TryFrom<String> for AgentProgram {
-    type Error = IdError;
-    fn try_from(text: String) -> Result<Self, IdError> {
-        Self::parse(&text)
-    }
-}
-
-impl From<AgentProgram> for String {
-    fn from(program: AgentProgram) -> String {
-        program.0.into()
-    }
-}
-
-impl std::fmt::Display for AgentProgram {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
-    }
-}
+porter_ids::string_newtype!(AgentProgram, IdError);
 
 /// The name of an environment variable (`ANTHROPIC_API_KEY`): 1 to 64 bytes of uppercase ASCII
 /// letters, digits and `_`, not starting with a digit. Only the name; a value is never here.
@@ -75,25 +53,9 @@ impl EnvName {
             Err(IdError::malformed("environment variable name", text))
         }
     }
-
-    /// The name as written.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
 }
 
-impl TryFrom<String> for EnvName {
-    type Error = IdError;
-    fn try_from(text: String) -> Result<Self, IdError> {
-        Self::parse(&text)
-    }
-}
-
-impl From<EnvName> for String {
-    fn from(name: EnvName) -> String {
-        name.0
-    }
-}
+porter_ids::string_newtype!(EnvName, IdError);
 
 /// A request format an agent speaks to its model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
