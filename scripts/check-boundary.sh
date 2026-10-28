@@ -40,6 +40,7 @@ RULES=(
   "porter-service: $EFFECTS"
   "porter-identities: zbus zvariant reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
   "porter-spaces: zbus zvariant reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
+  "porter-settings: reqwest hyper ureq oo7 keyring secret-service interprocess latchkey"
   "porter-store: zbus zvariant reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
   "porter-client: $EFFECTS"
   "porter-sheets: reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
@@ -342,6 +343,7 @@ EDGES=(
   "porter-store: porter-core porter-capability porter-fs"
   "porter-identities: porter-service-core porter-core porter-ids porter-fs porter-secrets porter-wire"
   "porter-spaces: porter-core porter-ids porter-fs"
+  "porter-settings: ds-settings porter-service-core porter-core porter-ids porter-provider porter-sheet"
   "porter-router: porter-core porter-tailnet porter-tailscale porter-match porter-capability porter-ids porter-engines porter-infer cua-action engine-supervisor model-catalog model-http model-openai-compat model-provider speech-provider vision-prep"
   "porter-turns: porter-core porter-match porter-capability porter-ids porter-infer porter-bridge porter-router cua-action cua-parse cua-session cua-vendors engine-supervisor model-extract model-http model-openai-compat model-provider vision-prep"
   "porter-dbus-macros:"
@@ -372,7 +374,7 @@ EDGES=(
   "porter-family-nextcloud: porter-family-kit nextcloud-proto dav-proto porter-core porter-capability porter-sheet porter-provider porter-http"
   "porter-family-generic: porter-family-kit generic-proto porter-core porter-capability porter-sheet porter-provider porter-http porter-discover porter-proxy"
   "porter-family-oauth: porter-family-kit oauth-probe-proto porter-core porter-capability porter-sheet porter-ids porter-provider porter-http porter-http-reqwest porter-oauth"
-  "accountd: ds-settings porter-core porter-match porter-capability porter-sheet porter-wire porter-ids porter-daemon porter-callers porter-dbus porter-families porter-family-oauth porter-fs porter-identities porter-provider porter-secrets porter-service porter-service-core porter-sheets porter-spaces porter-store porter-tailscale"
+  "accountd: ds-settings porter-core porter-match porter-capability porter-sheet porter-wire porter-ids porter-daemon porter-callers porter-dbus porter-families porter-family-oauth porter-fs porter-identities porter-provider porter-secrets porter-service porter-service-core porter-settings porter-sheets porter-spaces porter-store porter-tailscale"
   "storage-webdav: dav-proto porter-capability porter-ids porter-http porter-sync"
   "storage-graph: porter-capability porter-ids porter-http porter-sync"
   "storage-gdrive: porter-capability porter-ids porter-http porter-sync"
@@ -383,7 +385,7 @@ EDGES=(
   "porter-rig: fake-secret-service porter-client porter-core porter-match porter-capability porter-wire porter-ids porter-callers porter-dbus porter-fake porter-fake-servers porter-infer test-kit"
   "fake-secret-service:"
   "syncd-fakes: porter-dbus"
-  "inferd: ds-settings porter-bridge porter-engines porter-families porter-family-oauth porter-secrets porter-service porter-service-accounts porter-service-core porter-sheets porter-store porter-router porter-turns porter-core porter-match porter-capability porter-sheet porter-wire porter-ids porter-daemon porter-callers porter-dbus porter-discover porter-fs porter-http porter-http-reqwest porter-infer porter-provider porter-tailnet porter-tailscale cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-host-client speech-provider vision-prep"
+  "inferd: ds-settings porter-bridge porter-engines porter-families porter-family-oauth porter-secrets porter-service porter-service-accounts porter-service-core porter-settings porter-sheets porter-store porter-router porter-turns porter-core porter-match porter-capability porter-sheet porter-wire porter-ids porter-daemon porter-callers porter-dbus porter-discover porter-fs porter-http porter-http-reqwest porter-infer porter-provider porter-tailnet porter-tailscale cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-host-client speech-provider vision-prep"
 )
 for edge in "${EDGES[@]}"; do
   crate="${edge%%:*}"

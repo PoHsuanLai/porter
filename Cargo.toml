@@ -25,6 +25,7 @@ members = [
   "crates/porter-service",
   "crates/porter-identities",
   "crates/porter-spaces",
+  "crates/porter-settings",
   "crates/porter-store",
   "crates/porter-dbus",
   "crates/porter-dbus-macros",
@@ -101,6 +102,7 @@ porter-service-grants = { path = "crates/porter-service-grants" }
 porter-service  = { path = "crates/porter-service" }
 porter-identities = { path = "crates/porter-identities" }
 porter-spaces   = { path = "crates/porter-spaces" }
+porter-settings = { path = "crates/porter-settings" }
 porter-store    = { path = "crates/porter-store" }
 porter-dbus     = { path = "crates/porter-dbus" }
 porter-dbus-macros = { path = "crates/porter-dbus-macros" }

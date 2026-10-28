@@ -7,7 +7,6 @@ use crate::callers::Callers;
 use crate::errors::RefusedError;
 use crate::host::Host;
 use porter_callers::{Caller, CallerRole};
-use porter_core::AccountState;
 use porter_core::ProviderHint;
 use porter_core::ProviderId;
 use porter_families::set::ProviderNames;
@@ -174,17 +173,6 @@ pub(crate) fn hint(text: &str) -> Result<ProviderHint, RefusedError> {
         false => ProviderId::parse(text)
             .map(ProviderHint::Provider)
             .map_err(RefusedError::invalid),
-    }
-}
-
-/// The state's slug.
-pub(crate) fn state_slug(state: AccountState) -> &'static str {
-    match state {
-        AccountState::Ok => "ok",
-        AccountState::NeedsReauth => "needs_reauth",
-        AccountState::Offline => "offline",
-        AccountState::Limited => "limited",
-        AccountState::NeedsLogin => "needs_login",
     }
 }
 

@@ -4,12 +4,13 @@
 //! by asking `Identities1`). This file is the pure half: the events between two registries and
 //! who hears each. `publish` is the live half (the signals sent).
 
-use crate::settings_keys::{Key, path};
-use crate::state::state_slug;
 use ds_settings::schema::KeyPath;
 use porter_callers::CallerRole;
 use porter_core::AccountId;
+use porter_ids::word::word as word_of;
 use porter_service_core::registry::Registry;
+use porter_settings::accounts::{Key, expiry_text, path};
+use porter_settings::{LABEL, STATE};
 
 /// One change a client may be told of.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -78,11 +79,16 @@ pub(crate) fn settings_news(
     let mut news = Vec::new();
     for event in list {
         match event {
-            Event::Removed(id) => news.push((row(Key::State(id.clone())), text("removed"))),
+            Event::Removed(id) => {
+                news.push((row(Key::Account(id.clone(), STATE)), text("removed")))
+            }
             Event::Added(id) | Event::StateChanged(id) => {
                 if let Some(account) = after.accounts.iter().find(|a| a.id == *id) {
-                    news.push((row(Key::State(id.clone())), text(state_slug(account.state))));
-                    if let Some(words) = crate::settings_keys::expiry_text(account) {
+                    news.push((
+                        row(Key::Account(id.clone(), STATE)),
+                        text(word_of(&account.state)),
+                    ));
+                    if let Some(words) = expiry_text(account) {
                         news.push((row(Key::Expires(id.clone())), text(&words)));
                     }
                 }
@@ -97,7 +103,10 @@ pub(crate) fn settings_news(
             .find(|a| a.id == account.id)
             .is_some_and(|old| old.label != account.label);
         if renamed {
-            news.push((row(Key::Label(account.id.clone())), text(&account.label.0)));
+            news.push((
+                row(Key::Account(account.id.clone(), LABEL)),
+                text(&account.label.0),
+            ));
         }
     }
     news

@@ -9,7 +9,7 @@ use toml::{Table, Value};
 
 /// What is written.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum RowEdit<'a> {
+pub enum RowEdit<'a> {
     /// The client id; empty removes the row (its secret with it).
     Id(&'a str),
     /// The application secret; empty removes it from the row.
@@ -18,7 +18,7 @@ pub(crate) enum RowEdit<'a> {
 
 /// Why the edit was not made.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum RowRefused {
+pub enum RowRefused {
     /// A secret for an issuer with no row: a row needs its client id first.
     NoKey,
     /// The result would not be a valid clients file.
@@ -29,7 +29,7 @@ pub(crate) enum RowRefused {
 /// `issuer` on `channel`. A new row for Google says `testing = true`: a person's own Google
 /// client is in testing until Google verifies it, which is what makes porter say why Google
 /// signs the account out after seven days.
-pub(crate) fn edited(
+pub fn edited(
     text: &str,
     issuer: Issuer,
     channel: ClientChannel,

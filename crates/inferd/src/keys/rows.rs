@@ -8,15 +8,11 @@
 //! so it is never agent-settable (`ds-settings` refuses a schema that says otherwise).
 
 use super::host::KeyHost;
-use super::local::state_slug;
 use crate::cloud::accountd::Boxed;
 use crate::cloud::spend::written;
 use crate::cloud::wire::charges_of;
 use ds_settings::live::{LiveError, Served};
-use ds_settings::schema::{
-    ActionLabel, ActionWeight, AgentSetting, Exposure, Help, KeyKind, KeyPath, KeySpec, Label,
-    LiveAction, Page, Section, WordLabels,
-};
+use ds_settings::schema::{ActionWeight, Exposure, Help, KeyKind, KeyPath, KeySpec};
 use iso_currency::Currency;
 use model_catalog::ProviderId;
 use model_provider::{Charges, Money};
@@ -26,11 +22,10 @@ use porter_core::consent::{Decision, Grant, GrantScope};
 use porter_core::{Account, AccountState, AgentState, AppId, AppName, AuthKind, Isolation};
 use porter_core::{AccountId, GrantId};
 use porter_families::set::ProviderNames;
-use porter_ids::word::word as word_of;
 use porter_infer::ChargeTotal;
 use porter_service_accounts::{Launchers as LaunchersSeam, LoginEnd, program_of};
 use porter_service_core::registry::Registry;
-use porter_sheet::ProviderGroup;
+use porter_settings::{Names, READOUTS, REAUTH, REMOVE, Row, action, off};
 use porter_sheets::AppNames;
 use porter_wire::AccountsReply;
 use porter_wire::ParentWindow;
@@ -40,20 +35,10 @@ use std::sync::{Arc, OnceLock};
 /// What a key names.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Key {
+    /// `accounts.<id>.<row>`: a row every account has (`porter-settings`).
+    Account(AccountId, Row),
     /// `accounts.<id>.service.<kind>`.
     Service(AccountId, CapabilityKind),
-    /// `accounts.<id>.state`.
-    State(AccountId),
-    /// `accounts.<id>.label`.
-    Label(AccountId),
-    /// `accounts.<id>.place`.
-    Place(AccountId),
-    /// `accounts.<id>.sign_in`: read-only, how the account is signed in again.
-    SignIn(AccountId),
-    /// `accounts.<id>.provider`: read-only, the provider's id (the row's labels give its name).
-    Provider(AccountId),
-    /// `accounts.<id>.group`: read-only, the part of the Accounts page the account is listed under.
-    Group(AccountId),
     /// `accounts.<id>.grant.<grant>`: a permit, with its Revoke action.
     Grant(AccountId, GrantId),
     /// `accounts.<id>.grant.<grant>.since`: read-only, the UTC day the permit was given.
@@ -75,12 +60,8 @@ pub(crate) enum Key {
     /// provider that reports no charges the row says, before anything runs, that the limit
     /// cannot apply.
     SpendCap(AccountId),
-    /// `accounts.<id>.reauth`.
-    Reauth(AccountId),
     /// `accounts.<id>.sign_out`: for an agent that signs itself in, forgets that it was signed in.
     SignOut(AccountId),
-    /// `accounts.<id>.remove`.
-    Remove(AccountId),
 }
 
 fn slug<T: serde::Serialize>(value: &T) -> String {
@@ -103,16 +84,11 @@ pub(crate) fn parse(path: &str, registry: &Registry) -> Option<Key> {
     ids.into_iter().find_map(|id| {
         let tail = rest.strip_prefix(id.as_str())?.strip_prefix('.')?;
         let id = id.clone();
+        if let Some(row) = Row::named(tail) {
+            return Some(Key::Account(id, row));
+        }
         match tail {
-            "state" => Some(Key::State(id)),
-            "label" => Some(Key::Label(id)),
-            "place" => Some(Key::Place(id)),
-            "sign_in" => Some(Key::SignIn(id)),
-            "provider" => Some(Key::Provider(id)),
-            "group" => Some(Key::Group(id)),
-            "reauth" => Some(Key::Reauth(id)),
             "sign_out" => Some(Key::SignOut(id)),
-            "remove" => Some(Key::Remove(id)),
             "spend.month" => Some(Key::SpendMonth(id)),
             "spend.cap" => Some(Key::SpendCap(id)),
             _ => {
@@ -146,13 +122,8 @@ pub(crate) fn parse(path: &str, registry: &Registry) -> Option<Key> {
 /// The path of `key`.
 pub(crate) fn path(key: &Key) -> String {
     match key {
+        Key::Account(id, row) => row.path(id),
         Key::Service(id, kind) => format!("accounts.{id}.service.{}", slug(kind)),
-        Key::State(id) => format!("accounts.{id}.state"),
-        Key::Label(id) => format!("accounts.{id}.label"),
-        Key::Place(id) => format!("accounts.{id}.place"),
-        Key::SignIn(id) => format!("accounts.{id}.sign_in"),
-        Key::Provider(id) => format!("accounts.{id}.provider"),
-        Key::Group(id) => format!("accounts.{id}.group"),
         Key::Grant(id, grant) => format!("accounts.{id}.grant.{grant}"),
         Key::Since(id, grant) => format!("accounts.{id}.grant.{grant}.since"),
         Key::Scope(id, grant) => format!("accounts.{id}.grant.{grant}.scope"),
@@ -160,9 +131,7 @@ pub(crate) fn path(key: &Key) -> String {
         Key::GrantService(id, grant) => format!("accounts.{id}.grant.{grant}.service"),
         Key::SpendMonth(id) => format!("accounts.{id}.spend.month"),
         Key::SpendCap(id) => format!("accounts.{id}.spend.cap"),
-        Key::Reauth(id) => format!("accounts.{id}.reauth"),
         Key::SignOut(id) => format!("accounts.{id}.sign_out"),
-        Key::Remove(id) => format!("accounts.{id}.remove"),
     }
 }
 
@@ -174,36 +143,15 @@ fn spec(
     kind: KeyKind,
     default: toml::Value,
 ) -> KeySpec {
-    KeySpec {
-        control: None,
-        path: KeyPath(path(key)),
+    porter_settings::spec(
+        path(key),
+        section,
+        label,
+        help,
         kind,
         default,
-        label: Label(label),
-        help: Help(help.to_owned()),
-        page: Page::Accounts,
-        section: Section(section.to_owned()),
-        exposure: Exposure::Basic,
-        labels: Default::default(),
-        unavailable: Default::default(),
-        groups: Default::default(),
-        places: Default::default(),
-        note: None,
-        agent: AgentSetting::HandsOff,
-    }
-}
-
-fn action(name: &str, weight: ActionWeight) -> KeyKind {
-    KeyKind::Live {
-        action: LiveAction {
-            label: ActionLabel(name.to_owned()),
-            weight,
-        },
-    }
-}
-
-fn off() -> toml::Value {
-    toml::Value::Boolean(false)
+        Exposure::Basic,
+    )
 }
 
 /// A permit's row: "Companion can use Language model" (allowed) or "Mail can't use Language
@@ -229,31 +177,9 @@ pub(crate) fn since_text(grant: &Grant) -> String {
     grant.at.utc_date().unwrap_or_default()
 }
 
-fn labelled(mut spec: KeySpec, words: &[(&str, &str)]) -> KeySpec {
-    spec.labels = WordLabels(
-        words
-            .iter()
-            .map(|(word, label)| ((*word).to_owned(), (*label).to_owned()))
-            .collect(),
-    );
-    spec
-}
-
 /// A read-out row whose one value is `word`, as a person reads it by `labels`.
 fn readout(key: &Key, section: &str, label: &str, word: &str, labels: &[(&str, &str)]) -> KeySpec {
-    labelled(
-        spec(
-            key,
-            section,
-            label.to_owned(),
-            "",
-            KeyKind::Fixed {
-                variant: word.to_owned(),
-            },
-            toml::Value::String(word.to_owned()),
-        ),
-        labels,
-    )
+    porter_settings::readout(path(key), section, label, word, labels)
 }
 
 /// `spec` with the help text under its row.
@@ -269,14 +195,6 @@ const SCOPE_WORDS: [(&str, &str); 3] = [
     ("session", "This session only"),
 ];
 
-/// Where an account lives: a program on this computer, or anywhere else.
-pub(crate) fn place_slug(account: &Account) -> &'static str {
-    match account.auth {
-        AuthKind::LocalRuntime => "this_computer",
-        _ => "elsewhere",
-    }
-}
-
 fn account_keys(
     account: &Account,
     grants: &[Grant],
@@ -289,46 +207,14 @@ fn account_keys(
     let provider_label = providers
         .label_of(&account.provider)
         .unwrap_or_else(|| account.provider.as_str());
-    let group_words: Vec<(&str, &str)> = ProviderGroup::ALL
-        .iter()
-        .map(|group| (word_of(&group), porter_sheet::words::group_heading(*group)))
-        .collect();
-    let fixed = |key: Key, label: &str, word: &str| {
-        spec(
-            &key,
-            section,
-            label.to_owned(),
-            "",
-            KeyKind::Fixed {
-                variant: word.to_owned(),
-            },
-            toml::Value::String(word.to_owned()),
-        )
+    let shared = Names {
+        provider_label,
+        group: providers.group_of(account),
     };
-    let mut keys = vec![
-        fixed(Key::Label(id.clone()), "Account", &account.label.0),
-        fixed(Key::Place(id.clone()), "Where", place_slug(account)),
-        fixed(Key::State(id.clone()), "Status", state_slug(account.state)),
-        fixed(
-            Key::SignIn(id.clone()),
-            "Signs in",
-            word_of(&account.auth.facts().way),
-        ),
-        readout(
-            &Key::Provider(id.clone()),
-            section,
-            "Account type",
-            account.provider.as_str(),
-            &[(account.provider.as_str(), provider_label)],
-        ),
-        readout(
-            &Key::Group(id.clone()),
-            section,
-            "Listed under",
-            word_of(&providers.group_of(account)),
-            &group_words,
-        ),
-    ];
+    let mut keys: Vec<KeySpec> = READOUTS
+        .iter()
+        .filter_map(|row| row.0.spec(account, section, &shared))
+        .collect();
     // An account with several models holds one claim per model of the same kind: one switch.
     let mut toggles: Vec<CapabilityKind> = Vec::new();
     for kind in account
@@ -436,42 +322,19 @@ fn account_keys(
             &limit,
         ));
     }
-    keys.extend(match account.auth {
-        AuthKind::AgentLogin if account.state == AccountState::NeedsLogin => Some(spec(
-            &Key::Reauth(id.clone()),
-            section,
-            "Sign in".to_owned(),
-            "Asks the assistant to sign itself in, which needs its app to be running.",
-            action("Sign in", ActionWeight::Plain),
-            off(),
-        )),
-        AuthKind::AgentLogin => Some(spec(
+    keys.extend(REAUTH.0.spec(account, section, &shared));
+    // An agent that is signed in signs itself out from here; one that is signed out signs in.
+    if account.auth == AuthKind::AgentLogin && account.state != AccountState::NeedsLogin {
+        keys.push(spec(
             &Key::SignOut(id.clone()),
             section,
             "Sign out".to_owned(),
             "Asks the assistant to sign itself out when it is running; otherwise it only forgets here that it was signed in, and the assistant's own login is not touched.",
             action("Sign out", ActionWeight::Plain),
             off(),
-        )),
-        // A program on this computer signs in with nothing: there is nothing to sign in to.
-        AuthKind::LocalRuntime | AuthKind::None => None,
-        _ => Some(spec(
-            &Key::Reauth(id.clone()),
-            section,
-            "Sign in again".to_owned(),
-            "",
-            action("Sign in again", ActionWeight::Plain),
-            off(),
-        )),
-    });
-    keys.push(spec(
-        &Key::Remove(id.clone()),
-        section,
-        "Remove account".to_owned(),
-        "Deletes the account's stored key and every permission given for it.",
-        action("Remove account", ActionWeight::Destructive),
-        off(),
-    ));
+        ));
+    }
+    keys.extend(REMOVE.0.spec(account, section, &shared));
     keys
 }
 
@@ -737,12 +600,17 @@ impl<H: KeyHost, L: LaunchersSeam + Clone + 'static> AccountRows<H, L> {
                     .any(|c| c.offer.kind() == kind && matches!(c.offer, Offer::Present(_)));
                 text(if on { "on" } else { "off" })
             }
-            Key::State(id) => text(state_slug(account(&id)?.state)),
-            Key::Label(id) => text(&account(&id)?.label.0),
-            Key::Place(id) => text(place_slug(account(&id)?)),
-            Key::SignIn(id) => text(word_of(&account(&id)?.auth.facts().way)),
-            Key::Provider(id) => text(account(&id)?.provider.as_str()),
-            Key::Group(id) => text(word_of(&self.providers.group_of(account(&id)?))),
+            Key::Account(id, row) => {
+                let account = account(&id)?;
+                let names = Names {
+                    provider_label: self
+                        .providers
+                        .label_of(&account.provider)
+                        .unwrap_or_else(|| account.provider.as_str()),
+                    group: self.providers.group_of(account),
+                };
+                Ok(row.0.read(account, &names))
+            }
             Key::Since(_, grant) => registry
                 .grants
                 .iter()
@@ -778,9 +646,7 @@ impl<H: KeyHost, L: LaunchersSeam + Clone + 'static> AccountRows<H, L> {
                 let cap = spend.month(&id).1;
                 text(&cap.map_or_else(|| "0".to_owned(), cents_up))
             }
-            Key::Grant(..) | Key::Reauth(_) | Key::SignOut(_) | Key::Remove(_) => {
-                Ok(toml::Value::Boolean(false))
-            }
+            Key::Grant(..) | Key::SignOut(_) => Ok(toml::Value::Boolean(false)),
         }
     }
 
@@ -807,10 +673,10 @@ impl<H: KeyHost, L: LaunchersSeam + Clone + 'static> AccountRows<H, L> {
                 }
                 self.host.revoke_grant(&grant).await.map_err(refused)?;
             }
-            Key::Remove(id) => {
+            Key::Account(id, row) if row == REMOVE => {
                 self.host.remove(&id).await.map_err(failed)?;
             }
-            Key::Reauth(id) => {
+            Key::Account(id, row) if row == REAUTH => {
                 let local = registry.accounts.iter().any(|a| {
                     a.id == id && matches!(a.auth, AuthKind::LocalRuntime | AuthKind::None)
                 });
@@ -847,16 +713,16 @@ impl<H: KeyHost, L: LaunchersSeam + Clone + 'static> AccountRows<H, L> {
                     if let AccountsReply::Refused(why) = &reply {
                         eprintln!("inferd: sign in again from Settings refused: {why:?}");
                     }
-                    announce(&served, &Key::Reauth(id), ReauthNews::of(&reply).slug()).await;
+                    announce(
+                        &served,
+                        &Key::Account(id, REAUTH),
+                        ReauthNews::of(&reply).slug(),
+                    )
+                    .await;
                 });
             }
             Key::SignOut(id) => self.sign_out(&id).await?,
-            Key::State(_)
-            | Key::Label(_)
-            | Key::Place(_)
-            | Key::SignIn(_)
-            | Key::Provider(_)
-            | Key::Group(_)
+            Key::Account(..)
             | Key::Since(..)
             | Key::Scope(..)
             | Key::App(..)

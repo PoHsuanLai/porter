@@ -13,6 +13,7 @@ use ds_settings::schema::KeyPath;
 use porter_core::store::Persisted;
 use porter_core::store::{RegistryStore, StoreError};
 use porter_service_core::registry::Registry;
+use porter_settings::{LABEL, STATE};
 use std::sync::Arc;
 use tokio::sync::Notify;
 
@@ -57,19 +58,22 @@ pub(crate) fn row_news(before: &Registry, after: &Registry) -> Vec<(KeyPath, tom
     let mut news = Vec::new();
     for old in &before.accounts {
         if !after.accounts.iter().any(|a| a.id == old.id) {
-            news.push((row(Key::State(old.id.clone())), text("removed")));
+            news.push((row(Key::Account(old.id.clone(), STATE)), text("removed")));
         }
     }
     for account in &after.accounts {
         let was = before.accounts.iter().find(|a| a.id == account.id);
         if was.is_none_or(|old| old.state != account.state) {
             news.push((
-                row(Key::State(account.id.clone())),
-                text(super::local::state_slug(account.state)),
+                row(Key::Account(account.id.clone(), STATE)),
+                text(porter_ids::word::word(&account.state)),
             ));
         }
         if was.is_some_and(|old| old.label != account.label) {
-            news.push((row(Key::Label(account.id.clone())), text(&account.label.0)));
+            news.push((
+                row(Key::Account(account.id.clone(), LABEL)),
+                text(&account.label.0),
+            ));
         }
     }
     let grant_in = |registry: &Registry, id: &porter_core::GrantId| {

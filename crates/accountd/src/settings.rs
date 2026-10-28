@@ -1,7 +1,7 @@
 //! `org.quire.SettingsModule1` at `/org/quire/Accounts1/settings` (design/22 §9.4, PLAN §2.5),
 //! served through quire's `ds_settings::live`. Only the `Settings` role may `Get`, `Describe`,
 //! `Snapshot` or `Set`: the keys name accounts, and a `Set` removes them. The keys are in
-//! `settings_keys`; this file applies them.
+//! `porter-settings`; this file hosts them and applies what is written.
 //!
 //! Every read, `Describe`, `Get` and `Snapshot` alike, starts from one [`View`]: one copy of the
 //! registry (and of the apps using each identity and the clients file) taken once, from which
@@ -11,22 +11,25 @@
 //! (`Describe`, then a `Get` per key) leaves open.
 
 use crate::callers::Callers;
-use crate::client_rows::{RowEdit, RowRefused, edited};
 use crate::host::Host;
-use crate::settings_keys::{Key, UsedBy, listed, parse, schema};
 use crate::state::Core;
 use ds_settings::live::{
     Access, Caller, LiveError, LiveModule, LiveSchema, Snapshot, Verdict, serve,
 };
 use ds_settings::schema::KeyPath;
 use porter_callers::CallerRole;
-use porter_core::{AppId, AppName, AuthKind, IdentityId, Isolation};
+use porter_core::{Account, AppId, AppName, AuthKind, IdentityId, Isolation, ProviderId};
 use porter_dbus::accounts::ACCOUNTS_SETTINGS_PATH;
+use porter_families::set::ProviderNames;
 use porter_identities::IdentitiesApi;
-use porter_ids::word::word as word_of;
 use porter_provider::{ClientChannel, ClientsFile, Issuer, parse_clients};
 use porter_service_core::audit::{AuditEvent, ClientIdChange};
 use porter_service_core::registry::Registry;
+use porter_settings::accounts::{Directory, Key, UsedBy, listed, parse, read, schema};
+use porter_settings::clients::{RowEdit, RowRefused, edited};
+use porter_settings::{REAUTH, REMOVE};
+use porter_sheet::ProviderGroup;
+use porter_sheets::AppNames;
 use porter_wire::AccountsReply;
 use porter_wire::ParentWindow;
 use std::sync::Arc;
@@ -112,7 +115,7 @@ impl<H: Host, C> AccountsSettings<H, C> {
             registry
                 .accounts
                 .iter()
-                .filter(|account| listed(account, &self.0.provider_names))
+                .filter(|account| listed(account, &self.directory()))
                 .filter_map(|account| {
                     let apps = uses.apps(&IdentityId::of(&account.id));
                     (!apps.is_empty()).then(|| (account.id.clone(), apps))
@@ -128,43 +131,23 @@ impl<H: Host, C> AccountsSettings<H, C> {
 
     /// The schema `view` lists.
     fn schema_of(&self, view: &View) -> LiveSchema {
-        schema(
-            &view.registry,
-            &view.used,
-            &self.0.app_names,
-            &self.0.provider_names,
-        )
+        schema(&view.registry, &view.used, &self.directory())
+    }
+
+    /// How the daemon's provider and app names read to the rows.
+    fn directory(&self) -> Names<'_> {
+        Names {
+            apps: &self.0.app_names,
+            providers: &self.0.provider_names,
+        }
     }
 
     /// The value of the key at `path` in `view`.
     fn value_in(&self, view: &View, path: &KeyPath) -> Result<toml::Value, LiveError> {
-        let registry = &view.registry;
         let unknown = || LiveError::UnknownKey(path.0.clone());
-        let account = |id: &porter_core::AccountId| {
-            registry
-                .accounts
-                .iter()
-                .find(|a| a.id == *id)
-                .ok_or_else(unknown)
-        };
         let text = |text: &str| Ok(toml::Value::String(text.to_owned()));
-        match parse(&path.0, registry).ok_or_else(unknown)? {
-            Key::State(id) => text(crate::state::state_slug(account(&id)?.state)),
-            Key::Label(id) => text(&account(&id)?.label.0),
-            Key::Expires(id) => crate::settings_keys::expiry_text(account(&id)?)
-                .map(toml::Value::String)
-                .ok_or_else(unknown),
-            Key::Place(id) => text(crate::settings_keys::place_slug(account(&id)?)),
-            Key::SignIn(id) => text(word_of(&account(&id)?.auth.facts().way)),
-            Key::Provider(id) => text(account(&id)?.provider.as_str()),
-            Key::Group(id) => text(word_of(&self.0.provider_names.group_of(account(&id)?))),
-            Key::UsedBy(id, n) => view
-                .used
-                .get(&id)
-                .and_then(|apps| apps.get(n))
-                .map(|app| toml::Value::String(self.0.app_names.title_of(app).0))
-                .ok_or_else(unknown),
-            Key::Reauth(_) | Key::Remove(_) => Ok(toml::Value::Boolean(false)),
+        let key = parse(&path.0, &view.registry).ok_or_else(unknown)?;
+        match key {
             Key::Client(issuer) => text(
                 &view
                     .clients
@@ -186,7 +169,28 @@ impl<H: Host, C> AccountsSettings<H, C> {
                     .map(|s| s.expose().to_owned())
                     .unwrap_or_default(),
             ),
+            key => read(&key, &view.registry, &view.used, &self.directory()).ok_or_else(unknown),
         }
+    }
+}
+
+/// What the rows of `porter-settings` ask of the daemon: how a provider and an app are called.
+struct Names<'a> {
+    apps: &'a AppNames,
+    providers: &'a ProviderNames,
+}
+
+impl Directory for Names<'_> {
+    fn provider_label(&self, provider: &ProviderId) -> Option<&str> {
+        self.providers.label_of(provider)
+    }
+
+    fn group_of(&self, account: &Account) -> ProviderGroup {
+        self.providers.group_of(account)
+    }
+
+    fn app_title(&self, app: &AppName) -> String {
+        self.apps.title_of(app).0
     }
 }
 
@@ -228,10 +232,10 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
         let parsed =
             parse(&key.0, &registry).ok_or_else(|| LiveError::UnknownKey(key.0.clone()))?;
         match parsed {
-            Key::Remove(id) => {
+            Key::Account(id, row) if row == REMOVE => {
                 self.0.host.remove(&id).await.map_err(failed)?;
             }
-            Key::Reauth(id) => {
+            Key::Account(id, row) if row == REAUTH => {
                 // A program on this computer has nothing to sign in to (the row is not offered).
                 let local = registry.accounts.iter().any(|a| {
                     a.id == id && matches!(a.auth, AuthKind::LocalRuntime | AuthKind::None)
@@ -253,7 +257,7 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
                     // The pane hears how it ended on the row.
                     announce_row(
                         &core,
-                        &Key::Reauth(id),
+                        &Key::Account(id, REAUTH),
                         porter_ids::word::word(&ReauthNews::of(&reply)),
                     )
                     .await;
@@ -285,14 +289,7 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
                 };
                 self.write_client(issuer, RowEdit::Secret(&text))?;
             }
-            Key::State(_)
-            | Key::Label(_)
-            | Key::Place(_)
-            | Key::SignIn(_)
-            | Key::Expires(_)
-            | Key::Provider(_)
-            | Key::Group(_)
-            | Key::UsedBy(..) => {
+            Key::Account(..) | Key::Expires(_) | Key::UsedBy(..) => {
                 return Err(LiveError::NotPermitted("this row is a read-out".into()));
             }
         }
@@ -357,7 +354,7 @@ async fn announce_row<H, C>(core: &Core<H, C>, key: &Key, word: &str) {
     if let Some(module) = core.settings.get() {
         let _ = module
             .changed(
-                &KeyPath(crate::settings_keys::path(key)),
+                &KeyPath(porter_settings::accounts::path(key)),
                 &toml::Value::String(word.to_owned()),
             )
             .await;

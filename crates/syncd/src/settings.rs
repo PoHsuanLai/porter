@@ -34,7 +34,7 @@ use ds_settings::schema::{
 use porter_callers::{CallerRole, Callers};
 use porter_capability::Toggle;
 use porter_core::AccountId;
-use porter_core::{Account, AccountState, Family};
+use porter_core::{Account, Family};
 use porter_drive::CacheLimit;
 use porter_families::set::ProviderNames;
 use porter_service_core::registry::Registry;
@@ -130,16 +130,6 @@ pub(crate) fn path(key: &Key) -> String {
         Key::KeepAll(id) => format!("accounts.{id}.storage.keep"),
         Key::Reauth(id) => format!("accounts.{id}.reauth"),
         Key::Remove(id) => format!("accounts.{id}.remove"),
-    }
-}
-
-fn state_slug(state: AccountState) -> &'static str {
-    match state {
-        AccountState::Ok => "ok",
-        AccountState::NeedsReauth => "needs_reauth",
-        AccountState::Offline => "offline",
-        AccountState::Limited => "limited",
-        AccountState::NeedsLogin => "needs_login",
     }
 }
 
@@ -290,7 +280,7 @@ fn account_keys(account: &Account, names: &ProviderNames, files: FilesRow) -> Ve
             &Key::State(id.clone()),
             section,
             "Status",
-            state_slug(account.state),
+            porter_ids::word::word(&account.state),
         ),
     ];
     for class in sync_offers(account) {
@@ -643,7 +633,7 @@ impl<H: Hosted, D: Directory, C: Callers> LiveModule for SyncSettings<H, D, C> {
         match parse(&key.0, &registry).ok_or_else(unknown)? {
             Key::Label(id) => text(&account(&id)?.label.0),
             Key::Provider(id) => text(account(&id)?.provider.as_str()),
-            Key::State(id) => text(state_slug(account(&id)?.state)),
+            Key::State(id) => text(porter_ids::word::word(&account(&id)?.state)),
             Key::Sync(id, class) => {
                 account(&id)?;
                 text(if sync_allowed(&registry.grants, &id, class) {

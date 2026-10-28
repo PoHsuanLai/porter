@@ -10,7 +10,7 @@
 use crate::callers::Callers;
 use crate::errors::RefusedError;
 use crate::host::Host;
-use crate::state::{Core, Standing, state_slug, window};
+use crate::state::{Core, Standing, window};
 use porter_callers::{Caller, CallerRole};
 use porter_core::{Account, AccountState};
 use porter_dbus::accounts::sheet::SheetKind;
@@ -98,7 +98,7 @@ impl<H: Host, C: Callers> AccountServer for AccountObject<H, C> {
     }
 
     async fn state(&self, header: Option<Header<'_>>) -> fdo::Result<String> {
-        Ok(state_slug(visible(&self.0, header.as_ref()).await?.state).to_owned())
+        Ok(porter_ids::word::word(&visible(&self.0, header.as_ref()).await?.state).to_owned())
     }
 
     /// Why the account has to be signed in again, when porter knows: a word of

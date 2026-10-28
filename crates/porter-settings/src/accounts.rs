@@ -1,66 +1,54 @@
 //! The keys of accountd's settings module (PLAN §2.5), as a pure function of the registry: for
-//! each identity (the Internet accounts, and Tailscale) its label, place, state, how it signs in,
-//! its provider and group (read-outs), the apps using it (`used_by.<n>`, read-outs), "Sign in
-//! again" and "Remove account" actions, and one text row per OAuth issuer for a bring-your-own
-//! client id. The AI accounts, assistants and sync switches are listed by inferd's and syncd's own
-//! modules. Every key is under `accounts.`, so it is never agent-settable (`ds-settings` refuses
-//! a schema that says otherwise).
+//! each identity (the Internet accounts, and Tailscale) the rows every account has
+//! ([`crate::ROWS`]), the expiry of a sign-in that expires, the apps using it (`used_by.<n>`,
+//! read-outs), and one text row per OAuth issuer for a bring-your-own client id. The AI
+//! accounts, assistants and sync switches are listed by inferd's and syncd's own modules. Every
+//! key is under `accounts.`, so it is never agent-settable (`ds-settings` refuses a schema that
+//! says otherwise).
 
+use crate::{ACTIONS, Names, READOUTS, Row, spec as spec_of};
 use ds_settings::live::LiveSchema;
-use ds_settings::schema::{
-    ActionLabel, ActionWeight, AgentSetting, Exposure, Help, KeyKind, KeyPath, KeySpec, Label,
-    LiveAction, Page, Section, WordLabels,
-};
-use porter_core::AccountId;
-use porter_core::{Account, AccountState, AppName, AuthKind};
-use porter_families::set::ProviderNames;
-use porter_ids::word::word as word_of;
+use ds_settings::schema::{Exposure, KeyKind, KeySpec};
+use porter_core::{Account, AccountId, AccountState, AppName, ProviderId};
 use porter_ids::word::{from_word, word};
 use porter_provider::Issuer;
 use porter_service_core::registry::Registry;
 use porter_sheet::ProviderGroup;
-use porter_sheets::AppNames;
 use std::collections::BTreeMap;
+
+/// What the daemon knows that the registry does not: how a provider and an app are called, and
+/// where an account is listed.
+pub trait Directory {
+    /// What a person reads for `provider`, when its file is loaded.
+    fn provider_label(&self, provider: &ProviderId) -> Option<&str>;
+    /// The group of the page `account` is listed under.
+    fn group_of(&self, account: &Account) -> ProviderGroup;
+    /// What a person reads for `app`.
+    fn app_title(&self, app: &AppName) -> String;
+}
 
 /// The issuers a bring-your-own client id may be set for. The writer changes only the id (and the
 /// secret) of a row, so a hand-written row's other lines (Google's `testing`, `byo`) are kept.
-pub(crate) const ISSUERS: &[Issuer] = &[Issuer::Microsoft, Issuer::Google];
+pub const ISSUERS: &[Issuer] = &[Issuer::Microsoft, Issuer::Google];
 
 /// The issuers whose client also needs its application secret (Google's desktop clients): they
 /// get a second row, `accounts.clients.<issuer>.secret`.
-pub(crate) const SECRET_ISSUERS: &[Issuer] = &[Issuer::Google];
+pub const SECRET_ISSUERS: &[Issuer] = &[Issuer::Google];
 
 /// The apps that use each identity, by the account it is (`Identities1.RegisterUse`).
-pub(crate) type UsedBy = BTreeMap<AccountId, Vec<AppName>>;
+pub type UsedBy = BTreeMap<AccountId, Vec<AppName>>;
 
 /// What a key names.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Key {
-    /// `accounts.<id>.state`.
-    State(AccountId),
-    /// `accounts.<id>.label`.
-    Label(AccountId),
+pub enum Key {
+    /// `accounts.<id>.<row>`: a row every account has.
+    Account(AccountId, Row),
     /// `accounts.<id>.expires`: read-only, only for a sign-in that expires (Google, a client in
     /// testing).
     Expires(AccountId),
-    /// `accounts.<id>.place`.
-    Place(AccountId),
-    /// `accounts.<id>.sign_in`: read-only, how the account is signed in again (porter-core's
-    /// `SignInWay` slug: `browser`, `password`, `key`, `agent`, `outside`, `nothing`).
-    SignIn(AccountId),
-    /// `accounts.<id>.provider`: read-only, the provider the account was made from (the value is
-    /// the provider's id, the row's labels give its name).
-    Provider(AccountId),
-    /// `accounts.<id>.group`: read-only, the part of the Accounts page the account is listed
-    /// under (`internet`, `intelligence`, `agent`).
-    Group(AccountId),
     /// `accounts.<id>.used_by.<n>`: read-only, the display name of the n-th app (from 0, in name
     /// order) that signed in with this identity.
     UsedBy(AccountId, usize),
-    /// `accounts.<id>.reauth`.
-    Reauth(AccountId),
-    /// `accounts.<id>.remove`.
-    Remove(AccountId),
     /// `accounts.clients.<issuer>`.
     Client(Issuer),
     /// `accounts.clients.<issuer>.secret`: the application secret of the client, for the
@@ -79,7 +67,7 @@ fn sentence_case(word: &str) -> String {
 
 /// The key `path` names, among the accounts of `registry` (an id may hold dots, so the account
 /// is found by prefix, the longest id first).
-pub(crate) fn parse(path: &str, registry: &Registry) -> Option<Key> {
+pub fn parse(path: &str, registry: &Registry) -> Option<Key> {
     let rest = path.strip_prefix("accounts.")?;
     if let Some(issuer) = rest.strip_prefix("clients.") {
         return match issuer.strip_suffix(".secret") {
@@ -96,16 +84,11 @@ pub(crate) fn parse(path: &str, registry: &Registry) -> Option<Key> {
     ids.into_iter().find_map(|id| {
         let tail = rest.strip_prefix(id.as_str())?.strip_prefix('.')?;
         let id = id.clone();
+        if let Some(row) = Row::named(tail) {
+            return Some(Key::Account(id, row));
+        }
         match tail {
-            "state" => Some(Key::State(id)),
-            "label" => Some(Key::Label(id)),
             "expires" => Some(Key::Expires(id)),
-            "place" => Some(Key::Place(id)),
-            "sign_in" => Some(Key::SignIn(id)),
-            "provider" => Some(Key::Provider(id)),
-            "group" => Some(Key::Group(id)),
-            "reauth" => Some(Key::Reauth(id)),
-            "remove" => Some(Key::Remove(id)),
             _ => {
                 let n = tail.strip_prefix("used_by.")?;
                 n.parse::<usize>().ok().map(|n| Key::UsedBy(id, n))
@@ -115,24 +98,18 @@ pub(crate) fn parse(path: &str, registry: &Registry) -> Option<Key> {
 }
 
 /// The path of `key`.
-pub(crate) fn path(key: &Key) -> String {
+pub fn path(key: &Key) -> String {
     match key {
-        Key::State(id) => format!("accounts.{id}.state"),
-        Key::Label(id) => format!("accounts.{id}.label"),
+        Key::Account(id, row) => row.path(id),
         Key::Expires(id) => format!("accounts.{id}.expires"),
-        Key::Place(id) => format!("accounts.{id}.place"),
-        Key::SignIn(id) => format!("accounts.{id}.sign_in"),
-        Key::Provider(id) => format!("accounts.{id}.provider"),
-        Key::Group(id) => format!("accounts.{id}.group"),
         Key::UsedBy(id, n) => format!("accounts.{id}.used_by.{n}"),
-        Key::Reauth(id) => format!("accounts.{id}.reauth"),
-        Key::Remove(id) => format!("accounts.{id}.remove"),
         Key::Client(issuer) => format!("accounts.clients.{}", word(issuer)),
         Key::ClientSecret(issuer) => format!("accounts.clients.{}.secret", word(issuer)),
     }
 }
 
-fn spec(
+/// A row of this module that is not one every account has.
+fn row(
     key: &Key,
     section: &str,
     label: String,
@@ -140,44 +117,16 @@ fn spec(
     kind: KeyKind,
     default: toml::Value,
 ) -> KeySpec {
-    KeySpec {
-        control: None,
-        path: KeyPath(path(key)),
-        kind,
-        default,
-        label: Label(label),
-        help: Help(help.to_owned()),
-        page: Page::Accounts,
-        section: Section(section.to_owned()),
-        exposure: match key {
-            Key::Client(_) | Key::ClientSecret(_) => Exposure::Advanced,
-            _ => Exposure::Basic,
-        },
-        labels: Default::default(),
-        unavailable: Default::default(),
-        groups: Default::default(),
-        places: Default::default(),
-        note: None,
-        agent: AgentSetting::HandsOff,
-    }
-}
-
-fn action(name: &str, weight: ActionWeight) -> KeyKind {
-    KeyKind::Live {
-        action: LiveAction {
-            label: ActionLabel(name.to_owned()),
-            weight,
-        },
-    }
-}
-
-fn off() -> toml::Value {
-    toml::Value::Boolean(false)
+    let exposure = match key {
+        Key::Client(_) | Key::ClientSecret(_) => Exposure::Advanced,
+        _ => Exposure::Basic,
+    };
+    spec_of(path(key), section, label, help, kind, default, exposure)
 }
 
 /// What the `expires` row says: when Google signs the account out, or that it did. Only for an
 /// account whose sign-in expires and whose sign-in date is known. The date is the UTC day.
-pub(crate) fn expiry_text(account: &Account) -> Option<String> {
+pub fn expiry_text(account: &Account) -> Option<String> {
     let day = account.restriction.expires_at()?.utc_date()?;
     Some(match account.state {
         AccountState::NeedsReauth => format!("Signed out by Google on {day}"),
@@ -185,107 +134,16 @@ pub(crate) fn expiry_text(account: &Account) -> Option<String> {
     })
 }
 
-/// `spec` with the words of its enum key labelled for a person.
-fn labelled(mut spec: KeySpec, words: &[(&str, &str)]) -> KeySpec {
-    spec.labels = WordLabels(
-        words
-            .iter()
-            .map(|(word, label)| ((*word).to_owned(), (*label).to_owned()))
-            .collect(),
-    );
-    spec
-}
-
-/// A read-out row whose one value is `word`, as a person reads it by `labels`.
-fn readout(key: &Key, section: &str, label: &str, word: &str, labels: &[(&str, &str)]) -> KeySpec {
-    labelled(
-        spec(
-            key,
-            section,
-            label.to_owned(),
-            "",
-            KeyKind::Fixed {
-                variant: word.to_owned(),
-            },
-            toml::Value::String(word.to_owned()),
-        ),
-        labels,
-    )
-}
-
-fn account_keys(
-    account: &Account,
-    used_by: &[AppName],
-    names: &AppNames,
-    providers: &ProviderNames,
-) -> Vec<KeySpec> {
+fn account_keys(account: &Account, used_by: &[AppName], directory: &dyn Directory) -> Vec<KeySpec> {
     let section = account.label.0.as_str();
     let id = &account.id;
-    let provider_label = providers
-        .label_of(&account.provider)
-        .unwrap_or_else(|| account.provider.as_str());
-    let group_words: Vec<(&str, &str)> = ProviderGroup::ALL
+    let names = names_of(account, directory);
+    let mut keys: Vec<KeySpec> = READOUTS
         .iter()
-        .map(|group| (word_of(&group), porter_sheet::words::group_heading(*group)))
+        .filter_map(|row| row.0.spec(account, section, &names))
         .collect();
-    let mut keys = vec![
-        spec(
-            &Key::Label(id.clone()),
-            section,
-            "Account".to_owned(),
-            "",
-            KeyKind::Fixed {
-                variant: account.label.0.clone(),
-            },
-            toml::Value::String(account.label.0.clone()),
-        ),
-        spec(
-            &Key::Place(id.clone()),
-            section,
-            "Where".to_owned(),
-            "",
-            KeyKind::Fixed {
-                variant: place_slug(account).to_owned(),
-            },
-            toml::Value::String(place_slug(account).to_owned()),
-        ),
-        spec(
-            &Key::State(id.clone()),
-            section,
-            "Status".to_owned(),
-            "",
-            KeyKind::Fixed {
-                variant: crate::state::state_slug(account.state).to_owned(),
-            },
-            toml::Value::String(crate::state::state_slug(account.state).to_owned()),
-        ),
-        spec(
-            &Key::SignIn(id.clone()),
-            section,
-            "Signs in".to_owned(),
-            "",
-            KeyKind::Fixed {
-                variant: word_of(&account.auth.facts().way).to_owned(),
-            },
-            toml::Value::String(word_of(&account.auth.facts().way).to_owned()),
-        ),
-        readout(
-            &Key::Provider(id.clone()),
-            section,
-            "Account type",
-            account.provider.as_str(),
-            &[(account.provider.as_str(), provider_label)],
-        ),
-        readout(
-            &Key::Group(id.clone()),
-            section,
-            "Listed under",
-            word_of(&providers.group_of(account)),
-            &group_words,
-        ),
-    ];
     if let Some(text) = expiry_text(account) {
-        keys.push(spec(
+        keys.push(row(
             &Key::Expires(id.clone()),
             section,
             "Sign-in".to_owned(),
@@ -297,8 +155,8 @@ fn account_keys(
         ));
     }
     for (n, app) in used_by.iter().enumerate() {
-        let title = names.title_of(app).0;
-        keys.push(spec(
+        let title = directory.app_title(app);
+        keys.push(row(
             &Key::UsedBy(id.clone(), n),
             section,
             "Used by".to_owned(),
@@ -309,85 +167,70 @@ fn account_keys(
             toml::Value::String(title),
         ));
     }
-    keys.extend(match account.auth {
-        // Tailscale signed out: "Sign in" hands the person Tailscale's own page; porter takes no
-        // password or key of Tailscale's.
-        AuthKind::OwnProgram if account.state == AccountState::NeedsLogin => Some(spec(
-            &Key::Reauth(id.clone()),
-            section,
-            "Sign in".to_owned(),
-            "Opens Tailscale's own sign-in page. Your Tailscale password is never seen here.",
-            action("Sign in", ActionWeight::Plain),
-            off(),
-        )),
-        // Tailscale keeps its own sign-in, and so is not signed out from here.
-        AuthKind::OwnProgram => None,
-        // A program on this computer signs in with nothing: there is nothing to sign in to.
-        AuthKind::LocalRuntime | AuthKind::None => None,
-        _ => Some(spec(
-            &Key::Reauth(id.clone()),
-            section,
-            "Sign in again".to_owned(),
-            "",
-            action("Sign in again", ActionWeight::Plain),
-            off(),
-        )),
-    });
-    let remove_help = match account.auth {
-        // Nothing of Tailscale's is stored here, and nothing of Tailscale's is touched.
-        AuthKind::OwnProgram => {
-            "Takes this account out of this computer's accounts. It does not sign Tailscale out."
-        }
-        _ => "Deletes the account's stored sign-in from this computer.",
-    };
-    keys.push(spec(
-        &Key::Remove(id.clone()),
-        section,
-        "Remove account".to_owned(),
-        remove_help,
-        action("Remove account", ActionWeight::Destructive),
-        off(),
-    ));
+    keys.extend(
+        ACTIONS
+            .iter()
+            .filter_map(|row| row.0.spec(account, section, &names)),
+    );
     keys
-}
-
-/// Where an account lives, as the `place` row says it: a program on this computer (a probed
-/// runtime, which signs in with nothing) or anywhere else. Settings lists the first kind under
-/// "On this computer".
-pub(crate) fn place_slug(account: &Account) -> &'static str {
-    match account.auth {
-        AuthKind::LocalRuntime => "this_computer",
-        _ => "elsewhere",
-    }
 }
 
 /// Whether accountd lists `account`: the identities and Tailscale (the Internet group). The AI
 /// accounts and assistants are listed by inferd's module.
-pub(crate) fn listed(account: &Account, providers: &ProviderNames) -> bool {
-    providers.group_of(account) == ProviderGroup::Internet
+pub fn listed(account: &Account, directory: &dyn Directory) -> bool {
+    directory.group_of(account) == ProviderGroup::Internet
+}
+
+/// The value a read of `key` answers, or `None` when `registry` holds no such row (an account
+/// that is gone, an expiry that does not apply, an app that is not there). The sign-in key rows
+/// are the person's clients file's, which the daemon reads.
+pub fn read(
+    key: &Key,
+    registry: &Registry,
+    used_by: &UsedBy,
+    directory: &dyn Directory,
+) -> Option<toml::Value> {
+    let account = |id: &AccountId| registry.accounts.iter().find(|a| a.id == *id);
+    match key {
+        Key::Account(id, row) => {
+            let account = account(id)?;
+            Some(row.0.read(account, &names_of(account, directory)))
+        }
+        Key::Expires(id) => expiry_text(account(id)?).map(toml::Value::String),
+        Key::UsedBy(id, n) => used_by
+            .get(id)
+            .and_then(|apps| apps.get(*n))
+            .map(|app| toml::Value::String(directory.app_title(app))),
+        Key::Client(_) | Key::ClientSecret(_) => None,
+    }
+}
+
+/// What the rows of `account` need to know of its provider.
+fn names_of<'a>(account: &'a Account, directory: &'a dyn Directory) -> Names<'a> {
+    Names {
+        provider_label: directory
+            .provider_label(&account.provider)
+            .unwrap_or_else(|| account.provider.as_str()),
+        group: directory.group_of(account),
+    }
 }
 
 /// The schema of the module for `registry`; `used_by` says which apps use which identity.
-pub(crate) fn schema(
-    registry: &Registry,
-    used_by: &UsedBy,
-    names: &AppNames,
-    providers: &ProviderNames,
-) -> LiveSchema {
+pub fn schema(registry: &Registry, used_by: &UsedBy, directory: &dyn Directory) -> LiveSchema {
     let mut key: Vec<KeySpec> = registry
         .accounts
         .iter()
-        .filter(|account| listed(account, providers))
+        .filter(|account| listed(account, directory))
         .flat_map(|account| {
             let apps = used_by.get(&account.id).map(Vec::as_slice).unwrap_or(&[]);
-            account_keys(account, apps, names, providers)
+            account_keys(account, apps, directory)
         })
         .collect();
     key.extend(ISSUERS.iter().flat_map(|issuer| {
         let name = sentence_case(word(issuer));
         let text = || KeyKind::Text;
         let empty = || toml::Value::String(String::new());
-        let id = spec(
+        let id = row(
             &Key::Client(*issuer),
             "Sign-in keys",
             format!("{name} sign-in key"),
@@ -396,7 +239,7 @@ pub(crate) fn schema(
             empty(),
         );
         let secret = SECRET_ISSUERS.contains(issuer).then(|| {
-            spec(
+            row(
                 &Key::ClientSecret(*issuer),
                 "Sign-in keys",
                 format!("{name} sign-in secret"),
@@ -426,7 +269,50 @@ fn client_help(issuer: Issuer) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{SIGN_IN, place_slug};
+    use ds_settings::schema::{ActionWeight, AgentSetting};
+    use porter_core::AuthKind;
     use porter_fake::{mail_account, storage_account};
+
+    /// A directory that knows no provider file and no app name: the id stands for the label and
+    /// the sign-in decides the group.
+    struct Plain;
+
+    impl Directory for Plain {
+        fn provider_label(&self, _: &ProviderId) -> Option<&str> {
+            None
+        }
+
+        fn group_of(&self, account: &Account) -> ProviderGroup {
+            let kinds: Vec<_> = account
+                .capabilities
+                .iter()
+                .map(|c| c.offer.kind())
+                .collect();
+            ProviderGroup::fallback(account.auth, &kinds)
+        }
+
+        fn app_title(&self, app: &AppName) -> String {
+            app.as_str().to_owned()
+        }
+    }
+
+    /// A directory that knows Fastmail, an Internet account provider.
+    struct Fastmail;
+
+    impl Directory for Fastmail {
+        fn provider_label(&self, provider: &ProviderId) -> Option<&str> {
+            (provider.as_str() == "fastmail").then_some("Fastmail")
+        }
+
+        fn group_of(&self, _: &Account) -> ProviderGroup {
+            ProviderGroup::Internet
+        }
+
+        fn app_title(&self, app: &AppName) -> String {
+            app.as_str().to_owned()
+        }
+    }
 
     fn registry() -> Registry {
         Registry {
@@ -445,23 +331,12 @@ mod tests {
     }
 
     fn rows(registry: &Registry) -> Vec<KeySpec> {
-        schema(
-            registry,
-            &no_apps(),
-            &AppNames::default(),
-            &ProviderNames::default(),
-        )
-        .key
+        schema(registry, &no_apps(), &Plain).key
     }
 
     #[test]
     fn every_key_is_under_accounts_and_hands_off_and_the_schema_checks() {
-        let schema = schema(
-            &registry(),
-            &no_apps(),
-            &AppNames::default(),
-            &ProviderNames::default(),
-        );
+        let schema = schema(&registry(), &no_apps(), &Plain);
         assert!(schema.check().is_ok());
         assert!(schema.key.iter().all(|k| k.path.0.starts_with("accounts.")));
         assert!(schema.key.iter().all(|k| k.agent == AgentSetting::HandsOff));
@@ -495,12 +370,7 @@ mod tests {
             storage.clone(),
             vec![app("org.example.Mail"), app("org.quire.Photos")],
         );
-        let schema = schema(
-            &registry,
-            &used,
-            &AppNames::default(),
-            &ProviderNames::default(),
-        );
+        let schema = schema(&registry, &used, &Plain);
         let used_rows: Vec<(String, String)> = schema
             .key
             .iter()
@@ -536,12 +406,7 @@ mod tests {
     #[test]
     fn every_account_says_how_it_signs_in_again_on_a_read_only_row() {
         let way_of = |account: &Account| {
-            let rows = account_keys(
-                account,
-                &[],
-                &AppNames::default(),
-                &ProviderNames::default(),
-            );
+            let rows = account_keys(account, &[], &Plain);
             let row = rows
                 .iter()
                 .find(|k| k.path.0 == format!("accounts.{}.sign_in", account.id))
@@ -561,7 +426,7 @@ mod tests {
         let id = &registry.accounts[1].id;
         assert_eq!(
             parse(&format!("accounts.{id}.sign_in"), &registry),
-            Some(Key::SignIn(id.clone()))
+            Some(Key::Account(id.clone(), SIGN_IN))
         );
     }
 
@@ -588,15 +453,8 @@ mod tests {
     #[test]
     fn an_account_says_its_provider_and_its_group_on_two_read_only_rows() {
         let mut account = storage_account();
-        account.provider = porter_core::ProviderId::parse("fastmail").expect("id");
-        let text = std::fs::read_to_string(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../providers/fastmail.toml"
-        ))
-        .expect("fastmail ships");
-        let known =
-            ProviderNames::from_specs(&[porter_provider::parse_provider(&text).expect("spec")]);
-        let rows = account_keys(&account, &[], &AppNames::default(), &known);
+        account.provider = ProviderId::parse("fastmail").expect("id");
+        let rows = account_keys(&account, &[], &Fastmail);
         let id = &account.id;
         assert_eq!(
             fixed_row(&rows, &format!("accounts.{id}.provider")),
@@ -620,7 +478,7 @@ mod tests {
         // No provider file: the id stands for the label and the sign-in decides the group.
         let mut agent = storage_account();
         agent.auth = AuthKind::AgentLogin;
-        let rows = account_keys(&agent, &[], &AppNames::default(), &ProviderNames::default());
+        let rows = account_keys(&agent, &[], &Plain);
         let id = &agent.id;
         let (group, _) = fixed_row(&rows, &format!("accounts.{id}.group"));
         assert_eq!(group, "agent");
@@ -652,12 +510,7 @@ mod tests {
             registry.accounts[0].id.clone(),
             vec![app("org.example.Mail")],
         );
-        let schema = schema(
-            &registry,
-            &used,
-            &AppNames::default(),
-            &ProviderNames::default(),
-        );
+        let schema = schema(&registry, &used, &Plain);
         for key in &schema.key {
             let mut texts = vec![key.label.0.clone(), key.help.0.clone()];
             texts.extend(key.labels.0.values().cloned());
@@ -684,12 +537,7 @@ mod tests {
     /// secret row is Google's only.
     #[test]
     fn google_has_a_sign_in_key_row_and_a_secret_row() {
-        let schema = schema(
-            &registry(),
-            &no_apps(),
-            &AppNames::default(),
-            &ProviderNames::default(),
-        );
+        let schema = schema(&registry(), &no_apps(), &Plain);
         let row = |path: &str| {
             schema
                 .key
@@ -739,12 +587,7 @@ mod tests {
         assert!(paths.contains(&"accounts.fake-mail.reauth"), "{paths:?}");
         let mut runtime = storage_account();
         runtime.auth = AuthKind::LocalRuntime;
-        let own = account_keys(
-            &runtime,
-            &[],
-            &AppNames::default(),
-            &ProviderNames::default(),
-        );
+        let own = account_keys(&runtime, &[], &Plain);
         assert!(!own.iter().any(|k| k.path.0.ends_with(".reauth")));
     }
 

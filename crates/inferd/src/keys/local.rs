@@ -55,17 +55,6 @@ impl<H: KeyHost> LocalKeys<H> {
     }
 }
 
-/// The word a state is told as.
-pub(crate) fn state_slug(state: AccountState) -> &'static str {
-    match state {
-        AccountState::Ok => "ok",
-        AccountState::NeedsReauth => "needs_reauth",
-        AccountState::Offline => "offline",
-        AccountState::Limited => "limited",
-        AccountState::NeedsLogin => "needs_login",
-    }
-}
-
 impl<H: KeyHost> Accountd for LocalKeys<H> {
     fn verdicts<'a>(
         &'a self,

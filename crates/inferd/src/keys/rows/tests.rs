@@ -37,15 +37,15 @@ fn every_row_path_reads_back_as_its_key_and_a_dotted_permit_id_is_found() {
     let id = registry.accounts[0].id.clone();
     let grant = GrantId::parse("g.1").expect("id");
     let keys = [
-        Key::State(id.clone()),
-        Key::Label(id.clone()),
-        Key::Place(id.clone()),
-        Key::SignIn(id.clone()),
-        Key::Provider(id.clone()),
-        Key::Group(id.clone()),
-        Key::Reauth(id.clone()),
+        Key::Account(id.clone(), porter_settings::STATE),
+        Key::Account(id.clone(), porter_settings::LABEL),
+        Key::Account(id.clone(), porter_settings::PLACE),
+        Key::Account(id.clone(), porter_settings::SIGN_IN),
+        Key::Account(id.clone(), porter_settings::PROVIDER),
+        Key::Account(id.clone(), porter_settings::GROUP),
+        Key::Account(id.clone(), porter_settings::REAUTH),
         Key::SignOut(id.clone()),
-        Key::Remove(id.clone()),
+        Key::Account(id.clone(), porter_settings::REMOVE),
         Key::Service(id.clone(), CapabilityKind::Llm),
         Key::Grant(id.clone(), grant.clone()),
         Key::Since(id.clone(), grant.clone()),

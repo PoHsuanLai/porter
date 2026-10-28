@@ -38,6 +38,7 @@ porter-secrets = { workspace = true, features = ["oo7"] }
 porter-service = { workspace = true }
 porter-service-core = { workspace = true }
 porter-service-accounts = { workspace = true }
+porter-settings = { workspace = true }
 porter-sheets = { workspace = true }
 porter-store = { workspace = true }
 porter-discover = { workspace = true }

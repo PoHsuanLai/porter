@@ -27,6 +27,7 @@ porter-service = { workspace = true }
 porter-service-core = { workspace = true }
 porter-identities = { workspace = true }
 porter-spaces = { workspace = true }
+porter-settings = { workspace = true }
 porter-sheets = { workspace = true }
 porter-store = { workspace = true }
 porter-tailscale = { workspace = true, features = ["io"] }

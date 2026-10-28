@@ -61,7 +61,6 @@
 mod account;
 mod audit;
 mod callers;
-mod client_rows;
 mod core;
 pub mod daemon;
 mod errors;
@@ -76,7 +75,6 @@ mod publish;
 mod request;
 mod roster;
 mod settings;
-mod settings_keys;
 mod spaces_object;
 mod state;
 mod store;

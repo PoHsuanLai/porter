@@ -28,6 +28,7 @@ dependencies = [
  "porter-secrets",
  "porter-service",
  "porter-service-core",
+ "porter-settings",
  "porter-sheet",
  "porter-sheets",
  "porter-spaces",
@@ -1611,6 +1612,7 @@ dependencies = [
  "porter-service",
  "porter-service-accounts",
  "porter-service-core",
+ "porter-settings",
  "porter-sheet",
  "porter-sheets",
  "porter-store",
@@ -3212,6 +3214,20 @@ dependencies = [
  "porter-service-accounts",
  "porter-service-core",
  "porter-wire",
+]
+
+[[package]]
+name = "porter-settings"
+version = "0.1.0"
+dependencies = [
+ "ds-settings",
+ "porter-core",
+ "porter-fake",
+ "porter-ids",
+ "porter-provider",
+ "porter-service-core",
+ "porter-sheet",
+ "toml",
 ]
 
 [[package]]

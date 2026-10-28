@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Capability kinds are written once
+
+- `capability_kinds!` in porter-capability is the one list of kinds. `Capability`,
+  `CapabilityKind` (with `ALL`, `name` and `is_ai`), porter-match's `Need`, the dispatch that
+  meets a need with an offer and the `Service` type of each kind (`porter_capability::service::*`,
+  with `Asks` in porter-match for its need) are expanded from it; a new kind is one row, its
+  capability struct and its need struct. Each need says how it meets its capability by
+  `Wants<C>::short_of`, and `Shortfall` is unchanged. The serde forms are unchanged and pinned by
+  a test. `porter_sheet::words::service_name(kind)` is `kind.name()`.
+
+### Settings rows are written once
+
+- New crate porter-settings: `AccountRow` and one unit struct per row every account has, which
+  accountd and inferd list their accounts through in place of two copies of the same eight
+  `Key` variants. accountd's keys (`Key`, `parse`, `path`, `schema`) and the edit of
+  `clients.toml` moved there from accountd; the daemon hosts the module. The row paths and words
+  are unchanged.
+
 ### The service is a facade over domains
 
 - porter-service is split. New crates: porter-service-core (`Ctx<E: Ports>`, the registry, the
