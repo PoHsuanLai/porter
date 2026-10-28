@@ -1,7 +1,7 @@
 //! An in-memory store: never the user's keyring, never on disk. Tests and porter-fake.
 
 use crate::error::SecretsError;
-use crate::secrets::{PutOutcome, Secrets};
+use crate::secrets::Secrets;
 use porter_core::AccountId;
 use porter_core::{Credential, SecretKey};
 use std::collections::HashMap;
@@ -33,13 +33,13 @@ impl Secrets for MemorySecrets {
         &self,
         key: &SecretKey,
         value: &Credential,
-    ) -> Result<PutOutcome, SecretsError> {
+    ) -> Result<bool, SecretsError> {
         // One lock for the check and the insert: atomic.
         match self.entries().entry(key.clone()) {
-            Entry::Occupied(_) => Ok(PutOutcome::AlreadyThere),
+            Entry::Occupied(_) => Ok(false),
             Entry::Vacant(slot) => {
                 slot.insert(value.clone());
-                Ok(PutOutcome::Stored)
+                Ok(true)
             }
         }
     }

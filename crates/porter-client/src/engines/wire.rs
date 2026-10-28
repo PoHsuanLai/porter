@@ -28,20 +28,13 @@ const TIMEOUTS: Timeouts = Timeouts {
     idle: WaitMs(90_000),
 };
 
-/// Whether the body keeps the `temperature` the codec writes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Temperature {
-    /// The app chose a sampling: send it.
-    Sent,
-    /// The app left it to the engine: send none.
-    EngineDefault,
-}
-
 /// One turn's connection, its body shaped.
 #[derive(Debug, Clone)]
 pub(crate) struct Shaped {
     client: HttpClient,
-    temperature: Temperature,
+    /// Whether the body keeps the `temperature` the codec writes: the app chose a sampling.
+    /// When it did not, the engine's own default applies and none is sent.
+    keep_temperature: bool,
 }
 
 impl Transport for Shaped {
@@ -54,7 +47,7 @@ impl Transport for Shaped {
             body: ex
                 .body
                 .as_ref()
-                .map(|body| JsonBody(shape(self.temperature, &body.0))),
+                .map(|body| JsonBody(shape(self.keep_temperature, &body.0))),
             ..ex.clone()
         };
         let client = self.client.clone();
@@ -62,11 +55,11 @@ impl Transport for Shaped {
     }
 }
 
-/// `body` (a JSON object as text) with `temperature` taken out when it is the engine's to
-/// choose; a body that is not an object is returned as it came.
-pub(crate) fn shape(temperature: Temperature, body: &str) -> String {
-    match (temperature, serde_json::from_str::<Value>(body)) {
-        (Temperature::EngineDefault, Ok(Value::Object(mut fields))) => {
+/// `body` (a JSON object as text) with `temperature` taken out unless `keep_temperature`, which
+/// leaves it to the engine to choose; a body that is not an object is returned as it came.
+pub(crate) fn shape(keep_temperature: bool, body: &str) -> String {
+    match (keep_temperature, serde_json::from_str::<Value>(body)) {
+        (false, Ok(Value::Object(mut fields))) => {
             fields.remove("temperature");
             Value::Object(fields).to_string()
         }
@@ -105,11 +98,11 @@ fn endpoint(engine: &Engine, key: Option<&SecretText>) -> HttpEndpoint {
 pub(crate) fn provider(
     engine: &Engine,
     key: Option<&SecretText>,
-    temperature: Temperature,
+    keep_temperature: bool,
 ) -> Retrying<Driver<OpenAiCodec, Shaped>, TokioSleep> {
     let shaped = Shaped {
         client: HttpClient::new(endpoint(engine, key)),
-        temperature,
+        keep_temperature,
     };
     Retrying::new(
         Driver::new(OpenAiCodec::new(engine.dialect.flavor()), shaped),

@@ -5,16 +5,6 @@ use porter_core::AccountId;
 use porter_core::{Credential, SecretKey};
 use std::future::Future;
 
-/// What [`Secrets::put_if_absent`] did.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PutOutcome {
-    /// Nothing was filed under the key, and now the value is.
-    Stored,
-    /// Something was already filed under the key (even an item that does not decode); it is
-    /// untouched and the value was not stored.
-    AlreadyThere,
-}
-
 /// A store of credentials, filed by [`SecretKey`].
 pub trait Secrets: Send + Sync {
     /// Files `value` under `key`, replacing what was there.
@@ -24,13 +14,15 @@ pub trait Secrets: Send + Sync {
         value: &Credential,
     ) -> impl Future<Output = Result<(), SecretsError>> + Send;
 
-    /// Files `value` under `key` only when nothing is filed there; an existing item is never
-    /// replaced. Atomic where the backend allows: [`crate::MemorySecrets`] under its lock, the
+    /// Files `value` under `key` only when nothing is filed there; an existing item (even one that
+    /// does not decode) is never replaced. It answers whether it stored the value: `true` when
+    /// nothing was filed under the key and now the value is, `false` when something already was
+    /// and is untouched. Atomic where the backend allows: [`crate::MemorySecrets`] under its lock, the
     /// oo7 file backend under its keyring lock (against every user of the same open keyring in
     /// this process, not against another process or the Secret Service daemon's other clients),
     /// and, at best, read-then-write elsewhere: a second writer can slip in between the read
     /// and the write, and the keyring-core store has a window of one thread job. A caller that
-    /// must not lose a value to such a race reads the key again after `Stored`.
+    /// must not lose a value to such a race reads the key again after a `true`.
     ///
     /// The default body is that read-then-write over [`Secrets::get`] and [`Secrets::put`], so a
     /// store written before this method existed keeps compiling; a store with a better primitive
@@ -40,13 +32,11 @@ pub trait Secrets: Send + Sync {
         &self,
         key: &SecretKey,
         value: &Credential,
-    ) -> impl Future<Output = Result<PutOutcome, SecretsError>> + Send {
+    ) -> impl Future<Output = Result<bool, SecretsError>> + Send {
         async move {
             match self.get(key).await {
-                Ok(_) | Err(SecretsError::Unreadable) => Ok(PutOutcome::AlreadyThere),
-                Err(SecretsError::Missing) => {
-                    self.put(key, value).await.map(|()| PutOutcome::Stored)
-                }
+                Ok(_) | Err(SecretsError::Unreadable) => Ok(false),
+                Err(SecretsError::Missing) => self.put(key, value).await.map(|()| true),
                 Err(other) => Err(other),
             }
         }

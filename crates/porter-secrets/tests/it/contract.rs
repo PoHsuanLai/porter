@@ -5,7 +5,7 @@
 use porter_capability::CapabilityKind;
 use porter_core::AccountId;
 use porter_core::{Credential, SecretKey, SecretPurpose, SecretText};
-use porter_secrets::{MemorySecrets, Namespace, PutOutcome, Secrets, SecretsError, StoreSecrets};
+use porter_secrets::{MemorySecrets, Namespace, Secrets, SecretsError, StoreSecrets};
 use std::sync::Arc;
 
 fn key(account: &str, purpose: SecretPurpose) -> SecretKey {
@@ -56,11 +56,11 @@ async fn contract<F: Fixture>(fixture: F) {
     let fresh = key("fresh", SecretPurpose::Password);
     assert_eq!(
         store.put_if_absent(&fresh, &password("first")).await,
-        Ok(PutOutcome::Stored)
+        Ok(true)
     );
     assert_eq!(
         store.put_if_absent(&fresh, &password("second")).await,
-        Ok(PutOutcome::AlreadyThere)
+        Ok(false)
     );
     assert_eq!(store.get(&fresh).await, Ok(password("first")));
     // Present under another purpose or account is not present under this one.
@@ -69,13 +69,13 @@ async fn contract<F: Fixture>(fixture: F) {
         store
             .put_if_absent(&sibling, &Credential::ApiKey(SecretText::new("k2")))
             .await,
-        Ok(PutOutcome::Stored)
+        Ok(true)
     );
     // After a delete it is absent again.
     store.delete(&fresh).await.expect("delete");
     assert_eq!(
         store.put_if_absent(&fresh, &password("third")).await,
-        Ok(PutOutcome::Stored)
+        Ok(true)
     );
     assert_eq!(store.get(&fresh).await, Ok(password("third")));
     // Two racing callers: exactly one stores.
@@ -86,14 +86,7 @@ async fn contract<F: Fixture>(fixture: F) {
         store.put_if_absent(&raced, &two)
     );
     let outcomes = [a.expect("a"), b.expect("b")];
-    assert_eq!(
-        outcomes
-            .iter()
-            .filter(|o| **o == PutOutcome::Stored)
-            .count(),
-        1,
-        "{outcomes:?}"
-    );
+    assert_eq!(outcomes.iter().filter(|o| **o).count(), 1, "{outcomes:?}");
     store.delete_account(&fresh.account).await.expect("wipe");
     store.delete_account(&raced.account).await.expect("wipe");
 
@@ -277,10 +270,7 @@ async fn namespaces_keep_their_items_apart() {
     let filed = key("cloud", SecretPurpose::Password);
     porter.put(&filed, &password("a")).await.expect("put");
     assert_eq!(mailo.get(&filed).await, Err(SecretsError::Missing));
-    assert_eq!(
-        mailo.put_if_absent(&filed, &password("b")).await,
-        Ok(PutOutcome::Stored)
-    );
+    assert_eq!(mailo.put_if_absent(&filed, &password("b")).await, Ok(true));
     assert_eq!(porter.get(&filed).await, Ok(password("a")));
     assert_eq!(mailo.get(&filed).await, Ok(password("b")));
     let entry = |service: &str| {
@@ -313,12 +303,12 @@ async fn the_platform_store_is_the_default_store_once_one_is_set() {
     // put_if_absent is forwarded to the store's own, not left to the default body.
     assert_eq!(
         KeyringSecrets.put_if_absent(&filed, &password("q")).await,
-        Ok(PutOutcome::AlreadyThere)
+        Ok(false)
     );
     let fresh = key("forwarded", SecretPurpose::Password);
     assert_eq!(
         KeyringSecrets.put_if_absent(&fresh, &password("a")).await,
-        Ok(PutOutcome::Stored)
+        Ok(true)
     );
     KeyringSecrets
         .delete_account(&fresh.account)
@@ -491,14 +481,8 @@ impl Secrets for Plain {
 async fn the_default_put_if_absent_reads_then_writes_and_a_locked_read_writes_nothing() {
     let store = Plain(MemorySecrets::default(), false.into());
     let k = key("plain", SecretPurpose::Password);
-    assert_eq!(
-        store.put_if_absent(&k, &password("one")).await,
-        Ok(PutOutcome::Stored)
-    );
-    assert_eq!(
-        store.put_if_absent(&k, &password("two")).await,
-        Ok(PutOutcome::AlreadyThere)
-    );
+    assert_eq!(store.put_if_absent(&k, &password("one")).await, Ok(true));
+    assert_eq!(store.put_if_absent(&k, &password("two")).await, Ok(false));
     assert_eq!(store.get(&k).await, Ok(password("one")));
     let other = key("plain2", SecretPurpose::Password);
     store.1.store(true, std::sync::atomic::Ordering::SeqCst);

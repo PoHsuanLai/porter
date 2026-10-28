@@ -4,7 +4,7 @@
 
 use porter_core::AccountId;
 use porter_core::{Credential, SecretKey, SecretPurpose, SecretText};
-use porter_secrets::{FileSecrets, FileSecretsError, Namespace, PutOutcome, Secrets, SecretsError};
+use porter_secrets::{FileSecrets, FileSecretsError, Namespace, Secrets, SecretsError};
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 use test_kit::Scratch;
@@ -197,7 +197,7 @@ async fn concurrent_writers_are_serialised_and_none_loses_an_update() {
     }
     let mut stored = 0;
     for task in tasks {
-        stored += usize::from(task.await.expect("task") == PutOutcome::Stored);
+        stored += usize::from(task.await.expect("task"));
     }
     assert_eq!(stored, 1, "exactly one put_if_absent stored");
     for n in 0..24 {

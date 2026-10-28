@@ -15,7 +15,7 @@
 use crate::attributes::attributes_in;
 use crate::error::SecretsError;
 use crate::namespace::Namespace;
-use crate::secrets::{PutOutcome, Secrets};
+use crate::secrets::Secrets;
 use porter_core::AccountId;
 use porter_core::{Credential, SecretKey};
 use porter_fs::atomic::AtomicWrite;
@@ -68,13 +68,6 @@ impl From<FileSecretsError> for SecretsError {
             | FileSecretsError::Io(_) => SecretsError::Unavailable,
         }
     }
-}
-
-/// Whether a use changed the document, so it must be written back.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Change {
-    Kept,
-    Changed,
 }
 
 /// One filed item.
@@ -174,7 +167,7 @@ impl FileSecrets {
         if !store.path.is_absolute() {
             return Err(FileSecretsError::NotAbsolute);
         }
-        store.update(|_| ((), Change::Kept))?;
+        store.update(|_| ((), false))?;
         Ok(store)
     }
 
@@ -194,10 +187,11 @@ impl FileSecrets {
         PathBuf::from(name)
     }
 
-    /// Runs `change` over the items under the exclusive lock, writing them back if it says so.
+    /// Runs `change` over the items under the exclusive lock, writing them back if it answers
+    /// `true` as the second half: that it changed them.
     fn update<R>(
         &self,
-        change: impl FnOnce(&mut Vec<Item>) -> (R, Change),
+        change: impl FnOnce(&mut Vec<Item>) -> (R, bool),
     ) -> Result<R, FileSecretsError> {
         if let Some(dir) = self.path.parent() {
             std::fs::create_dir_all(dir)?;
@@ -210,7 +204,7 @@ impl FileSecrets {
         // The lock is released when `lock` drops, on every path out.
         let mut items = self.read()?;
         let (out, changed) = change(&mut items);
-        if changed == Change::Changed {
+        if changed {
             self.write(&render(&items))?;
         }
         Ok(out)
@@ -263,7 +257,7 @@ impl Secrets for FileSecrets {
         Ok(self.update(|items| {
             items.retain(|item| !item.is(namespace, key));
             items.push(Item::new(namespace, key, credential));
-            ((), Change::Changed)
+            ((), true)
         })?)
     }
 
@@ -271,15 +265,15 @@ impl Secrets for FileSecrets {
         &self,
         key: &SecretKey,
         value: &Credential,
-    ) -> Result<PutOutcome, SecretsError> {
+    ) -> Result<bool, SecretsError> {
         let credential = serde_json::to_value(value).map_err(|_| SecretsError::Unreadable)?;
         let namespace = &self.namespace;
         Ok(self.update(|items| {
             if items.iter().any(|item| item.is(namespace, key)) {
-                return (PutOutcome::AlreadyThere, Change::Kept);
+                return (false, false);
             }
             items.push(Item::new(namespace, key, credential));
-            (PutOutcome::Stored, Change::Changed)
+            (true, true)
         })?)
     }
 
@@ -288,7 +282,7 @@ impl Secrets for FileSecrets {
         let found = self.update(|items| {
             (
                 items.iter().find(|item| item.is(namespace, key)).cloned(),
-                Change::Kept,
+                false,
             )
         })?;
         let item = found.ok_or(SecretsError::Missing)?;
@@ -300,7 +294,7 @@ impl Secrets for FileSecrets {
         Ok(self.update(|items| {
             let before = items.len();
             items.retain(|item| !item.is(namespace, key));
-            ((), changed_if(items.len() != before))
+            ((), items.len() != before)
         })?)
     }
 
@@ -310,11 +304,7 @@ impl Secrets for FileSecrets {
         Ok(self.update(|items| {
             let before = items.len();
             items.retain(|item| !(item.service == service && item.account == account));
-            ((), changed_if(items.len() != before))
+            ((), items.len() != before)
         })?)
     }
-}
-
-fn changed_if(did: bool) -> Change {
-    if did { Change::Changed } else { Change::Kept }
 }

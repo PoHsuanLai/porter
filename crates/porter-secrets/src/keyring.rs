@@ -23,7 +23,7 @@ mod thread;
 use crate::attributes::attributes;
 use crate::error::SecretsError;
 use crate::namespace::Namespace;
-use crate::secrets::{PutOutcome, Secrets};
+use crate::secrets::Secrets;
 use keyring_chunked::{ChunkedStore, Limit};
 use keyring_core::api::CredentialStoreApi;
 use keyring_core::{CredentialStore, Error};
@@ -249,18 +249,14 @@ impl StoreSecrets {
     /// Read, then write, in one thread job. A keyring-core store has no create-if-missing, so
     /// another process (or another `StoreSecrets` on the same store) can file the key between
     /// the two; within one process the mutex below serialises the callers of this method.
-    fn put_if_absent_now(
-        &self,
-        key: &SecretKey,
-        value: &Credential,
-    ) -> Result<PutOutcome, SecretsError> {
+    fn put_if_absent_now(&self, key: &SecretKey, value: &Credential) -> Result<bool, SecretsError> {
         static GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
         let _held = GUARD
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         match self.read(&entry_name(key))? {
-            Some(_) => Ok(PutOutcome::AlreadyThere),
-            None => self.put_now(key, value).map(|()| PutOutcome::Stored),
+            Some(_) => Ok(false),
+            None => self.put_now(key, value).map(|()| true),
         }
     }
 
@@ -298,7 +294,7 @@ impl Secrets for StoreSecrets {
         &self,
         key: &SecretKey,
         value: &Credential,
-    ) -> Result<PutOutcome, SecretsError> {
+    ) -> Result<bool, SecretsError> {
         let (this, key, value) = (self.clone(), key.clone(), value.clone());
         off_thread(move || this.put_if_absent_now(&key, &value)).await?
     }
@@ -332,7 +328,7 @@ impl Secrets for KeyringSecrets {
         &self,
         key: &SecretKey,
         value: &Credential,
-    ) -> Result<PutOutcome, SecretsError> {
+    ) -> Result<bool, SecretsError> {
         resolve(&Namespace::PORTER)?.put_if_absent(key, value).await
     }
 
@@ -358,7 +354,7 @@ impl Secrets for KeyringNamedSecrets {
         &self,
         key: &SecretKey,
         value: &Credential,
-    ) -> Result<PutOutcome, SecretsError> {
+    ) -> Result<bool, SecretsError> {
         resolve(&self.namespace)?.put_if_absent(key, value).await
     }
 

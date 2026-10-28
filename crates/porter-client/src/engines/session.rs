@@ -46,20 +46,14 @@ impl Drop for Turn {
     }
 }
 
-/// Whether the `Routed` event has gone out.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum RoutedNote {
-    Pending,
-    Sent,
-}
-
 /// A streaming session over the engines of an [`EngineHost`](super::EngineHost).
 #[derive(Debug)]
 pub struct EngineSession<K> {
     keys: Arc<K>,
     class: DataClass,
     phase: Phase,
-    routed: RoutedNote,
+    /// Whether the `Routed` event has gone out.
+    routed: bool,
     /// The session's own events (`Routed`, a refusal of a request, `Cancelled`); a turn's are on
     /// its own channel.
     events: UnboundedSender<InferEvent>,
@@ -81,7 +75,7 @@ impl<K: KeySource + 'static> EngineSession<K> {
             keys,
             class,
             phase,
-            routed: RoutedNote::Pending,
+            routed: false,
             events,
             inbox,
         }
@@ -122,8 +116,8 @@ impl<K: KeySource + 'static> EngineSession<K> {
 
     /// Starts the turn for `request`, or answers at once when the session may not carry it.
     fn start(&mut self, pinned: Pinned, request: InferRequest, frames: Frames) -> Phase {
-        if self.routed == RoutedNote::Pending {
-            self.routed = RoutedNote::Sent;
+        if !self.routed {
+            self.routed = true;
             let _ = self.events.send(InferEvent::Routed(pinned.served.clone()));
         }
         if class_of(&request).is_some_and(|class| class != self.class) {

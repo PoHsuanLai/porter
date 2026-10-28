@@ -21,7 +21,7 @@ use porter_fake::{
 };
 use porter_families::set::ProviderNames;
 use porter_ids::clock::FixedClock;
-use porter_secrets::{MemorySecrets, PutOutcome, Secrets, SecretsError};
+use porter_secrets::{MemorySecrets, Secrets, SecretsError};
 use porter_service::audit::AuditEvent;
 use porter_service::{AccountService, Registry};
 use porter_wire::ParentWindow;
@@ -43,7 +43,7 @@ impl Secrets for Shared {
         &self,
         key: &SecretKey,
         value: &Credential,
-    ) -> Result<PutOutcome, SecretsError> {
+    ) -> Result<bool, SecretsError> {
         self.0.put_if_absent(key, value).await
     }
 

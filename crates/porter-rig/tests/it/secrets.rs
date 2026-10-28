@@ -11,7 +11,7 @@ use common::bus::PrivateBus;
 use porter_core::AccountId;
 use porter_core::{Credential, SecretKey, SecretPurpose, SecretText};
 use porter_ids::UnixSeconds;
-use porter_secrets::{Oo7Secrets, PutOutcome, Secrets, SecretsError};
+use porter_secrets::{Oo7Secrets, Secrets, SecretsError};
 use std::process::{Command, Stdio};
 use test_kit::Scratch;
 
@@ -55,7 +55,7 @@ async fn oo7_child() {
         store
             .put_if_absent(&one, &credential("RIG-REFRESH-2"))
             .await,
-        Ok(PutOutcome::AlreadyThere)
+        Ok(false)
     );
     assert_eq!(
         store.get(&one).await.expect("get"),
@@ -74,7 +74,7 @@ async fn oo7_child() {
         store
             .put_if_absent(&two, &credential("RIG-REFRESH-4"))
             .await,
-        Ok(PutOutcome::Stored)
+        Ok(true)
     );
     store.delete(&one).await.expect("delete");
     assert_eq!(store.get(&one).await, Err(SecretsError::Missing));

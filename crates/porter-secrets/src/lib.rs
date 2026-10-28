@@ -61,4 +61,4 @@ pub use namespace::{Namespace, NamespaceError};
 pub use oo7::{Oo7KeyringSecrets, Oo7NamedSecrets, Oo7Secrets};
 #[cfg(any(target_os = "linux", target_os = "android"))]
 pub use sealed::sealed_key;
-pub use secrets::{PutOutcome, Secrets};
+pub use secrets::Secrets;

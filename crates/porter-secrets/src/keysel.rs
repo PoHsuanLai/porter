@@ -12,7 +12,7 @@
 //! The module is built with the `oo7` feature (the Secret Service store); the key file arm
 //! needs `test-keys` on a unix target as well.
 
-use crate::{Namespace, Oo7NamedSecrets, Oo7Secrets, PutOutcome, Secrets, SecretsError};
+use crate::{Namespace, Oo7NamedSecrets, Oo7Secrets, Secrets, SecretsError};
 use porter_core::AccountId;
 use porter_core::{Credential, SecretKey};
 use std::path::PathBuf;
@@ -172,7 +172,7 @@ impl Secrets for AnyKeys {
         &self,
         key: &SecretKey,
         value: &Credential,
-    ) -> Result<PutOutcome, SecretsError> {
+    ) -> Result<bool, SecretsError> {
         match self {
             Self::Oo7(keys) => keys.put_if_absent(key, value).await,
             #[cfg(all(feature = "test-keys", unix))]
