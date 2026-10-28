@@ -1,0 +1,214 @@
+accounts.a-key.label | Fake Runtime on this computer | Account |  | fixed Fake Runtime on this computer | "Fake Runtime on this computer" | basic | 
+accounts.a-key.place | Fake Runtime on this computer | Where |  | fixed elsewhere | "elsewhere" | basic | 
+accounts.a-key.state | Fake Runtime on this computer | Status |  | fixed ok | "ok" | basic | 
+accounts.a-key.sign_in | Fake Runtime on this computer | Signs in |  | fixed key | "key" | basic | 
+accounts.a-key.provider | Fake Runtime on this computer | Account type |  | fixed fake-llm | "fake-llm" | basic | fake-llm=fake-llm
+accounts.a-key.group | Fake Runtime on this computer | Listed under |  | fixed intelligence | "intelligence" | basic | agent=Assistants, intelligence=Intelligence, internet=Internet Accounts
+accounts.a-key.service.llm | Fake Runtime on this computer | Language model | Whether apps may use this service of the account. | toggle on/off | "on" | basic | 
+accounts.a-key.service.embeddings | Fake Runtime on this computer | Search by meaning | Whether apps may use this service of the account. | toggle on/off | "on" | basic | 
+accounts.a-key.grant.g.1 | Fake Runtime on this computer | ORG.QUIRE.COMPANION can use Language model | Revoking asks the app again the next time it needs the account. | action Revoke plain | false | basic | 
+accounts.a-key.grant.g.1.since | Fake Runtime on this computer | Since |  | fixed 1970-01-01 | "1970-01-01" | basic | 
+accounts.a-key.grant.g.1.scope | Fake Runtime on this computer | Lasts |  | fixed always | "always" | basic | always=Always, once=Once, session=This session only
+accounts.a-key.grant.g.1.app | Fake Runtime on this computer | App |  | fixed org.quire.Companion | "org.quire.Companion" | basic | org.quire.Companion=ORG.QUIRE.COMPANION
+accounts.a-key.grant.g.1.service | Fake Runtime on this computer | Service |  | fixed llm | "llm" | basic | llm=Language model
+accounts.a-key.grant.g2 | Fake Runtime on this computer | ORG.EXAMPLE.MAIL can't use Language model | Revoking asks the app again the next time it needs the account. | action Revoke plain | false | basic | 
+accounts.a-key.grant.g2.since | Fake Runtime on this computer | Since |  | fixed 2026-09-22 | "2026-09-22" | basic | 
+accounts.a-key.grant.g2.scope | Fake Runtime on this computer | Lasts |  | fixed once | "once" | basic | always=Always, once=Once, session=This session only
+accounts.a-key.grant.g2.app | Fake Runtime on this computer | App |  | fixed org.example.Mail | "org.example.Mail" | basic | org.example.Mail=ORG.EXAMPLE.MAIL
+accounts.a-key.grant.g2.service | Fake Runtime on this computer | Service |  | fixed llm | "llm" | basic | llm=Language model
+accounts.a-key.reauth | Fake Runtime on this computer | Sign in again |  | action Sign in again plain | false | basic | 
+accounts.a-key.remove | Fake Runtime on this computer | Remove account | Deletes the account's stored key and every permission given for it. | action Remove account destructive | false | basic | 
+accounts.an-agent.label | ada@cloud.invalid | Account |  | fixed ada@cloud.invalid | "ada@cloud.invalid" | basic | 
+accounts.an-agent.place | ada@cloud.invalid | Where |  | fixed elsewhere | "elsewhere" | basic | 
+accounts.an-agent.state | ada@cloud.invalid | Status |  | fixed ok | "ok" | basic | 
+accounts.an-agent.sign_in | ada@cloud.invalid | Signs in |  | fixed agent | "agent" | basic | 
+accounts.an-agent.provider | ada@cloud.invalid | Account type |  | fixed fake-cloud | "fake-cloud" | basic | fake-cloud=fake-cloud
+accounts.an-agent.group | ada@cloud.invalid | Listed under |  | fixed agent | "agent" | basic | agent=Assistants, intelligence=Intelligence, internet=Internet Accounts
+accounts.an-agent.service.agent | ada@cloud.invalid | Assistant | Whether apps may use this service of the account. | toggle on/off | "on" | basic | 
+accounts.an-agent.grant.g3 | ada@cloud.invalid | ORG.QUIRE.COMPANION can use Assistant (this session) | Revoking asks the app again the next time it needs the account. | action Revoke plain | false | basic | 
+accounts.an-agent.grant.g3.since | ada@cloud.invalid | Since |  | fixed 1970-01-02 | "1970-01-02" | basic | 
+accounts.an-agent.grant.g3.scope | ada@cloud.invalid | Lasts |  | fixed session | "session" | basic | always=Always, once=Once, session=This session only
+accounts.an-agent.grant.g3.app | ada@cloud.invalid | App |  | fixed org.quire.Companion | "org.quire.Companion" | basic | org.quire.Companion=ORG.QUIRE.COMPANION
+accounts.an-agent.grant.g3.service | ada@cloud.invalid | Service |  | fixed agent | "agent" | basic | agent=Assistant
+accounts.an-agent.sign_out | ada@cloud.invalid | Sign out | Asks the assistant to sign itself out when it is running; otherwise it only forgets here that it was signed in, and the assistant's own login is not touched. | action Sign out plain | false | basic | 
+accounts.an-agent.remove | ada@cloud.invalid | Remove account | Deletes the account's stored key and every permission given for it. | action Remove account destructive | false | basic | 
+accounts.an-agent-out.label | ada@cloud.invalid | Account |  | fixed ada@cloud.invalid | "ada@cloud.invalid" | basic | 
+accounts.an-agent-out.place | ada@cloud.invalid | Where |  | fixed elsewhere | "elsewhere" | basic | 
+accounts.an-agent-out.state | ada@cloud.invalid | Status |  | fixed needs_login | "needs_login" | basic | 
+accounts.an-agent-out.sign_in | ada@cloud.invalid | Signs in |  | fixed agent | "agent" | basic | 
+accounts.an-agent-out.provider | ada@cloud.invalid | Account type |  | fixed fake-cloud | "fake-cloud" | basic | fake-cloud=fake-cloud
+accounts.an-agent-out.group | ada@cloud.invalid | Listed under |  | fixed agent | "agent" | basic | agent=Assistants, intelligence=Intelligence, internet=Internet Accounts
+accounts.an-agent-out.service.agent | ada@cloud.invalid | Assistant | Whether apps may use this service of the account. | toggle on/off | "on" | basic | 
+accounts.an-agent-out.reauth | ada@cloud.invalid | Sign in | Asks the assistant to sign itself in, which needs its app to be running. | action Sign in plain | false | basic | 
+accounts.an-agent-out.remove | ada@cloud.invalid | Remove account | Deletes the account's stored key and every permission given for it. | action Remove account destructive | false | basic | 
+accounts.a-runtime.label | Fake Runtime on this computer | Account |  | fixed Fake Runtime on this computer | "Fake Runtime on this computer" | basic | 
+accounts.a-runtime.place | Fake Runtime on this computer | Where |  | fixed this_computer | "this_computer" | basic | 
+accounts.a-runtime.state | Fake Runtime on this computer | Status |  | fixed ok | "ok" | basic | 
+accounts.a-runtime.sign_in | Fake Runtime on this computer | Signs in |  | fixed nothing | "nothing" | basic | 
+accounts.a-runtime.provider | Fake Runtime on this computer | Account type |  | fixed fake-llm | "fake-llm" | basic | fake-llm=fake-llm
+accounts.a-runtime.group | Fake Runtime on this computer | Listed under |  | fixed intelligence | "intelligence" | basic | agent=Assistants, intelligence=Intelligence, internet=Internet Accounts
+accounts.a-runtime.service.llm | Fake Runtime on this computer | Language model | Whether apps may use this service of the account. | toggle on/off | "on" | basic | 
+accounts.a-runtime.remove | Fake Runtime on this computer | Remove account | Deletes the account's stored key and every permission given for it. | action Remove account destructive | false | basic | 
+accounts.a-tailscale.label | ada@cloud.invalid | Account |  | fixed ada@cloud.invalid | "ada@cloud.invalid" | basic | 
+accounts.a-tailscale.place | ada@cloud.invalid | Where |  | fixed elsewhere | "elsewhere" | basic | 
+accounts.a-tailscale.state | ada@cloud.invalid | Status |  | fixed needs_login | "needs_login" | basic | 
+accounts.a-tailscale.sign_in | ada@cloud.invalid | Signs in |  | fixed outside | "outside" | basic | 
+accounts.a-tailscale.provider | ada@cloud.invalid | Account type |  | fixed fake-cloud | "fake-cloud" | basic | fake-cloud=fake-cloud
+accounts.a-tailscale.group | ada@cloud.invalid | Listed under |  | fixed internet | "internet" | basic | agent=Assistants, intelligence=Intelligence, internet=Internet Accounts
+accounts.a-tailscale.reauth | ada@cloud.invalid | Sign in | Opens Tailscale's own sign-in page. Your Tailscale password is never seen here. | action Sign in plain | false | basic | 
+accounts.a-tailscale.remove | ada@cloud.invalid | Remove account | Takes this account out of this computer's accounts. It does not sign Tailscale out. | action Remove account destructive | false | basic | 
+accounts.fake-mail.label | ada@mail.invalid | Account |  | fixed ada@mail.invalid | "ada@mail.invalid" | basic | 
+accounts.fake-mail.place | ada@mail.invalid | Where |  | fixed elsewhere | "elsewhere" | basic | 
+accounts.fake-mail.state | ada@mail.invalid | Status |  | fixed ok | "ok" | basic | 
+accounts.fake-mail.sign_in | ada@mail.invalid | Signs in |  | fixed browser | "browser" | basic | 
+accounts.fake-mail.provider | ada@mail.invalid | Account type |  | fixed fastmail | "fastmail" | basic | fastmail=Fastmail
+accounts.fake-mail.group | ada@mail.invalid | Listed under |  | fixed internet | "internet" | basic | agent=Assistants, intelligence=Intelligence, internet=Internet Accounts
+accounts.fake-mail.expires | ada@mail.invalid | Sign-in | Google ends the sign-ins of an app that is not verified yet after 7 days; signing in again starts another 7. | fixed Google signs this account out on 2023-11-21 | "Google signs this account out on 2023-11-21" | basic | 
+accounts.fake-mail.used_by.0 | ada@mail.invalid | Used by |  | fixed ORG.EXAMPLE.MAIL | "ORG.EXAMPLE.MAIL" | basic | 
+accounts.fake-mail.used_by.1 | ada@mail.invalid | Used by |  | fixed ORG.QUIRE.PHOTOS | "ORG.QUIRE.PHOTOS" | basic | 
+accounts.fake-mail.reauth | ada@mail.invalid | Sign in again |  | action Sign in again plain | false | basic | 
+accounts.fake-mail.remove | ada@mail.invalid | Remove account | Deletes the account's stored sign-in from this computer. | action Remove account destructive | false | basic | 
+accounts.fake-storage.label | ada@cloud.invalid | Account |  | fixed ada@cloud.invalid | "ada@cloud.invalid" | basic | 
+accounts.fake-storage.place | ada@cloud.invalid | Where |  | fixed elsewhere | "elsewhere" | basic | 
+accounts.fake-storage.state | ada@cloud.invalid | Status |  | fixed needs_reauth | "needs_reauth" | basic | 
+accounts.fake-storage.sign_in | ada@cloud.invalid | Signs in |  | fixed password | "password" | basic | 
+accounts.fake-storage.provider | ada@cloud.invalid | Account type |  | fixed fake-cloud | "fake-cloud" | basic | fake-cloud=fake-cloud
+accounts.fake-storage.group | ada@cloud.invalid | Listed under |  | fixed internet | "internet" | basic | agent=Assistants, intelligence=Intelligence, internet=Internet Accounts
+accounts.fake-storage.expires | ada@cloud.invalid | Sign-in | Google ends the sign-ins of an app that is not verified yet after 7 days; signing in again starts another 7. | fixed Signed out by Google on 2023-11-21 | "Signed out by Google on 2023-11-21" | basic | 
+accounts.fake-storage.reauth | ada@cloud.invalid | Sign in again |  | action Sign in again plain | false | basic | 
+accounts.fake-storage.remove | ada@cloud.invalid | Remove account | Deletes the account's stored sign-in from this computer. | action Remove account destructive | false | basic | 
+accounts.clients.microsoft | Sign-in keys | Microsoft sign-in key | A sign-in key from your own Google or Microsoft developer account. Leave it empty to use the one built in. | text | "" | advanced | 
+accounts.clients.google | Sign-in keys | Google sign-in key | Google accounts can be added once you paste a sign-in key here: make one for a desktop app in your own Google Cloud project, and paste its secret below. Leave it empty to remove it. | text | "" | advanced | 
+accounts.clients.google.secret | Sign-in keys | Google sign-in secret | The secret Google shows beside the sign-in key. Google asks for it even from an app on your computer; it is not your password. | text | "" | advanced | 
+-- every listed path read back
+accounts.a-key.label => key accounts.a-key.label => "Fake Runtime on this computer"
+accounts.a-key.place => key accounts.a-key.place => "elsewhere"
+accounts.a-key.state => key accounts.a-key.state => "ok"
+accounts.a-key.sign_in => key accounts.a-key.sign_in => "key"
+accounts.a-key.provider => key accounts.a-key.provider => "fake-llm"
+accounts.a-key.group => key accounts.a-key.group => "intelligence"
+accounts.a-key.service.llm => key accounts.a-key.service.llm => "on"
+accounts.a-key.service.embeddings => key accounts.a-key.service.embeddings => "off"
+accounts.a-key.grant.g.1 => key accounts.a-key.grant.g.1 => false
+accounts.a-key.grant.g.1.since => key accounts.a-key.grant.g.1.since => "1970-01-01"
+accounts.a-key.grant.g.1.scope => key accounts.a-key.grant.g.1.scope => "always"
+accounts.a-key.grant.g.1.app => key accounts.a-key.grant.g.1.app => "org.quire.Companion"
+accounts.a-key.grant.g.1.service => key accounts.a-key.grant.g.1.service => "llm"
+accounts.a-key.grant.g2 => key accounts.a-key.grant.g2 => false
+accounts.a-key.grant.g2.since => key accounts.a-key.grant.g2.since => "2026-09-22"
+accounts.a-key.grant.g2.scope => key accounts.a-key.grant.g2.scope => "once"
+accounts.a-key.grant.g2.app => key accounts.a-key.grant.g2.app => "org.example.Mail"
+accounts.a-key.grant.g2.service => key accounts.a-key.grant.g2.service => "llm"
+accounts.a-key.reauth => key accounts.a-key.reauth => false
+accounts.a-key.remove => key accounts.a-key.remove => false
+accounts.an-agent.label => key accounts.an-agent.label => "ada@cloud.invalid"
+accounts.an-agent.place => key accounts.an-agent.place => "elsewhere"
+accounts.an-agent.state => key accounts.an-agent.state => "ok"
+accounts.an-agent.sign_in => key accounts.an-agent.sign_in => "agent"
+accounts.an-agent.provider => key accounts.an-agent.provider => "fake-cloud"
+accounts.an-agent.group => key accounts.an-agent.group => "agent"
+accounts.an-agent.service.agent => key accounts.an-agent.service.agent => "on"
+accounts.an-agent.grant.g3 => key accounts.an-agent.grant.g3 => false
+accounts.an-agent.grant.g3.since => key accounts.an-agent.grant.g3.since => "1970-01-02"
+accounts.an-agent.grant.g3.scope => key accounts.an-agent.grant.g3.scope => "session"
+accounts.an-agent.grant.g3.app => key accounts.an-agent.grant.g3.app => "org.quire.Companion"
+accounts.an-agent.grant.g3.service => key accounts.an-agent.grant.g3.service => "agent"
+accounts.an-agent.sign_out => key accounts.an-agent.sign_out => false
+accounts.an-agent.remove => key accounts.an-agent.remove => false
+accounts.an-agent-out.label => key accounts.an-agent-out.label => "ada@cloud.invalid"
+accounts.an-agent-out.place => key accounts.an-agent-out.place => "elsewhere"
+accounts.an-agent-out.state => key accounts.an-agent-out.state => "needs_login"
+accounts.an-agent-out.sign_in => key accounts.an-agent-out.sign_in => "agent"
+accounts.an-agent-out.provider => key accounts.an-agent-out.provider => "fake-cloud"
+accounts.an-agent-out.group => key accounts.an-agent-out.group => "agent"
+accounts.an-agent-out.service.agent => key accounts.an-agent-out.service.agent => "on"
+accounts.an-agent-out.reauth => key accounts.an-agent-out.reauth => false
+accounts.an-agent-out.remove => key accounts.an-agent-out.remove => false
+accounts.a-runtime.label => key accounts.a-runtime.label => "Fake Runtime on this computer"
+accounts.a-runtime.place => key accounts.a-runtime.place => "this_computer"
+accounts.a-runtime.state => key accounts.a-runtime.state => "ok"
+accounts.a-runtime.sign_in => key accounts.a-runtime.sign_in => "nothing"
+accounts.a-runtime.provider => key accounts.a-runtime.provider => "fake-llm"
+accounts.a-runtime.group => key accounts.a-runtime.group => "intelligence"
+accounts.a-runtime.service.llm => key accounts.a-runtime.service.llm => "on"
+accounts.a-runtime.remove => key accounts.a-runtime.remove => false
+accounts.a-tailscale.label => key accounts.a-tailscale.label => "ada@cloud.invalid"
+accounts.a-tailscale.place => key accounts.a-tailscale.place => "elsewhere"
+accounts.a-tailscale.state => key accounts.a-tailscale.state => "needs_login"
+accounts.a-tailscale.sign_in => key accounts.a-tailscale.sign_in => "outside"
+accounts.a-tailscale.provider => key accounts.a-tailscale.provider => "fake-cloud"
+accounts.a-tailscale.group => key accounts.a-tailscale.group => "internet"
+accounts.a-tailscale.reauth => key accounts.a-tailscale.reauth => false
+accounts.a-tailscale.remove => key accounts.a-tailscale.remove => false
+accounts.fake-mail.label => key accounts.fake-mail.label => "ada@mail.invalid"
+accounts.fake-mail.place => key accounts.fake-mail.place => "elsewhere"
+accounts.fake-mail.state => key accounts.fake-mail.state => "ok"
+accounts.fake-mail.sign_in => key accounts.fake-mail.sign_in => "browser"
+accounts.fake-mail.provider => key accounts.fake-mail.provider => "fastmail"
+accounts.fake-mail.group => key accounts.fake-mail.group => "internet"
+accounts.fake-mail.expires => key accounts.fake-mail.expires => "Google signs this account out on 2023-11-21"
+accounts.fake-mail.used_by.0 => key accounts.fake-mail.used_by.0 => "ORG.EXAMPLE.MAIL"
+accounts.fake-mail.used_by.1 => key accounts.fake-mail.used_by.1 => "ORG.QUIRE.PHOTOS"
+accounts.fake-mail.reauth => key accounts.fake-mail.reauth => false
+accounts.fake-mail.remove => key accounts.fake-mail.remove => false
+accounts.fake-storage.label => key accounts.fake-storage.label => "ada@cloud.invalid"
+accounts.fake-storage.place => key accounts.fake-storage.place => "elsewhere"
+accounts.fake-storage.state => key accounts.fake-storage.state => "needs_reauth"
+accounts.fake-storage.sign_in => key accounts.fake-storage.sign_in => "password"
+accounts.fake-storage.provider => key accounts.fake-storage.provider => "fake-cloud"
+accounts.fake-storage.group => key accounts.fake-storage.group => "internet"
+accounts.fake-storage.expires => key accounts.fake-storage.expires => "Signed out by Google on 2023-11-21"
+accounts.fake-storage.reauth => key accounts.fake-storage.reauth => false
+accounts.fake-storage.remove => key accounts.fake-storage.remove => false
+accounts.clients.microsoft => key accounts.clients.microsoft => none
+accounts.clients.google => key accounts.clients.google => none
+accounts.clients.google.secret => key accounts.clients.google.secret => none
+-- probes
+accounts.a-key.service.llm => key accounts.a-key.service.llm => "on"
+accounts.a-key.service.embeddings => key accounts.a-key.service.embeddings => "off"
+accounts.a-key.service.speech => no key
+accounts.a-key.service.storage => no key
+accounts.a-key.service.nonsense => no key
+accounts.a-key.service. => no key
+accounts.a-key.grant.g.1 => key accounts.a-key.grant.g.1 => false
+accounts.a-key.grant.g.1.since => key accounts.a-key.grant.g.1.since => "1970-01-01"
+accounts.a-key.grant.g.1.scope => key accounts.a-key.grant.g.1.scope => "always"
+accounts.a-key.grant.g.1.app => key accounts.a-key.grant.g.1.app => "org.quire.Companion"
+accounts.a-key.grant.g.1.service => key accounts.a-key.grant.g.1.service => "llm"
+accounts.a-key.grant.g.1.nonsense => no key
+accounts.a-key.grant.g.2 => no key
+accounts.a-key.grant.g2.since => key accounts.a-key.grant.g2.since => "2026-09-22"
+accounts.a-key.grant.g3 => key accounts.a-key.grant.g3 => false
+accounts.a-key.grant. => no key
+accounts.a-key.grant => no key
+accounts.a-key.sign_out => no key
+accounts.an-agent.sign_out => key accounts.an-agent.sign_out => false
+accounts.an-agent-out.sign_out => key accounts.an-agent-out.sign_out => false
+accounts.an-agent.reauth => key accounts.an-agent.reauth => false
+accounts.an-agent-out.reauth => key accounts.an-agent-out.reauth => false
+accounts.a-runtime.reauth => key accounts.a-runtime.reauth => false
+accounts.a-tailscale.reauth => key accounts.a-tailscale.reauth => false
+accounts.a-tailscale.remove => key accounts.a-tailscale.remove => false
+accounts.fake-mail.expires => key accounts.fake-mail.expires => "Google signs this account out on 2023-11-21"
+accounts.fake-storage.expires => key accounts.fake-storage.expires => "Signed out by Google on 2023-11-21"
+accounts.a-key.expires => key accounts.a-key.expires => none
+accounts.fake-mail.used_by.0 => key accounts.fake-mail.used_by.0 => "ORG.EXAMPLE.MAIL"
+accounts.fake-mail.used_by.1 => key accounts.fake-mail.used_by.1 => "ORG.QUIRE.PHOTOS"
+accounts.fake-mail.used_by.2 => key accounts.fake-mail.used_by.2 => none
+accounts.fake-mail.used_by.x => no key
+accounts.fake-mail.used_by. => no key
+accounts.fake-mail.used_by => no key
+accounts.a-key.used_by.0 => key accounts.a-key.used_by.0 => none
+accounts.a-key.label => key accounts.a-key.label => "Fake Runtime on this computer"
+accounts.a-key.nonsense => no key
+accounts.a-key => no key
+accounts.a-key. => no key
+accounts.nobody.state => no key
+accounts.clients.google => key accounts.clients.google => none
+accounts.clients.google.secret => key accounts.clients.google.secret => none
+accounts.clients.microsoft => key accounts.clients.microsoft => none
+accounts.clients.microsoft.secret => no key
+accounts.clients.openrouter => no key
+accounts. => no key
+accounts => no key
+dock.size => no key
