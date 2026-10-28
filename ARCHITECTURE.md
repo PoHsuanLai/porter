@@ -144,7 +144,7 @@ root, or its graph holds two copies of `ds-*` (the git one through porter, its p
 External boundaries: every crate but `porter-dbus` and the daemons never reaches `zbus`,
 `zvariant`, `tokio`, `reqwest`, `hyper`, `ureq`, `oo7`, `keyring`, `secret-service`,
 `interprocess` or `latchkey` (default features); `porter-core` and `porter-ids` also never reach `toml`.
-`porter-http` is the pure seam and reaches none of them (check-boundary checks it). `reqwest` is named by one crate, `porter-http-reqwest`, and no other crate may name it
+`porter-http` is the pure seam and reaches none of them (check-boundary checks it). Every `crates/*-proto` crate is sans-IO: check-boundary fails when one depends on `porter-http`, `tokio` or `reqwest`, or has an `async fn` (a new one is found by its name). `reqwest` is named by one crate, `porter-http-reqwest`, and no other crate may name it
 (check-boundary checks that too); `porter-proxy` and
 `porter-oauth` reach `tokio` only through their feature `io`. `porter-families` reaches none with
 default features; through its family features it reaches exactly this (measured with

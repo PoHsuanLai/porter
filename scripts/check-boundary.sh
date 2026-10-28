@@ -91,6 +91,37 @@ for rule in "${RULES[@]}"; do
   fi
 done
 
+# SANS-IO PROTOCOL CRATES: every `crates/*-proto` is sans-IO: request builders return
+# `http::Request<Vec<u8>>`, parsers take `&http::Response<Vec<u8>>`, and the caller sends and
+# reads the clock. So none reaches the HTTP seam (porter-http), a runtime (tokio) or an HTTP client
+# (reqwest), and none has an `async fn`. The crates are found by name, so a new one is checked
+# without a row here; the crates they may depend on are in EDGES.
+for dir in crates/*-proto; do
+  crate="$(basename "$dir")"
+  if ! cargo tree -p "$crate" --depth 0 >/dev/null 2>&1; then
+    echo "ERROR: cargo tree cannot resolve $crate; the sans-IO rule was not checked"
+    fail=1
+    continue
+  fi
+  clean=1
+  for dep in porter-http tokio reqwest; do
+    if cargo tree -p "$crate" -i "$dep" -e normal,build 2>/dev/null | grep -q .; then
+      echo "LEAK: $crate (sans-IO) depends on $dep"
+      cargo tree -p "$crate" -i "$dep" -e normal,build 2>/dev/null | head -20
+      clean=0
+      fail=1
+    fi
+  done
+  if grep -rn --include='*.rs' -E '\basync[[:space:]]+fn\b' "$dir/src"; then
+    echo "LEAK: $crate (sans-IO) has an async fn"
+    clean=0
+    fail=1
+  fi
+  if [ "$clean" -eq 1 ]; then
+    echo "sans-IO holds: $crate reaches none of porter-http tokio reqwest and has no async fn"
+  fi
+done
+
 # FAMILY FEATURES: porter-families with each of its family features on, one at a time, and no
 # other. Its default build is checked by RULES above (it reaches none of EFFECTS). A family
 # reaches only what it really uses, so each feature forbids EFFECTS minus what it uses today:

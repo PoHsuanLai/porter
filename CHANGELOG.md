@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Sans-IO is checked
+
+- check-boundary fails when a `*-proto` crate depends on porter-http, tokio or reqwest, or has an
+  `async fn`. No crate failed it.
+
 ### porter-families is the registry, and each family is a crate
 
 - New crates porter-family-kit, porter-family-nextcloud, porter-family-generic and
