@@ -30,6 +30,7 @@ fn no_usage() -> TokenUsage {
         input: Tokens(0),
         output: Tokens(0),
         cached: Tokens(0),
+        charge: None,
     }
 }
 
@@ -57,7 +58,6 @@ fn audit(ctx: &Ctx, served: ServedBy, usage: TokenUsage) {
         ctx,
         served,
         usage,
-        cost: None,
         sent: 0,
     }
     .write();

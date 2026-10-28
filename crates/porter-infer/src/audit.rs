@@ -6,7 +6,7 @@ use porter_capability::Locality;
 use porter_capability::ModelId;
 use porter_core::AccountId;
 use porter_core::{AppId, DataClass};
-use porter_ids::{Bytes, Count, MicroUsd, UnixSeconds};
+use porter_ids::{Bytes, Count, UnixSeconds};
 use serde::{Deserialize, Serialize};
 
 /// One audited request.
@@ -24,7 +24,7 @@ pub struct AuditEntry {
     pub model: ModelId,
     /// Where it ran.
     pub locality: Locality,
-    /// Tokens spent.
+    /// Tokens spent, and the charge the provider reported for them, when it reported one.
     pub usage: TokenUsage,
     /// Bytes that left the machine (zero on device).
     pub bytes_out: Bytes,
@@ -36,9 +36,4 @@ pub struct AuditEntry {
     /// written before the router said why.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub why: Option<Why>,
-    /// What the request cost at the reach's price, when it was metered (a hosted model or an
-    /// agent's API-key account); absent for a model on this computer and in entries written
-    /// before the field.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cost: Option<MicroUsd>,
 }

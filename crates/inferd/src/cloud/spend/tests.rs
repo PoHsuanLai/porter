@@ -1,7 +1,9 @@
 use super::*;
 use crate::settings::{ScopeLimits, SpendLimits};
-use porter_capability::PriceTable;
 use porter_core::{AppName, Isolation};
+use porter_ids::{Tokens, TurnCount};
+use rust_decimal::Decimal;
+use serde_json::json;
 use test_kit::Scratch;
 
 fn app(name: &str) -> AppId {
@@ -20,6 +22,23 @@ fn used(input: u32, output: u32) -> TokenUsage {
         input: Tokens(input),
         output: Tokens(output),
         cached: Tokens(0),
+        charge: None,
+    }
+}
+
+/// A reply of `input` and `output` tokens that its provider said cost `milli` thousandths of a
+/// US dollar.
+fn charged(input: u32, output: u32, milli: i64) -> TokenUsage {
+    TokenUsage {
+        charge: Some(Money::usd(Decimal::new(milli, 3))),
+        ..used(input, output)
+    }
+}
+
+fn milli(milli: i64) -> ChargeTotal {
+    ChargeTotal {
+        reported: Money::usd(Decimal::new(milli, 3)),
+        unpriced: TurnCount(0),
     }
 }
 
@@ -72,33 +91,42 @@ fn a_reply_counts_against_the_app_and_the_account_for_the_day_and_the_month() {
     ledger.record(
         &companion,
         &account("openrouter"),
-        used(1_000, 200),
-        MicroUsd(700),
+        charged(1_000, 200, 700),
         LEAP_NOON,
     );
     ledger.record(
         &reader,
         &account("openrouter"),
-        used(10, 5),
-        MicroUsd(30),
+        charged(10, 5, 30),
         LEAP_NOON,
     );
+    // A reply whose provider reported no charge is a turn, and no money.
+    ledger.record(&reader, &account("openrouter"), used(1, 1), LEAP_NOON);
     let spent = |scope: SpendScope, period| ledger.spent(&scope, period, LEAP_NOON);
     assert_eq!(
         spent(SpendScope::App(companion), Period::Daily),
         Spent {
-            micro_usd: 700,
+            charges: milli(700),
             tokens_in: 1_000,
             tokens_out: 200
         }
     );
     assert_eq!(
-        spent(SpendScope::App(reader), Period::Monthly).micro_usd,
-        30
+        spent(SpendScope::App(reader), Period::Monthly).charges,
+        ChargeTotal {
+            unpriced: TurnCount(1),
+            ..milli(30)
+        }
     );
     let through = SpendScope::Account(account("openrouter"));
-    assert_eq!(spent(through.clone(), Period::Daily).micro_usd, 730);
-    assert_eq!(spent(through, Period::Monthly).tokens_in, 1_010);
+    assert_eq!(
+        spent(through.clone(), Period::Daily).charges,
+        ChargeTotal {
+            unpriced: TurnCount(1),
+            ..milli(730)
+        }
+    );
+    assert_eq!(spent(through, Period::Monthly).tokens_in, 1_011);
     assert_eq!(
         spent(SpendScope::Account(account("openai")), Period::Daily),
         Spent::default()
@@ -109,97 +137,80 @@ fn a_reply_counts_against_the_app_and_the_account_for_the_day_and_the_month() {
 fn a_new_day_starts_the_day_over_and_the_month_goes_on() {
     let ledger = Ledger::in_memory();
     let who = app("org.quire.Companion");
-    ledger.record(
-        &who,
-        &account("openrouter"),
-        used(1, 1),
-        MicroUsd(500),
-        LEAP_NOON,
-    );
+    ledger.record(&who, &account("openrouter"), charged(1, 1, 500), LEAP_NOON);
     let next_day = UnixSeconds(LEAP_NOON.0 + 86_400);
     let scope = SpendScope::App(who.clone());
-    assert_eq!(ledger.spent(&scope, Period::Daily, next_day).micro_usd, 0);
+    let reported = |period, at| ledger.spent(&scope, period, at).charges;
+    assert_eq!(reported(Period::Daily, next_day), ChargeTotal::default());
     assert_eq!(
-        ledger.spent(&scope, Period::Monthly, next_day).micro_usd,
-        0,
+        reported(Period::Monthly, next_day),
+        ChargeTotal::default(),
         "that was March"
     );
     let same_month = UnixSeconds(LEAP_NOON.0 - 86_400);
-    assert_eq!(
-        ledger.spent(&scope, Period::Monthly, same_month).micro_usd,
-        500
-    );
-    ledger.record(
-        &who,
-        &account("openrouter"),
-        used(1, 1),
-        MicroUsd(5),
-        next_day,
-    );
-    assert_eq!(ledger.spent(&scope, Period::Daily, next_day).micro_usd, 5);
+    assert_eq!(reported(Period::Monthly, same_month), milli(500));
+    ledger.record(&who, &account("openrouter"), charged(1, 1, 5), next_day);
+    assert_eq!(reported(Period::Daily, next_day), milli(5));
 }
 
 #[test]
 fn the_caps_say_within_warn_or_stop_and_no_cap_says_within() {
-    let ledger = Ledger::in_memory();
     let who = app("org.quire.Companion");
     let through = account("openrouter");
-    let estimate = MicroUsd(0);
-    // 10 cents a day is 100_000 micro-dollars; the warning line is at 80 per cent.
+    // 10 cents a day is 100 thousandths of a dollar; the warning line is at 80 per cent.
     let cases = [
         ("nothing spent", 0, SpendVerdict::Within),
-        ("under the line", 79_999, SpendVerdict::Within),
-        ("on the line", 80_000, SpendVerdict::Warn),
-        ("under the cap", 99_999, SpendVerdict::Warn),
-        ("at the cap", 100_000, SpendVerdict::Stop),
+        ("under the line", 79, SpendVerdict::Within),
+        ("on the line", 80, SpendVerdict::Warn),
+        ("under the cap", 99, SpendVerdict::Warn),
+        ("at the cap", 100, SpendVerdict::Stop),
     ];
     for (name, spent, want) in cases {
-        let ledger_now = Ledger::in_memory();
+        let ledger = Ledger::in_memory();
         if spent > 0 {
-            ledger_now.record(&who, &through, used(0, 0), MicroUsd(spent), LEAP_NOON);
+            ledger.record(&who, &through, charged(0, 0, spent), LEAP_NOON);
         }
-        let got = ledger_now.verdict(line(10), &who, &through, estimate, LEAP_NOON);
+        let got = ledger.verdict(line(10), &who, &through, LEAP_NOON);
         assert_eq!(got, want, "{name}");
     }
+    let ledger = Ledger::in_memory();
+    ledger.record(&who, &through, charged(0, 0, 1_000_000), LEAP_NOON);
     assert_eq!(
-        ledger.verdict(
-            SpendLine::default(),
-            &who,
-            &through,
-            MicroUsd(u64::MAX / 2),
-            LEAP_NOON
-        ),
+        ledger.verdict(SpendLine::default(), &who, &through, LEAP_NOON),
         SpendVerdict::Within,
         "no cap, no limit"
     );
 }
 
+/// A cap compares what providers reported: turns that reported nothing are counted and never meet
+/// it, and the turn that passes it is the last one, not the one it stops.
 #[test]
-fn the_estimate_of_the_turn_about_to_run_counts_toward_the_cap() {
+fn only_reported_charges_meet_a_cap_and_the_turn_that_passes_it_is_the_last() {
     let ledger = Ledger::in_memory();
     let who = app("org.quire.Companion");
-    ledger.record(
-        &who,
-        &account("openrouter"),
-        used(0, 0),
-        MicroUsd(99_000),
-        LEAP_NOON,
+    let through = account("openai");
+    for _ in 0..1_000 {
+        ledger.record(&who, &through, used(500, 500), LEAP_NOON);
+    }
+    assert_eq!(
+        ledger.verdict(line(1), &who, &through, LEAP_NOON),
+        SpendVerdict::Within,
+        "a thousand turns with no charge are no money"
     );
-    let cheap = ledger.verdict(
-        line(10),
-        &who,
-        &account("openrouter"),
-        MicroUsd(10),
-        LEAP_NOON,
+    let scope = SpendScope::App(who.clone());
+    assert_eq!(
+        ledger
+            .spent(&scope, Period::Daily, LEAP_NOON)
+            .charges
+            .unpriced,
+        TurnCount(1_000)
     );
-    let dear = ledger.verdict(
-        line(10),
-        &who,
-        &account("openrouter"),
-        MicroUsd(1_000),
-        LEAP_NOON,
+    // The reply that carries the charge is counted whole, and the next turn is stopped.
+    ledger.record(&who, &through, charged(10, 10, 10), LEAP_NOON);
+    assert_eq!(
+        ledger.verdict(line(1), &who, &through, LEAP_NOON),
+        SpendVerdict::Stop
     );
-    assert_eq!((cheap, dear), (SpendVerdict::Warn, SpendVerdict::Stop));
 }
 
 #[test]
@@ -207,7 +218,7 @@ fn the_strictest_cap_of_the_four_decides() {
     let who = app("org.quire.Companion");
     let through = account("openrouter");
     let ledger = Ledger::in_memory();
-    ledger.record(&who, &through, used(0, 0), MicroUsd(150_000), LEAP_NOON);
+    ledger.record(&who, &through, charged(0, 0, 150), LEAP_NOON);
     let line = SpendLine {
         limits: SpendLimits {
             account: ScopeLimits {
@@ -222,13 +233,13 @@ fn the_strictest_cap_of_the_four_decides() {
         ..SpendLine::default()
     };
     assert_eq!(
-        ledger.verdict(line, &who, &through, MicroUsd(0), LEAP_NOON),
+        ledger.verdict(line, &who, &through, LEAP_NOON),
         SpendVerdict::Stop,
         "the app's daily cap is passed though the account's monthly one is not"
     );
     let other = app("org.quire.Reader");
     assert_eq!(
-        ledger.verdict(line, &other, &through, MicroUsd(0), LEAP_NOON),
+        ledger.verdict(line, &other, &through, LEAP_NOON),
         SpendVerdict::Within,
         "another app has spent nothing and the account's cap is far off"
     );
@@ -244,19 +255,22 @@ fn a_ledger_opened_on_a_file_keeps_what_it_was_told_across_a_restart() {
         ledger.record(
             &who,
             &account("openrouter"),
-            used(7, 3),
-            MicroUsd(1_234),
+            charged(7, 3, 1_234),
             LEAP_NOON,
         );
+        ledger.record(&who, &account("openrouter"), used(1, 1), LEAP_NOON);
     }
     let again = Ledger::open_at(file.clone(), LEAP_NOON);
     let scope = SpendScope::App(who);
     assert_eq!(
         again.spent(&scope, Period::Daily, LEAP_NOON),
         Spent {
-            micro_usd: 1_234,
-            tokens_in: 7,
-            tokens_out: 3
+            charges: ChargeTotal {
+                unpriced: TurnCount(1),
+                ..milli(1_234)
+            },
+            tokens_in: 8,
+            tokens_out: 4
         }
     );
     let text = std::fs::read_to_string(&file).expect("the file");
@@ -290,25 +304,23 @@ fn a_file_that_does_not_read_is_set_aside_and_the_caps_stop_until_the_period_end
         ledger.spent(&scope, Period::Daily, LEAP_NOON),
         Spent::default()
     );
-    let stopped = |ledger: &Ledger, at: UnixSeconds| {
-        ledger.verdict(line(10), &who, &through, MicroUsd(0), at)
-    };
+    let stopped = |ledger: &Ledger, at: UnixSeconds| ledger.verdict(line(10), &who, &through, at);
     assert_eq!(stopped(&ledger, LEAP_NOON), SpendVerdict::Stop);
     // With no cap set there is nothing to hold to.
     assert_eq!(
-        ledger.verdict(SpendLine::default(), &who, &through, MicroUsd(0), LEAP_NOON),
+        ledger.verdict(SpendLine::default(), &who, &through, LEAP_NOON),
         SpendVerdict::Within
     );
     // The next day the daily cap counts again from nothing (the lost day is over).
     let tomorrow = UnixSeconds(LEAP_NOON.0 + 86_400);
     assert_eq!(stopped(&ledger, tomorrow), SpendVerdict::Within);
     // Records go on, and the stop is in the file: a restart in the same day does not forget it.
-    ledger.record(&who, &through, used(1, 1), MicroUsd(5), LEAP_NOON);
+    ledger.record(&who, &through, charged(1, 1, 5), LEAP_NOON);
     let again = Ledger::open_at(file.clone(), LEAP_NOON);
     assert_eq!(stopped(&again, LEAP_NOON), SpendVerdict::Stop);
     assert_eq!(
-        again.spent(&scope, Period::Daily, LEAP_NOON).micro_usd,
-        5,
+        again.spent(&scope, Period::Daily, LEAP_NOON).charges,
+        milli(5),
         "what was recorded since is kept"
     );
     // A restart after the day is over has nothing to remember for the daily cap.
@@ -325,7 +337,7 @@ fn a_monthly_cap_stays_stopped_to_the_end_of_the_month_and_a_missing_file_is_jus
     // No file yet: a new ledger, nothing set aside, caps work as usual.
     let fresh = Ledger::open_at(file.clone(), LEAP_NOON);
     assert_eq!(
-        fresh.verdict(line(10), &who, &through, MicroUsd(0), LEAP_NOON),
+        fresh.verdict(line(10), &who, &through, LEAP_NOON),
         SpendVerdict::Within
     );
     assert!(
@@ -362,11 +374,7 @@ fn a_monthly_cap_stays_stopped_to_the_end_of_the_month_and_a_missing_file_is_jus
             SpendVerdict::Within,
         ),
     ] {
-        assert_eq!(
-            lost.verdict(monthly, &who, &through, MicroUsd(0), at),
-            want,
-            "{name}"
-        );
+        assert_eq!(lost.verdict(monthly, &who, &through, at), want, "{name}");
     }
 }
 
@@ -374,108 +382,92 @@ fn a_monthly_cap_stays_stopped_to_the_end_of_the_month_and_a_missing_file_is_jus
 fn usage_names_what_the_app_used_and_each_cap_that_is_set() {
     let ledger = Ledger::in_memory();
     let who = app("org.quire.Companion");
-    ledger.record(
-        &who,
-        &account("openrouter"),
-        used(40, 9),
-        MicroUsd(321),
-        LEAP_NOON,
-    );
+    ledger.record(&who, &account("openrouter"), charged(40, 9, 321), LEAP_NOON);
+    ledger.record(&who, &account("openai"), used(1, 1), LEAP_NOON);
     let rows = ledger.usage_of(line(10), &who, LEAP_NOON);
+    let money = |milli: i64| UsageValue::Money(Money::usd(Decimal::new(milli, 3)));
     let want = [
-        ("tokens_in_day", 40),
-        ("tokens_out_day", 9),
-        ("spend_day_micro_usd", 321),
-        ("spend_month_micro_usd", 321),
-        ("cap_day_micro_usd", 100_000),
+        ("tokens_in_day", UsageValue::Count(41)),
+        ("tokens_out_day", UsageValue::Count(10)),
+        ("reported_day", money(321)),
+        ("reported_month", money(321)),
+        ("unpriced_turns_day", UsageValue::Count(1)),
+        ("unpriced_turns_month", UsageValue::Count(1)),
+        ("cap_day", money(100)),
     ];
-    let got: Vec<(&str, u64)> = rows.iter().map(|(n, v)| (n.as_str(), *v)).collect();
+    let got: Vec<(&str, UsageValue)> = rows.iter().map(|(n, v)| (n.as_str(), *v)).collect();
     assert_eq!(got, want);
+    assert_eq!(written(Money::usd(Decimal::new(9500, 6))), "0.0095 USD");
+    assert_eq!(written(Money::usd(Decimal::ZERO)), "0 USD");
 }
 
+/// A ledger file from before the meter counted only reported charges has dollar amounts worked out
+/// from prices. They are not read as money: the token counts and the lost period carry over, the
+/// charges start empty, the file is rewritten in the new format, and the daemon says so.
 #[test]
-fn a_turn_not_yet_run_is_estimated_at_a_thousand_tokens_each_way() {
-    let price = porter_capability::PriceTable {
-        input_per_mtok: MicroUsd(4_000_000),
-        output_per_mtok: MicroUsd(20_000_000),
-    };
-    assert_eq!(estimate(&price), MicroUsd(4_000 + 20_000));
-}
-
-/// A price of one micro-dollar a token each way, so a hold of `n` tokens costs `n`.
-const ONE_EACH: PriceTable = PriceTable {
-    input_per_mtok: MicroUsd(1_000_000),
-    output_per_mtok: MicroUsd(1_000_000),
-};
-
-fn day_spent(ledger: &Ledger, who: &AppId) -> u64 {
-    ledger
-        .spent(&SpendScope::App(who.clone()), Period::Daily, LEAP_NOON)
-        .micro_usd
-}
-
-fn hold<'a>(ledger: &'a Ledger, who: &AppId, worst: TokenUsage) -> Option<SpendGuard<'a>> {
-    // A cap of one cent: ten thousand micro-dollars.
-    ledger.reserve(
-        line(1),
-        who,
-        &account("openai"),
-        &ONE_EACH,
-        worst,
-        LEAP_NOON,
-    )
-}
-
-#[test]
-fn a_turn_that_ends_in_an_error_is_charged_its_hold() {
-    let ledger = Ledger::in_memory();
+fn a_ledger_file_from_before_reported_charges_keeps_tokens_and_drops_its_dollars() {
+    let dir = scratch("before");
+    let file = dir.join("spend.json");
     let who = app("org.quire.Companion");
-    let guard = hold(&ledger, &who, used(4_000, 2_000)).expect("within the cap");
-    assert_eq!(day_spent(&ledger, &who), 6_000, "counted while it runs");
-    guard.settle(None);
-    assert_eq!(day_spent(&ledger, &who), 6_000);
-}
-
-#[test]
-fn a_guard_dropped_without_settling_is_charged_its_hold() {
-    let ledger = Ledger::in_memory();
-    let who = app("org.quire.Companion");
-    drop(hold(&ledger, &who, used(4_000, 2_000)));
-    assert_eq!(day_spent(&ledger, &who), 6_000);
-}
-
-#[test]
-fn a_turn_that_reports_its_usage_is_charged_that_and_not_its_hold() {
-    let ledger = Ledger::in_memory();
-    let who = app("org.quire.Companion");
-    let guard = hold(&ledger, &who, used(4_000, 2_000)).expect("within the cap");
-    guard.settle(Some(used(300, 120)));
-    let scope = SpendScope::Account(account("openai"));
-    let month = ledger.spent(&scope, Period::Monthly, LEAP_NOON);
-    assert_eq!(day_spent(&ledger, &who), 420);
+    let mut row = serde_json::to_value(Key {
+        scope: SpendScope::App(who.clone()),
+        period: Period::Daily,
+        bucket: day_of(LEAP_NOON),
+    })
+    .expect("key")
+    .as_object()
+    .expect("an object")
+    .clone();
+    row.insert(
+        "spent".to_owned(),
+        json!({"micro_usd": 123_456_789, "tokens_in": 70, "tokens_out": 30}),
+    );
+    let before = json!({ "rows": [row] }).to_string();
+    std::fs::write(&file, before).expect("write");
+    let ledger = Ledger::open_at(file.clone(), LEAP_NOON);
+    let scope = SpendScope::App(who.clone());
     assert_eq!(
-        month,
+        ledger.spent(&scope, Period::Daily, LEAP_NOON),
         Spent {
-            micro_usd: 420,
-            tokens_in: 300,
-            tokens_out: 120
+            charges: ChargeTotal::default(),
+            tokens_in: 70,
+            tokens_out: 30
+        },
+        "the old micro-dollars are not a charge"
+    );
+    assert_eq!(
+        ledger.verdict(line(10), &who, &account("openrouter"), LEAP_NOON),
+        SpendVerdict::Within
+    );
+    assert!(
+        !dir.join(format!("spend.json.corrupt-{}", LEAP_NOON.0))
+            .exists(),
+        "an old file is read, not set aside"
+    );
+    let text = std::fs::read_to_string(&file).expect("the file");
+    assert!(text.contains("\"format\":2"), "rewritten at once: {text}");
+    assert!(!text.contains("micro_usd"), "{text}");
+    ledger.record(&who, &account("openrouter"), charged(1, 1, 5), LEAP_NOON);
+    let again = Ledger::open_at(file, LEAP_NOON);
+    assert_eq!(
+        again.spent(&scope, Period::Daily, LEAP_NOON),
+        Spent {
+            charges: milli(5),
+            tokens_in: 71,
+            tokens_out: 31
         }
     );
 }
 
+/// A file a later inferd wrote is not guessed at: it is set aside like one that does not read.
 #[test]
-fn turns_that_start_together_cannot_together_pass_a_cap() {
-    let ledger = Ledger::in_memory();
-    let who = app("org.quire.Companion");
-    let first = hold(&ledger, &who, used(4_000, 2_000));
-    assert!(first.is_some());
+fn a_ledger_file_of_a_format_not_known_is_set_aside() {
+    let dir = scratch("later");
+    let file = dir.join("spend.json");
+    std::fs::write(&file, r#"{"format":3,"rows":[]}"#).expect("write");
+    let _ledger = Ledger::open_at(file, LEAP_NOON);
     assert!(
-        hold(&ledger, &who, used(4_000, 2_000)).is_none(),
-        "the second sees the first's hold"
-    );
-    first.expect("held").settle(Some(used(10, 10)));
-    assert!(
-        hold(&ledger, &who, used(4_000, 2_000)).is_some(),
-        "a settled hold gives back what the turn did not use"
+        dir.join(format!("spend.json.corrupt-{}", LEAP_NOON.0))
+            .exists()
     );
 }

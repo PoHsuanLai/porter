@@ -109,6 +109,6 @@ pub use speech::{
     AudioFrame, AudioFrameOut, AudioRate, HeardDelta, LangPick, SpeakRequest, TranscribeBegin,
     TranscribeMode, VoiceName,
 };
-pub use spend::{Period, SpendCap, SpendScope, SpendVerdict, cost, spend_verdict};
+pub use spend::{ChargeTotal, Period, SpendCap, SpendScope, SpendVerdict, spend_verdict};
 pub use takes::{NO_MODEL_SEES_SCREEN, Sight, Takes, cannot_see_screen};
 pub use tool_proof::{PROBE_TOOL, ToolProof, judge, probe_request};

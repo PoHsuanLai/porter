@@ -12,6 +12,7 @@ use crate::agent::service::AgentsService;
 use crate::attached::{
     ComputerError, Computers, NewComputer, NewModel, NewReach, NewTailnetComputer,
 };
+use crate::cloud::spend::{UsageValue, written};
 use crate::engines::Engines;
 use crate::peers::{Caller, Peers, Role};
 use crate::pipeline::Hearing;
@@ -560,9 +561,10 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         Ok(notes.iter().map(note_row).collect())
     }
 
-    // What the caller used this period, by name: tokens and micro-dollars of today, micro-dollars of
-    // the month, and each spend cap that is set; empty on a daemon that serves no hosted model.
-    // (Plain comments: a doc comment on a member would change the introspection XML.)
+    // What the caller used this period, by name: the tokens of today, the charges providers
+    // reported for today and the month (an amount and its currency, as text) and the turns that
+    // reported none, and each spend cap that is set; empty on a daemon that serves no hosted
+    // model. (Plain comments: a doc comment on a member would change the introspection XML.)
     async fn usage(&self, #[zbus(header)] header: Header<'_>) -> fdo::Result<Details> {
         let caller = self.caller(&header).await?;
         Ok(self
@@ -570,8 +572,11 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
             .usage_of(&caller.app)
             .into_iter()
             .filter_map(|(name, value)| {
-                let value = zbus::zvariant::OwnedValue::try_from(zbus::zvariant::Value::U64(value));
-                Some((name, value.ok()?))
+                let value = match value {
+                    UsageValue::Count(count) => zbus::zvariant::Value::U64(count),
+                    UsageValue::Money(money) => zbus::zvariant::Value::from(written(money)),
+                };
+                Some((name, zbus::zvariant::OwnedValue::try_from(value).ok()?))
             })
             .collect())
     }

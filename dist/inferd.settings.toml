@@ -476,7 +476,7 @@ kind = "intelligence"
 path = "ai.spend.account_daily_cents"
 default = 0
 label = "Daily cap per account"
-help = "The most a cloud account may cost in a day, in US cents, counting every app that uses it. 0 is no cap. Days and months are counted in UTC."
+help = "The most a cloud account may cost in a day, in US cents, counting every app that uses it. 0 is no cap. Only charges a provider reports count toward it (today that is OpenRouter), so a provider that reports none is never stopped by it. Days and months are counted in UTC."
 section = "Automatic"
 exposure = "advanced"
 
@@ -495,7 +495,7 @@ kind = "intelligence"
 path = "ai.spend.account_monthly_cents"
 default = 0
 label = "Monthly cap per account"
-help = "The most a cloud account may cost in a month, in US cents, counting every app that uses it. 0 is no cap. Days and months are counted in UTC."
+help = "The most a cloud account may cost in a month, in US cents, counting every app that uses it. 0 is no cap. Only charges a provider reports count toward it (today that is OpenRouter), so a provider that reports none is never stopped by it. Days and months are counted in UTC."
 section = "Automatic"
 exposure = "advanced"
 
@@ -514,7 +514,7 @@ kind = "intelligence"
 path = "ai.spend.app_daily_cents"
 default = 0
 label = "Daily cap per app"
-help = "The most one app may spend on cloud models in a day, in US cents, whichever account pays. 0 is no cap. Days and months are counted in UTC."
+help = "The most one app may spend on cloud models in a day, in US cents, whichever account pays. 0 is no cap. Only charges a provider reports count toward it (today that is OpenRouter), so a provider that reports none is never stopped by it. Days and months are counted in UTC."
 section = "Automatic"
 exposure = "advanced"
 
@@ -533,7 +533,7 @@ kind = "intelligence"
 path = "ai.spend.app_monthly_cents"
 default = 0
 label = "Monthly cap per app"
-help = "The most one app may spend on cloud models in a month, in US cents, whichever account pays. 0 is no cap. Days and months are counted in UTC."
+help = "The most one app may spend on cloud models in a month, in US cents, whichever account pays. 0 is no cap. Only charges a provider reports count toward it (today that is OpenRouter), so a provider that reports none is never stopped by it. Days and months are counted in UTC."
 section = "Automatic"
 exposure = "advanced"
 

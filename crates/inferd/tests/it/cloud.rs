@@ -12,19 +12,22 @@ use hosting::engine::{Chat, Script};
 use hosting::entries;
 use hosting::rig::{Hosted, Plan, Trust, World};
 use inferd::settings::{ConfigFile, InferdSettings, Reload, SpendLine, serve_settings};
+use model_provider::Money;
 use porter_capability::LlmFeature;
 use porter_capability::Tier;
 use porter_client::InferSession;
 use porter_core::consent::Usage;
 use porter_core::{AppId, AppName, DataClass, Isolation};
 use porter_dbus::InferenceProxy;
-use porter_ids::{MicroUsd, Tokens};
+use porter_ids::{Tokens, TurnCount};
 use porter_infer::{
-    ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRefusal, InferReply, InferRequest,
-    LocalOnly, MessagePart, ModelError, OpenOptions, Policy, Role as ChatRole, StopReason,
+    ChargeTotal, ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRefusal, InferReply,
+    InferRequest, LocalOnly, MessagePart, ModelError, OpenOptions, Policy, Role as ChatRole,
+    StopReason,
 };
 use porter_match::LlmNeed;
 use porter_match::Need;
+use rust_decimal::Decimal;
 use std::path::Path;
 
 /// OpenRouter's key, and OpenAI's: distinctive, so a scan for either cannot match by accident.
@@ -166,8 +169,9 @@ fn openai(to: &[&'static str]) -> FakeAccount {
 fn plan(accounts: Vec<FakeAccount>, app_name: &str) -> Plan {
     Plan {
         catalog: vec![
-            ("a-claude-opus-5.5.toml", entries::claude()),
-            ("b-gpt-6-luna.toml", entries::luna()),
+            // Listed first: with no price to compare, Automatic takes the first of equals.
+            ("a-gpt-6-luna.toml", entries::luna()),
+            ("b-claude-opus-5.5.toml", entries::claude()),
             ("c-kimi-k3.toml", entries::kimi()),
         ],
         policy: open_policy(),
@@ -261,7 +265,7 @@ async fn acceptance_7_a_chat_turn_goes_to_a_hosted_model_through_openrouter_and_
 
     let events = turn(&world, "hi there").await;
 
-    // Routed to a hosted entry through the account of the grant, whose price decides among them.
+    // Routed to a hosted entry through the account of the grant, among the entries.
     let served = routed(&events);
     assert_eq!(served.account.as_str(), "openrouter");
     assert_eq!(served.model.as_str(), "gpt-6-luna");
@@ -321,8 +325,8 @@ async fn acceptance_7_a_chat_turn_goes_to_a_hosted_model_through_openrouter_and_
     );
     assert_eq!(calls.resolved, vec!["grant-openrouter".to_owned()]);
 
-    // The turn was audited against the account that served it, and metered at the reach's price:
-    // five tokens in and two out at 0.1 and 0.5 dollars a million is two micro-dollars.
+    // The turn was audited against the account that served it, and metered at what OpenRouter
+    // reported for it: five tokens in, two out, and a charge of 0.00095 dollars.
     let audited = world.audit.entries();
     assert_eq!(audited.len(), 1);
     assert_eq!(audited[0].account.as_str(), "openrouter");
@@ -330,6 +334,8 @@ async fn acceptance_7_a_chat_turn_goes_to_a_hosted_model_through_openrouter_and_
         audited[0].locality,
         porter_capability::Locality::Cloud { .. }
     ));
+    assert_eq!(audited[0].usage.charge, Some(reported()));
+    assert_eq!(reply.usage.charge, Some(reported()));
     let cloud = world.served.cloud().expect("cloud");
     let spent = cloud.ledger().spent(
         &porter_infer::SpendScope::App(app(COMPANION)),
@@ -337,8 +343,15 @@ async fn acceptance_7_a_chat_turn_goes_to_a_hosted_model_through_openrouter_and_
         cloud.now(),
     );
     assert_eq!(
-        (spent.micro_usd, spent.tokens_in, spent.tokens_out),
-        (2, 5, 2)
+        (spent.charges, spent.tokens_in, spent.tokens_out),
+        (
+            ChargeTotal {
+                reported: reported(),
+                unpriced: TurnCount(0)
+            },
+            5,
+            2
+        )
     );
 
     // Acceptance 7. The positive control first: a key sent as an argument on the bus is found by
@@ -585,8 +598,8 @@ async fn a_provider_that_rejects_the_key_is_unauthorized_and_charges_nothing() {
         &InferReply::Failed(ModelError::Unauthorized),
         "{events:?}"
     );
-    // The provider says no model ran, so the hold is given back.
-    assert_eq!(spent_today(&world).micro_usd, 0);
+    // The provider says no model ran, so there is no turn to count.
+    assert_eq!(spent_today(&world).charges, ChargeTotal::default());
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -598,8 +611,8 @@ async fn a_server_that_answers_an_error_status_charges_nothing_for_any_attempt()
         "{events:?}"
     );
     // An error status before any reply is a request no model ran, retries included; a stream
-    // that breaks after the model started is the one that keeps its hold (`Unknown`).
-    assert_eq!(spent_today(&world).micro_usd, 0);
+    // that breaks after the model started is counted as an unpriced turn (`Unknown`).
+    assert_eq!(spent_today(&world).charges, ChargeTotal::default());
 }
 
 /// A world whose hosted provider answers every turn with `status`.
@@ -612,6 +625,21 @@ async fn failing_with(status: u16) -> World {
         };
     }
     World::start(world_plan).await
+}
+
+/// What OpenRouter reports for the scripted reply: 0.00095 US dollars.
+fn reported() -> Money {
+    Money::usd(Decimal::new(95, 5))
+}
+
+/// A reply with no tokens that its provider said cost `dollars`.
+fn charged(dollars: Decimal) -> porter_infer::TokenUsage {
+    porter_infer::TokenUsage {
+        input: Tokens(0),
+        output: Tokens(0),
+        cached: Tokens(0),
+        charge: Some(Money::usd(dollars)),
+    }
 }
 
 /// What the companion has spent today.
@@ -696,16 +724,11 @@ async fn a_cap_the_app_has_reached_refuses_with_the_spend_refusal_and_nothing_is
     world_plan.spend = capped(1);
     let world = World::start(world_plan).await;
     let cloud = world.served.cloud().expect("cloud");
-    // One cent is ten thousand micro-dollars; the app has spent that today.
+    // The app has been charged that cent today.
     cloud.ledger().record(
         &app(COMPANION),
         &porter_core::AccountId::parse("openrouter").expect("id"),
-        porter_infer::TokenUsage {
-            input: Tokens(0),
-            output: Tokens(0),
-            cached: Tokens(0),
-        },
-        MicroUsd(10_000),
+        charged(Decimal::new(1, 2)),
         cloud.now(),
     );
     assert_eq!(
@@ -734,21 +757,16 @@ async fn a_warning_line_still_serves_the_turn_and_a_cap_met_mid_session_stops_th
     world_plan.spend = capped(100);
     let world = World::start(world_plan).await;
     let cloud = world.served.cloud().expect("cloud").clone();
-    let record = |micro_usd| {
+    let record = |dollars: Decimal| {
         cloud.ledger().record(
             &app(COMPANION),
             &porter_core::AccountId::parse("openrouter").expect("id"),
-            porter_infer::TokenUsage {
-                input: Tokens(0),
-                output: Tokens(0),
-                cached: Tokens(0),
-            },
-            MicroUsd(micro_usd),
+            charged(dollars),
             cloud.now(),
         );
     };
-    // Past the warning line (eight hundred thousand of a million), under the cap: served.
-    record(800_000);
+    // Past the warning line (eighty cents of a dollar), under the cap: served.
+    record(Decimal::new(80, 2));
     let mut session = world
         .accounts
         .session(&llm(), DataClass::Prompt, Tier::Balanced)
@@ -760,8 +778,8 @@ async fn a_warning_line_still_serves_the_turn_and_a_cap_met_mid_session_stops_th
         .expect("send");
     let first = until_finished(&mut session).await;
     assert!(matches!(finished(&first), InferReply::Chat(_)), "{first:?}");
-    // The same session, after something else spent the rest: the next turn is refused.
-    record(200_000);
+    // The same session, after something else was charged the rest: the next turn is refused.
+    record(Decimal::new(20, 2));
     session
         .send(ClientFrame::Request(chat_request("two", DataClass::Prompt)))
         .await
@@ -789,24 +807,22 @@ async fn usage_over_the_bus_says_what_the_caller_spent_and_what_it_may() {
         .usage()
         .await
         .expect("usage");
-    let number = |name: &str| -> u64 {
-        u64::try_from(
-            usage
-                .get(name)
-                .unwrap_or_else(|| panic!("{name} in {usage:?}"))
-                .try_clone()
-                .expect("clone"),
-        )
-        .expect("a number")
+    let value = |name: &str| {
+        usage
+            .get(name)
+            .unwrap_or_else(|| panic!("{name} in {usage:?}"))
+            .try_clone()
+            .expect("clone")
     };
+    let number = |name: &str| -> u64 { u64::try_from(value(name)).expect("a number") };
+    let text = |name: &str| -> String { String::try_from(value(name)).expect("text") };
     assert_eq!(number("tokens_in_day"), 5);
     assert_eq!(number("tokens_out_day"), 2);
-    assert_eq!(number("spend_day_micro_usd"), 2);
-    assert_eq!(number("cap_day_micro_usd"), 50_000);
-    assert!(
-        !usage.contains_key("cap_month_micro_usd"),
-        "no monthly cap was set"
-    );
+    assert_eq!(text("reported_day"), "0.00095 USD");
+    assert_eq!(text("reported_month"), "0.00095 USD");
+    assert_eq!(number("unpriced_turns_day"), 0);
+    assert_eq!(text("cap_day"), "0.05 USD");
+    assert!(!usage.contains_key("cap_month"), "no monthly cap was set");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -841,13 +857,13 @@ async fn the_picker_lists_every_hosted_model_by_company_and_marks_the_ones_no_ac
         ),
         (
             vec![openrouter(&[COMPANION])],
-            vec!["cloud/claude-opus-5.5", "cloud/gpt-6-luna", "cloud/kimi-k3"],
+            vec!["cloud/gpt-6-luna", "cloud/claude-opus-5.5", "cloud/kimi-k3"],
             vec![],
         ),
         (
             Vec::new(),
             vec![],
-            vec!["cloud/claude-opus-5.5", "cloud/gpt-6-luna", "cloud/kimi-k3"],
+            vec!["cloud/gpt-6-luna", "cloud/claude-opus-5.5", "cloud/kimi-k3"],
         ),
     ] {
         let world = World::start(plan(accounts, COMPANION)).await;
@@ -891,7 +907,7 @@ async fn the_picker_lists_every_hosted_model_by_company_and_marks_the_ones_no_ac
             .collect();
         assert_eq!(
             hosted,
-            ["cloud/claude-opus-5.5", "cloud/gpt-6-luna", "cloud/kimi-k3"],
+            ["cloud/gpt-6-luna", "cloud/claude-opus-5.5", "cloud/kimi-k3"],
             "every curated model is listed, in catalogue order, grouped by company"
         );
         // Every slot a hosted model fits has its own picker row, grouped the same way.

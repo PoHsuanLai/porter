@@ -2,7 +2,11 @@ use super::*;
 use serde_json::json;
 
 fn stream(shape: Shape, pieces: &[&str]) -> Seen {
-    let mut reading = Reading::of_stream(shape);
+    stream_from(shape, Charges::NotReported, pieces)
+}
+
+fn stream_from(shape: Shape, charges: Charges, pieces: &[&str]) -> Seen {
+    let mut reading = Reading::of_stream(shape, charges);
     for piece in pieces {
         reading.feed(piece.as_bytes());
     }
@@ -48,43 +52,84 @@ fn an_openai_stream_gives_usage_from_its_final_chunk() {
 
 #[test]
 fn a_whole_body_is_read_in_either_shape_and_a_body_with_no_figures_gives_none() {
-    let mut anthropic = Reading::of_body(Shape::Anthropic);
+    let mut anthropic = Reading::of_body(Shape::Anthropic, Charges::NotReported);
     anthropic.finish_body(
         json!({"usage": {"input_tokens": 3, "output_tokens": 2}})
             .to_string()
             .as_bytes(),
     );
     assert_eq!(anthropic.seen().usage().map(|u| u.output), Some(Tokens(2)));
-    let mut openai = Reading::of_body(Shape::OpenAi);
+    let mut openai = Reading::of_body(Shape::OpenAi, Charges::NotReported);
     openai.finish_body(
         json!({"usage": {"prompt_tokens": 3, "completion_tokens": 2}})
             .to_string()
             .as_bytes(),
     );
     assert_eq!(openai.seen().usage().map(|u| u.input), Some(Tokens(3)));
-    let mut none = Reading::of_body(Shape::OpenAi);
+    let mut none = Reading::of_body(Shape::OpenAi, Charges::NotReported);
     none.finish_body(b"{\"choices\":[]}");
     assert_eq!(none.seen().usage(), None);
 }
 
-/// A whole reply is charged its count, a request no model ran is charged nothing, and a reply
-/// with no count, or one that did not come whole, keeps the hold: a missing figure is never free.
+/// A reply that came whole with figures, or part way, is counted with what the provider reported;
+/// one with no figure is a turn of no tokens; a request no model ran is not a turn at all.
 #[test]
-fn a_request_is_charged_its_count_nothing_when_no_model_ran_and_the_hold_when_unknown() {
-    let mut counted = Reading::of_body(Shape::OpenAi);
-    counted.finish_body(br#"{"usage":{"prompt_tokens":3,"completion_tokens":2}}"#);
-    let counted = counted.seen();
+fn a_request_is_counted_as_reported_as_an_empty_turn_when_unknown_and_not_when_no_model_ran() {
+    let mut reported = Reading::of_body(Shape::OpenAi, Charges::NotReported);
+    reported.finish_body(br#"{"usage":{"prompt_tokens":3,"completion_tokens":2}}"#);
+    let reported = reported.seen();
     let silent = Seen::default();
     assert_eq!(
-        charge_of(End::Answered, counted).map(|used| (used.input, used.output)),
+        counted(End::Answered, reported).map(|used| (used.input, used.output)),
         Some((Tokens(3), Tokens(2)))
     );
-    assert_eq!(charge_of(End::Answered, silent), None);
-    let nothing = charge_of(End::NotRun, silent).expect("a charge");
-    assert_eq!((nothing.input, nothing.output), (Tokens(0), Tokens(0)));
+    let empty = counted(End::Answered, silent).expect("a turn");
     assert_eq!(
-        charge_of(End::Unknown, counted),
+        (empty.input, empty.output, empty.charge),
+        (Tokens(0), Tokens(0), None)
+    );
+    assert_eq!(counted(End::NotRun, reported), None);
+    assert_eq!(
+        counted(End::Unknown, reported).map(|used| used.input),
+        Some(Tokens(3)),
+        "what was seen of a cut-off reply is counted"
+    );
+}
+
+const COST_CHUNK: &str = "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":9,\"completion_tokens\":4,\"cost\":0.00095}}\n\ndata: [DONE]\n\n";
+
+/// A charge is read only from a provider that says it reports one, and exactly as written.
+#[test]
+fn a_charge_is_read_from_a_provider_that_reports_one_and_from_no_other() {
+    let from = |charges| stream_from(Shape::OpenAi, charges, &[COST_CHUNK]).usage();
+    let charged = from(Charges::PerReply).expect("usage");
+    assert_eq!(charged.charge, Some(Money::usd(Decimal::new(95, 5))));
+    assert_eq!((charged.input, charged.output), (Tokens(9), Tokens(4)));
+    assert_eq!(from(Charges::NotReported).expect("usage").charge, None);
+}
+
+#[test]
+fn a_charge_that_cannot_be_read_is_no_charge() {
+    for body in [
+        r#"{"usage":{"prompt_tokens":1,"cost":-0.5}}"#,
+        r#"{"usage":{"prompt_tokens":1,"cost":"free"}}"#,
+        r#"{"usage":{"prompt_tokens":1,"cost":null}}"#,
+        r#"{"usage":{"prompt_tokens":1}}"#,
+        r#"{"usage":null}"#,
+    ] {
+        let mut reading = Reading::of_body(Shape::OpenAi, Charges::PerReply);
+        reading.finish_body(body.as_bytes());
+        assert_eq!(
+            reading.seen().usage().and_then(|u| u.charge),
+            None,
+            "{body}"
+        );
+    }
+    let mut anthropic = Reading::of_body(Shape::Anthropic, Charges::PerReply);
+    anthropic.finish_body(br#"{"usage":{"input_tokens":1,"cost":0.5}}"#);
+    assert_eq!(
+        anthropic.seen().usage().and_then(|u| u.charge),
         None,
-        "a cut-off count is partial"
+        "only the OpenAI shape carries a cost"
     );
 }

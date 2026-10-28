@@ -414,7 +414,7 @@ fn the_cap_rows_are_cents_from_zero_and_default_to_no_cap() {
             "{path}"
         );
         assert_eq!(key.default, toml::Value::Integer(0), "{path}");
-        // Zero is no cap, and a number is that many cents in micro-dollars.
+        // Zero is no cap, and a number is that many US cents.
         assert_eq!(
             effect(&file_with(path, toml::Value::Integer(0))).0,
             effect("").0
@@ -422,7 +422,9 @@ fn the_cap_rows_are_cents_from_zero_and_default_to_no_cap() {
     }
     assert_eq!(
         settings::cents_to_limit(250),
-        Some(porter_ids::MicroUsd(2_500_000))
+        Some(model_provider::Money::usd(rust_decimal::Decimal::new(
+            250, 2
+        )))
     );
     assert_eq!(settings::cents_to_limit(0), None);
 }

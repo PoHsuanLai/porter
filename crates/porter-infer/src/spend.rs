@@ -1,10 +1,11 @@
-//! Spend caps (design/31 §5.5): per account and per app, daily and monthly, warn then stop.
+//! Spend caps (design/31 §5.5): per account and per app, daily and monthly, warn then stop. A cap
+//! compares the charges the providers reported, never an estimate: it can stop the next turn and
+//! never the current one.
 
-use crate::reply::TokenUsage;
-use porter_capability::PriceTable;
-use porter_core::AccountId;
-use porter_core::AppId;
-use porter_ids::{MicroUsd, Permille};
+use model_provider::Money;
+use porter_core::{AccountId, AppId};
+use porter_ids::{Permille, TurnCount};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 /// Who a cap limits.
@@ -28,14 +29,14 @@ pub enum Period {
 }
 
 /// One cap.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SpendCap {
     /// Who it limits.
     pub scope: SpendScope,
     /// Over which window.
     pub period: Period,
-    /// The limit.
-    pub limit: MicroUsd,
+    /// The limit, in the currency it is set in.
+    pub limit: Money,
     /// The share of the limit that warns (setting `ai.spend.warn_permille`, proposed 800).
     pub warn_at: Permille,
 }
@@ -52,22 +53,69 @@ pub enum SpendVerdict {
     Stop,
 }
 
-/// What `usage` costs at `price`, rounded up to a whole micro-dollar.
-pub fn cost(usage: TokenUsage, price: &PriceTable) -> MicroUsd {
-    let part =
-        |tokens: u32, per_mtok: MicroUsd| (u64::from(tokens) * per_mtok.0).div_ceil(1_000_000);
-    MicroUsd(
-        part(usage.input.0, price.input_per_mtok) + part(usage.output.0, price.output_per_mtok),
-    )
+/// What a scope has been charged: the sum of the charges providers reported, and how many turns
+/// reported none. Only a reported charge ever counts toward a cap; a turn with none is counted
+/// here and nowhere else.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChargeTotal {
+    /// The sum of the reported charges, in the currency of the first one (US dollars, zero, when
+    /// none has come).
+    pub reported: Money,
+    /// The turns that had no charge to add.
+    pub unpriced: TurnCount,
 }
 
-/// The verdict for spending `estimate` more after `spent` this period.
-pub fn spend_verdict(cap: &SpendCap, spent: MicroUsd, estimate: MicroUsd) -> SpendVerdict {
-    let after = spent.0.saturating_add(estimate.0);
-    let warn_line = cap.limit.0.saturating_mul(u64::from(cap.warn_at.0)) / 1000;
-    if after >= cap.limit.0 {
-        SpendVerdict::Stop
-    } else if after >= warn_line {
+impl Default for ChargeTotal {
+    fn default() -> Self {
+        Self {
+            reported: Money::usd(Decimal::ZERO),
+            unpriced: TurnCount(0),
+        }
+    }
+}
+
+impl ChargeTotal {
+    /// The total after one more turn that carried `charge`. A turn with none is `unpriced`, and so
+    /// is one whose charge cannot be added: another currency than the total's, or a sum too large
+    /// to hold. Nothing is converted, guessed or dropped.
+    pub fn counting(self, charge: Option<Money>) -> Self {
+        let unpriced = Self {
+            unpriced: TurnCount(self.unpriced.0.saturating_add(1)),
+            ..self
+        };
+        let Some(charge) = charge else {
+            return unpriced;
+        };
+        // A total that is still zero has no currency yet: the first charge gives it one.
+        let sum = if self.reported.amount.is_zero() {
+            Ok(charge)
+        } else {
+            self.reported.checked_add(charge)
+        };
+        match sum {
+            Ok(reported) => Self { reported, ..self },
+            Err(_) => unpriced,
+        }
+    }
+}
+
+/// What a cap says about one more request, given what has been reported so far. A cap in another
+/// currency than the reported total is never met, and a turn that reported nothing never meets
+/// one.
+pub fn spend_verdict(cap: &SpendCap, spent: &ChargeTotal) -> SpendVerdict {
+    if spent.reported.currency != cap.limit.currency {
+        return SpendVerdict::Within;
+    }
+    let (spent, limit) = (spent.reported.amount, cap.limit.amount);
+    if spent >= limit {
+        return SpendVerdict::Stop;
+    }
+    // A warning line too large to hold is no line: only the limit speaks.
+    let warn_line = limit
+        .checked_mul(Decimal::from(cap.warn_at.0))
+        .and_then(|scaled| scaled.checked_div(Decimal::ONE_THOUSAND))
+        .unwrap_or(limit);
+    if spent >= warn_line {
         SpendVerdict::Warn
     } else {
         SpendVerdict::Within
@@ -77,14 +125,25 @@ pub fn spend_verdict(cap: &SpendCap, spent: MicroUsd, estimate: MicroUsd) -> Spe
 #[cfg(test)]
 mod tests {
     use super::*;
+    use iso_currency::Currency;
     use porter_core::AccountId;
-    use porter_ids::Tokens;
 
-    fn cap(limit: u64) -> SpendCap {
+    fn usd(cents: i64) -> Money {
+        Money::usd(Decimal::new(cents, 2))
+    }
+
+    fn total(cents: i64) -> ChargeTotal {
+        ChargeTotal {
+            reported: usd(cents),
+            unpriced: TurnCount(0),
+        }
+    }
+
+    fn cap(limit_cents: i64) -> SpendCap {
         SpendCap {
             scope: SpendScope::Account(AccountId::parse("openrouter").expect("id")),
             period: Period::Daily,
-            limit: MicroUsd(limit),
+            limit: usd(limit_cents),
             warn_at: Permille(800),
         }
     }
@@ -92,51 +151,63 @@ mod tests {
     #[test]
     fn caps_warn_at_the_line_and_stop_at_the_limit() {
         let cases = [
-            ("well under", 100, 0, 10, SpendVerdict::Within),
-            ("just under the line", 100, 70, 9, SpendVerdict::Within),
-            ("on the line", 100, 70, 10, SpendVerdict::Warn),
-            ("just under the limit", 100, 90, 9, SpendVerdict::Warn),
-            ("reaching the limit", 100, 90, 10, SpendVerdict::Stop),
-            ("already over", 100, 150, 0, SpendVerdict::Stop),
+            ("well under", 100, 10, SpendVerdict::Within),
+            ("just under the line", 100, 79, SpendVerdict::Within),
+            ("on the line", 100, 80, SpendVerdict::Warn),
+            ("just under the limit", 100, 99, SpendVerdict::Warn),
+            ("at the limit", 100, 100, SpendVerdict::Stop),
+            ("already over", 100, 150, SpendVerdict::Stop),
         ];
-        for (name, limit, spent, estimate, expected) in cases {
-            let got = spend_verdict(&cap(limit), MicroUsd(spent), MicroUsd(estimate));
+        for (name, limit, spent, expected) in cases {
+            let got = spend_verdict(&cap(limit), &total(spent));
             assert_eq!(got, expected, "{name}");
         }
     }
 
     #[test]
-    fn cost_is_per_million_tokens_rounded_up() {
-        let price = PriceTable {
-            input_per_mtok: MicroUsd(3_000_000),
-            output_per_mtok: MicroUsd(15_000_000),
-        };
-        let cases = [
-            ("nothing", 0, 0, 0),
-            ("a million in", 1_000_000, 0, 3_000_000),
-            ("one token each way", 1, 1, 3 + 15),
-        ];
-        for (name, input, output, expected) in cases {
-            let usage = TokenUsage {
-                input: Tokens(input),
-                output: Tokens(output),
-                cached: Tokens(0),
-            };
-            assert_eq!(cost(usage, &price), MicroUsd(expected), "{name}");
+    fn turns_that_reported_nothing_never_meet_a_cap() {
+        let mut spent = ChargeTotal::default();
+        for _ in 0..1_000 {
+            spent = spent.counting(None);
         }
-        let cheap = PriceTable {
-            input_per_mtok: MicroUsd(1),
-            output_per_mtok: MicroUsd(0),
-        };
-        let usage = TokenUsage {
-            input: Tokens(1),
-            output: Tokens(0),
-            cached: Tokens(0),
+        assert_eq!(spent.unpriced, TurnCount(1_000));
+        assert_eq!(spend_verdict(&cap(1), &spent), SpendVerdict::Within);
+    }
+
+    #[test]
+    fn a_cap_in_another_currency_than_the_reports_is_never_met() {
+        let euros = SpendCap {
+            limit: Money::new(Decimal::ONE, Currency::EUR),
+            ..cap(1)
         };
         assert_eq!(
-            cost(usage, &cheap),
-            MicroUsd(1),
-            "a fraction rounds up to one"
+            spend_verdict(&euros, &total(1_000_000)),
+            SpendVerdict::Within
         );
+    }
+
+    #[test]
+    fn reported_charges_add_exactly_and_the_rest_are_counted_unpriced() {
+        let first = ChargeTotal::default().counting(Some(Money::usd(Decimal::new(1, 1))));
+        let both = first.counting(Some(Money::usd(Decimal::new(2, 1))));
+        assert_eq!(both.reported, Money::usd(Decimal::new(3, 1)));
+        assert_eq!(both.unpriced, TurnCount(0));
+
+        // The first charge gives an empty total its currency.
+        let euros = Money::new(Decimal::new(5, 0), Currency::EUR);
+        assert_eq!(ChargeTotal::default().counting(Some(euros)).reported, euros);
+
+        // A charge in another currency than the total's is not added, and not lost: it is counted.
+        let mixed = both.counting(Some(euros));
+        assert_eq!(mixed.reported, both.reported);
+        assert_eq!(mixed.unpriced, TurnCount(1));
+
+        // So is a sum too large to hold.
+        let top = ChargeTotal {
+            reported: Money::usd(Decimal::MAX),
+            unpriced: TurnCount(0),
+        };
+        let over = top.counting(Some(Money::usd(Decimal::ONE)));
+        assert_eq!((over.reported, over.unpriced), (top.reported, TurnCount(1)));
     }
 }

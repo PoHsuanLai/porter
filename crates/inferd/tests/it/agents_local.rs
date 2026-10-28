@@ -62,11 +62,14 @@ async fn a_local_route_serves_an_anthropic_tool_conversation_with_no_key_and_no_
     // No key was asked for, nothing was spent, and the audit line says it ran here.
     let calls = world.accountd.as_ref().expect("accountd").calls();
     assert!(calls.resolved.is_empty() && calls.verdicts.is_empty());
-    assert_eq!(spent(&world, "").micro_usd, 0);
+    assert_eq!(
+        spent(&world, "").charges,
+        porter_infer::ChargeTotal::default()
+    );
     let audited = world.audit.entries();
     assert_eq!(audited.len(), 1);
     assert_eq!(audited[0].locality, porter_capability::Locality::OnDevice);
-    assert_eq!(audited[0].cost, None);
+    assert_eq!(audited[0].usage.charge, None);
     assert_eq!(audited[0].app, agent_app());
     assert!(provider_requests(&world).is_empty());
 }
@@ -280,7 +283,7 @@ async fn an_attached_my_network_engine_follows_the_floor_and_the_my_network_sett
         audited[0].locality,
         porter_capability::Locality::LocalNetwork
     );
-    assert_eq!(audited[0].cost, None);
+    assert_eq!(audited[0].usage.charge, None);
     // The setting turned back off: the open session's next request is refused.
     let mut settings = (*world.served.settings()).clone();
     settings.my_network = inferd::settings::MyNetwork::Off;

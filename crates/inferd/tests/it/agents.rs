@@ -13,9 +13,11 @@ use hosting::rig::{AgentsPlan, World};
 use inferd::peers::{Caller, Role};
 use inferd::settings::AgentEndpoint;
 use inferd::settings::SpendLine;
+use model_provider::Money;
 use porter_dbus::{AgentsProxy, Details};
-use porter_ids::MicroUsd;
-use porter_infer::{Period, Policy, SpendScope};
+use porter_ids::TurnCount;
+use porter_infer::{ChargeTotal, Period, Policy, SpendScope};
+use rust_decimal::Decimal;
 use serde_json::json;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -90,12 +92,16 @@ async fn an_anthropic_chat_with_a_tool_call_and_result_streams_through_with_the_
             .all(|(_, v)| !v.contains(KEY_ANTHROPIC))
     );
 
-    // Five tokens in and two out at 4 and 20 dollars a million: 60 micro-dollars, counted
-    // against the program and the account, and audited once without content.
+    // Five tokens in and two out, counted against the program and the account, and audited once
+    // without content. Anthropic reports no charge, so the turn is counted unpriced, not priced.
+    let unpriced_once = ChargeTotal {
+        unpriced: TurnCount(1),
+        ..ChargeTotal::default()
+    };
     let counted = spent(&world, "anthropic");
     assert_eq!(
-        (counted.tokens_in, counted.tokens_out, counted.micro_usd),
-        (5, 2, 60)
+        (counted.tokens_in, counted.tokens_out, counted.charges),
+        (5, 2, unpriced_once)
     );
     let cloud = world.served.cloud().expect("cloud");
     let on_account = cloud.ledger().spent(
@@ -103,13 +109,13 @@ async fn an_anthropic_chat_with_a_tool_call_and_result_streams_through_with_the_
         Period::Daily,
         cloud.now(),
     );
-    assert_eq!(on_account.micro_usd, 60);
+    assert_eq!(on_account.charges, unpriced_once);
     let audited = world.audit.entries();
     assert_eq!(audited.len(), 1);
     assert_eq!(audited[0].app, agent_app());
     assert_eq!(audited[0].account.as_str(), "anthropic");
     assert_eq!(audited[0].model.as_str(), "claude-opus-5.5");
-    assert_eq!(audited[0].cost, Some(MicroUsd(60)));
+    assert_eq!(audited[0].usage.charge, None);
     assert_eq!(audited[0].usage.input.0, 5);
     assert_eq!(audited[0].usage.output.0, 2);
     let line = serde_json::to_string(&audited[0]).expect("json");
@@ -183,12 +189,17 @@ async fn an_openai_chat_with_a_tool_call_and_result_streams_through_with_the_rea
     assert_eq!(seen[0].body, want);
     assert!(!contains(reply.body.as_bytes(), KEY_OPENAI));
 
-    // Five in at 0.1 and two out at 0.5 dollars a million: one and a half, rounded up to two.
+    // Five in and two out; OpenAI reports no charge, so the turn is counted unpriced.
     let counted = spent(&world, "openai");
     assert_eq!(
-        (counted.tokens_in, counted.tokens_out, counted.micro_usd),
-        (5, 2, 2)
+        (
+            counted.tokens_in,
+            counted.tokens_out,
+            counted.charges.unpriced
+        ),
+        (5, 2, TurnCount(1))
     );
+    assert_eq!(counted.charges.reported, Money::usd(Decimal::ZERO));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -222,7 +233,11 @@ async fn requests_that_do_not_stream_are_answered_whole_and_metered() {
         "whole answer"
     );
     assert_eq!(world.audit.entries().len(), 2);
-    assert_eq!(spent(&world, "x").micro_usd, 62, "60 and 2");
+    assert_eq!(
+        spent(&world, "x").charges.unpriced,
+        TurnCount(2),
+        "two turns, neither with a charge"
+    );
 }
 
 // ---- sessions: tokens, closing, the launcher going away ------------------------------------
@@ -561,7 +576,7 @@ async fn over_the_spend_cap_the_agent_is_told_to_stop_and_nothing_is_sent_or_cou
         say("x"),
         say("y"),
     );
-    // Five cents a day for the program.
+    // Five cents a day for the program, which only a charge a provider reported can reach.
     capped.spend = SpendLine {
         limits: inferd::settings::SpendLimits {
             app: inferd::settings::ScopeLimits {
@@ -580,51 +595,43 @@ async fn over_the_spend_cap_the_agent_is_told_to_stop_and_nothing_is_sent_or_cou
     )
     .await;
     let body = anthropic_body("claude-opus-5-5", false);
-    // Under the cap: served and counted.
+    // Under the cap: served and counted. Anthropic reports no charge, so this turn is no money.
     assert_eq!(messages(&endpoint, &body).await.status, 200);
     let cloud = world.served.cloud().expect("cloud");
-    // The program has spent 45,000 micro-dollars of its 50,000 elsewhere today: less is left than
-    // the worst this request can cost (its prompt and the 256 tokens of reply it asks for, about
-    // 6,000), so it is refused before it goes out though what it would use fits.
-    cloud.ledger().record(
-        &agent_app(),
-        &porter_core::AccountId::parse("anthropic").expect("id"),
-        porter_infer::TokenUsage {
-            input: porter_ids::Tokens(0),
-            output: porter_ids::Tokens(0),
-            cached: porter_ids::Tokens(0),
-        },
-        MicroUsd(44_940),
-        cloud.now(),
-    );
-    let before = spent(&world, "anthropic").micro_usd;
-    assert_eq!(before, 45_000);
+    // Another provider reported four cents charged to the program today: under the cap, so the
+    // next request is still served, and it is not held for what it might cost.
+    let charged = |cents: i64| porter_infer::TokenUsage {
+        input: porter_ids::Tokens(0),
+        output: porter_ids::Tokens(0),
+        cached: porter_ids::Tokens(0),
+        charge: Some(Money::usd(Decimal::new(cents, 2))),
+    };
+    let anthropic = porter_core::AccountId::parse("anthropic").expect("id");
+    cloud
+        .ledger()
+        .record(&agent_app(), &anthropic, charged(4), cloud.now());
+    assert_eq!(messages(&endpoint, &body).await.status, 200);
+    // One more cent reported reaches the cap: the next request is refused before it goes out.
+    cloud
+        .ledger()
+        .record(&agent_app(), &anthropic, charged(1), cloud.now());
+    let before = spent(&world, "anthropic");
+    assert_eq!(before.charges.reported, Money::usd(Decimal::new(5, 2)));
     let reply = messages(&endpoint, &body).await;
     assert_eq!(reply.status, 429, "{}", reply.body);
     assert_eq!(reply.header("x-should-retry"), Some("false"));
     assert_eq!(reply.json()["error"]["type"], "rate_limit_error");
     assert_eq!(
         provider_requests(&world).len(),
-        1,
-        "the provider saw only the first"
+        2,
+        "the provider saw only the two served"
     );
     assert_eq!(
-        spent(&world, "anthropic").micro_usd,
+        spent(&world, "anthropic"),
         before,
         "a refused request counts nothing"
     );
     // The cap is the program's, whichever account pays: the same refusal in OpenAI's shape.
-    cloud.ledger().record(
-        &agent_app(),
-        &porter_core::AccountId::parse("openai").expect("id"),
-        porter_infer::TokenUsage {
-            input: porter_ids::Tokens(0),
-            output: porter_ids::Tokens(0),
-            cached: porter_ids::Tokens(0),
-        },
-        MicroUsd(9_900),
-        cloud.now(),
-    );
     let openai = open(
         &world,
         &account_route("openai", &["gpt-6-luna"]),
@@ -634,7 +641,7 @@ async fn over_the_spend_cap_the_agent_is_told_to_stop_and_nothing_is_sent_or_cou
     let reply = completions(&openai, &openai_body("gpt-6-luna", false)).await;
     assert_eq!(reply.status, 429, "{}", reply.body);
     assert_eq!(reply.json()["error"]["code"], "spend_cap_reached");
-    assert_eq!(provider_requests(&world).len(), 1);
+    assert_eq!(provider_requests(&world).len(), 2);
 }
 
 /// A request that fails before it is sent (here the account's key cannot be read) holds nothing:
@@ -662,7 +669,7 @@ async fn a_request_that_fails_before_it_is_sent_counts_nothing() {
         assert_ne!(reply.status, 200, "{}", reply.body);
     }
     assert!(provider_requests(&world).is_empty());
-    assert_eq!(spent(&world, "anthropic").micro_usd, 0);
+    assert_eq!(spent(&world, "anthropic").charges, ChargeTotal::default());
 }
 
 // ---- models --------------------------------------------------------------------------------
