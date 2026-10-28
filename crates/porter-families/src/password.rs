@@ -7,7 +7,6 @@
 //! credential itself.
 
 use base64::Engine;
-use porter_capability::{Claim, Offer, Provenance, Subject};
 use porter_core::{Credential, SecretText};
 use porter_http::HttpError;
 use porter_http::http::Request;
@@ -112,18 +111,6 @@ pub(crate) fn authorize(request: &mut Request<Vec<u8>>, value: &str) -> Result<(
         .headers_mut()
         .insert(AUTHORIZATION, sensitive(value)?);
     Ok(())
-}
-
-/// What the provider file declares, as claims at `Declared` provenance.
-pub(crate) fn declared(spec: &ProviderSpec) -> Vec<Claim> {
-    spec.capabilities
-        .iter()
-        .map(|row| Claim {
-            subject: Subject::Account,
-            offer: Offer::Present(row.capability.clone()),
-            provenance: Provenance::Declared,
-        })
-        .collect()
 }
 
 /// The password an account presents: the credential, when it is one.

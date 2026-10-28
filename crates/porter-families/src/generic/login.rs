@@ -9,9 +9,8 @@
 //!
 //! DAV does not come through here: `dav::discover` already sends a PROPFIND with the password.
 
-use porter_capability::CapabilityKind;
 use porter_core::stream::ByteStream;
-use porter_core::{Credential, EndpointProtocol, Reach, RelayAuth, RelayPlan, ServiceEndpoint};
+use porter_core::{Credential, RelayPlan, ServiceEndpoint};
 use porter_proxy::{Connect, RelayEnd, RelayFault, RustlsConnect, relay};
 use porter_sheet::SignInFault;
 use std::future::Future;
@@ -61,28 +60,11 @@ impl SharedLogin {
         credential: &Credential,
         endpoints: &[ServiceEndpoint],
     ) -> Result<(), SignInFault> {
-        let (Credential::Password(password), Some(endpoint)) = (credential, incoming(endpoints))
-        else {
+        let Some(plan) = generic_proto::check::plan(credential, endpoints) else {
             return Ok(());
         };
-        let plan = RelayPlan::new(
-            endpoint.clone(),
-            CapabilityKind::Mail,
-            RelayAuth::Password(password.clone()),
-            Reach::origin(),
-        );
         self.0.check_boxed(plan).await
     }
-}
-
-/// The endpoint the account reads mail from.
-fn incoming(endpoints: &[ServiceEndpoint]) -> Option<&ServiceEndpoint> {
-    endpoints.iter().find(|e| {
-        matches!(
-            e.protocol(),
-            Some(EndpointProtocol::Imap | EndpointProtocol::Pop3)
-        )
-    })
 }
 
 /// What the person is told for a relay that ended without a login.

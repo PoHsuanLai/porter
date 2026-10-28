@@ -1140,6 +1140,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "generic-proto"
+version = "0.1.0"
+dependencies = [
+ "dav-proto",
+ "http",
+ "porter-capability",
+ "porter-core",
+ "porter-ids",
+ "porter-provider",
+ "porter-sheet",
+ "thiserror",
+]
+
+[[package]]
 name = "getrandom"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2739,6 +2753,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "dav-proto",
+ "generic-proto",
  "nextcloud-proto",
  "porter-capability",
  "porter-core",

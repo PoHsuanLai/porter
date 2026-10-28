@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### generic-proto
+
+- New crate generic-proto: the typed and file-named mail servers (`typed`, `fixed`, `domain_of`),
+  the `.well-known` and PROPFIND requests of DAV discovery with their verdicts, the JMAP session
+  request and the plan of the password check, with no IO. The generic family only sends them.
+
 ### nextcloud-proto
 
 - New crate nextcloud-proto: Login Flow v2, the OCS capabilities (moved from porter-discover:

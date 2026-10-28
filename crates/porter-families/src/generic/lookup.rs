@@ -5,6 +5,7 @@ use super::mail::{self, Looked};
 use super::sign_in::{Located, Lookup, Outcome, Seams};
 use super::{dav, jmap};
 use crate::password::{password_for, plain, text_of, typed_password};
+use generic_proto::mail as proto_mail;
 use porter_capability::Claim;
 use porter_core::{Credential, EndpointUrl, Family, LoginName, SecretText, ServiceEndpoint};
 use porter_provider::{ProviderSpec, SignInMode, SignInStep};
@@ -58,7 +59,7 @@ fn address_and_password(answers: &[FieldAnswer]) -> Option<(String, SecretText)>
         text_of(answers, FieldKind::Address)?,
         typed_password(answers)?,
     );
-    mail::domain_of(&address).map(|_| (address, password))
+    proto_mail::domain_of(&address).map(|_| (address, password))
 }
 
 impl MailLookup {
@@ -99,7 +100,7 @@ impl MailLookup {
 
     /// Asks for the mail server, keeping what was typed.
     fn ask_server(typed: Typed) -> Outcome<Typed> {
-        let domain = mail::domain_of(&typed.login).map(|d| d.as_str().to_owned());
+        let domain = proto_mail::domain_of(&typed.login).map(|d| d.as_str().to_owned());
         Outcome::Ask(
             SignInStep::AskFields(manual_form(Protocol::Imap, domain.as_deref())),
             typed,
@@ -164,8 +165,14 @@ impl Lookup for MailLookup {
         let login = LoginName(manual.login().map_or(typed.login.clone(), str::to_owned));
         let mut credential = Credential::Password(typed.password.clone());
         let built = match &manual {
-            Manual::Imap(servers) => mail::typed(Family::Imap, servers, &typed.login, seams.spec),
-            Manual::Pop3(servers) => mail::typed(Family::Pop3, servers, &typed.login, seams.spec),
+            Manual::Imap(servers) => {
+                proto_mail::typed(Family::Imap, servers, &typed.login, seams.spec)
+                    .map_err(|_| SignInFault::Unreadable)
+            }
+            Manual::Pop3(servers) => {
+                proto_mail::typed(Family::Pop3, servers, &typed.login, seams.spec)
+                    .map_err(|_| SignInFault::Unreadable)
+            }
             Manual::Jmap(server) => {
                 if let Some(token) = &server.token {
                     credential = Credential::Bearer(token.clone());
@@ -228,7 +235,7 @@ impl Lookup for FixedLookup {
         let Some((address, password)) = address_and_password(&answers) else {
             return Outcome::Fail(SignInFault::Unreadable);
         };
-        match mail::fixed(&address, seams.spec) {
+        match proto_mail::fixed(&address, seams.spec).map_err(|_| SignInFault::Unreadable) {
             Ok((endpoints, claims)) => Outcome::Known(Located {
                 credential: Credential::Password(password),
                 label: address,

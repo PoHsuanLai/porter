@@ -1,0 +1,22 @@
+[package]
+name = "generic-proto"
+description = "A generic account's servers with no IO: the mail servers a person typed or a provider file names, the DAV and JMAP lookups as requests (http::Request<Vec<u8>>) and verdicts over the replies, and the plan of the password check at the incoming mail server."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+dav-proto = { workspace = true, features = ["discover"] }
+porter-core = { workspace = true }
+porter-capability = { workspace = true }
+porter-ids = { workspace = true }
+porter-provider = { workspace = true }
+porter-sheet = { workspace = true }
+http = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

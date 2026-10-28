@@ -35,6 +35,7 @@ members = [
   "crates/porter-discover",
   "crates/dav-proto",
   "crates/nextcloud-proto",
+  "crates/generic-proto",
   "crates/porter-families",
   "crates/porter-tailscale",
   "crates/porter-tailnet",
@@ -100,6 +101,7 @@ porter-oauth    = { path = "crates/porter-oauth" }
 porter-discover = { path = "crates/porter-discover" }
 dav-proto       = { path = "crates/dav-proto" }
 nextcloud-proto = { path = "crates/nextcloud-proto" }
+generic-proto   = { path = "crates/generic-proto" }
 porter-families = { path = "crates/porter-families" }
 porter-tailscale = { path = "crates/porter-tailscale" }
 porter-tailnet  = { path = "crates/porter-tailnet" }

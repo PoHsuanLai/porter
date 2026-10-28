@@ -1,7 +1,7 @@
 use super::*;
 
 fn spec() -> ProviderSpec {
-    porter_provider::parse_provider(include_str!("../../../../../providers/generic-imap.toml"))
+    porter_provider::parse_provider(include_str!("../../../../providers/generic-imap.toml"))
         .expect("the shipped file")
 }
 
@@ -130,7 +130,7 @@ fn plain_is_for_loopback_only() {
     );
     assert_eq!(
         typed(Family::Imap, &elsewhere, "ada@example.org", &spec()).err(),
-        Some(SignInFault::Unreadable)
+        Some(Error::Unreadable)
     );
 }
 

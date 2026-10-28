@@ -15,9 +15,23 @@ mod lookup;
 mod mail;
 mod sign_in;
 
+/// What a generic-proto error means for a sign-in. Plain `http` to another computer is a
+/// server that cannot be reached safely.
+fn fault(error: generic_proto::Error) -> porter_sheet::SignInFault {
+    use porter_sheet::SignInFault;
+    match error {
+        generic_proto::Error::Refused => SignInFault::Refused,
+        generic_proto::Error::Unreachable | generic_proto::Error::Insecure => {
+            SignInFault::Unreachable
+        }
+        _ => SignInFault::Unreadable,
+    }
+}
+
 use crate::conversation::Conversation;
 use crate::io::{Io, SharedDns};
-use crate::password::{declared, secret_presented};
+use crate::password::secret_presented;
+use generic_proto::declared;
 use porter_capability::Claim;
 use porter_core::AccountId;
 use porter_core::{Account, Audience, Credential, IssuedToken};
