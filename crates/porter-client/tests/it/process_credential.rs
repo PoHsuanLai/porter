@@ -12,7 +12,7 @@ use common::fake_inferd::{FakeInferd, KEY, Sheets};
 use porter_capability::{AgentProgram, EnvName};
 use porter_client::credential::{ChildKey, ChildKeyError, CredentialHandle, Delivery};
 use porter_client::{Launcher, LauncherError};
-use porter_core::KeyPermitId;
+use porter_core::GrantId;
 use porter_core::audit::{CredentialEnd, Handoff};
 use porter_dbus::{BusStream, LauncherFault};
 use porter_wire::Refusal;
@@ -24,8 +24,8 @@ fn program() -> AgentProgram {
     AgentProgram::parse("claude-code").expect("program")
 }
 
-fn permit(id: &str) -> KeyPermitId {
-    KeyPermitId::parse(id).expect("permit")
+fn permit(id: &str) -> GrantId {
+    GrantId::parse(id).expect("permit")
 }
 
 fn key_env() -> EnvName {

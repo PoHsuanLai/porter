@@ -36,7 +36,7 @@ use porter_capability::AgentProgram;
 use porter_capability::{CapabilityKind, Toggle};
 use porter_core::consent::{Decision, GrantScope};
 use porter_core::{Account, AccountState, AppId, AuthKind};
-use porter_core::{AccountId, GrantId, KeyPermitId};
+use porter_core::{AccountId, GrantId};
 use porter_core::{LauncherSession, ProcessCredentialId};
 use porter_dbus::LauncherFault;
 use porter_service::Registry;
@@ -136,7 +136,7 @@ impl<H: LauncherHost, P: Peers> Core<H, P> {
         target: &str,
     ) -> Result<(String, OwnedValue), RefusedError> {
         let owner = self.launcher_of(header).await?;
-        let grant = GrantId::from(KeyPermitId::parse(permit).map_err(RefusedError::invalid)?);
+        let grant = GrantId::parse(permit).map_err(RefusedError::invalid)?;
         let program = AgentProgram::parse(program).map_err(RefusedError::invalid)?;
         let handoff = Handoff::from_word(target).ok_or_else(|| {
             RefusedError::invalid(format!("`{target}` is not a way to hand a key"))

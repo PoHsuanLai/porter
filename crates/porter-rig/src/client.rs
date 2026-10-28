@@ -19,7 +19,7 @@ use porter_core::LauncherSession;
 use porter_core::ProviderHint;
 use porter_core::audit::Handoff;
 use porter_core::consent::Usage;
-use porter_core::{AccountId, KeyPermitId, ProviderId};
+use porter_core::{AccountId, GrantId, ProviderId};
 use porter_core::{DataClass, IdentityId};
 use porter_dbus::{SyncProxy, from_vardict};
 use porter_ids::Tokens;
@@ -221,7 +221,7 @@ pub enum LauncherCommand {
     Issue {
         /// The permit.
         #[arg(value_parser = permit)]
-        permit: KeyPermitId,
+        permit: GrantId,
         /// The agent program.
         #[arg(value_parser = program)]
         program: AgentProgram,
@@ -247,8 +247,8 @@ fn account(id: &str) -> Result<AccountId, String> {
     AccountId::parse(id).map_err(|e| format!("`{id}` is not an account id: {e}"))
 }
 
-fn permit(id: &str) -> Result<KeyPermitId, String> {
-    KeyPermitId::parse(id).map_err(|e| format!("`{id}` is not a permit id: {e}"))
+fn permit(id: &str) -> Result<GrantId, String> {
+    GrantId::parse(id).map_err(|e| format!("`{id}` is not a permit id: {e}"))
 }
 
 fn session(text: &str) -> Result<LauncherSession, String> {
@@ -530,7 +530,7 @@ async fn launcher_request_key(
 
 async fn launcher_issue(
     connection: &zbus::Connection,
-    permit: &KeyPermitId,
+    permit: &GrantId,
     program: &AgentProgram,
     target: Handoff,
     emit: &mut impl FnMut(Value),

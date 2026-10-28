@@ -46,7 +46,7 @@ pub use grant_key::{GrantKey, decide_key};
 pub use helper_id::HelperId;
 pub use identities::{Identity, IdentityAddress, IdentityId, IdentityKind, IdentityName};
 pub use identity::{CgroupPath, ClaimedId, PeerFacts, PeerIdentity, SandboxFacts, identity_of};
-pub use ids::{AccountId, GrantId, KeyPermitId, ProviderId};
+pub use ids::{AccountId, GrantId, ProviderId};
 pub use launcher_session::LauncherSession;
 pub use process_credential::ProcessCredentialId;
 pub use protocol::EndpointProtocol;

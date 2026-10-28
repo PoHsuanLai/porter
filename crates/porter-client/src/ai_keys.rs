@@ -1,6 +1,6 @@
 //! The person's AI keys, as an app asks for them (`org.quire.Inference1.Keys` on inferd). An AI
 //! key is inferd's: whoever uses a credential holds it, and an app never sees one. What an app
-//! gets is the person's yes to use their keys, a permit ([`KeyPermitId`]), after inferd shows the
+//! gets is the person's yes to use their keys, a permit ([`GrantId`]), after inferd shows the
 //! consent sheet; and it can send the person to add a key through the same kind of sheet.
 //!
 //! ```ignore
@@ -22,7 +22,7 @@ use crate::abandon::Abandon;
 use crate::call_failure::{CallFailure, bus_failure_from};
 use porter_core::ProviderHint;
 use porter_core::consent::Usage;
-use porter_core::{AccountId, KeyPermitId};
+use porter_core::{AccountId, GrantId};
 use porter_core::{CoreError, DataClass};
 use porter_dbus::sheet::{SheetKind, reply_of};
 use porter_dbus::{BusConnection, BusError, KeysProxy, ServiceRoot, Sheet, SheetError, refusal_of};
@@ -121,7 +121,7 @@ impl AiKeys {
         class: DataClass,
         usage: Usage,
         window: &ParentWindow,
-    ) -> Result<KeyPermitId, AiKeysError> {
+    ) -> Result<GrantId, AiKeysError> {
         let (class, usage, window) = (slug(&class)?, slug(&usage)?, wire(window));
         let reply = self
             .sheet(SheetKind::Choose, |options| async move {
@@ -132,7 +132,7 @@ impl AiKeys {
             .await?;
         match reply {
             // The answer is the chosen key; its `grant` is the permit's id.
-            AccountsReply::Chosen(candidate) => Ok(candidate.grant.into()),
+            AccountsReply::Chosen(candidate) => Ok(candidate.grant),
             AccountsReply::Refused(refusal) => Err(AiKeysError::Refused(refusal)),
             other => {
                 Err(CallFailure::Malformed(format!("a key request answered with {other:?}")).into())

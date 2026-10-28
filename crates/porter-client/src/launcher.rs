@@ -5,7 +5,7 @@
 //!
 //! The launcher talks to inferd (`org.quire.Inference1`), which holds the AI keys: whoever uses a
 //! credential holds it. An agent's yes to use one of the person's keys is a permit
-//! ([`KeyPermitId`]), asked for with [`Launcher::request_agent_key`].
+//! ([`GrantId`]), asked for with [`Launcher::request_agent_key`].
 //!
 //! For an agent that cannot be pointed at inferd the launcher can also be handed an API key for
 //! the process it spawns ([`Launcher::issue_credential`]; the duties and the residual risk are in
@@ -35,7 +35,7 @@ use porter_capability::AgentProgram;
 use porter_capability::{Capability, Subject};
 use porter_capability::{LoginOutcome, LoginRequestId};
 use porter_core::audit::Handoff;
-use porter_core::{AccountId, KeyPermitId, ProviderId};
+use porter_core::{AccountId, GrantId, ProviderId};
 use porter_core::{AccountLabel, Candidate, CoreError, DataClass, Restriction};
 use porter_core::{LauncherSession, ProcessCredentialId};
 use porter_dbus::sheet::{SheetKind, reply_of};
@@ -123,7 +123,7 @@ pub struct KeyCandidate {
     /// What limits it.
     pub restriction: Restriction,
     /// The person's yes for this agent to use the key; `issue_credential` is asked by it.
-    pub permit: KeyPermitId,
+    pub permit: GrantId,
 }
 
 impl From<Candidate> for KeyCandidate {
@@ -135,7 +135,7 @@ impl From<Candidate> for KeyCandidate {
             subject: candidate.subject,
             capability: candidate.capability,
             restriction: candidate.restriction,
-            permit: candidate.grant.into(),
+            permit: candidate.grant,
         }
     }
 }
@@ -250,7 +250,7 @@ impl Launcher {
     /// documentation of [`crate::credential`] for the launcher's duties.
     pub async fn issue_credential(
         &self,
-        permit: &KeyPermitId,
+        permit: &GrantId,
         program: &AgentProgram,
         target: Handoff,
     ) -> Result<ProcessCredential, LauncherError> {

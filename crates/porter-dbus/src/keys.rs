@@ -8,7 +8,7 @@
 //! - `RequestKey(class, usage, parent_window, options)`: the consent sheet for the caller's use of
 //!   one of the person's AI keys for data of `class`, used `usage` (`interactive`, `background`).
 //!   Answered with the results of a `Choose` response (the chosen key's account) whose `grant` is
-//!   the permit's id: a [`porter_core::KeyPermitId`].
+//!   the permit's id: a [`porter_core::GrantId`].
 //! - `AddAccount(provider_hint, parent_window, options)`: the sheet that adds an AI key or an
 //!   agent's account. Answered as `Manager.AddAccount` is (`account`, `path`).
 //!
