@@ -1,6 +1,7 @@
 //! Every provider file the repo ships parses, round-trips through TOML, and lays over the
 //! others by id.
 
+use porter_ids::word::word as word_of;
 use porter_provider::{ProviderSet, ProviderSpec, parse_provider};
 use std::path::PathBuf;
 
@@ -801,7 +802,7 @@ fn only_googles_picker_row_lists_an_authenticated_origin_and_it_is_one_exact_hos
                 .map(|row| {
                     (
                         spec.id.as_str().to_owned(),
-                        row.family.slug().to_owned(),
+                        word_of(&row.family).to_owned(),
                         row.auth_origins.iter().map(ToString::to_string).collect(),
                     )
                 })

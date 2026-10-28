@@ -26,6 +26,7 @@ use porter_core::consent::{Decision, Grant, GrantScope};
 use porter_core::{Account, AccountState, AgentState, AppId, AppName, AuthKind, Isolation};
 use porter_core::{AccountId, GrantId};
 use porter_families::set::ProviderNames;
+use porter_ids::word::word as word_of;
 use porter_infer::ChargeTotal;
 use porter_service::{Launchers as LaunchersSeam, LoginEnd, Registry, program_of};
 use porter_sheet::ProviderGroup;
@@ -289,7 +290,7 @@ fn account_keys(
         .unwrap_or_else(|| account.provider.as_str());
     let group_words: Vec<(&str, &str)> = ProviderGroup::ALL
         .iter()
-        .map(|group| (group.slug(), porter_sheet::words::group_heading(*group)))
+        .map(|group| (word_of(&group), porter_sheet::words::group_heading(*group)))
         .collect();
     let fixed = |key: Key, label: &str, word: &str| {
         spec(
@@ -310,7 +311,7 @@ fn account_keys(
         fixed(
             Key::SignIn(id.clone()),
             "Signs in",
-            account.auth.facts().way.slug(),
+            word_of(&account.auth.facts().way),
         ),
         readout(
             &Key::Provider(id.clone()),
@@ -323,7 +324,7 @@ fn account_keys(
             &Key::Group(id.clone()),
             section,
             "Listed under",
-            providers.group_of(account).slug(),
+            word_of(&providers.group_of(account)),
             &group_words,
         ),
     ];
@@ -738,9 +739,9 @@ impl<H: KeyHost, L: LaunchersSeam + Clone + 'static> AccountRows<H, L> {
             Key::State(id) => text(state_slug(account(&id)?.state)),
             Key::Label(id) => text(&account(&id)?.label.0),
             Key::Place(id) => text(place_slug(account(&id)?)),
-            Key::SignIn(id) => text(account(&id)?.auth.facts().way.slug()),
+            Key::SignIn(id) => text(word_of(&account(&id)?.auth.facts().way)),
             Key::Provider(id) => text(account(&id)?.provider.as_str()),
-            Key::Group(id) => text(self.providers.group_of(account(&id)?).slug()),
+            Key::Group(id) => text(word_of(&self.providers.group_of(account(&id)?))),
             Key::Since(_, grant) => registry
                 .grants
                 .iter()

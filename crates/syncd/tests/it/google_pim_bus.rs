@@ -7,6 +7,7 @@
 //! session bus, `~/.local` or the network.
 
 use crate::common;
+use porter_ids::word::word as word_of;
 
 use common::bus::PrivateBus;
 use common::caller as caller_of;
@@ -70,7 +71,7 @@ v = { access = "read_write", delta = "none", transport = "google_api", collectio
 
 /// What the fake provider mints for the audience of this account's endpoint of `family`.
 fn bearer(family: Family) -> String {
-    format!("fake:{ACCOUNT}:{}", family.slug())
+    format!("fake:{ACCOUNT}:{}", word_of(&family))
 }
 
 fn read(path: &Path) -> Option<String> {

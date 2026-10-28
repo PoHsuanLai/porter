@@ -14,6 +14,7 @@ use ds_settings::schema::{
 use porter_core::AccountId;
 use porter_core::{Account, AccountState, AppName, AuthKind};
 use porter_families::set::ProviderNames;
+use porter_ids::word::word as word_of;
 use porter_ids::word::{from_word, word};
 use porter_provider::Issuer;
 use porter_service::Registry;
@@ -225,7 +226,7 @@ fn account_keys(
         .unwrap_or_else(|| account.provider.as_str());
     let group_words: Vec<(&str, &str)> = ProviderGroup::ALL
         .iter()
-        .map(|group| (group.slug(), porter_sheet::words::group_heading(*group)))
+        .map(|group| (word_of(&group), porter_sheet::words::group_heading(*group)))
         .collect();
     let mut keys = vec![
         spec(
@@ -264,9 +265,9 @@ fn account_keys(
             "Signs in".to_owned(),
             "",
             KeyKind::Fixed {
-                variant: account.auth.facts().way.slug().to_owned(),
+                variant: word_of(&account.auth.facts().way).to_owned(),
             },
-            toml::Value::String(account.auth.facts().way.slug().to_owned()),
+            toml::Value::String(word_of(&account.auth.facts().way).to_owned()),
         ),
         readout(
             &Key::Provider(id.clone()),
@@ -279,7 +280,7 @@ fn account_keys(
             &Key::Group(id.clone()),
             section,
             "Listed under",
-            providers.group_of(account).slug(),
+            word_of(&providers.group_of(account)),
             &group_words,
         ),
     ];

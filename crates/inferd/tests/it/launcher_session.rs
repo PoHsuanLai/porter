@@ -5,6 +5,7 @@
 
 use crate::launcher_register::error_name;
 use crate::launcher_rig::*;
+use porter_ids::word::word as word_of;
 
 use inferd::launcher::LoginTiming;
 use porter_core::LauncherSession;
@@ -165,7 +166,7 @@ async fn a_session_permit_and_the_credential_under_it_end_with_the_session() {
     let args = signal.args().expect("args");
     assert_eq!(
         (args.id, args.reason),
-        (id, CredentialEnd::SessionClosed.word().to_owned())
+        (id, word_of(&CredentialEnd::SessionClosed).to_owned())
     );
 }
 

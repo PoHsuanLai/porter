@@ -125,33 +125,10 @@ pub enum SpaceChange {
     Removed,
 }
 
-impl SpaceChange {
-    /// The word on the bus.
-    pub fn word(self) -> &'static str {
-        match self {
-            SpaceChange::Created => "created",
-            SpaceChange::Renamed => "renamed",
-            SpaceChange::Look => "look",
-            SpaceChange::Removed => "removed",
-        }
-    }
-
-    /// The change a word names.
-    pub fn from_word(word: &str) -> Option<Self> {
-        [
-            SpaceChange::Created,
-            SpaceChange::Renamed,
-            SpaceChange::Look,
-            SpaceChange::Removed,
-        ]
-        .into_iter()
-        .find(|change| change.word() == word)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use porter_ids::word::{from_word, word as word_of};
 
     #[test]
     fn names_are_what_the_person_typed_within_bounds() {
@@ -185,17 +162,16 @@ mod tests {
 
     #[test]
     fn change_words_round_trip() {
-        for change in [
-            SpaceChange::Created,
-            SpaceChange::Renamed,
-            SpaceChange::Look,
-            SpaceChange::Removed,
+        for (change, word) in [
+            (SpaceChange::Created, "created"),
+            (SpaceChange::Renamed, "renamed"),
+            (SpaceChange::Look, "look"),
+            (SpaceChange::Removed, "removed"),
         ] {
-            assert_eq!(SpaceChange::from_word(change.word()), Some(change));
-            let json = serde_json::to_string(&change).expect("json");
-            assert_eq!(json, format!("\"{}\"", change.word()));
+            assert_eq!(word_of(&change), word);
+            assert_eq!(from_word::<SpaceChange>(word), Some(change));
         }
-        assert_eq!(SpaceChange::from_word("moved"), None);
+        assert_eq!(from_word::<SpaceChange>("moved"), None);
     }
 
     #[test]

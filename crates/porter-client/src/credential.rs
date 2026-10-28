@@ -30,6 +30,7 @@ use porter_core::ProcessCredentialId;
 use porter_core::SecretText;
 use porter_core::audit::{CredentialEnd, Handoff};
 use porter_dbus::{BusStream, ProcessCredentialRevoked, ProcessCredentialRevokedStream};
+use porter_ids::word::from_word;
 use std::io;
 use std::os::fd::{AsFd, OwnedFd, RawFd};
 use std::os::unix::fs::FileExt;
@@ -252,7 +253,7 @@ impl Revocations {
         let args = signal.args()?;
         Ok(Revoked {
             id: ProcessCredentialId::parse(&args.id)?,
-            reason: CredentialEnd::from_word(&args.reason).ok_or_else(|| {
+            reason: from_word::<CredentialEnd>(&args.reason).ok_or_else(|| {
                 LauncherError::Bus(CallFailure::Malformed(format!(
                     "`{}` is not a reason",
                     args.reason

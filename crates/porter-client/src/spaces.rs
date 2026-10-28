@@ -20,6 +20,7 @@ use porter_dbus::{
     BusConnection, BusError, BusStream, Details, SpaceChanged, SpaceChangedStream, SpacesProxy,
     is_limits_exceeded,
 };
+use porter_ids::word::from_word;
 use porter_ids::{IdError, UnixSeconds};
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -129,7 +130,7 @@ pub struct SpaceChanges(SpaceChangedStream);
 
 fn change(signal: SpaceChanged) -> Result<(DesktopSpace, SpaceChange), SpacesError> {
     let args = signal.args()?;
-    let what = SpaceChange::from_word(args.what)
+    let what = from_word::<SpaceChange>(args.what)
         .ok_or_else(|| CallFailure::Malformed(format!("a change `{}`", args.what)))?;
     Ok((DesktopSpace::parse(args.id)?, what))
 }

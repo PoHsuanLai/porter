@@ -110,21 +110,6 @@ impl ReauthReason {
             .is_none_or(|at| now.0 - at.0 >= SEVEN_DAY_REFUSAL_FROM)
             .then_some(ReauthReason::TestingAppExpired)
     }
-
-    /// The word on the bus and in the audit trail.
-    pub fn slug(self) -> &'static str {
-        match self {
-            ReauthReason::TestingAppExpired => "testing_app_expired",
-        }
-    }
-
-    /// The reason a word stands for.
-    pub fn from_slug(slug: &str) -> Option<Self> {
-        match slug {
-            "testing_app_expired" => Some(ReauthReason::TestingAppExpired),
-            _ => None,
-        }
-    }
 }
 
 /// The OAuth client's verification for the scopes an account uses (C2, C3).
@@ -204,6 +189,7 @@ pub enum LimitReason {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use porter_ids::word::{from_word, word as word_of};
 
     const DAY: i64 = 86_400;
 
@@ -265,17 +251,13 @@ mod tests {
 
     #[test]
     fn the_reason_has_one_word_that_reads_back_and_nothing_else_does() {
-        let word = ReauthReason::TestingAppExpired.slug();
+        let word = word_of(&ReauthReason::TestingAppExpired);
         assert_eq!(word, "testing_app_expired");
         assert_eq!(
-            ReauthReason::from_slug(word),
+            from_word::<ReauthReason>(word),
             Some(ReauthReason::TestingAppExpired)
         );
-        assert_eq!(ReauthReason::from_slug("Testing app expired."), None);
-        assert_eq!(
-            serde_json::to_value(ReauthReason::TestingAppExpired).unwrap(),
-            word
-        );
+        assert_eq!(from_word::<ReauthReason>("Testing app expired."), None);
     }
 
     #[test]

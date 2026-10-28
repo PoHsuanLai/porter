@@ -39,6 +39,7 @@ use porter_core::{Account, AccountState, AppId, AuthKind};
 use porter_core::{AccountId, GrantId};
 use porter_core::{LauncherSession, ProcessCredentialId};
 use porter_dbus::LauncherFault;
+use porter_ids::word::{from_word, word as word_of};
 use porter_service::Registry;
 use porter_service::audit::{AuditEvent, CredentialEnd, Handoff};
 use porter_sheets::{OpenSheets, RequestObjects};
@@ -138,7 +139,7 @@ impl<H: LauncherHost, P: Peers> Core<H, P> {
         let owner = self.launcher_of(header).await?;
         let grant = GrantId::parse(permit).map_err(RefusedError::invalid)?;
         let program = AgentProgram::parse(program).map_err(RefusedError::invalid)?;
-        let handoff = Handoff::from_word(target).ok_or_else(|| {
+        let handoff = from_word::<Handoff>(target).ok_or_else(|| {
             RefusedError::invalid(format!("`{target}` is not a way to hand a key"))
         })?;
         if !self.launchers.holds(&owner, &program) {
@@ -272,7 +273,7 @@ impl<H: LauncherHost, P: Peers> Core<H, P> {
         );
         for (id, held, reason) in ended {
             self.launchers
-                .tell_revoked(&held.owner, id.as_str(), reason.word())
+                .tell_revoked(&held.owner, id.as_str(), word_of(&reason))
                 .await;
         }
     }
@@ -302,7 +303,7 @@ impl<H: LauncherHost, P: Peers> Core<H, P> {
         for (id, held, reason) in ended {
             if tell {
                 self.launchers
-                    .tell_revoked(&held.owner, id.as_str(), reason.word())
+                    .tell_revoked(&held.owner, id.as_str(), word_of(&reason))
                     .await;
             }
         }

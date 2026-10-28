@@ -6,6 +6,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use porter_fake_servers::browser::split_loopback;
 use porter_fake_servers::http::{Request, Response, Scheme, post_form, send};
 use porter_fake_servers::{Google, Style, shipped};
+use porter_ids::word::word as word_of;
 use sha2::{Digest, Sha256};
 
 const SECRET: &str = "GOCSPX-fake";
@@ -230,7 +231,7 @@ async fn the_shipped_file_keeps_its_paths_when_it_is_pointed_at_the_fake() {
         .filter_map(|row| {
             row.endpoint
                 .as_ref()
-                .map(|e| (row.family.slug(), e.0.clone()))
+                .map(|e| (word_of(&row.family).to_owned(), e.0.clone()))
         })
         .collect();
     let base = google.api.base_url();

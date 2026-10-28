@@ -6,6 +6,7 @@
 
 use crate::launcher_register::error_name;
 use crate::launcher_rig::*;
+use porter_ids::word::word as word_of;
 
 use inferd::launcher::LoginTiming;
 use inferd::peers::Role;
@@ -65,10 +66,10 @@ fn audit_lines(rig: &Rig) -> Vec<String> {
         .iter()
         .filter_map(|entry| match &entry.event {
             AuditEvent::ProcessCredentialIssued { handoff, .. } => {
-                Some(format!("issued {}", handoff.word()))
+                Some(format!("issued {}", word_of(&handoff)))
             }
             AuditEvent::ProcessCredentialRevoked { reason, .. } => {
-                Some(format!("ended {}", reason.word()))
+                Some(format!("ended {}", word_of(&reason)))
             }
             _ => None,
         })
@@ -233,7 +234,7 @@ async fn a_permit_withdrawn_or_an_account_removed_ends_the_credential_and_tells_
     let args = signal.args().expect("args");
     assert_eq!(
         (args.id, args.reason),
-        (id, CredentialEnd::GrantRevoked.word().to_owned())
+        (id, word_of(&CredentialEnd::GrantRevoked).to_owned())
     );
     assert_eq!(
         audit_lines(&rig).last().map(String::as_str),

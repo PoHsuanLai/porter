@@ -50,24 +50,6 @@ pub enum IdentityKind {
     Password,
 }
 
-impl IdentityKind {
-    /// Every kind, so a table over them is total.
-    pub const ALL: [IdentityKind; 2] = [IdentityKind::OAuth, IdentityKind::Password];
-
-    /// The word on the bus and in files.
-    pub fn slug(self) -> &'static str {
-        match self {
-            IdentityKind::OAuth => "oauth",
-            IdentityKind::Password => "password",
-        }
-    }
-
-    /// The kind a word names, if it is one.
-    pub fn from_slug(slug: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|kind| kind.slug() == slug)
-    }
-}
-
 /// One identity, as `Identities1.List` gives it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
@@ -121,17 +103,18 @@ impl Identity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use porter_ids::word::{from_word, word as word_of};
 
     #[test]
     fn a_kind_reads_back_from_its_word_and_an_identity_from_its_account() {
-        for kind in IdentityKind::ALL {
-            assert_eq!(IdentityKind::from_slug(kind.slug()), Some(kind));
-            assert_eq!(
-                serde_json::to_string(&kind).expect("json"),
-                format!("\"{}\"", kind.slug())
-            );
+        for (kind, word) in [
+            (IdentityKind::OAuth, "oauth"),
+            (IdentityKind::Password, "password"),
+        ] {
+            assert_eq!(word_of(&kind), word);
+            assert_eq!(from_word::<IdentityKind>(word), Some(kind));
         }
-        assert_eq!(IdentityKind::from_slug("OAuth"), None);
+        assert_eq!(from_word::<IdentityKind>("OAuth"), None);
         let account = AccountId::parse("ada.example").expect("id");
         let id = IdentityId::of(&account);
         assert!(id.is(&account));

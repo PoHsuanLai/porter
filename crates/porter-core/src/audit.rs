@@ -36,70 +36,32 @@ pub enum CredentialEnd {
     SessionClosed,
 }
 
-impl Handoff {
-    /// Every way, so a table over them is total.
-    pub const ALL: [Handoff; 2] = [Handoff::Memfd, Handoff::TmpfsFile];
-
-    /// The word on the bus (`Tokens.IssueProcessCredential`'s `target`) and in `audit.jsonl`.
-    pub fn word(self) -> &'static str {
-        match self {
-            Handoff::Memfd => "memfd",
-            Handoff::TmpfsFile => "tmpfs_file",
-        }
-    }
-
-    /// The way a word names, if it is one.
-    pub fn from_word(word: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|way| way.word() == word)
-    }
-}
-
-impl CredentialEnd {
-    /// Every end, so a table over them is total.
-    pub const ALL: [CredentialEnd; 6] = [
-        CredentialEnd::ProcessExited,
-        CredentialEnd::LauncherGone,
-        CredentialEnd::GrantRevoked,
-        CredentialEnd::AccountRemoved,
-        CredentialEnd::Expired,
-        CredentialEnd::SessionClosed,
-    ];
-
-    /// The word on the bus (`ProcessCredentialRevoked`'s `reason`) and in `audit.jsonl`.
-    pub fn word(self) -> &'static str {
-        match self {
-            CredentialEnd::ProcessExited => "process_exited",
-            CredentialEnd::LauncherGone => "launcher_gone",
-            CredentialEnd::GrantRevoked => "grant_revoked",
-            CredentialEnd::AccountRemoved => "account_removed",
-            CredentialEnd::Expired => "expired",
-            CredentialEnd::SessionClosed => "session_closed",
-        }
-    }
-
-    /// The end a word names, if it is one.
-    pub fn from_word(word: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|end| end.word() == word)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use porter_ids::word::{from_word, word as word_of};
 
     #[test]
-    fn the_bus_words_of_a_handoff_and_an_end_are_their_audit_words() {
-        for way in Handoff::ALL {
-            let json = serde_json::to_string(&way).expect("json");
-            assert_eq!(json, format!("\"{}\"", way.word()));
-            assert_eq!(Handoff::from_word(way.word()), Some(way));
+    fn the_bus_words_of_a_handoff_and_an_end_are_the_audit_words_as_written() {
+        for (way, word) in [
+            (Handoff::Memfd, "memfd"),
+            (Handoff::TmpfsFile, "tmpfs_file"),
+        ] {
+            assert_eq!(word_of(&way), word);
+            assert_eq!(from_word::<Handoff>(word), Some(way));
         }
-        for end in CredentialEnd::ALL {
-            let json = serde_json::to_string(&end).expect("json");
-            assert_eq!(json, format!("\"{}\"", end.word()));
-            assert_eq!(CredentialEnd::from_word(end.word()), Some(end));
+        for (end, word) in [
+            (CredentialEnd::ProcessExited, "process_exited"),
+            (CredentialEnd::LauncherGone, "launcher_gone"),
+            (CredentialEnd::GrantRevoked, "grant_revoked"),
+            (CredentialEnd::AccountRemoved, "account_removed"),
+            (CredentialEnd::Expired, "expired"),
+            (CredentialEnd::SessionClosed, "session_closed"),
+        ] {
+            assert_eq!(word_of(&end), word);
+            assert_eq!(from_word::<CredentialEnd>(word), Some(end));
         }
-        assert_eq!(Handoff::from_word("env"), None);
-        assert_eq!(CredentialEnd::from_word("Memfd"), None);
+        assert_eq!(from_word::<Handoff>("env"), None);
+        assert_eq!(from_word::<CredentialEnd>("Memfd"), None);
     }
 }

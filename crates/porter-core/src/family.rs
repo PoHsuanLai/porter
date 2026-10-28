@@ -69,16 +69,8 @@ pub enum Family {
     AcpAgent,
 }
 
+/// The family's stable word (its serde form) is what provider files, audiences and the bus use.
 impl Family {
-    /// The family's stable slug (its serde form): provider files, audiences and the bus use it.
-    pub fn slug(self) -> String {
-        match serde_json::to_value(self) {
-            Ok(serde_json::Value::String(slug)) => slug,
-            // A fieldless enum always serializes to a string.
-            _ => String::new(),
-        }
-    }
-
     /// The protocol an authenticated relay speaks for this family, or `None` for a family the
     /// relay does not carry (the AI wires go through inferd, the vendor APIs take bearer tokens).
     pub fn relay_protocol(self) -> Option<EndpointProtocol> {
@@ -157,6 +149,7 @@ impl Family {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use porter_ids::word::word as word_of;
 
     const CASES: &[(&str, Family, &str, Option<EndpointProtocol>)] = &[
         ("imap", Family::Imap, "imap", Some(EndpointProtocol::Imap)),
@@ -388,7 +381,7 @@ mod tests {
     #[test]
     fn a_family_has_its_slug_and_its_relay_protocol() {
         for (name, family, slug, protocol) in CASES {
-            assert_eq!(family.slug(), *slug, "{name}");
+            assert_eq!(word_of(&family), *slug, "{name}");
             assert_eq!(family.relay_protocol(), *protocol, "{name}");
         }
     }

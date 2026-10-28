@@ -19,6 +19,7 @@ use porter_core::{
         GrantScope, Usage, Verdict,
     },
 };
+use porter_ids::word::word as word_of;
 use porter_ids::*;
 use porter_match::{
     AgentNeed, CuaNeed, DimsNeed, EmbedNeed, IdentityNeed, ImageGenNeed, KeyValueNeed, LlmNeed,
@@ -443,7 +444,7 @@ fn a_consent_ask_names_its_session_only_when_it_has_one() {
     ask.purpose = AskPurpose::ContinueAs;
     assert!(json(&ask).contains(r#""purpose":"continue_as""#));
     round_trip(&ask);
-    for kind in IdentityKind::ALL {
+    for kind in [IdentityKind::OAuth, IdentityKind::Password] {
         round_trip(&Identity::new(
             IdentityId::parse("ada.example").expect("id"),
             IdentityAddress("ada@example.org".into()),
@@ -792,6 +793,6 @@ fn every_auth_kind_has_one_way_to_sign_in_again_and_its_slug_is_its_serde_form()
     ];
     for (kind, way) in table {
         assert_eq!(kind.facts().way, way, "{kind:?}");
-        assert_eq!(json(&way), format!("\"{}\"", way.slug()), "{way:?}");
+        assert_eq!(json(&way), format!("\"{}\"", word_of(&way)), "{way:?}");
     }
 }

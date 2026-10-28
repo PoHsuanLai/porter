@@ -15,6 +15,7 @@ use crate::args::Details;
 use crate::json_value::bad;
 use porter_core::ProviderId;
 use porter_core::{CoreError, Identity, IdentityAddress, IdentityId, IdentityKind, IdentityName};
+use porter_ids::word::{from_word, word as word_of};
 use zbus::fdo;
 use zbus::object_server::SignalEmitter;
 use zbus::zvariant::{OwnedFd, OwnedValue, Value};
@@ -42,7 +43,7 @@ pub fn identity_to_dbus(identity: &Identity) -> (String, Details) {
         (IDENTITY_KEY_NAME, Value::from(identity.name.0.clone())),
         (
             IDENTITY_KEY_KIND,
-            Value::from(identity.kind.slug().to_owned()),
+            Value::from(word_of(&identity.kind).to_owned()),
         ),
     ];
     let details = fields
@@ -64,7 +65,7 @@ pub fn identity_from_dbus(row: &(String, Details)) -> Result<Identity, CoreError
     let provider =
         text(details, IDENTITY_KEY_PROVIDER).ok_or_else(|| bad("identity: no provider"))?;
     let kind = text(details, IDENTITY_KEY_KIND)
-        .and_then(|slug| IdentityKind::from_slug(&slug))
+        .and_then(|slug| from_word::<IdentityKind>(&slug))
         .ok_or_else(|| bad("identity: no kind"))?;
     let provider = ProviderId::parse(&provider)?;
     // A row without a name for the provider shows the provider's id.

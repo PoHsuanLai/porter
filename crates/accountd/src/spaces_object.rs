@@ -23,6 +23,7 @@ use porter_dbus::Details;
 use porter_dbus::callers::CallerRole;
 use porter_dbus::names::SPACES_PATH;
 use porter_ids::clock::Clock;
+use porter_ids::word::word as word_of;
 use porter_service::audit::AuditEvent;
 use std::sync::Arc;
 use std::time::Instant;
@@ -134,7 +135,7 @@ impl<H: Host, C: Callers> SpacesObject<H, C> {
                 continue;
             };
             let emitter = emitter.set_destination(destination);
-            let _ = Self::changed(&emitter, id.as_str(), change.word()).await;
+            let _ = Self::changed(&emitter, id.as_str(), word_of(&change)).await;
         }
     }
 }

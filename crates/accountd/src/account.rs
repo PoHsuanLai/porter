@@ -17,6 +17,7 @@ use porter_dbus::names::{ACCOUNTS_PATH, account_path};
 use porter_dbus::sheet::SheetKind;
 use porter_dbus::{Details, to_vardict};
 use porter_ids::object_segment;
+use porter_ids::word::word as word_of;
 use porter_wire::AccountsRequest;
 use std::sync::Arc;
 use zbus::ObjectServer;
@@ -40,7 +41,7 @@ pub(crate) fn reauth_reason_word(account: &Account, now: porter_ids::UnixSeconds
         AccountState::NeedsReauth => account
             .restriction
             .reauth_reason(now)
-            .map_or("", porter_core::ReauthReason::slug),
+            .map_or("", |reason| word_of(&reason)),
         _ => "",
     }
 }

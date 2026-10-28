@@ -45,6 +45,7 @@ use porter_dbus::{
     ServiceRoot, Sheet, SheetError, launcher_fault_of, refusal_of, zvariant::Value,
 };
 use porter_ids::IdError;
+use porter_ids::word::word as word_of;
 use porter_wire::AccountsReply;
 use porter_wire::Refusal;
 use std::os::fd::AsFd;
@@ -256,7 +257,7 @@ impl Launcher {
     ) -> Result<ProcessCredential, LauncherError> {
         let (id, handle) = self
             .launcher
-            .issue_process_credential(permit.as_str(), program.as_str(), target.word())
+            .issue_process_credential(permit.as_str(), program.as_str(), word_of(&target))
             .await?;
         let id = ProcessCredentialId::parse(&id)?;
         let handle = match (target, &*handle) {

@@ -6,6 +6,7 @@
 
 use porter_ids::IdError;
 use porter_ids::is_id;
+use porter_ids::word::{from_word, word as word_of};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -67,28 +68,6 @@ pub enum LoginFault {
     Other,
 }
 
-impl LoginFault {
-    /// Every fault, for tables.
-    pub const ALL: [LoginFault; 5] = [
-        LoginFault::Refused,
-        LoginFault::Unreachable,
-        LoginFault::NotInstalled,
-        LoginFault::TimedOut,
-        LoginFault::Other,
-    ];
-
-    /// The word on the bus.
-    pub fn slug(self) -> &'static str {
-        match self {
-            LoginFault::Refused => "refused",
-            LoginFault::Unreachable => "unreachable",
-            LoginFault::NotInstalled => "not_installed",
-            LoginFault::TimedOut => "timed_out",
-            LoginFault::Other => "other",
-        }
-    }
-}
-
 /// What the launcher reports of a login or a logout it was asked for. For a logout `Ready`
 /// means done.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -108,7 +87,7 @@ impl LoginOutcome {
     pub fn to_wire(self) -> (&'static str, &'static str) {
         match self {
             LoginOutcome::Ready => ("ready", ""),
-            LoginOutcome::Failed(fault) => ("failed", fault.slug()),
+            LoginOutcome::Failed(fault) => ("failed", word_of(&fault)),
             LoginOutcome::Cancelled => ("cancelled", ""),
         }
     }
@@ -116,7 +95,7 @@ impl LoginOutcome {
     /// The outcome two words stand for. A reason with any outcome but `failed`, a `failed` with
     /// no reason, and a word outside the set are all refused.
     pub fn from_wire(outcome: &str, reason: &str) -> Result<Self, IdError> {
-        let fault = LoginFault::ALL.into_iter().find(|f| f.slug() == reason);
+        let fault = from_word::<LoginFault>(reason);
         match (outcome, reason, fault) {
             ("ready", "", _) => Ok(LoginOutcome::Ready),
             ("cancelled", "", _) => Ok(LoginOutcome::Cancelled),
@@ -171,10 +150,16 @@ mod tests {
     }
 
     #[test]
-    fn a_fault_slug_is_its_serde_name() {
-        for fault in LoginFault::ALL {
-            let json = serde_json::to_value(fault).expect("json");
-            assert_eq!(json.as_str(), Some(fault.slug()));
+    fn a_fault_has_the_word_it_always_had() {
+        for (fault, word) in [
+            (LoginFault::Refused, "refused"),
+            (LoginFault::Unreachable, "unreachable"),
+            (LoginFault::NotInstalled, "not_installed"),
+            (LoginFault::TimedOut, "timed_out"),
+            (LoginFault::Other, "other"),
+        ] {
+            assert_eq!(word_of(&fault), word);
+            assert_eq!(from_word::<LoginFault>(word), Some(fault));
         }
     }
 

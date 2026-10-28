@@ -17,6 +17,7 @@ use porter_core::{
     SecretKey, SecretPurpose, SecretText, ServiceEndpoint, TokenKind,
 };
 use porter_ids::clock::Clock;
+use porter_ids::word::word as word_of;
 use porter_provider::Provider;
 use porter_secrets::{Secrets, SecretsError};
 use porter_wire::Refusal;
@@ -200,7 +201,7 @@ where
         endpoint: &ServiceEndpoint,
         (kind, reach): (CapabilityKind, StorageScope),
     ) -> Result<RelayAuth, Refusal> {
-        let audience = Audience(endpoint.family.slug().to_owned());
+        let audience = Audience(word_of(&endpoint.family).to_owned());
         let spec = self
             .catalog
             .get(&account.provider)

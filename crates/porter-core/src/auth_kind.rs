@@ -67,20 +67,6 @@ pub enum SignInWay {
     Nothing,
 }
 
-impl SignInWay {
-    /// The stable slug, as the row's value says it.
-    pub fn slug(self) -> &'static str {
-        match self {
-            SignInWay::Browser => "browser",
-            SignInWay::Password => "password",
-            SignInWay::Key => "key",
-            SignInWay::Agent => "agent",
-            SignInWay::Outside => "outside",
-            SignInWay::Nothing => "nothing",
-        }
-    }
-}
-
 /// What is true of every account of one [`AuthKind`]: the one table the code asks, in place of a
 /// `match` on the kind in each place that needs one of these facts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

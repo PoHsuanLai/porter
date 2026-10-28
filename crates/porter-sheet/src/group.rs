@@ -29,15 +29,6 @@ impl ProviderGroup {
         ProviderGroup::Agent,
     ];
 
-    /// The stable word, as the file and the Settings row say it.
-    pub fn slug(self) -> &'static str {
-        match self {
-            ProviderGroup::Internet => "internet",
-            ProviderGroup::Intelligence => "intelligence",
-            ProviderGroup::Agent => "agent",
-        }
-    }
-
     /// The group of a provider whose file does not name one, from the way its accounts sign in
     /// and the kinds of service they offer: an agent that signs itself in is an `Agent`; a
     /// runtime on this computer, and a provider whose services are all AI (an API key, a minted
@@ -61,6 +52,7 @@ impl ProviderGroup {
 mod tests {
     use super::*;
     use CapabilityKind::*;
+    use porter_ids::word::word as word_of;
 
     #[test]
     fn the_slug_is_the_serde_word_and_the_heading_is_plain() {
@@ -70,7 +62,7 @@ mod tests {
             (ProviderGroup::Agent, "agent", "Assistants"),
         ];
         for (group, slug, heading) in table {
-            assert_eq!(group.slug(), slug);
+            assert_eq!(word_of(&group), slug);
             assert_eq!(crate::words::group_heading(group), heading);
             assert_eq!(
                 serde_json::to_string(&group).expect("json"),

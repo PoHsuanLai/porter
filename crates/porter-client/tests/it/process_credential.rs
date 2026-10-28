@@ -5,6 +5,7 @@
 #![cfg(feature = "dbus")]
 
 use crate::common;
+use porter_ids::word::word as word_of;
 
 use common::bus::PrivateBus;
 use common::eventually;
@@ -179,7 +180,7 @@ async fn inferd_ending_a_credential_reaches_the_launcher_as_a_revocation() {
         .revoke_for_launcher(
             &rig.daemon,
             credential.id().as_str(),
-            CredentialEnd::GrantRevoked.word(),
+            word_of(&CredentialEnd::GrantRevoked),
         )
         .await;
 

@@ -23,6 +23,7 @@ use porter_core::{AccountId, GrantId, ProviderId};
 use porter_core::{DataClass, IdentityId};
 use porter_dbus::{SyncProxy, from_vardict};
 use porter_ids::Tokens;
+use porter_ids::word::word as word_of;
 use porter_infer::{
     ChatControl, ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRequest, MessagePart,
     Role, ToolParallelism,
@@ -546,7 +547,7 @@ async fn launcher_issue(
             emit(json!({
                 "result": "issued",
                 "id": credential.id().as_str(),
-                "handoff": target.word(),
+                "handoff": word_of(&target),
             }));
             true
         }

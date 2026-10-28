@@ -22,6 +22,7 @@ use ds_settings::schema::KeyPath;
 use porter_core::{AppId, AppName, AuthKind, IdentityId, Isolation};
 use porter_dbus::callers::CallerRole;
 use porter_dbus::names::ACCOUNTS_SETTINGS_PATH;
+use porter_ids::word::word as word_of;
 use porter_provider::{ClientChannel, ClientsFile, Issuer, parse_clients};
 use porter_service::Registry;
 use porter_service::audit::{AuditEvent, ClientIdChange};
@@ -153,9 +154,9 @@ impl<H: Host, C> AccountsSettings<H, C> {
                 .map(toml::Value::String)
                 .ok_or_else(unknown),
             Key::Place(id) => text(crate::settings_keys::place_slug(account(&id)?)),
-            Key::SignIn(id) => text(account(&id)?.auth.facts().way.slug()),
+            Key::SignIn(id) => text(word_of(&account(&id)?.auth.facts().way)),
             Key::Provider(id) => text(account(&id)?.provider.as_str()),
-            Key::Group(id) => text(self.0.provider_names.group_of(account(&id)?).slug()),
+            Key::Group(id) => text(word_of(&self.0.provider_names.group_of(account(&id)?))),
             Key::UsedBy(id, n) => view
                 .used
                 .get(&id)

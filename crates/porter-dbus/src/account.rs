@@ -24,7 +24,7 @@ pub trait Account {
     #[zbus(property)]
     fn state(&self) -> zbus::Result<String>;
     /// Why the account needs signing in again, as a word of a closed set
-    /// (`porter_core::ReauthReason::slug`), or the empty string when the state is not
+    /// (`porter_core::ReauthReason::word`), or the empty string when the state is not
     /// `needs_reauth` or porter knows no more than that the provider refused.
     #[zbus(property)]
     fn reauth_reason(&self) -> zbus::Result<String>;
