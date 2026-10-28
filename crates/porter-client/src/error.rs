@@ -1,47 +1,46 @@
-//! porter-client's errors.
+//! porter-client's failures that belong to no one domain: why a call to a service did not
+//! complete. Each domain's error holds one beside the reasons it gives of its own. Nothing here
+//! carries a sentence for a person; the apps word them.
 
-use porter_core::AccountId;
-use porter_wire::Refusal;
-
-/// Why a transport could not carry a request. More reasons may be added: match with a wildcard.
+/// Why a call did not complete, whatever the call was. More reasons may be added: match with a
+/// wildcard.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
-pub enum TransportError {
-    /// No daemon answered.
-    #[error("no account service reachable")]
+pub enum LinkError {
+    /// No daemon answered: nobody owns the name, or there is no bus.
+    #[error("unreachable")]
     Unreachable,
-    /// The connection closed mid-request.
-    #[error("connection closed")]
+    /// The connection closed mid-call.
+    #[error("closed")]
     Closed,
-    /// The daemon refused the caller: the bus's `AccessDenied`, with the daemon's own text (its
-    /// caller table does not name this program, or the app holds no grant for the call). Asking
-    /// again does not help; the person or the packager must change who may call.
-    #[error("refused by the daemon: {0}")]
-    Denied(String),
+    /// The daemon refused the caller (the bus's `AccessDenied`): its caller table does not name
+    /// this program, or the call is not one it may make. Asking again does not help.
+    #[error("denied")]
+    Denied,
+    /// The daemon refused an argument (an id, a name or a program that is not one).
+    #[error("invalid")]
+    Invalid,
     /// The other side sent something that is not porter's protocol.
-    #[error("malformed reply: {0}")]
-    Malformed(String),
-    /// This link does not carry that call.
-    #[error("this link does not carry that call")]
-    Unsupported,
+    #[error("malformed {0:?}")]
+    Malformed(Malformed),
 }
 
-/// Why a client call failed; each variant is something an app can show or act on. More reasons
-/// may be added: match with a wildcard.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+/// What the other side got wrong.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
-pub enum ClientError {
-    /// The request did not arrive or the reply did not come back.
-    #[error(transparent)]
-    Transport(#[from] TransportError),
-    /// accountd refused.
-    #[error("refused: {0:?}")]
-    Refused(Refusal),
-    /// `add_account`: the person signed in to an account that was already here, so nothing was
-    /// added. It is that account; ask for a grant of it (`find`, then `request_grant`).
-    #[error("that account is already added: {0}")]
-    AlreadyAdded(AccountId),
-    /// The reply does not answer the request (a daemon of another version).
-    #[error("reply does not answer the request")]
-    Mismatched,
+pub enum Malformed {
+    /// A reply that does not answer the call.
+    Reply,
+    /// One row of a list that does not say what the interface promises.
+    Row,
+    /// A signal whose arguments are not what the interface promises.
+    Signal,
+    /// An id or a name that fails its rule.
+    Id,
+    /// A descriptor that cannot be read as what it should hold.
+    Descriptor,
+    /// A sheet's `Response` that is not what the Request interface promises.
+    Sheet,
+    /// A failure this client does not know.
+    UnknownFailure,
 }

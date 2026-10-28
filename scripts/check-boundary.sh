@@ -42,7 +42,9 @@ RULES=(
   "porter-spaces: zbus zvariant reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
   "porter-settings: reqwest hyper ureq oo7 keyring secret-service interprocess latchkey"
   "porter-store: zbus zvariant reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
-  "porter-client: $EFFECTS"
+  "porter-client: $EFFECTS porter-dbus porter-callers porter-service porter-service-core porter-service-accounts porter-service-grants porter-secrets porter-provider porter-fs"
+  "porter-client-dbus: reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings porter-service porter-service-core porter-service-accounts porter-service-grants porter-secrets porter-provider porter-fs"
+  "porter-client-inproc: zbus zvariant hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings porter-dbus"
   "inferd-client: $EFFECTS"
   "porter-sheets: reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
   "porter-fake: $EFFECTS"
@@ -191,22 +193,6 @@ for feature in $family_features; do
   fi
 done
 
-# IN-PROCESS FEATURE: porter-client's feature `in-process` is the only way the crate reaches the
-# account service, its secrets and the provider catalogue. A bus-only consumer (`dbus` with no
-# default features) reaches none of them.
-in_process_leaked=0
-for dep in porter-service porter-service-core porter-service-accounts porter-service-grants porter-secrets porter-provider; do
-  if cargo tree -p porter-client --no-default-features --features dbus -i "$dep" -e normal,build 2>/dev/null | grep -q .; then
-    echo "LEAK: porter-client[dbus] without in-process depends on $dep"
-    cargo tree -p porter-client --no-default-features --features dbus -i "$dep" -e normal,build 2>/dev/null | head -20
-    in_process_leaked=1
-    fail=1
-  fi
-done
-if [ "$in_process_leaked" -eq 0 ]; then
-  echo "boundary holds: porter-client[dbus] without in-process reaches none of porter-service and its domains, porter-secrets, porter-provider"
-fi
-
 # ONE CLIENT: reqwest is named by porter-http-reqwest and by no other crate of this workspace. Every
 # other crate that sends over a direct connection takes `ReqwestHttp` from it.
 named=$(grep -lE '^reqwest[ .=]' crates/*/Cargo.toml | grep -v '^crates/porter-http-reqwest/' || true)
@@ -215,15 +201,6 @@ if [ -n "$named" ]; then
   fail=1
 else
   echo "boundary holds: only porter-http-reqwest names reqwest"
-fi
-
-# IN-PROCESS AND FS: porter-client reaches porter-fs only through `in-process` (porter-secrets uses
-# it); a bus-only consumer reaches it not.
-if cargo tree -p porter-client --no-default-features --features dbus -i porter-fs -e normal,build 2>/dev/null | grep -q .; then
-  echo "LEAK: porter-client[dbus] without in-process depends on porter-fs"
-  fail=1
-else
-  echo "boundary holds: porter-client[dbus] without in-process reaches no porter-fs"
 fi
 
 # PURE FILES: source that parses what an edge read and never reads it itself. A dependency rule
@@ -350,7 +327,9 @@ EDGES=(
   "porter-dbus: porter-core porter-dbus-macros porter-tailscale porter-match porter-wire porter-ids"
   "porter-bridge: porter-core porter-capability porter-match porter-ids porter-infer model-catalog model-openai-compat model-provider vision-prep"
   "porter-sheets: porter-core porter-capability porter-sheet porter-wire porter-callers porter-dbus porter-provider porter-service-core"
-  "porter-client: porter-core porter-tailscale porter-match porter-capability porter-wire porter-ids porter-dbus porter-provider porter-proxy porter-secrets porter-service porter-service-core porter-sheet"
+  "porter-client: porter-core porter-tailscale porter-match porter-capability porter-wire porter-ids"
+  "porter-client-dbus: porter-client porter-core porter-wire porter-capability porter-dbus porter-ids porter-tailscale"
+  "porter-client-inproc: porter-client porter-core porter-ids porter-match porter-provider porter-proxy porter-secrets porter-service porter-service-accounts porter-service-core porter-service-grants porter-sheet porter-wire"
   "inferd-client: porter-core porter-tailnet porter-tailscale porter-match porter-capability porter-wire porter-ids porter-infer porter-bridge porter-turns porter-callers porter-dbus porter-fs model-http model-openai-compat model-provider model-wire"
   "porter-fake: porter-core porter-capability porter-sheet porter-wire porter-ids porter-provider porter-secrets porter-service porter-service-core"
   "test-kit:"
@@ -379,11 +358,11 @@ EDGES=(
   "porter-drive: porter-capability porter-ids porter-fs porter-sync quickxorhash"
   "porter-drive-fuse: porter-drive porter-mountd"
   "porter-mountd:"
-  "syncd: dav-proto ds-settings porter-client porter-core porter-match porter-capability porter-sheet porter-wire porter-ids porter-daemon porter-callers porter-dbus porter-drive porter-drive-fuse porter-families porter-family-oauth porter-fs porter-http porter-http-relay porter-provider porter-secrets porter-service porter-service-accounts porter-service-core porter-sheets porter-store porter-sync storage-gdrive storage-graph storage-webdav windows-zones"
-  "porter-rig: fake-secret-service porter-client porter-core porter-match porter-capability porter-wire porter-ids porter-callers porter-dbus porter-fake porter-fake-servers porter-infer test-kit inferd-client"
+  "syncd: dav-proto ds-settings porter-client porter-core porter-match porter-capability porter-sheet porter-wire porter-ids porter-daemon porter-callers porter-dbus porter-drive porter-drive-fuse porter-families porter-family-oauth porter-fs porter-http porter-http-relay porter-provider porter-secrets porter-service porter-service-accounts porter-service-core porter-sheets porter-store porter-sync storage-gdrive storage-graph storage-webdav windows-zones porter-client-inproc porter-client-dbus"
+  "porter-rig: fake-secret-service porter-client porter-core porter-match porter-capability porter-wire porter-ids porter-callers porter-dbus porter-fake porter-fake-servers porter-infer test-kit inferd-client porter-client-dbus"
   "fake-secret-service:"
   "syncd-fakes: porter-dbus"
-  "inferd: ds-settings porter-bridge porter-client porter-settings porter-store porter-router porter-turns porter-core porter-match porter-capability porter-wire porter-ids porter-daemon porter-callers porter-dbus porter-discover porter-fs porter-http porter-http-reqwest porter-infer porter-provider porter-tailnet porter-tailscale cua-action cua-parse cua-session cua-vendors engine-manifest engine-probe engine-spec engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-host-client speech-provider vision-prep"
+  "inferd: ds-settings porter-bridge porter-client porter-settings porter-store porter-router porter-turns porter-core porter-match porter-capability porter-wire porter-ids porter-daemon porter-callers porter-dbus porter-discover porter-fs porter-http porter-http-reqwest porter-infer porter-provider porter-tailnet porter-tailscale cua-action cua-parse cua-session cua-vendors engine-manifest engine-probe engine-spec engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-host-client speech-provider vision-prep porter-client-dbus"
 )
 for edge in "${EDGES[@]}"; do
   crate="${edge%%:*}"

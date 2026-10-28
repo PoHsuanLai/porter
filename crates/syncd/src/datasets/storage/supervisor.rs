@@ -47,7 +47,7 @@ use crate::journal::Journal;
 use crate::paths::AccountDir;
 use crate::scheduler::next_look;
 use crate::service::{Access, DatasetName};
-use porter_client::Transport;
+use porter_client::GrantsLink;
 use porter_core::{AppName, Candidate, EndpointUrl};
 use porter_dbus::sync::DriveState;
 use porter_drive::{CacheLimit, Drive, DriveConfig, FreeSpace, ReplicaSource};
@@ -120,7 +120,7 @@ impl Default for StorageConfig {
     }
 }
 
-enum Running<T: Transport> {
+enum Running<T: GrantsLink> {
     /// The app folder mirror, over either store.
     Folder {
         name: DatasetName,
@@ -146,13 +146,13 @@ enum Running<T: Transport> {
     },
 }
 
-impl<T: Transport> std::fmt::Debug for Running<T> {
+impl<T: GrantsLink> std::fmt::Debug for Running<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_list().entries(self.names()).finish()
     }
 }
 
-impl<T: Transport> Running<T> {
+impl<T: GrantsLink> Running<T> {
     fn names(&self) -> Vec<DatasetName> {
         match self {
             Running::Folder { name, .. } => vec![name.clone()],
@@ -167,7 +167,7 @@ impl<T: Transport> Running<T> {
 
 /// Keeps the Storage mirrors of every granted account.
 #[derive(Debug)]
-pub struct StorageSupervisor<T: Transport, G> {
+pub struct StorageSupervisor<T: GrantsLink, G> {
     wiring: Wiring<T>,
     grants: G,
     config: StorageConfig,
@@ -197,7 +197,7 @@ fn seed_of(text: &str) -> u64 {
 
 impl<T, G> StorageSupervisor<T, G>
 where
-    T: Transport + 'static,
+    T: GrantsLink + 'static,
     G: StorageGrants + 'static,
 {
     /// A supervisor over `wiring` (its `owners` are not used: `config` names the owners of each
@@ -902,7 +902,7 @@ enum Either<A, B> {
     Right(B),
 }
 
-impl<T: Transport, G> Drop for StorageSupervisor<T, G> {
+impl<T: GrantsLink, G> Drop for StorageSupervisor<T, G> {
     fn drop(&mut self) {
         for running in self.running.values() {
             match running {

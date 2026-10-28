@@ -10,6 +10,8 @@ dependencies = [
  "ds-settings",
  "porter-callers",
  "porter-capability",
+ "porter-client",
+ "porter-client-dbus",
  "porter-core",
  "porter-daemon",
  "porter-dbus",
@@ -1623,6 +1625,7 @@ dependencies = [
  "porter-callers",
  "porter-capability",
  "porter-client",
+ "porter-client-dbus",
  "porter-core",
  "porter-daemon",
  "porter-dbus",
@@ -2631,11 +2634,44 @@ dependencies = [
 name = "porter-client"
 version = "0.1.0"
 dependencies = [
- "accountd",
- "porter-callers",
+ "futures-core",
+ "futures-util",
  "porter-capability",
  "porter-core",
+ "porter-ids",
+ "porter-match",
+ "porter-tailscale",
+ "porter-wire",
+ "thiserror",
+]
+
+[[package]]
+name = "porter-client-dbus"
+version = "0.1.0"
+dependencies = [
+ "futures-util",
+ "porter-capability",
+ "porter-client",
+ "porter-core",
  "porter-dbus",
+ "porter-ids",
+ "porter-secrets",
+ "porter-tailscale",
+ "porter-wire",
+ "rustix",
+ "serde_json",
+ "thiserror",
+ "zbus",
+ "zeroize",
+]
+
+[[package]]
+name = "porter-client-inproc"
+version = "0.1.0"
+dependencies = [
+ "porter-capability",
+ "porter-client",
+ "porter-core",
  "porter-fake",
  "porter-fake-servers",
  "porter-families",
@@ -2648,19 +2684,13 @@ dependencies = [
  "porter-proxy",
  "porter-secrets",
  "porter-service",
+ "porter-service-accounts",
  "porter-service-core",
+ "porter-service-grants",
  "porter-sheet",
- "porter-spaces",
- "porter-tailscale",
  "porter-wire",
- "rustix",
- "serde",
- "serde_json",
  "test-kit",
- "thiserror",
  "tokio",
- "zbus",
- "zeroize",
 ]
 
 [[package]]
@@ -3101,6 +3131,7 @@ dependencies = [
  "porter-callers",
  "porter-capability",
  "porter-client",
+ "porter-client-dbus",
  "porter-core",
  "porter-dbus",
  "porter-fake",
@@ -4373,6 +4404,8 @@ dependencies = [
  "porter-callers",
  "porter-capability",
  "porter-client",
+ "porter-client-dbus",
+ "porter-client-inproc",
  "porter-core",
  "porter-daemon",
  "porter-dbus",

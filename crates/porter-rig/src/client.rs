@@ -12,10 +12,8 @@ use clap::Subcommand;
 use inferd_client::{DbusTransport as InferdTransport, InferSession, Inference, OpenOptions};
 use porter_capability::Tier;
 use porter_capability::{Access, AgentProgram, Delta, StorageScope};
-use porter_client::{
-    Accounts, AiKeys, AiKeysError, ClientError, DbusTransport, Identities, IdentitiesError,
-    Launcher, LauncherError,
-};
+use porter_client::{Accounts, AccountsError, AiKeysError, Identities, IdentitiesError, Porter};
+use porter_client_dbus::{Bus, Launcher, LauncherError};
 use porter_core::ProviderHint;
 use porter_core::SessionToken;
 use porter_core::consent::Usage;
@@ -260,7 +258,7 @@ pub async fn run(
     command: Command,
     emit: &mut impl FnMut(Value),
 ) -> bool {
-    let accounts = Accounts::over(DbusTransport::over(connection.clone()));
+    let accounts = Porter::over(Bus::over(connection.clone())).accounts();
     let inference = Inference::over(InferdTransport::over(connection.clone()));
     match command {
         Command::Identities(IdentitiesCommand::List) => identities_list(connection, emit).await,
@@ -331,8 +329,13 @@ fn refused(refusal: porter_wire::Refusal, emit: &mut impl FnMut(Value)) -> bool 
     false
 }
 
+/// The Identities of this app on `connection`.
+fn identities_of(connection: &zbus::Connection) -> Identities<Bus> {
+    Porter::over(Bus::over(connection.clone())).identities()
+}
+
 async fn identities_list(connection: &zbus::Connection, emit: &mut impl FnMut(Value)) -> bool {
-    let listed = async { Identities::connect(connection).await?.list().await }.await;
+    let listed = identities_of(connection).list().await;
     match listed {
         Ok(identities) => {
             let rows: Vec<Value> = identities
@@ -355,13 +358,9 @@ async fn identities_offer(
     emit: &mut impl FnMut(Value),
 ) -> bool {
     let hint = provider.map_or(ProviderHint::Any, ProviderHint::Provider);
-    let picked = async {
-        Identities::connect(connection)
-            .await?
-            .offer(&hint, &ParentWindow::Unparented)
-            .await
-    }
-    .await;
+    let picked = identities_of(connection)
+        .offer(&hint, &ParentWindow::Unparented)
+        .await;
     match picked {
         Ok(picked) => {
             emit(json!({
@@ -392,13 +391,7 @@ async fn identities_register_use(
     identity: &IdentityId,
     emit: &mut impl FnMut(Value),
 ) -> bool {
-    let said = async {
-        Identities::connect(connection)
-            .await?
-            .register_use(identity)
-            .await
-    }
-    .await;
+    let said = identities_of(connection).register_use(identity).await;
     match said {
         Ok(()) => {
             emit(json!({ "result": "registered", "identity": identity.as_str() }));
@@ -416,13 +409,10 @@ async fn ai_keys_request(
     ask: &Ask,
     emit: &mut impl FnMut(Value),
 ) -> bool {
-    let permit = async {
-        AiKeys::connect(connection)
-            .await?
-            .request_key(ask.class, ask.usage, &ParentWindow::Unparented)
-            .await
-    }
-    .await;
+    let permit = Porter::over(Bus::over(connection.clone()))
+        .ai_keys()
+        .request_key(ask.class, ask.usage, &ParentWindow::Unparented)
+        .await;
     match permit {
         Ok(permit) => {
             emit(json!({ "result": "granted", "permit": permit.as_str() }));
@@ -441,7 +431,7 @@ async fn launcher_for(
     connection: &zbus::Connection,
     program: &AgentProgram,
 ) -> Result<Launcher, LauncherError> {
-    let launcher = Launcher::connect(connection).await?;
+    let launcher = Bus::over(connection.clone()).launcher();
     launcher.register(std::slice::from_ref(program)).await?;
     Ok(launcher)
 }
@@ -508,9 +498,9 @@ async fn launcher_issue(
 
 /// What a sheet that did not finish tells: `refused` with accountd's word for it (`Cancelled`
 /// when the person closed the sheet, `Unavailable` when no sheet host answered, ...).
-fn sheet_failure(why: ClientError, emit: &mut impl FnMut(Value)) -> bool {
+fn sheet_failure(why: AccountsError, emit: &mut impl FnMut(Value)) -> bool {
     match why {
-        ClientError::Refused(refusal) => {
+        AccountsError::Refused(refusal) => {
             emit(json!({ "result": "refused", "refusal": format!("{refusal:?}") }));
         }
         other => emit(failure(other)),
@@ -519,18 +509,18 @@ fn sheet_failure(why: ClientError, emit: &mut impl FnMut(Value)) -> bool {
 }
 
 async fn add_account(
-    accounts: &Accounts<DbusTransport>,
+    accounts: &Accounts<Bus>,
     provider: Option<ProviderId>,
     emit: &mut impl FnMut(Value),
 ) -> bool {
     let hint = provider.map_or(ProviderHint::Any, ProviderHint::Provider);
-    match accounts.add_account(hint, &ParentWindow::Unparented).await {
+    match accounts.add(hint, &ParentWindow::Unparented).await {
         Ok(account) => {
             emit(json!({ "result": "added", "account": account.as_str() }));
             true
         }
         // The account was already here: nothing was added, and this is the one it is.
-        Err(ClientError::AlreadyAdded(account)) => {
+        Err(AccountsError::AlreadyAdded(account)) => {
             emit(json!({ "result": "already_added", "account": account.as_str() }));
             false
         }
@@ -539,7 +529,7 @@ async fn add_account(
 }
 
 async fn reauthenticate(
-    accounts: &Accounts<DbusTransport>,
+    accounts: &Accounts<Bus>,
     account: &AccountId,
     emit: &mut impl FnMut(Value),
 ) -> bool {

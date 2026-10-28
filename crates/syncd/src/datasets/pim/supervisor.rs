@@ -8,7 +8,7 @@ use super::grants::PimGrants;
 use super::mirrors::{AccountMirrors, Wiring};
 use crate::paths::AccountDir;
 use crate::scheduler::next_look;
-use porter_client::Transport;
+use porter_client::GrantsLink;
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 use tokio::task::JoinHandle;
@@ -40,7 +40,7 @@ pub struct PimSupervisor<T, G> {
 
 impl<T, G> PimSupervisor<T, G>
 where
-    T: Transport + 'static,
+    T: GrantsLink + 'static,
     G: PimGrants + 'static,
 {
     /// A supervisor over `wiring`, asking `grants`.

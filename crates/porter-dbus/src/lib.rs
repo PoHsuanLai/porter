@@ -42,7 +42,7 @@ pub mod sync;
 
 pub use args::Details;
 pub use destination::Destination;
-pub use failure::{BusFailure, classify, is_invalid_args, is_limits_exceeded};
+pub use failure::{BusFailure, classify, is_invalid_args, is_limits_exceeded, is_unknown_object};
 pub use json_value::{from_vardict, to_vardict};
 pub use ready::serve_ready;
 pub use serve::{Call, Document, Unserved};

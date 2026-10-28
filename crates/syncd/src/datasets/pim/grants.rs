@@ -8,7 +8,7 @@
 
 use super::PimKind;
 use porter_capability::{Access, Delta};
-use porter_client::{Accounts, Found, HostedCore, InProcess};
+use porter_client::{Found, Grants, GrantsLink};
 use porter_core::Candidate;
 use porter_core::consent::Usage;
 use porter_match::Need;
@@ -47,17 +47,17 @@ pub struct AccountdUnavailable;
 /// [`PimGrants`] over an accountd connection.
 #[derive(Debug)]
 pub struct ClientGrants<T> {
-    accounts: Arc<Accounts<T>>,
+    accounts: Arc<Grants<T>>,
 }
 
 impl<T> ClientGrants<T> {
     /// Grants as `accounts` finds them.
-    pub fn new(accounts: Arc<Accounts<T>>) -> Self {
+    pub fn new(accounts: Arc<Grants<T>>) -> Self {
         Self { accounts }
     }
 }
 
-impl<C: HostedCore, H: Send + Sync> PimGrants for ClientGrants<InProcess<C, H>> {
+impl<T: GrantsLink> PimGrants for ClientGrants<T> {
     async fn granted(&self, kind: PimKind) -> Result<Vec<Candidate>, AccountdUnavailable> {
         let found = self
             .accounts

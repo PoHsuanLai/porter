@@ -6,7 +6,7 @@
 //! and reaches that endpoint's origin only. [`webdav_replica`] builds the replica of a dataset's
 //! folder under that endpoint over them.
 
-use porter_client::{Accounts, Transport};
+use porter_client::{Grants, GrantsLink};
 use porter_core::EndpointUrl;
 use porter_core::GrantId;
 use porter_http_relay::{RelayDial, RelayHttp, RelayLimits};
@@ -25,8 +25,8 @@ pub enum BuildError {
 
 /// The replica of `folder` (a path under the endpoint, `Photos/Originals`) of the account the
 /// grant covers, over relays accountd opens to `endpoint`.
-pub fn webdav_replica<T: Transport>(
-    accounts: Arc<Accounts<T>>,
+pub fn webdav_replica<T: GrantsLink>(
+    accounts: Arc<Grants<T>>,
     grant: GrantId,
     endpoint: EndpointUrl,
     folder: &str,

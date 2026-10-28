@@ -1,12 +1,12 @@
 //! A key handed to a process the launcher spawns (agent-session ask P2, lane p2-handoff): what
 //! `Launcher::issue_credential` returns, how the launcher sets a child up with it, and the
-//! signal that tells the launcher accountd ended it.
+//! [`Revoked`] that tells the launcher accountd ended it.
 //!
 //! **The launcher's duties** (accountd cannot do these for it):
 //!
 //! - Give the child the key only as [`ChildKey`] says, after `env_clear`: never in the
 //!   environment of the launcher itself, a log line, a command line or a file of its own.
-//! - Watch [`Revocations`]. When accountd ends a credential (the permit was revoked, the account
+//! - Watch `Launcher::revocations`. When accountd ends a credential (the permit was revoked, the account
 //!   removed) it cannot reach the child's copy of the memfd or the text it already read, so it
 //!   tells the launcher in a signal and the launcher must end the process: ask it to quit, and
 //!   kill it after a grace period the launcher chooses.
@@ -23,20 +23,13 @@
 //! URL. A memfd keeps the key out of `/proc/<pid>/environ`; delivering it as text in the child's
 //! environment ([`Delivery::Value`]) puts it back there, readable by processes of the same user.
 
-use crate::call_failure::CallFailure;
-use crate::launcher::LauncherError;
 use porter_capability::EnvName;
 use porter_core::ProcessCredentialId;
 use porter_core::SecretText;
 use porter_core::audit::CredentialEnd;
-use porter_dbus::BusStream;
-use porter_dbus::accounts::{ProcessCredentialRevoked, ProcessCredentialRevokedStream};
-use porter_ids::word::from_word;
 use std::io;
 use std::os::fd::{AsFd, OwnedFd, RawFd};
 use std::os::unix::fs::FileExt;
-use std::pin::Pin;
-use std::task::{Context, Poll};
 use zeroize::Zeroizing;
 
 /// A credential issued to this launcher for one process: its id, and the sealed memfd that holds
@@ -115,11 +108,13 @@ pub enum ChildKeyError {
 }
 
 impl ProcessCredential {
-    pub(crate) fn new(id: ProcessCredentialId, key: OwnedFd) -> Self {
+    /// A credential of `id` whose key is on the sealed descriptor `key`: what a transport hands
+    /// back from `issue_credential`.
+    pub fn new(id: ProcessCredentialId, key: OwnedFd) -> Self {
         Self { id, key }
     }
 
-    /// The id to end it by (`Launcher::revoke_credential`) and that `Revocations` names.
+    /// The id to end it by (`Launcher::revoke_credential`) and that `Revoked` names.
     pub fn id(&self) -> &ProcessCredentialId {
         &self.id
     }
@@ -206,42 +201,6 @@ pub struct Revoked {
     pub id: ProcessCredentialId,
     /// Why.
     pub reason: CredentialEnd,
-}
-
-/// The stream of [`Revoked`], sent to this launcher alone. An item is an error when accountd sent
-/// one that is not well formed.
-#[derive(Debug)]
-pub struct Revocations {
-    stream: ProcessCredentialRevokedStream,
-}
-
-impl Revocations {
-    pub(crate) fn new(stream: ProcessCredentialRevokedStream) -> Self {
-        Self { stream }
-    }
-
-    fn revoked(signal: ProcessCredentialRevoked) -> Result<Revoked, LauncherError> {
-        let args = signal.args()?;
-        Ok(Revoked {
-            id: ProcessCredentialId::parse(&args.id)?,
-            reason: from_word::<CredentialEnd>(&args.reason).ok_or_else(|| {
-                LauncherError::Bus(CallFailure::Malformed(format!(
-                    "`{}` is not a reason",
-                    args.reason
-                )))
-            })?,
-        })
-    }
-}
-
-impl BusStream for Revocations {
-    type Item = Result<Revoked, LauncherError>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        Pin::new(&mut self.stream)
-            .poll_next(cx)
-            .map(|signal| signal.map(Self::revoked))
-    }
 }
 
 #[cfg(test)]

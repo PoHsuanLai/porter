@@ -19,7 +19,9 @@ use crate::service::{Access, Hub};
 use crate::settings::{SyncSettings, read_cache_limit, serve_settings};
 use porter_callers::choose_proc_root;
 use porter_callers::{CallerFileError, ProcCallers};
-use porter_client::{Accounts, Identities, IdentitiesError, InProcess, PorterRelays};
+use porter_client::Porter;
+use porter_client_dbus::Bus;
+use porter_client_inproc::{Hosted, PorterRelays};
 use porter_core::store::RegistryStore;
 use porter_daemon::xdg::PathError;
 use porter_dbus::BusTarget;
@@ -88,7 +90,7 @@ pub type OwnService = AccountService<
 
 /// What the supervisors reach accounts through: that service, in this process, with relays that
 /// carry the credential to the servers (it crosses no process).
-pub type OwnLink = InProcess<OwnService, PorterRelays>;
+pub type OwnLink = Hosted<OwnService, PorterRelays>;
 
 /// Everything syncd needs to start, as typed values.
 #[derive(Debug, Clone)]
@@ -233,9 +235,6 @@ pub enum StartError {
     /// The bus cannot be reached.
     #[error("no session bus: {0}")]
     Bus(#[source] zbus::Error),
-    /// The account service's identities cannot be asked for.
-    #[error("cannot reach the identities: {0}")]
-    Identities(#[source] IdentitiesError),
     /// The settings module cannot be served.
     #[error("cannot serve the settings module: {0}")]
     Settings(#[source] zbus::Error),
@@ -330,8 +329,8 @@ impl Daemon {
                 .with_audit(FileAudit::new(keep.audit.clone())),
         );
         let link: OwnLink =
-            InProcess::new(Arc::clone(&service), sync_app()).with_relays(PorterRelays::new());
-        let accounts = Arc::new(Accounts::over(link));
+            Hosted::new(Arc::clone(&service), sync_app()).with_relays(PorterRelays::new());
+        let accounts = Arc::new(Porter::over(link).grants());
         // What tells this run from every other: its anchors, its new Photos devices.
         let nonce = fresh_nonce();
         let wiring = |network| Wiring {
@@ -372,9 +371,7 @@ impl Daemon {
         // On an error below `daemon` drops, which ends both supervisors.
         // The Settings rows: the accounts syncd signed in, "Continue as" for a new one, the sync
         // switches and removal.
-        let identities = Identities::connect(&connection)
-            .await
-            .map_err(StartError::Identities)?;
+        let identities = Porter::over(Bus::over(connection.clone())).identities();
         let settings_file = paths.settings.clone();
         let own = Arc::new(
             Keep::new(Arc::clone(&service), identities, intent, paths, hub.clone())

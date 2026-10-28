@@ -13,7 +13,7 @@ use common::{Known, client};
 use porter_callers::CallerRole;
 use porter_capability::CapabilityKind;
 use porter_capability::StorageScope;
-use porter_client::Accounts;
+use porter_client::Grants;
 use porter_core::{AccountId, GrantId};
 use porter_core::{
     AppName, AuthKind, Credential, DataClass, EndpointUrl, Family, LoginName, SecretKey,
@@ -71,7 +71,7 @@ struct Rig {
     hub: Hub,
     known: Known,
     nextcloud: Running<NextcloudHandle>,
-    accounts: Arc<Accounts<Link>>,
+    accounts: Arc<Grants<Link>>,
     grant: GrantId,
     endpoint: EndpointUrl,
     _keep: Vec<zbus::Connection>,

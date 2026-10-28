@@ -341,12 +341,7 @@ async fn add_account_and_reauthenticate_drive_accountds_sheets_and_say_how_they_
     let (lines, ok) = rig.run(&["reauthenticate", ACCOUNT]).await;
     assert!(!ok, "{lines:?}");
     assert_eq!(result_of(&lines), "error", "{lines:?}");
-    assert!(
-        lines[0]["error"]
-            .as_str()
-            .is_some_and(|e| e.contains("UnknownObject")),
-        "{lines:?}"
-    );
+    assert_eq!(lines[0]["error"], "invalid", "{lines:?}");
 
     // A word that is no provider or account id never reaches the bus.
     for args in [

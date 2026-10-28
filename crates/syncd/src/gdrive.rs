@@ -7,7 +7,7 @@
 //! [`gdrive_replica`] builds the replica of a dataset's folder in the account's app data folder.
 
 use crate::webdav::BuildError;
-use porter_client::{Accounts, Transport};
+use porter_client::{Grants, GrantsLink};
 use porter_core::EndpointUrl;
 use porter_core::GrantId;
 use porter_http_relay::{RelayDial, RelayHttp, RelayLimits};
@@ -19,8 +19,8 @@ use storage_gdrive::GdriveReplica;
 /// The replica of `folder` (a path in the app data folder, `Photos/Originals`; empty for the
 /// folder itself) of the account the grant covers, over relays accountd opens to `endpoint`
 /// (the `google_drive` row's, `https://www.googleapis.com/drive/v3`).
-pub fn gdrive_replica<T: Transport>(
-    accounts: Arc<Accounts<T>>,
+pub fn gdrive_replica<T: GrantsLink>(
+    accounts: Arc<Grants<T>>,
     grant: GrantId,
     endpoint: EndpointUrl,
     folder: &str,

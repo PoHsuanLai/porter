@@ -25,6 +25,27 @@
 - `EngineConfig::program` is public and `EngineConfig::named_path` is new; `LocalModel::unit_with`
   returns an `Option`.
 
+### `Porter`: one handle over a transport
+
+- `porter_client::Porter<T>` is the app's handle: `porter.accounts()` (`add`, `reauthenticate`) over any transport that
+  signs an account in, and `porter.grants()` (`find`, `request_grant`, `grants`, `revoke`, `open_authenticated`,
+  `open_linked`) over a transport that carries grants, which is the hosted one only. A transport implements
+  `AccountsLink` and `GrantsLink`; a domain a transport does not carry has no accessor on it, so the
+  `Unsupported`/`Unreachable` defaults are gone.
+- The transports are crates of their own. `porter-client-dbus`: `Bus::over(connection)`, `Bus::accounts_at(owner)`,
+  `connect()`. `porter-client-inproc`: `Hosted::new(service, app)`, `HostConfig` and `hosted(config)` for an app that
+  brings its providers, secrets and sheet host, `RelayHost`, `NoRelays`, `PorterRelays` (feature `relays`).
+- The agent launcher is `porter_client_dbus::Launcher` (`Bus::launcher()`), not a `Porter` domain: its process credential
+  is a sealed memfd accountd hands over on the bus, a Linux descriptor, so `ProcessCredential`, `ChildKey`, `Delivery`,
+  `Inherit` and `Revoked` live in `porter-client-dbus` and `porter-client` has no descriptor in its API and builds on
+  macOS and Windows. `LauncherLink` is gone. `scripts/check-portable.sh` now cross-checks `porter-client`,
+  `porter-sheet` and `porter-wire` on every macOS and Windows target rustup has installed.
+- Errors are typed without prose: `LinkError` (`Unreachable`, `Closed`, `Denied`, `Invalid`, `Malformed(Malformed)`)
+  beside each domain's own: `AccountsError` (`Refused`, `AlreadyAdded`, `Busy`, `Link`), `GrantsError`.
+- Gone from `porter-client`: `Accounts<T>` (the god facade), `Transport`, `TransportError`, `ClientError`,
+  `DbusTransport`, `InProcess`, `HostedCore`, `Relayed`, `Removals`, `RemovedAccount`, `Accounts::watch_removals`
+  (nobody called it; `Identities::watch_removals` is the same signal) and the features `dbus`, `in-process`, `relays`.
+
 ### `porter_service::Service`
 
 - `Service` is the facade seen as the two domain traits a host asks of it: `accounts_api()` (`AccountsApi`) and

@@ -28,7 +28,8 @@ use crate::watch::Watch;
 use engine_supervisor::EngineId;
 use model_catalog::EngineKind;
 use porter_callers::{ProcRoot, choose_proc_root, proc_notice};
-use porter_client::AiAccounts;
+use porter_client::Porter;
+use porter_client_dbus::Bus;
 use porter_dbus::BusTarget;
 use porter_dbus::inference::INFERENCE_BUS;
 use porter_http_reqwest::{Limits, ReqwestHttp};
@@ -505,7 +506,7 @@ impl Daemon {
         // The AI keys are accountd's; inferd asks it for the permits an app holds and for the key
         // behind one, and reports the runtimes it probes. What it learns of the accounts wakes
         // the places listeners and keeps the spend rows' list.
-        let broker = AiAccounts::connect(&connection).await?;
+        let broker = Porter::over(Bus::over(connection.clone())).ai_accounts();
         let engines_news = Arc::new(tokio::sync::Notify::new());
         let account_list = AccountList::default();
         // Whatever an earlier inferd left of its own store is removed once accountd, which copies

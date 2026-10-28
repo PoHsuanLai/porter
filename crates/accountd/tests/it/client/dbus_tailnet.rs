@@ -1,15 +1,15 @@
-//! The person's computers through the client (`DbusTransport::tailnet`), against the real accountd
+//! The person's computers through the client , against the real accountd
 //! front end on a private bus following a fake Tailscale on a scratch socket (never the real
 //! one): the typed `Machine`s, the stream of changes, and the refusals read back as
-//! `CallFailure`s. No dictionary is parsed here: that is what the reader is for.
-#![cfg(feature = "dbus")]
+//! `LinkError`s. No dictionary is parsed here: that is what the reader is for.
 
-use crate::common;
+use super::common;
 
 use accountd::{Options, TableCallers, TailnetWatch};
 use common::bus::PrivateBus;
 use porter_callers::{Caller, CallerRole};
-use porter_client::{CallFailure, DbusTransport};
+use porter_client::{LinkError, Porter};
+use porter_client_dbus::Bus;
 use porter_core::{
     Account, AccountLabel, AccountState, AppId, AppName, AuthKind, Isolation, Restriction,
 };
@@ -131,10 +131,7 @@ impl World {
 #[tokio::test(flavor = "multi_thread")]
 async fn the_terminal_reads_typed_machines_and_hears_of_changes() {
     let world = World::start("typed").await;
-    let tailnet = DbusTransport::over(world.client(CallerRole::Terminal).await)
-        .tailnet()
-        .await
-        .expect("tailnet");
+    let tailnet = Porter::over(Bus::over(world.client(CallerRole::Terminal).await)).tailnet();
     let mut changes = tailnet.watch().await.expect("watch");
     let machines: Vec<Machine> = tailnet.machines().await.expect("machines");
     let names: Vec<(&str, MachineOwner)> = machines
@@ -163,7 +160,7 @@ async fn the_terminal_reads_typed_machines_and_hears_of_changes() {
     )
     .await
     .expect("told in time");
-    assert_eq!(told, Some(()));
+    assert_eq!(told, Some(Ok(())));
     let again = tailnet.machines().await.expect("machines");
     // The first of the fake's computers (`pi`) went offline.
     assert!(
@@ -179,17 +176,8 @@ async fn the_terminal_reads_typed_machines_and_hears_of_changes() {
 #[tokio::test(flavor = "multi_thread")]
 async fn an_app_and_a_stranger_are_refused_with_the_reason_read_back() {
     let world = World::start("refused").await;
-    let app = DbusTransport::over(world.client(CallerRole::App).await)
-        .tailnet()
-        .await
-        .expect("tailnet");
-    assert!(matches!(app.machines().await, Err(CallFailure::Denied(_))));
-    let stranger = DbusTransport::over(world.bus.connect().await)
-        .tailnet()
-        .await
-        .expect("tailnet");
-    assert!(matches!(
-        stranger.machines().await,
-        Err(CallFailure::Denied(_))
-    ));
+    let app = Porter::over(Bus::over(world.client(CallerRole::App).await)).tailnet();
+    assert!(matches!(app.machines().await, Err(LinkError::Denied)));
+    let stranger = Porter::over(Bus::over(world.bus.connect().await)).tailnet();
+    assert!(matches!(stranger.machines().await, Err(LinkError::Denied)));
 }

@@ -4,7 +4,7 @@
 //!
 //! With the feature `relays` the crate brings that host ready made: [`PorterRelays`], which runs
 //! `porter_proxy::relay` on the app's tokio runtime with the platform's trusted roots. An app or
-//! daemon that hosts its own `AccountService` (syncd) hands it to `InProcess::with_relays`.
+//! daemon that hosts its own `AccountService` (syncd) hands it to `Hosted::with_relays`.
 
 use porter_core::RelayPlan;
 use porter_core::stream::DuplexEnd;
@@ -44,7 +44,7 @@ mod porter_relays {
     /// endpoint over TCP and rustls. Certificate checks are always on; the trusted roots are the
     /// platform's (`webpki-roots` when it has none), read from disk once, on first use, off the
     /// async threads. [`RelayHost::run`] must be called from inside a tokio runtime, as
-    /// `InProcess` does.
+    /// `Hosted` does.
     #[derive(Debug, Clone, Default)]
     pub struct PorterRelays {
         connector: Arc<OnceCell<RustlsConnect>>,

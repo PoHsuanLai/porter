@@ -1,9 +1,9 @@
 //! An app on the in-process transport, over the fake providers: it finds an account by
 //! capability, is asked for consent, and gets a token; a refusal sticks; a once-grant is spent.
-#![cfg(feature = "in-process")]
 
 use porter_capability::{Access, Delta, StorageScope};
-use porter_client::{Accounts, ClientError, ConsentOffer, Found, InProcess, NoAccount};
+use porter_client::{AccountsError, ConsentOffer, Found, GrantsError, NoAccount, Porter};
+use porter_client_inproc::Hosted;
 use porter_core::AccountId;
 use porter_core::consent::{GrantScope, Usage};
 use porter_core::{AppId, AppName, DataClass, Isolation, RelayAuth};
@@ -13,7 +13,7 @@ use porter_match::StorageNeed;
 use porter_wire::{ParentWindow, Refusal};
 use std::sync::Arc;
 
-type App = Accounts<InProcess<FakeService>>;
+type App = Porter<Hosted<FakeService>>;
 
 fn app_id(name: &str) -> AppId {
     AppId {
@@ -23,7 +23,7 @@ fn app_id(name: &str) -> AppId {
 }
 
 fn app(service: &Arc<FakeService>, name: &str) -> App {
-    Accounts::over(InProcess::new(Arc::clone(service), app_id(name)))
+    Porter::over(Hosted::new(Arc::clone(service), app_id(name)))
 }
 
 fn storage(delta: Delta) -> Need {
@@ -52,11 +52,13 @@ async fn a_storage_need_finds_the_fake_cloud_after_consent() {
 
     let offer = needs_consent(
         photos
+            .grants()
             .find(&need, DataClass::Photos, Usage::Interactive)
             .await
             .expect("find"),
     );
     let chosen = photos
+        .grants()
         .request_grant(&offer, &ParentWindow::Unparented)
         .await
         .expect("granted");
@@ -75,6 +77,7 @@ async fn a_storage_need_finds_the_fake_cloud_after_consent() {
     );
 
     match photos
+        .grants()
         .find(&need, DataClass::Photos, Usage::Interactive)
         .await
         .expect("find")
@@ -98,6 +101,7 @@ async fn a_storage_need_finds_the_fake_cloud_after_consent() {
 
     let files = app(&service, "org.quire.Files");
     let other = files
+        .grants()
         .find(&need, DataClass::Photos, Usage::Interactive)
         .await
         .expect("find");
@@ -114,15 +118,18 @@ async fn a_refusal_sticks_for_that_app() {
     let need = storage(Delta::Poll);
     let offer = needs_consent(
         photos
+            .grants()
             .find(&need, DataClass::Photos, Usage::Interactive)
             .await
             .expect("find"),
     );
     let refused = photos
+        .grants()
         .request_grant(&offer, &ParentWindow::Unparented)
         .await;
-    assert_eq!(refused, Err(ClientError::Refused(Refusal::Denied)));
+    assert_eq!(refused, Err(GrantsError::Refused(Refusal::Denied)));
     let after = photos
+        .grants()
         .find(&need, DataClass::Photos, Usage::Interactive)
         .await
         .expect("find");
@@ -134,6 +141,7 @@ async fn a_need_no_provider_meets_is_unsupported() {
     let service = Arc::new(fake_service(ScriptedSheets::default()).await);
     let photos = app(&service, "org.quire.Photos");
     let found = photos
+        .grants()
         .find(&storage(Delta::Push), DataClass::Photos, Usage::Interactive)
         .await
         .expect("find");
@@ -152,11 +160,13 @@ async fn a_once_grant_is_spent_by_its_first_relay() {
     let need = storage(Delta::Poll);
     let offer = needs_consent(
         photos
+            .grants()
             .find(&need, DataClass::Files, Usage::Interactive)
             .await
             .expect("find"),
     );
     let chosen = photos
+        .grants()
         .request_grant(&offer, &ParentWindow::Unparented)
         .await
         .expect("granted");
@@ -166,6 +176,7 @@ async fn a_once_grant_is_spent_by_its_first_relay() {
     let again = relay(&chosen.grant).await.map(|_| ());
     assert_eq!(again, Err(Refusal::UnknownGrant));
     let after = photos
+        .grants()
         .find(&need, DataClass::Files, Usage::Interactive)
         .await
         .expect("find");
@@ -184,11 +195,13 @@ async fn revoking_a_grant_ends_it() {
     let need = storage(Delta::Poll);
     let offer = needs_consent(
         photos
+            .grants()
             .find(&need, DataClass::Photos, Usage::Interactive)
             .await
             .expect("find"),
     );
     let chosen = photos
+        .grants()
         .request_grant(&offer, &ParentWindow::Unparented)
         .await
         .expect("granted");
@@ -279,7 +292,8 @@ async fn an_app_adds_an_account_through_a_family_is_granted_it_and_signs_it_in_a
     let calendar = app_over(&service, "org.quire.Calendar");
 
     let added = calendar
-        .add_account(porter_core::ProviderHint::Any, &ParentWindow::Unparented)
+        .accounts()
+        .add(porter_core::ProviderHint::Any, &ParentWindow::Unparented)
         .await
         .expect("added");
     assert_eq!(added.as_str(), "generic-dav-bob-127.0.0.1");
@@ -287,11 +301,13 @@ async fn an_app_adds_an_account_through_a_family_is_granted_it_and_signs_it_in_a
     let need = Need::Calendar(PimNeed::new(Access::ReadWrite, Delta::Poll));
     let offer = needs_consent(
         calendar
+            .grants()
             .find(&need, DataClass::Calendar, Usage::Interactive)
             .await
             .expect("find"),
     );
     let chosen = calendar
+        .grants()
         .request_grant(&offer, &ParentWindow::Unparented)
         .await
         .expect("granted");
@@ -303,23 +319,26 @@ async fn an_app_adds_an_account_through_a_family_is_granted_it_and_signs_it_in_a
     );
 
     calendar
+        .accounts()
         .reauthenticate(&added, &ParentWindow::Unparented)
         .await
         .expect("signed in again");
     assert_eq!(
         calendar
+            .accounts()
             .reauthenticate(&added, &ParentWindow::Unparented)
             .await,
-        Err(ClientError::Refused(Refusal::Denied)),
+        Err(AccountsError::Refused(Refusal::Denied)),
         "the server refused the password"
     );
     // Another app was never granted the account, so it cannot sign it in again.
     let other = app_over(&service, "org.quire.Other");
     assert_eq!(
         other
+            .accounts()
             .reauthenticate(&added, &ParentWindow::Unparented)
             .await,
-        Err(ClientError::Refused(Refusal::UnknownGrant))
+        Err(AccountsError::Refused(Refusal::UnknownGrant))
     );
 }
 
@@ -387,16 +406,18 @@ async fn adding_an_account_that_is_already_here_tells_the_app_which_one_it_is() 
     ));
     let calendar = app_over(&service, "org.quire.Calendar");
     let added = calendar
-        .add_account(porter_core::ProviderHint::Any, &ParentWindow::Unparented)
+        .accounts()
+        .add(porter_core::ProviderHint::Any, &ParentWindow::Unparented)
         .await
         .expect("added");
     let held = service.registry().accounts.clone();
 
     assert_eq!(
         calendar
-            .add_account(porter_core::ProviderHint::Any, &ParentWindow::Unparented,)
+            .accounts()
+            .add(porter_core::ProviderHint::Any, &ParentWindow::Unparented)
             .await,
-        Err(ClientError::AlreadyAdded(added))
+        Err(AccountsError::AlreadyAdded(added))
     );
     assert_eq!(service.registry().accounts, held, "nothing was added");
 }
@@ -497,17 +518,20 @@ async fn a_typed_pop3_server_is_added_through_the_sheet_and_found_by_a_mail_need
     ));
     let mail = app_over(&service, "org.quire.Mail");
     let added = mail
-        .add_account(porter_core::ProviderHint::Any, &ParentWindow::Unparented)
+        .accounts()
+        .add(porter_core::ProviderHint::Any, &ParentWindow::Unparented)
         .await
         .expect("added");
 
     let need = Need::Mail(MailNeed::new(Access::Read, true, Delta::Poll));
     let offer = needs_consent(
-        mail.find(&need, DataClass::Mail, Usage::Interactive)
+        mail.grants()
+            .find(&need, DataClass::Mail, Usage::Interactive)
             .await
             .expect("find"),
     );
     let chosen = mail
+        .grants()
         .request_grant(&offer, &ParentWindow::Unparented)
         .await
         .expect("granted");
@@ -541,12 +565,12 @@ type FamilyService = porter_service::AccountService<
     porter_ids::clock::FixedClock,
 >;
 
-type FamilyApp = Accounts<InProcess<FamilyService>>;
+type FamilyApp = Porter<Hosted<FamilyService>>;
 
 fn app_over(service: &Arc<FamilyService>, name: &str) -> FamilyApp {
     let id = AppId {
         name: AppName::parse(name).expect("app name"),
         isolation: Isolation::Flatpak,
     };
-    Accounts::over(InProcess::new(Arc::clone(service), id))
+    Porter::over(Hosted::new(Arc::clone(service), id))
 }

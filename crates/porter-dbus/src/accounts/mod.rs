@@ -56,10 +56,11 @@ pub use machines::{
     MACHINE_KEY_SSH_HOST_KEYS, machine_from_dbus, machine_to_dbus,
 };
 pub use manager::{
-    AccountRemoved, AccountRemovedStream, ManagerProxy, ManagerServed, ManagerServer,
+    AccountAdded, AccountAddedStream, AccountRemoved, AccountRemovedStream, ManagerProxy,
+    ManagerServed, ManagerServer, NeedsReauth, NeedsReauthStream,
 };
 pub use names::*;
-pub use pending::{Closer, Sheet, SheetError};
+pub use pending::{Abandon, Closer, Sheet, SheetError};
 pub use refusal::{
     REFUSAL_ERROR_PREFIX, refusal_error_name, refusal_error_name_in, refusal_from_error_name,
     refusal_of,

@@ -14,7 +14,8 @@ use crate::probe::Runtime;
 use crate::probed::Standing;
 use crate::report::{ReportFault, Reports};
 use porter_capability::Claim;
-use porter_client::{AiAccounts, AiAccountsError, CallFailure};
+use porter_client::{AiAccounts, AiAccountsError, LinkError};
+use porter_client_dbus::Bus;
 use porter_core::consent::Usage;
 use porter_core::{AccountId, AccountState, AiAccountRow, AppId, DataClass, GrantId};
 use porter_core::{ProviderId, SecretText};
@@ -27,12 +28,12 @@ use tokio::sync::Notify;
 /// accountd's AI accounts, asked over the bus.
 #[derive(Debug, Clone)]
 pub struct AccountdBroker {
-    accounts: AiAccounts,
+    accounts: AiAccounts<Bus>,
 }
 
 impl AccountdBroker {
     /// The accounts of accountd, asked through `accounts`.
-    pub fn new(accounts: AiAccounts) -> Self {
+    pub fn new(accounts: AiAccounts<Bus>) -> Self {
         Self { accounts }
     }
 }
@@ -42,8 +43,8 @@ impl AccountdBroker {
 fn fault_of(error: AiAccountsError) -> AccountdFault {
     match error {
         AiAccountsError::Refused(refusal) => AccountdFault::from(refusal),
-        AiAccountsError::Bus(CallFailure::Unreachable) => AccountdFault::Unreachable,
-        AiAccountsError::Bus(CallFailure::Malformed(_)) => AccountdFault::Unreadable,
+        AiAccountsError::Link(LinkError::Unreachable) => AccountdFault::Unreachable,
+        AiAccountsError::Link(LinkError::Malformed(_)) => AccountdFault::Unreadable,
         // A caller accountd does not know as the broker, or an argument it refused: final.
         _ => AccountdFault::Refused,
     }
@@ -118,7 +119,7 @@ impl Reports for AccountdBroker {
                 .report_local(&provider, claims, state)
                 .await
                 .map_err(|error| match error {
-                    AiAccountsError::Bus(CallFailure::Unreachable)
+                    AiAccountsError::Link(LinkError::Unreachable)
                     | AiAccountsError::Refused(Refusal::Unavailable) => ReportFault::Unreachable,
                     _ => ReportFault::Rejected,
                 })
@@ -154,7 +155,7 @@ const RETRY: Duration = Duration::from_secs(2);
 /// after the first look that worked: accountd is up then, and has copied what it found of
 /// inferd's old store.
 pub fn follow(
-    accounts: AiAccounts,
+    accounts: AiAccounts<Bus>,
     list: AccountList,
     news: Arc<Notify>,
     first: impl FnOnce() + Send + 'static,

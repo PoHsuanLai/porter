@@ -28,7 +28,8 @@ porter-match = { workspace = true }
 porter-capability = { workspace = true }
 porter-wire = { workspace = true }
 porter-ids = { workspace = true }
-porter-client = { workspace = true, features = ["dbus", "in-process"] }
+porter-client = { workspace = true }
+porter-client-dbus = { workspace = true }
 inferd-client = { workspace = true, features = ["dbus"] }
 porter-callers = { workspace = true, features = ["test-proc-root"] }
 porter-dbus = { workspace = true }

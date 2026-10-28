@@ -2,15 +2,14 @@
 //! (`common::fake_accountd`) on a private bus: register, a stream of requests, report, sessions, and
 //! the sheet that asks for an agent's key. accountd's own behaviour (who may call, the wait, the
 //! permit book) is in accountd's launcher tests.
-#![cfg(feature = "dbus")]
 
-use crate::common;
+use super::common;
 
 use common::bus::PrivateBus;
 use common::fake_accountd::{FakeAccountd, Sheets};
 use porter_capability::AgentProgram;
 use porter_capability::LoginOutcome;
-use porter_client::{AskKind, Launcher, LauncherError};
+use porter_client_dbus::{AskKind, Bus, Launcher, LauncherError};
 use porter_core::DataClass;
 use porter_core::SessionToken;
 use porter_dbus::BusStream;
@@ -33,9 +32,7 @@ async fn rig(sheets: Sheets) -> Rig {
     let daemon = bus.connect().await;
     let fake = FakeAccountd::new(sheets);
     fake.serve(&daemon).await;
-    let launcher = Launcher::connect(&bus.connect().await)
-        .await
-        .expect("launcher");
+    let launcher = Bus::over(bus.connect().await).launcher();
     Rig {
         _bus: bus,
         daemon,

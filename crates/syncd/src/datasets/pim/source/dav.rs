@@ -7,7 +7,7 @@ use super::super::PimKind;
 use super::super::discover::{DiscoverError, Found, discover};
 use super::super::relay::{pim_http, pim_replica};
 use super::{Feed, FeedChange, FeedCursor, Page, PimSource};
-use porter_client::{Accounts, Transport};
+use porter_client::{Grants, GrantsLink};
 use porter_core::EndpointUrl;
 use porter_core::GrantId;
 use porter_http_relay::{RelayDial, RelayHttp};
@@ -34,7 +34,7 @@ impl FeedCursor for DavCursor {
 /// The collections of one account's CalDAV or CardDAV endpoint.
 #[derive(Debug)]
 pub struct DavSource<T> {
-    accounts: Arc<Accounts<T>>,
+    accounts: Arc<Grants<T>>,
     grant: GrantId,
     endpoint: EndpointUrl,
     clock: Clock,
@@ -45,7 +45,7 @@ impl<T> DavSource<T> {
     /// The source at `endpoint`, as `grant` allows, dating tombstones with `clock`; `nonce` is
     /// the run's, which tells its feed anchors from an earlier run's.
     pub fn new(
-        accounts: Arc<Accounts<T>>,
+        accounts: Arc<Grants<T>>,
         grant: GrantId,
         endpoint: EndpointUrl,
         clock: Clock,
@@ -63,9 +63,9 @@ impl<T> DavSource<T> {
 
 /// One DAV collection's feed.
 #[derive(Debug)]
-pub struct DavFeed<T: Transport>(WebDavReplica<RelayHttp<RelayDial<T>>>);
+pub struct DavFeed<T: GrantsLink>(WebDavReplica<RelayHttp<RelayDial<T>>>);
 
-impl<T: Transport + 'static> PimSource for DavSource<T> {
+impl<T: GrantsLink + 'static> PimSource for DavSource<T> {
     type Feed = DavFeed<T>;
 
     async fn collections(&self, kind: PimKind) -> Result<Vec<Found>, DiscoverError> {
@@ -90,7 +90,7 @@ impl<T: Transport + 'static> PimSource for DavSource<T> {
     }
 }
 
-impl<T: Transport + 'static> Feed for DavFeed<T> {
+impl<T: GrantsLink + 'static> Feed for DavFeed<T> {
     type Cursor = DavCursor;
 
     async fn changes(&self, from: Option<DavCursor>) -> Result<Page<DavCursor>, ReplicaError> {

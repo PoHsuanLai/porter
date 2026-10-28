@@ -1,0 +1,31 @@
+[package]
+name = "porter-client-dbus"
+description = "The bus transport of porter-client: accountd on the session bus, for an app that lets accountd hold its accounts."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+porter-client = { workspace = true }
+porter-core = { workspace = true }
+porter-wire = { workspace = true }
+porter-capability = { workspace = true }
+porter-dbus = { workspace = true }
+porter-ids = { workspace = true }
+porter-tailscale = { workspace = true }
+futures-util = { workspace = true }
+serde_json = { workspace = true }
+zbus = { workspace = true }
+thiserror = { workspace = true }
+zeroize = { workspace = true }
+
+[dev-dependencies]
+# `sealed_key` and a memfd: the credential tests hand a key over as the daemon does.
+porter-secrets = { workspace = true }
+rustix = { workspace = true }
+
+[lints]
+workspace = true

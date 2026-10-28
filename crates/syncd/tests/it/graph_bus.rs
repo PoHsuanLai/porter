@@ -17,7 +17,7 @@ use common::{Known, client};
 use porter_callers::CallerRole;
 use porter_capability::StorageScope;
 use porter_capability::{CapabilityKind, Claim, Offer, Provenance, Subject};
-use porter_client::Accounts;
+use porter_client::Grants;
 use porter_core::{
     Account, AccountLabel, AccountState, AppName, AuthKind, Credential, DataClass, EndpointUrl,
     Family, LoginName, Restriction, SecretKey, SecretPurpose, SecretText, ServiceEndpoint,
@@ -108,7 +108,7 @@ struct Rig {
     hub: Hub,
     known: Known,
     graph: Running<GraphHandle>,
-    accounts: Arc<Accounts<Link>>,
+    accounts: Arc<Grants<Link>>,
     grant: GrantId,
     endpoint: EndpointUrl,
     link: EndpointUrl,
@@ -401,7 +401,7 @@ async fn a_linked_relay_reaches_a_declared_origin_only_adds_no_credential_and_st
         assert!(
             matches!(
                 refused,
-                Err(porter_client::ClientError::Refused(
+                Err(porter_client::GrantsError::Refused(
                     porter_wire::Refusal::EndpointNotGranted
                 ))
             ),

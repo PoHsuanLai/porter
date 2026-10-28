@@ -1,11 +1,8 @@
 //! Shared by the bus tests: a private bus and the real accountd on it.
 #![allow(dead_code)]
 
-#[cfg(feature = "dbus")]
 pub mod accountd;
-#[cfg(feature = "dbus")]
 pub mod bus;
-#[cfg(feature = "dbus")]
 pub mod fake_accountd;
 
 /// Waits until `condition` holds (a daemon's task has run); fails the test, naming `what`, when

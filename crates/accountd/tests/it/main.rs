@@ -5,6 +5,7 @@ mod account_objects;
 mod binary;
 mod broker;
 mod bus_sheets;
+mod client;
 mod common;
 mod daemon;
 mod dist;

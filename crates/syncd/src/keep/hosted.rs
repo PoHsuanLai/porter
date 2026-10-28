@@ -3,7 +3,7 @@
 
 use super::classes::sync_app;
 use porter_capability::CapabilityKind;
-use porter_client::{Identities, IdentitiesError};
+use porter_client::{Identities, IdentitiesError, IdentitiesLink};
 use porter_core::ProviderHint;
 use porter_core::consent::{ConsentAnswer, ConsentAsk, Grant, GrantScope};
 use porter_core::store::RegistryStore;
@@ -163,7 +163,7 @@ pub trait Directory: Send + Sync + 'static {
     ) -> impl Future<Output = Result<(), IdentitiesError>> + Send;
 }
 
-impl Directory for Identities {
+impl<T: IdentitiesLink> Directory for Identities<T> {
     async fn offer(&self, window: &ParentWindow) -> Result<Pick, IdentitiesError> {
         let picked = Identities::offer(self, &ProviderHint::Any, window).await?;
         Ok(Pick::new(picked.id, picked.address, picked.provider))

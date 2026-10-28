@@ -5,7 +5,8 @@
 //! for accounts, no real keyring.
 #![allow(dead_code)]
 
-use porter_client::{Accounts, IdentitiesError, InProcess, PorterRelays};
+use porter_client::{Grants, IdentitiesError, Porter};
+use porter_client_inproc::{Hosted as HostedLink, PorterRelays};
 use porter_core::IdentityId;
 use porter_fake::{FakeProvider, MemoryStore, RecordingAudit, ScriptedSheets};
 use porter_ids::clock::FixedClock;
@@ -27,12 +28,12 @@ pub type Service = AccountService<
     RecordingAudit,
 >;
 
-pub type Link = InProcess<Service, PorterRelays>;
+pub type Link = HostedLink<Service, PorterRelays>;
 
 /// The hosted service and the `Accounts` the supervisors use, as syncd (`org.quire.Sync`).
 pub struct Hosted {
     pub service: Arc<Service>,
-    pub accounts: Arc<Accounts<Link>>,
+    pub accounts: Arc<Grants<Link>>,
     pub intent: Intent,
     pub store: MemoryStore,
     pub audit: RecordingAudit,
@@ -64,9 +65,9 @@ pub fn host_with(
         .with_store(store.clone())
         .with_audit(audit.clone()),
     );
-    let link = InProcess::new(Arc::clone(&service), sync_app()).with_relays(PorterRelays::new());
+    let link = HostedLink::new(Arc::clone(&service), sync_app()).with_relays(PorterRelays::new());
     Hosted {
-        accounts: Arc::new(Accounts::over(link)),
+        accounts: Arc::new(Porter::over(link).grants()),
         service,
         intent,
         store,

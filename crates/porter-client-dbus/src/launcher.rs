@@ -1,4 +1,5 @@
-//! The launcher's side of an agent's login (design/31 R7-R9, C5, C6). The agent launcher
+//! The launcher's side of an agent's login (accountd's `Launcher` over the bus; it is this crate's and
+//! not `Porter`'s, because the key it hands over is a sealed memfd, a Linux descriptor) (design/31 R7-R9, C5, C6). The agent launcher
 //! (docket-acp) registers the programs it runs, hears when accountd asks it to sign an agent in or
 //! out, has the agent do it, and reports only a coarse [`LoginOutcome`]. Nothing of the login
 //! itself (a token, a URL, a code) crosses to porter: there is no way to send one.
@@ -12,10 +13,10 @@
 //! [`crate::credential`]).
 //!
 //! The caller must be known to accountd as the agent launcher (`CallerRole::AgentLauncher`, a row
-//! of accountd's caller table a machine writes); any other caller is [`CallFailure::Denied`].
+//! of accountd's caller table a machine writes); any other caller is `Link(LinkError::Denied)`.
 //!
 //! ```ignore
-//! let launcher = Launcher::connect(&connection).await?;
+//! let launcher = Bus::over(connection).launcher();
 //! let mut requests = launcher.requests().await?;       // subscribe first
 //! launcher.register(&[AgentProgram::parse("claude-code")?]).await?;
 //! while let Some(ask) = requests.next().await {
@@ -28,29 +29,28 @@
 //! }
 //! ```
 
-use crate::abandon::Abandon;
-use crate::call_failure::{CallFailure, bus_failure_from};
-use crate::credential::{ProcessCredential, Revocations};
+use crate::Bus;
+use crate::credential::{ProcessCredential, Revoked};
+use crate::failure::{launcher_error, link_error};
+use futures_util::StreamExt;
+use futures_util::stream::select;
 use porter_capability::AgentProgram;
 use porter_capability::{Capability, Subject};
 use porter_capability::{LoginOutcome, LoginRequestId};
+use porter_client::{Changes, LinkError, Malformed};
+use porter_core::audit::CredentialEnd;
 use porter_core::{AccountId, GrantId, ProviderId};
-use porter_core::{AccountLabel, Candidate, CoreError, DataClass, Restriction};
+use porter_core::{AccountLabel, Candidate, DataClass, Restriction};
 use porter_core::{ProcessCredentialId, SessionToken};
-use porter_dbus::accounts::refusal_of;
 use porter_dbus::accounts::sheet::{SheetKind, reply_of};
 use porter_dbus::accounts::{
-    AgentLoginRequested, AgentLoginRequestedStream, AgentLogoutRequested,
-    AgentLogoutRequestedStream, LauncherProxy, launcher_fault_of,
+    Abandon, AgentLoginRequested, AgentLogoutRequested, LauncherProxy, ProcessCredentialRevoked,
+    ServiceRoot, Sheet, SheetError,
 };
-use porter_dbus::accounts::{ServiceRoot, Sheet, SheetError};
-use porter_dbus::{BusConnection, BusError, BusStream};
-use porter_ids::IdError;
+use porter_ids::word::{from_word, word as word_of};
 use porter_wire::AccountsReply;
 use porter_wire::LauncherFault;
 use porter_wire::Refusal;
-use std::pin::Pin;
-use std::task::{Context, Poll};
 
 /// Why a launcher call failed. More reasons may be added: match with a wildcard.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -63,25 +63,13 @@ pub enum LauncherError {
     /// accountd refused the permit or the account for a reason an app also meets: `UnknownGrant`,
     /// `AudienceNotGranted` (the permit is not for `org.quire.Agent.<program>`), `NeedsReauth`,
     /// `Denied` (the person turned the account off), `Unavailable`.
-    #[error("refused: {0:?}")]
+    #[error("refused")]
     Refused(Refusal),
-    /// The call itself failed: accountd is not there, did not know the caller as the agent
+    /// The call did not complete: accountd is not there, did not know the caller as the agent
     /// launcher, refused an argument, or sent something that is not porter's protocol.
     #[error(transparent)]
-    Bus(CallFailure),
+    Link(#[from] LinkError),
 }
-
-impl From<BusError> for LauncherError {
-    fn from(error: BusError) -> Self {
-        match (launcher_fault_of(&error), refusal_of(&error)) {
-            (Some(fault), _) => LauncherError::Fault(fault),
-            (None, Some(refusal)) => LauncherError::Refused(refusal),
-            (None, None) => LauncherError::Bus(error.into()),
-        }
-    }
-}
-
-bus_failure_from!(LauncherError: CallFailure, CoreError, IdError);
 
 /// What accountd asks of the launcher.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -141,38 +129,87 @@ impl From<Candidate> for KeyCandidate {
     }
 }
 
-/// The launcher's calls to accountd.
-#[derive(Debug, Clone)]
-pub struct Launcher {
-    connection: BusConnection,
-    launcher: LauncherProxy<'static>,
+fn malformed(what: Malformed) -> LauncherError {
+    LauncherError::Link(LinkError::Malformed(what))
 }
 
-/// A data class as its slug, the form the bus takes.
-fn slug(class: DataClass) -> Result<String, LauncherError> {
-    match serde_json::to_value(class) {
-        Ok(serde_json::Value::String(slug)) => Ok(slug),
-        _ => Err(CallFailure::Malformed("a data class with no slug".into()).into()),
+impl Bus {
+    async fn launcher_proxy(&self) -> Result<LauncherProxy<'static>, LauncherError> {
+        self.accounts
+            .proxy(&self.connection)
+            .await
+            .map_err(|e| LauncherError::Link(link_error(&e)))
+    }
+}
+
+fn sheet_error(error: SheetError) -> LauncherError {
+    match error {
+        SheetError::Bus(error) => launcher_error(&error),
+        SheetError::Gone => LauncherError::Link(LinkError::Unreachable),
+        SheetError::Unreadable => malformed(Malformed::Sheet),
+        // a failure a later porter-dbus adds
+        _ => malformed(Malformed::UnknownFailure),
+    }
+}
+
+fn request(
+    kind: AskKind,
+    request: &str,
+    account: &str,
+    program: &str,
+) -> Result<LauncherRequest, Malformed> {
+    Ok(LauncherRequest {
+        kind,
+        request: LoginRequestId::parse(request).map_err(|_| Malformed::Id)?,
+        account: AccountId::parse(account).map_err(|_| Malformed::Id)?,
+        program: AgentProgram::parse(program).map_err(|_| Malformed::Id)?,
+    })
+}
+
+fn login(signal: AgentLoginRequested) -> Result<LauncherRequest, Malformed> {
+    let args = signal.args().map_err(|_| Malformed::Signal)?;
+    request(AskKind::Login, &args.request, &args.account, &args.program)
+}
+
+fn logout(signal: AgentLogoutRequested) -> Result<LauncherRequest, Malformed> {
+    let args = signal.args().map_err(|_| Malformed::Signal)?;
+    request(AskKind::Logout, &args.request, &args.account, &args.program)
+}
+
+fn revoked(signal: ProcessCredentialRevoked) -> Result<Revoked, Malformed> {
+    let args = signal.args().map_err(|_| Malformed::Signal)?;
+    Ok(Revoked {
+        id: ProcessCredentialId::parse(&args.id).map_err(|_| Malformed::Id)?,
+        reason: from_word::<CredentialEnd>(&args.reason).ok_or(Malformed::Signal)?,
+    })
+}
+
+/// The launcher's calls to accountd, over `bus`.
+#[derive(Debug, Clone)]
+pub struct Launcher {
+    bus: Bus,
+}
+
+impl Bus {
+    /// The agent launcher's calls to accountd over this connection.
+    pub fn launcher(&self) -> Launcher {
+        Launcher { bus: self.clone() }
     }
 }
 
 impl Launcher {
-    /// A launcher over `connection`, which accountd (`org.quire.Accounts1`) knows as the agent
-    /// launcher.
-    pub async fn connect(connection: &BusConnection) -> Result<Self, LauncherError> {
-        Ok(Self {
-            connection: connection.clone(),
-            launcher: LauncherProxy::new(connection).await?,
-        })
-    }
-
     /// Opens `session`, the span a permit "for this session only" lasts (the launcher names it,
     /// usually from an ACP session id). It belongs to this connection, which must have
     /// registered a program, and ends at [`Launcher::end_session`] or when the connection
     /// leaves the bus. A session another connection holds is [`LauncherFault::SessionTaken`];
     /// beginning one this connection holds is a no-op.
     pub async fn begin_session(&self, session: &SessionToken) -> Result<(), LauncherError> {
-        Ok(self.launcher.begin_session(session.as_str()).await?)
+        self.bus
+            .launcher_proxy()
+            .await?
+            .begin_session(session.as_str())
+            .await
+            .map_err(|e| launcher_error(&e))
     }
 
     /// Ends a session this connection began: accountd removes the permits scoped to it and ends
@@ -180,7 +217,12 @@ impl Launcher {
     /// connection of each in [`Launcher::revocations`] so the launcher can end the processes. A
     /// session that is not open for this connection is [`LauncherFault::UnknownSession`].
     pub async fn end_session(&self, session: &SessionToken) -> Result<(), LauncherError> {
-        Ok(self.launcher.end_session(session.as_str()).await?)
+        self.bus
+            .launcher_proxy()
+            .await?
+            .end_session(session.as_str())
+            .await
+            .map_err(|e| launcher_error(&e))
     }
 
     /// Asks the person, on accountd's consent sheet titled for `program`, which of their AI keys
@@ -195,14 +237,16 @@ impl Launcher {
         class: DataClass,
         session: Option<&SessionToken>,
     ) -> Result<KeyCandidate, LauncherError> {
-        let mut listener = Sheet::subscribe_on(&self.connection, ServiceRoot::Accounts).await?;
+        let proxy = self.bus.launcher_proxy().await?;
+        let mut listener = Sheet::subscribe_on(&self.bus.connection, ServiceRoot::Accounts)
+            .await
+            .map_err(|e| launcher_error(&e))?;
         // Armed before the call: a dropped call may already have made the sheet.
         let mut abandon = Abandon(listener.closer(None));
-        let path = self
-            .launcher
+        let path = proxy
             .request_agent_key(
                 program.as_str(),
-                &slug(class)?,
+                word_of(&class),
                 session.map_or("", SessionToken::as_str),
                 "",
                 &listener.options(),
@@ -211,31 +255,17 @@ impl Launcher {
         let path = match path {
             Ok(path) => path,
             Err(error) => {
-                abandon.0 = None;
-                return Err(error.into());
+                abandon.answered();
+                return Err(launcher_error(&error));
             }
         };
         abandon.0 = listener.closer(Some(path.clone()));
-        let (code, results) = listener
-            .response(&path)
-            .await
-            .map_err(|error| match error {
-                SheetError::Bus(error) => LauncherError::from(error),
-                SheetError::Gone => CallFailure::Unreachable.into(),
-                SheetError::Unreadable => {
-                    CallFailure::Malformed("a Response that is not (u, a{sv})".into()).into()
-                }
-                // a failure a later porter-dbus adds
-                _ => CallFailure::Malformed("a sheet failure this client does not know".into())
-                    .into(),
-            })?;
-        abandon.0 = None;
-        match reply_of(SheetKind::Choose, code, results)? {
+        let (code, results) = listener.response(&path).await.map_err(sheet_error)?;
+        abandon.answered();
+        match reply_of(SheetKind::Choose, code, results).map_err(|_| malformed(Malformed::Reply))? {
             AccountsReply::Chosen(candidate) => Ok(candidate.into()),
             AccountsReply::Refused(refusal) => Err(LauncherError::Refused(refusal)),
-            other => {
-                Err(CallFailure::Malformed(format!("a chooser answered with {other:?}")).into())
-            }
+            _ => Err(malformed(Malformed::Reply)),
         }
     }
 
@@ -255,10 +285,13 @@ impl Launcher {
         program: &AgentProgram,
     ) -> Result<ProcessCredential, LauncherError> {
         let (id, handle) = self
-            .launcher
+            .bus
+            .launcher_proxy()
+            .await?
             .issue_process_credential(permit.as_str(), program.as_str())
-            .await?;
-        let id = ProcessCredentialId::parse(&id)?;
+            .await
+            .map_err(|e| launcher_error(&e))?;
+        let id = ProcessCredentialId::parse(&id).map_err(|_| malformed(Malformed::Id))?;
         Ok(ProcessCredential::new(id, handle.into()))
     }
 
@@ -266,16 +299,26 @@ impl Launcher {
     /// was killed: accountd forgets it. Not for a credential accountd
     /// ended itself (that is [`LauncherFault::UnknownCredential`]).
     pub async fn revoke_credential(&self, id: &ProcessCredentialId) -> Result<(), LauncherError> {
-        Ok(self.launcher.revoke_process_credential(id.as_str()).await?)
+        self.bus
+            .launcher_proxy()
+            .await?
+            .revoke_process_credential(id.as_str())
+            .await
+            .map_err(|e| launcher_error(&e))
     }
 
     /// What accountd tells this connection when it ends a credential itself (the permit was
     /// revoked, the account removed): the launcher must end that process. Subscribe before
     /// issuing, so none is missed.
-    pub async fn revocations(&self) -> Result<Revocations, LauncherError> {
-        Ok(Revocations::new(
-            self.launcher.receive_process_credential_revoked().await?,
-        ))
+    pub async fn revocations(&self) -> Result<Changes<Revoked>, LauncherError> {
+        let stream = self
+            .bus
+            .launcher_proxy()
+            .await?
+            .receive_process_credential_revoked()
+            .await
+            .map_err(|e| launcher_error(&e))?;
+        Ok(Changes::new(stream.map(revoked)))
     }
 
     /// Registers the programs this connection launches, for as long as it lives. A program
@@ -284,16 +327,27 @@ impl Launcher {
     /// more.
     pub async fn register(&self, programs: &[AgentProgram]) -> Result<(), LauncherError> {
         let names: Vec<&str> = programs.iter().map(AgentProgram::as_str).collect();
-        Ok(self.launcher.register_launcher(&names).await?)
+        self.bus
+            .launcher_proxy()
+            .await?
+            .register_launcher(&names)
+            .await
+            .map_err(|e| launcher_error(&e))
     }
 
     /// The requests accountd sends this connection. Subscribe before registering, so none is
     /// missed.
-    pub async fn requests(&self) -> Result<Requests, LauncherError> {
-        Ok(Requests {
-            logins: self.launcher.receive_agent_login_requested().await?,
-            logouts: self.launcher.receive_agent_logout_requested().await?,
-        })
+    pub async fn requests(&self) -> Result<Changes<LauncherRequest>, LauncherError> {
+        let proxy = self.bus.launcher_proxy().await?;
+        let logins = proxy
+            .receive_agent_login_requested()
+            .await
+            .map_err(|e| launcher_error(&e))?;
+        let logouts = proxy
+            .receive_agent_logout_requested()
+            .await
+            .map_err(|e| launcher_error(&e))?;
+        Ok(Changes::new(select(logins.map(login), logouts.map(logout))))
     }
 
     /// Reports what became of a login request. Only the connection that was sent it may.
@@ -303,10 +357,12 @@ impl Launcher {
         outcome: LoginOutcome,
     ) -> Result<(), LauncherError> {
         let (word, reason) = outcome.to_wire();
-        Ok(self
-            .launcher
+        self.bus
+            .launcher_proxy()
+            .await?
             .report_agent_login(request.as_str(), word, reason)
-            .await?)
+            .await
+            .map_err(|e| launcher_error(&e))
     }
 
     /// Reports what became of a logout request; `Ready` means the agent is signed out.
@@ -316,60 +372,11 @@ impl Launcher {
         outcome: LoginOutcome,
     ) -> Result<(), LauncherError> {
         let (word, reason) = outcome.to_wire();
-        Ok(self
-            .launcher
+        self.bus
+            .launcher_proxy()
+            .await?
             .report_agent_logout(request.as_str(), word, reason)
-            .await?)
-    }
-}
-
-/// The stream of [`LauncherRequest`]s; an item is an error when accountd sent one that is not
-/// well formed.
-#[derive(Debug)]
-pub struct Requests {
-    logins: AgentLoginRequestedStream,
-    logouts: AgentLogoutRequestedStream,
-}
-
-fn request(
-    kind: AskKind,
-    request: &str,
-    account: &str,
-    program: &str,
-) -> Result<LauncherRequest, LauncherError> {
-    Ok(LauncherRequest {
-        kind,
-        request: LoginRequestId::parse(request)?,
-        account: AccountId::parse(account)?,
-        program: AgentProgram::parse(program)?,
-    })
-}
-
-impl Requests {
-    fn login(signal: AgentLoginRequested) -> Result<LauncherRequest, LauncherError> {
-        let args = signal.args()?;
-        request(AskKind::Login, &args.request, &args.account, &args.program)
-    }
-
-    fn logout(signal: AgentLogoutRequested) -> Result<LauncherRequest, LauncherError> {
-        let args = signal.args()?;
-        request(AskKind::Logout, &args.request, &args.account, &args.program)
-    }
-}
-
-impl BusStream for Requests {
-    type Item = Result<LauncherRequest, LauncherError>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let logins = Pin::new(&mut self.logins).poll_next(cx);
-        if let Poll::Ready(Some(signal)) = logins {
-            return Poll::Ready(Some(Self::login(signal)));
-        }
-        let logouts = Pin::new(&mut self.logouts).poll_next(cx);
-        match (logins, logouts) {
-            (_, Poll::Ready(Some(signal))) => Poll::Ready(Some(Self::logout(signal))),
-            (Poll::Ready(None), Poll::Ready(None)) => Poll::Ready(None),
-            _ => Poll::Pending,
-        }
+            .await
+            .map_err(|e| launcher_error(&e))
     }
 }

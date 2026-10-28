@@ -3,14 +3,14 @@
 //! 2 another refusal). The answer may beat the method's reply, and one from a connection that
 //! does not own accountd's name is not heard. A client that gives up closes the sheet; one whose
 //! daemon leaves is told nobody is there.
-#![cfg(feature = "dbus")]
 
-use crate::common;
+use super::common;
 
 use common::bus::PrivateBus;
 use common::eventually;
 use common::fake_accountd::{FakeAccountd, Sheets};
-use porter_client::{AiKeys, AiKeysError, CallFailure};
+use porter_client::{AiKeys, AiKeysError, LinkError, Porter};
+use porter_client_dbus::Bus;
 use porter_core::DataClass;
 use porter_core::consent::Usage;
 use porter_wire::{ParentWindow, Refusal};
@@ -21,7 +21,7 @@ struct Rig {
     bus: PrivateBus,
     daemon: zbus::Connection,
     fake: FakeAccountd,
-    keys: AiKeys,
+    keys: AiKeys<Bus>,
 }
 
 async fn rig(sheets: Sheets, forged: bool) -> Rig {
@@ -32,7 +32,7 @@ async fn rig(sheets: Sheets, forged: bool) -> Rig {
         fake = fake.forged_by(bus.connect().await);
     }
     fake.serve(&daemon).await;
-    let keys = AiKeys::connect(&bus.connect().await).await.expect("keys");
+    let keys = Porter::over(Bus::over(bus.connect().await)).ai_keys();
     Rig {
         bus,
         daemon,
@@ -91,7 +91,7 @@ async fn every_way_a_sheet_can_end_is_a_typed_error() {
     }
     // With no accountd on the bus there is nobody to ask.
     let bus = PrivateBus::start();
-    let keys = AiKeys::connect(&bus.connect().await).await.expect("keys");
+    let keys = Porter::over(Bus::over(bus.connect().await)).ai_keys();
     assert_eq!(
         keys.request_key(
             DataClass::Files,
@@ -99,7 +99,7 @@ async fn every_way_a_sheet_can_end_is_a_typed_error() {
             &ParentWindow::Unparented
         )
         .await,
-        Err(AiKeysError::Bus(CallFailure::Unreachable))
+        Err(AiKeysError::Link(LinkError::Unreachable))
     );
 }
 
@@ -156,6 +156,6 @@ async fn a_daemon_that_leaves_mid_sheet_ends_the_wait() {
         .await
         .expect("the wait ends")
         .expect("task");
-    assert_eq!(ended, Err(AiKeysError::Bus(CallFailure::Unreachable)));
+    assert_eq!(ended, Err(AiKeysError::Link(LinkError::Unreachable)));
     drop(rig.bus);
 }

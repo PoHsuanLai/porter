@@ -32,6 +32,8 @@ members = [
   "crates/porter-callers",
   "crates/porter-sheets",
   "crates/porter-client",
+  "crates/porter-client-dbus",
+  "crates/porter-client-inproc",
   "crates/inferd-client",
   "crates/porter-fake",
   "crates/porter-fake-servers",
@@ -108,6 +110,8 @@ porter-dbus-macros = { path = "crates/porter-dbus-macros" }
 porter-callers  = { path = "crates/porter-callers" }
 porter-sheets   = { path = "crates/porter-sheets" }
 porter-client   = { path = "crates/porter-client" }
+porter-client-dbus = { path = "crates/porter-client-dbus" }
+porter-client-inproc = { path = "crates/porter-client-inproc" }
 inferd-client   = { path = "crates/inferd-client" }
 porter-fake     = { path = "crates/porter-fake" }
 test-kit        = { path = "crates/test-kit" }
@@ -185,6 +189,10 @@ model-wire          = { git = "https://github.com/PoHsuanLai/stoker", rev = "986
 # names itself, as mailo does.
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros", "net", "io-util", "process"] }
 thiserror = "2"
+# The `Stream` trait and its combinators, already in the lockfile through zbus: `Changes` in porter-client,
+# the bus streams mapped to it in porter-client-dbus.
+futures-core = "0.3"
+futures-util = { version = "0.3", default-features = false }
 # porter-daemon's settings-file watch (CC0-1.0, already in Cargo.lock at 8.2.0 through quire).
 notify = "8"
 roxmltree = "0.21"

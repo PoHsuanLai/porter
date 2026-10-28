@@ -48,7 +48,8 @@ check() {
   fi
 }
 
-check "porter-client --no-default-features" porter-client "$BUS|$INFER" --no-default-features
+check "porter-client" porter-client "$BUS|$INFER"
+check "porter-client-inproc" porter-client-inproc "$BUS|$INFER"
 check "porter-ids" porter-ids "$BUS"
 check "porter-core" porter-core "$BUS"
 check "porter-provider" porter-provider "$BUS"
@@ -57,5 +58,24 @@ check "porter-oauth --no-default-features" porter-oauth "$BUS" --no-default-feat
 check "porter-families --no-default-features" porter-families "$BUS" --no-default-features
 check "porter-router" porter-router "$BUS"
 check "porter-turns" porter-turns "$BUS"
+
+# The client API is the one an app on macOS or Windows links, so it must compile there, not only
+# on a host that happens to have unix descriptors: the Linux-only code (a memfd, a bus) is in
+# porter-client-dbus. Every target of these that rustup has installed is checked; a target that is
+# not installed is said, and skipped (this script installs nothing).
+CROSS='x86_64-pc-windows-msvc x86_64-pc-windows-gnu aarch64-apple-darwin x86_64-apple-darwin'
+installed=$(rustup target list --installed 2>/dev/null)
+for target in $CROSS; do
+  if ! grep -qx "$target" <<<"$installed"; then
+    echo "skip cross: $target is not installed"
+    continue
+  fi
+  if cargo check --target "$target" -p porter-client -p porter-sheet -p porter-wire >/dev/null 2>&1; then
+    echo "check ok: porter-client porter-sheet porter-wire on $target"
+  else
+    echo "FAIL check: porter-client porter-sheet porter-wire do not build on $target"
+    fail=1
+  fi
+done
 
 exit "$fail"

@@ -2,15 +2,15 @@
 //! permits an app holds read back as typed verdicts, a key arriving on a descriptor, once for an
 //! allow-once permit, the changes a listener is told of, and the refusals of every caller that is
 //! not the broker. The keys are fakes; nothing real is touched.
-#![cfg(feature = "dbus")]
 
-use crate::common;
+use super::common;
 
 use accountd::{NewsStore, Options, TableCallers, serve_with};
 use common::bus::PrivateBus;
 use porter_callers::{Caller, CallerRole};
 use porter_capability::{CapabilityKind, StorageScope};
-use porter_client::{AiAccounts, AiAccountsError, CallFailure};
+use porter_client::{AiAccountsError, LinkError, Porter};
+use porter_client_dbus::Bus;
 use porter_core::consent::{Decision, Grant, GrantScope, Usage, Verdict};
 use porter_core::{AccountId, AppId, AppName, Credential, DataClass, GrantId, GrantKey};
 use porter_core::{Isolation, SecretKey, SecretPurpose, SecretText, SpaceScope};
@@ -139,9 +139,7 @@ impl World {
 #[tokio::test(flavor = "multi_thread")]
 async fn the_broker_reads_verdicts_accounts_and_a_key_once_where_the_permit_is_once() {
     let world = World::start().await;
-    let accounts = AiAccounts::connect(&world.client(CallerRole::AiBroker).await)
-        .await
-        .expect("connect");
+    let accounts = Porter::over(Bus::over(world.client(CallerRole::AiBroker).await)).ai_accounts();
     let verdicts = accounts
         .verdicts(&notes(), DataClass::Prompt, Usage::Interactive)
         .await
@@ -188,9 +186,7 @@ async fn the_broker_reads_verdicts_accounts_and_a_key_once_where_the_permit_is_o
 #[tokio::test(flavor = "multi_thread")]
 async fn a_change_to_the_registry_reaches_the_broker_as_a_change() {
     let world = World::start().await;
-    let accounts = AiAccounts::connect(&world.client(CallerRole::AiBroker).await)
-        .await
-        .expect("connect");
+    let accounts = Porter::over(Bus::over(world.client(CallerRole::AiBroker).await)).ai_accounts();
     let mut changes = accounts.changes().await.expect("changes");
     // The broker has called, so accountd knows it.
     accounts.accounts().await.expect("accounts");
@@ -205,7 +201,8 @@ async fn a_change_to_the_registry_reaches_the_broker_as_a_change() {
     )
     .await
     .expect("told in time")
-    .expect("open");
+    .expect("open")
+    .expect("well formed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -217,13 +214,11 @@ async fn no_other_caller_is_served() {
         CallerRole::Agent,
         CallerRole::AgentLauncher,
     ] {
-        let accounts = AiAccounts::connect(&world.client(role).await)
-            .await
-            .expect("connect");
+        let accounts = Porter::over(Bus::over(world.client(role).await)).ai_accounts();
         assert!(
             matches!(
                 accounts.accounts().await,
-                Err(AiAccountsError::Bus(CallFailure::Denied(_)))
+                Err(AiAccountsError::Link(LinkError::Denied))
             ),
             "{role:?}"
         );

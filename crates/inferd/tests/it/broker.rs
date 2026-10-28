@@ -10,7 +10,8 @@ use inferd::cloud::accountd::{Accountd, AccountdFault};
 use inferd::probe::Runtime;
 use inferd::probed::Standing;
 use inferd::report::{ReportFault, Reports};
-use porter_client::AiAccounts;
+use porter_client::{AiAccounts, Porter};
+use porter_client_dbus::Bus;
 use porter_core::consent::{GrantScope, Usage, Verdict};
 use porter_core::{
     AccountId, AccountState, AiAccountRow, AppId, AppName, DataClass, EndpointUrl, Family, GrantId,
@@ -186,7 +187,7 @@ struct Rig {
     _daemon: zbus::Connection,
     script: Arc<Mutex<Script>>,
     broker: AccountdBroker,
-    accounts: AiAccounts,
+    accounts: AiAccounts<Bus>,
 }
 
 async fn rig() -> Rig {
@@ -207,9 +208,7 @@ async fn rig() -> Rig {
         .request_name(porter_wire::names::ACCOUNTS_BUS)
         .await
         .expect("name");
-    let accounts = AiAccounts::connect(&bus.connect().await)
-        .await
-        .expect("connect");
+    let accounts = Porter::over(Bus::over(bus.connect().await)).ai_accounts();
     Rig {
         bus,
         _daemon: daemon,
@@ -305,9 +304,7 @@ async fn a_probed_runtime_is_reported_with_its_provider_and_state() {
 #[tokio::test(flavor = "multi_thread")]
 async fn with_no_accountd_on_the_bus_a_question_is_ask_again_and_a_report_is_unreachable() {
     let bus = PrivateBus::start();
-    let accounts = AiAccounts::connect(&bus.connect().await)
-        .await
-        .expect("connect");
+    let accounts = Porter::over(Bus::over(bus.connect().await)).ai_accounts();
     let broker = AccountdBroker::new(accounts);
     assert_eq!(
         broker

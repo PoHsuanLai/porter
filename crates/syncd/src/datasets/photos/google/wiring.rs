@@ -12,7 +12,7 @@
 
 use super::picker::PhotosPicker;
 use crate::webdav::BuildError;
-use porter_client::{Accounts, Transport};
+use porter_client::{Grants, GrantsLink};
 use porter_core::EndpointUrl;
 use porter_core::GrantId;
 use porter_http_relay::{RelayDial, RelayHttp, RelayLimits, Routed, bare_url};
@@ -32,8 +32,8 @@ pub type PickerHttp<T> = Routed<RelayHttp<RelayDial<T>>, RelayHttp<RelayDial<T>>
 pub type GooglePicker<T> = PhotosPicker<PickerHttp<T>>;
 
 /// The client for the Photos upload API at `endpoint`, under `grant`.
-pub fn library_http<T: Transport>(
-    accounts: Arc<Accounts<T>>,
+pub fn library_http<T: GrantsLink>(
+    accounts: Arc<Grants<T>>,
     grant: GrantId,
     endpoint: EndpointUrl,
 ) -> LibraryHttp<T> {
@@ -44,8 +44,8 @@ pub fn library_http<T: Transport>(
 }
 
 /// The client for the Picker API at `endpoint`, under `grant`.
-pub fn picker_http<T: Transport + 'static>(
-    accounts: Arc<Accounts<T>>,
+pub fn picker_http<T: GrantsLink + 'static>(
+    accounts: Arc<Grants<T>>,
     grant: GrantId,
     endpoint: EndpointUrl,
 ) -> Result<PickerHttp<T>, BuildError> {

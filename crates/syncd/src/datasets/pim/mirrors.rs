@@ -21,7 +21,7 @@ use crate::journal::{Journal, JournalError};
 use crate::paths::{AccountDir, Paths};
 use crate::scheduler::{Network, Settings};
 use crate::service::{Access, DatasetName, Hub};
-use porter_client::{Accounts, Transport};
+use porter_client::{Grants, GrantsLink};
 use porter_core::Candidate;
 use porter_sync::Clock;
 use sha2::{Digest, Sha256};
@@ -35,7 +35,7 @@ use tokio::task::JoinHandle;
 #[derive(Debug)]
 pub struct Wiring<T> {
     /// accountd, for the relays.
-    pub accounts: Arc<Accounts<T>>,
+    pub accounts: Arc<Grants<T>>,
     /// The running datasets.
     pub hub: Hub,
     /// Where journals and mirrors live.
@@ -133,7 +133,7 @@ impl AccountMirrors {
 
     /// Reads the account's collections and brings the running ones to match, through the source
     /// the grant's transport names.
-    pub async fn refresh<T: Transport + 'static>(
+    pub async fn refresh<T: GrantsLink + 'static>(
         &mut self,
         wiring: &Wiring<T>,
         candidate: &Candidate,
@@ -193,7 +193,7 @@ impl AccountMirrors {
         }
     }
 
-    async fn refresh_with<T: Transport + 'static, S: PimSource>(
+    async fn refresh_with<T: GrantsLink + 'static, S: PimSource>(
         &mut self,
         wiring: &Wiring<T>,
         source: S,
@@ -229,7 +229,7 @@ impl AccountMirrors {
         failure.map_or(Ok(()), |why| Err(RefreshError::Open(why)))
     }
 
-    fn start<T: Transport + 'static, S: PimSource>(
+    fn start<T: GrantsLink + 'static, S: PimSource>(
         &mut self,
         wiring: &Wiring<T>,
         source: &S,

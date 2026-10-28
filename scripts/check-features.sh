@@ -29,11 +29,13 @@ BUILDS=(
   "accountd (default) :: -p accountd"
   "syncd (default) :: -p syncd"
 
-  # porter-client, in the sets its consumers name. No feature is on by default, so each consumer
-  # names its own: mailo's pure client (no features) and syncd (dbus, in-process, relays).
-  "porter-client (no features: mailo) :: -p porter-client --no-default-features"
-  "porter-client (dbus only) :: -p porter-client --no-default-features --features dbus"
-  "porter-client (dbus,in-process,relays: syncd) :: -p porter-client --features dbus,in-process,relays"
+  # porter-client and its two transports, in the sets their consumers name. No feature is on by
+  # default: mailo takes the hosted transport alone, syncd the hosted transport with its relays,
+  # detent, sill, docket and almanac the bus transport.
+  "porter-client :: -p porter-client"
+  "porter-client-dbus :: -p porter-client-dbus"
+  "porter-client-inproc (no features: mailo) :: -p porter-client-inproc --no-default-features"
+  "porter-client-inproc (relays: syncd) :: -p porter-client-inproc --features relays"
 
   # inferd-client, in the sets its consumers name (it sits in porter until steward takes it):
   # detent's Settings (dbus, lending), docket and almanac (dbus), inferd's tests (dbus), an app

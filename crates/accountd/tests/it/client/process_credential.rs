@@ -2,17 +2,15 @@
 //! hand-written accountd (`common::fake_accountd`) on a private bus: issue on a memfd, set a
 //! child up with it, end it, and hear accountd end it. What accountd checks before it issues one
 //! (the permit, the program, the caller) is in accountd's launcher tests.
-#![cfg(feature = "dbus")]
 
-use crate::common;
+use super::common;
 use porter_ids::word::word as word_of;
 
 use common::bus::PrivateBus;
 use common::eventually;
 use common::fake_accountd::{FakeAccountd, KEY, Sheets};
 use porter_capability::{AgentProgram, EnvName};
-use porter_client::credential::{ChildKey, ChildKeyError, Delivery};
-use porter_client::{Launcher, LauncherError};
+use porter_client_dbus::{Bus, ChildKey, ChildKeyError, Delivery, Launcher, LauncherError};
 use porter_core::GrantId;
 use porter_core::audit::CredentialEnd;
 use porter_dbus::BusStream;
@@ -46,9 +44,7 @@ async fn rig() -> Rig {
     let daemon = bus.connect().await;
     let fake = FakeAccountd::new(Sheets::Hang);
     fake.serve(&daemon).await;
-    let launcher = Launcher::connect(&bus.connect().await)
-        .await
-        .expect("launcher");
+    let launcher = Bus::over(bus.connect().await).launcher();
     launcher.register(&[program()]).await.expect("registered");
     Rig {
         _bus: bus,

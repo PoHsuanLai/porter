@@ -13,7 +13,7 @@ use super::{Api, SyncCursor, id_in, list_all, read_error, segment_of};
 use crate::dataset::fingerprint;
 use crate::datasets::pim::PimKind;
 use crate::datasets::pim::discover::{DiscoverError, Found};
-use porter_client::{Accounts, Transport};
+use porter_client::{Grants, GrantsLink};
 use porter_core::EndpointUrl;
 use porter_core::GrantId;
 use porter_ids::{Bytes, WebUrl};
@@ -53,15 +53,15 @@ struct EventsPage {
 
 /// The calendars of one Google account.
 #[derive(Debug)]
-pub struct GoogleCalendarSource<T: Transport> {
+pub struct GoogleCalendarSource<T: GrantsLink> {
     api: Arc<Api<T>>,
     clock: Clock,
 }
 
-impl<T: Transport> GoogleCalendarSource<T> {
+impl<T: GrantsLink> GoogleCalendarSource<T> {
     /// The source at `endpoint` (`https://www.googleapis.com/calendar/v3`), as `grant` allows.
     pub fn new(
-        accounts: Arc<Accounts<T>>,
+        accounts: Arc<Grants<T>>,
         grant: GrantId,
         endpoint: EndpointUrl,
         clock: Clock,
@@ -75,13 +75,13 @@ impl<T: Transport> GoogleCalendarSource<T> {
 
 /// One calendar's feed.
 #[derive(Debug)]
-pub struct GoogleCalendarFeed<T: Transport> {
+pub struct GoogleCalendarFeed<T: GrantsLink> {
     api: Arc<Api<T>>,
     calendar: String,
     clock: Clock,
 }
 
-impl<T: Transport + 'static> PimSource for GoogleCalendarSource<T> {
+impl<T: GrantsLink + 'static> PimSource for GoogleCalendarSource<T> {
     type Feed = GoogleCalendarFeed<T>;
 
     async fn collections(&self, kind: PimKind) -> Result<Vec<Found>, DiscoverError> {
@@ -124,7 +124,7 @@ impl<T: Transport + 'static> PimSource for GoogleCalendarSource<T> {
     }
 }
 
-impl<T: Transport> GoogleCalendarFeed<T> {
+impl<T: GrantsLink> GoogleCalendarFeed<T> {
     fn events_path(&self, tail: &str) -> String {
         format!(
             "/calendars/{}/events{tail}",
@@ -162,7 +162,7 @@ impl<T: Transport> GoogleCalendarFeed<T> {
     }
 }
 
-impl<T: Transport + 'static> Feed for GoogleCalendarFeed<T> {
+impl<T: GrantsLink + 'static> Feed for GoogleCalendarFeed<T> {
     type Cursor = SyncCursor;
 
     async fn changes(&self, from: Option<SyncCursor>) -> Result<Page<SyncCursor>, ReplicaError> {

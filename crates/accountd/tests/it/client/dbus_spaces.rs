@@ -1,12 +1,12 @@
-//! The desktop-wide Spaces through the client (`DbusTransport::spaces`), against the real
+//! The desktop-wide Spaces through the client (`Spaces`), against the real
 //! accountd front end on a private bus: list, create, the stream of changes, and the refusals
 //! read back as `SpacesError`s.
-#![cfg(feature = "dbus")]
 
-use crate::common;
+use super::common;
 
 use common::accountd::{Daemon, named, photos};
-use porter_client::{CallFailure, DbusTransport, SpacesError};
+use porter_client::{LinkError, Porter, SpacesError};
+use porter_client_dbus::Bus;
 use porter_core::{SpaceChange, SpaceLook, SpaceName};
 
 fn name(text: &str) -> SpaceName {
@@ -16,17 +16,11 @@ fn name(text: &str) -> SpaceName {
 #[tokio::test(flavor = "multi_thread")]
 async fn an_app_lists_creates_and_hears_of_new_spaces() {
     let daemon = Daemon::start([]).await;
-    let watcher = DbusTransport::over(daemon.client_as(named("org.quire.Mail")).await)
-        .spaces()
-        .await
-        .expect("spaces");
+    let watcher = Porter::over(Bus::over(daemon.client_as(named("org.quire.Mail")).await)).spaces();
     let mut changes = watcher.watch().await.expect("watch");
     assert!(watcher.list().await.expect("list").is_empty());
 
-    let maker = DbusTransport::over(daemon.client_as(photos()).await)
-        .spaces()
-        .await
-        .expect("spaces");
+    let maker = Porter::over(Bus::over(daemon.client_as(photos()).await)).spaces();
     let look = SpaceLook::parse(r#"{"colour":"teal"}"#).expect("look");
     let id = maker.create(&name("Work"), &look).await.expect("create");
 
@@ -51,10 +45,7 @@ async fn an_app_lists_creates_and_hears_of_new_spaces() {
 #[tokio::test(flavor = "multi_thread")]
 async fn too_many_new_spaces_and_a_stranger_are_told_apart() {
     let daemon = Daemon::start([]).await;
-    let app = DbusTransport::over(daemon.client().await)
-        .spaces()
-        .await
-        .expect("spaces");
+    let app = Porter::over(Bus::over(daemon.client().await)).spaces();
     for n in 0..porter_spaces::CREATES_PER_WINDOW {
         app.create(&name(&format!("Space {n}")), &SpaceLook::default())
             .await
@@ -65,12 +56,9 @@ async fn too_many_new_spaces_and_a_stranger_are_told_apart() {
         Err(SpacesError::TooMany)
     );
 
-    let stranger = DbusTransport::over(daemon.stranger().await)
-        .spaces()
-        .await
-        .expect("spaces");
+    let stranger = Porter::over(Bus::over(daemon.stranger().await)).spaces();
     assert!(matches!(
         stranger.list().await,
-        Err(SpacesError::Bus(CallFailure::Denied(_)))
+        Err(SpacesError::Link(LinkError::Denied))
     ));
 }

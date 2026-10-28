@@ -36,7 +36,7 @@ pub use tasks::{GoogleTasksFeed, GoogleTasksSource};
 use super::graph::{encode, get, retry_after, unreached};
 use crate::datasets::pim::discover::DiscoverError;
 use crate::datasets::pim::relay::pim_http;
-use porter_client::{Accounts, Transport};
+use porter_client::{Grants, GrantsLink};
 use porter_core::EndpointUrl;
 use porter_core::GrantId;
 use porter_http::HttpError;
@@ -54,15 +54,15 @@ const MAX_PAGES: usize = 50;
 
 /// One Google API at one endpoint, reached through the relay.
 #[derive(Debug)]
-pub(super) struct Api<T: Transport> {
+pub(super) struct Api<T: GrantsLink> {
     http: RelayHttp<RelayDial<T>>,
     base: String,
 }
 
-impl<T: Transport> Api<T> {
+impl<T: GrantsLink> Api<T> {
     /// The API at `endpoint` (its version path included), as `grant` allows.
     pub(super) fn new(
-        accounts: Arc<Accounts<T>>,
+        accounts: Arc<Grants<T>>,
         grant: GrantId,
         endpoint: EndpointUrl,
     ) -> Result<Self, DiscoverError> {
@@ -132,7 +132,7 @@ pub(super) fn read_error(response: &Response<Vec<u8>>, now: UnixSeconds) -> Repl
 }
 
 /// Every item of a paged list (`items` and `nextPageToken`) at `path`.
-pub(super) async fn list_all<T: Transport, I: DeserializeOwned>(
+pub(super) async fn list_all<T: GrantsLink, I: DeserializeOwned>(
     api: &Api<T>,
     path: &str,
     query: &[(&str, &str)],

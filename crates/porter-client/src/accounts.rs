@@ -1,83 +1,57 @@
-//! `Accounts`: the app's handle on porter.
+//! `Accounts`: signing an account in, through the sheet.
 
-use crate::authenticated::{AuthenticatedStream, Relayed};
-use crate::error::ClientError;
-#[cfg(feature = "dbus")]
-use crate::error::TransportError;
-use crate::found::ConsentOffer;
-use crate::transport::Transport;
-use porter_core::ProviderHint;
-use porter_core::{AccountId, GrantId};
-use porter_core::{Candidate, EndpointUrl};
-use porter_wire::ParentWindow;
-use porter_wire::{AccountsReply, AccountsRequest};
+use crate::changes::Changes;
+use crate::error::LinkError;
+use crate::link::{AccountWatch, AccountsLink};
+use porter_core::{AccountId, AccountLabel, AccountState, ProviderHint, ProviderId, ReauthReason};
+use porter_ids::object_segment;
+use porter_wire::names::ACCOUNTS_PATH;
+use porter_wire::{ParentWindow, Refusal};
+use std::sync::Arc;
 
-/// The app's connection to the account service.
+/// Why an accounts call failed. More reasons may be added: match with a wildcard.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum AccountsError {
+    /// accountd refused, or the person closed the sheet (`Refusal::Dismissed`).
+    #[error("refused")]
+    Refused(Refusal),
+    /// `add`: the person signed in to an account that was already here, so nothing was added. It
+    /// is that account; ask for a grant of it.
+    #[error("already added")]
+    AlreadyAdded(AccountId),
+    /// This app has a sheet of this kind open already.
+    #[error("a sheet is open")]
+    Busy,
+    /// The call did not complete.
+    #[error(transparent)]
+    Link(#[from] LinkError),
+}
+
+/// The accounts domain over a transport.
 #[derive(Debug)]
 pub struct Accounts<T> {
-    pub(crate) transport: T,
+    pub(crate) link: Arc<T>,
 }
 
-#[cfg(feature = "dbus")]
-impl Accounts<crate::transport::DbusTransport> {
-    /// Connects over the session bus. accountd is found, and started by bus activation, at the
-    /// first call. No session bus is `TransportError::Unreachable`.
-    pub async fn connect() -> Result<Self, ClientError> {
-        crate::transport::DbusTransport::session()
-            .await
-            .map(|transport| Self { transport })
-            .map_err(|_| TransportError::Unreachable.into())
-    }
-
-    /// The identities accountd removes, from now on (`Identities::watch_removals`, as accounts
-    /// by their object-path segment). An app that keeps something of an identity (a copy of its
-    /// sign-in, mirrors) forgets it on each [`crate::RemovedAccount`].
-    pub async fn watch_removals(&self) -> Result<crate::Removals, ClientError> {
-        Ok(crate::Removals::watch(self.transport.connection(), self.transport.accounts()).await?)
-    }
-}
-
-impl<T: Transport> Accounts<T> {
-    /// Over a transport the app built (`InProcess` for an app hosting the core).
-    pub fn over(transport: T) -> Self {
-        Self { transport }
-    }
-
-    /// Shows the chooser and consent sheet for `offer`; the account the user picked, granted.
-    pub async fn request_grant(
-        &self,
-        offer: &ConsentOffer,
-        window: &ParentWindow,
-    ) -> Result<Candidate, ClientError> {
-        let request = AccountsRequest::Choose {
-            need: offer.need.clone(),
-            class: offer.class,
-            usage: offer.usage,
-            window: window.clone(),
-        };
-        match self.transport.call(request).await? {
-            AccountsReply::Chosen(candidate) => Ok(candidate),
-            other => Err(unexpected(other)),
+impl<T> Clone for Accounts<T> {
+    fn clone(&self) -> Self {
+        Self {
+            link: Arc::clone(&self.link),
         }
     }
+}
 
-    /// Opens the add-account sheet; the account added. An account the person signs in to that
-    /// was already here is `ClientError::AlreadyAdded` with its id: nothing was added, and the app
+impl<T: AccountsLink> Accounts<T> {
+    /// Opens the add-account sheet; the account added. An account the person signs in to that was
+    /// already here is [`AccountsError::AlreadyAdded`] with its id: nothing was added, and the app
     /// may ask for a grant of it.
-    pub async fn add_account(
+    pub async fn add(
         &self,
         hint: ProviderHint,
         window: &ParentWindow,
-    ) -> Result<AccountId, ClientError> {
-        let request = AccountsRequest::AddAccount {
-            hint,
-            window: window.clone(),
-        };
-        match self.transport.call(request).await? {
-            AccountsReply::Added(account) => Ok(account),
-            AccountsReply::AlreadyAdded(account) => Err(ClientError::AlreadyAdded(account)),
-            other => Err(unexpected(other)),
-        }
+    ) -> Result<AccountId, AccountsError> {
+        self.link.add(&hint, window).await
     }
 
     /// Opens the sheet that signs a granted account in again (its refresh token was revoked, a
@@ -86,56 +60,160 @@ impl<T: Transport> Accounts<T> {
         &self,
         account: &AccountId,
         window: &ParentWindow,
-    ) -> Result<(), ClientError> {
-        let request = AccountsRequest::Reauthenticate {
-            account: account.clone(),
-            window: window.clone(),
-        };
-        match self.transport.call(request).await? {
-            AccountsReply::Reauthenticated => Ok(()),
-            other => Err(unexpected(other)),
+    ) -> Result<(), AccountsError> {
+        self.link.reauthenticate(account, window).await
+    }
+}
+
+impl<T: AccountWatch> Accounts<T> {
+    /// The accounts that need signing in again now, with their labels. Asking is also how
+    /// accountd learns this connection, which it then sends `NeedsReauth` to.
+    pub async fn needing_reauth(&self) -> Result<Vec<NeedsReauth>, LinkError> {
+        self.link.needing_reauth().await
+    }
+
+    /// One account as accountd shows it to the shell.
+    pub async fn view(&self, account: &AccountRef) -> Result<AccountView, LinkError> {
+        self.link.view(account).await
+    }
+
+    /// Opens the sheet that signs `account` in again, for the shell, which knows an account by
+    /// its object only.
+    pub async fn reauthenticate_shown(
+        &self,
+        account: &AccountRef,
+        window: &ParentWindow,
+    ) -> Result<(), AccountsError> {
+        self.link.reauthenticate_shown(account, window).await
+    }
+
+    /// The accounts added, removed and needing a sign-in again, from now on. Subscribe before
+    /// reading [`Accounts::needing_reauth`], so no change falls between the two.
+    pub async fn watch(&self) -> Result<Changes<AccountChange>, LinkError> {
+        self.link.watch().await
+    }
+}
+
+/// The object accountd serves an account at, as a signal names it. A lossy spelling of the id
+/// (a legal object-path segment): good as a directory name and for asking [`Accounts::view`], not
+/// to be turned back into an [`AccountId`].
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct AccountRef {
+    segment: String,
+}
+
+impl AccountRef {
+    /// The account the object path `/org/quire/Accounts1/account/<segment>` names; `None` for any
+    /// other path.
+    pub fn of_object_path(path: &str) -> Option<Self> {
+        let prefix = format!("{ACCOUNTS_PATH}/account/");
+        let segment = path.strip_prefix(&prefix)?;
+        (!segment.is_empty() && !segment.contains('/')).then(|| Self {
+            segment: segment.to_owned(),
+        })
+    }
+
+    /// The object `account` is served at.
+    pub fn of_account(account: &AccountId) -> Self {
+        Self {
+            segment: object_segment(account.as_str()),
         }
     }
 
-    /// A byte stream to `endpoint`, one of the account's servers the candidate listed, already
-    /// authenticated by a daemon-side relay: an IMAP, SMTP or HTTP engine speaks its protocol on
-    /// it and never holds the password. The IMAP stream starts with a `PREAUTH` greeting, the
-    /// SMTP one with a `220` and an `EHLO` reply that offers no `AUTH` and no `STARTTLS`, and the
-    /// HTTP one takes plain HTTP/1.1 requests (the relay adds `Authorization`, refuses any other
-    /// origin and strips the app's own `Authorization`).
-    pub async fn open_authenticated(
-        &self,
-        grant: &GrantId,
-        endpoint: &EndpointUrl,
-    ) -> Result<AuthenticatedStream, ClientError> {
-        match self.transport.open_authenticated(grant, endpoint).await? {
-            Relayed::Stream(stream) => Ok(stream),
-            Relayed::Refused(refusal) => Err(ClientError::Refused(refusal)),
-        }
+    /// The segment: what names the account's directories (`a1`, `67e55044_10b1_x`).
+    pub fn segment(&self) -> &str {
+        &self.segment
     }
+}
 
-    /// A byte stream to `origin` (`https://host[:port]`, no path), a host the account's provider
-    /// file declares as one its pre-authenticated links point at: Microsoft Graph's `uploadUrl`
-    /// and the `downloadUrl` a content request redirects to. The relay speaks TLS and plain
-    /// HTTP/1.1 on the stream and adds **no** credential (the link carries its own), drops any
-    /// `Authorization` the app writes and refuses any other origin. An origin the file does not
-    /// declare is `Refused(EndpointNotGranted)`.
-    pub async fn open_linked(
-        &self,
-        grant: &GrantId,
-        origin: &EndpointUrl,
-    ) -> Result<AuthenticatedStream, ClientError> {
-        match self.transport.open_linked(grant, origin).await? {
-            Relayed::Stream(stream) => Ok(stream),
-            Relayed::Refused(refusal) => Err(ClientError::Refused(refusal)),
+/// An account that needs signing in again.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct NeedsReauth {
+    /// The account.
+    pub account: AccountRef,
+    /// What accountd calls it.
+    pub label: AccountLabel,
+}
+
+impl NeedsReauth {
+    /// `account`, called `label`.
+    pub fn new(account: AccountRef, label: AccountLabel) -> Self {
+        Self { account, label }
+    }
+}
+
+/// One account as accountd shows it to the shell.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct AccountView {
+    /// Its id.
+    pub id: AccountId,
+    /// Its provider.
+    pub provider: ProviderId,
+    /// What accountd calls it.
+    pub label: AccountLabel,
+    /// Where it stands.
+    pub state: AccountState,
+    /// Why it has to be signed in again, when porter knows beyond "the provider refused".
+    pub reauth_reason: Option<ReauthReason>,
+}
+
+impl AccountView {
+    /// An account with these properties.
+    pub fn new(
+        id: AccountId,
+        provider: ProviderId,
+        label: AccountLabel,
+        state: AccountState,
+        reauth_reason: Option<ReauthReason>,
+    ) -> Self {
+        Self {
+            id,
+            provider,
+            label,
+            state,
+            reauth_reason,
         }
     }
 }
 
-/// A refusal as its error; any other reply answered a different request.
-fn unexpected(reply: AccountsReply) -> ClientError {
-    match reply {
-        AccountsReply::Refused(refusal) => ClientError::Refused(refusal),
-        _ => ClientError::Mismatched,
+/// What happened to an account, as accountd tells the shell. More may be added: match with a
+/// wildcard.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum AccountChange {
+    /// An account was added.
+    Added(AccountRef),
+    /// An account was removed.
+    Removed(AccountRef),
+    /// An account needs signing in again.
+    NeedsReauth(AccountRef),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_account_is_the_last_segment_of_its_object_path_and_nothing_else_is_one() {
+        let path = "/org/quire/Accounts1/account/abc_1";
+        assert_eq!(
+            AccountRef::of_object_path(path).map(|a| a.segment().to_owned()),
+            Some("abc_1".to_owned())
+        );
+        for other in [
+            "/org/quire/Accounts1/account/",
+            "/org/quire/Accounts1/account/a/b",
+            "/other/abc",
+        ] {
+            assert_eq!(AccountRef::of_object_path(other), None, "{other}");
+        }
+    }
+
+    #[test]
+    fn an_account_id_is_spelled_as_the_object_accountd_serves_it_at() {
+        let id = AccountId::parse("67e55044-10b1.x").expect("id");
+        assert_eq!(AccountRef::of_account(&id).segment(), "67e55044_10b1_x");
     }
 }
