@@ -264,7 +264,6 @@ fn sender_names_become_path_segments_as_portals_write_them() {
     // The same caller's namespace under each service's own root.
     for (service, root) in [
         (ServiceRoot::Accounts, "/org/quire/Accounts1/request"),
-        (ServiceRoot::Inference, "/org/quire/Inference1/request"),
         (ServiceRoot::Sync, "/org/quire/Sync1/request"),
     ] {
         assert_eq!(

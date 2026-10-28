@@ -1,5 +1,5 @@
-//! How inferd's own refusals read on the caller's side: the no-allowed-place reply, a refusal of a
-//! computer call and a launcher fault.
+//! How inferd's own refusals read on the caller's side: the no-allowed-place reply and a refusal of
+//! a computer call.
 
 /// The prefix of the error inferd answers a call that named its `places` with when none of them
 /// can serve it: `org.quire.Inference1.Error.NoAllowedPlace.<Reason>`, with `NotReady`,
@@ -34,15 +34,4 @@ pub fn computer_refusal_of(error: &zbus::Error) -> Option<(String, String)> {
     };
     let reason = name.as_str().strip_prefix(super::COMPUTER_ERROR_PREFIX)?;
     Some((reason.to_owned(), words.clone().unwrap_or_default()))
-}
-
-/// The launcher fault a daemon's error reply stands for (`org.quire.Accounts1.Error.*`), if it is
-/// one.
-pub fn launcher_fault_of(error: &zbus::Error) -> Option<super::LauncherFault> {
-    match error {
-        zbus::Error::MethodError(name, _, _) => {
-            super::LauncherFault::from_error_name(name.as_str())
-        }
-        _ => None,
-    }
 }

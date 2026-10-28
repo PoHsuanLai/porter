@@ -1,15 +1,12 @@
-//! inferd's interfaces and vocabulary: inference (`Inference`), the agents' endpoints (`Agents`),
-//! the agent launcher's calls (`Launcher`) and the AI keys (`Keys`), with the bus names, option
-//! keys, row keys and error prefixes that go with them, and the codec of a need and a candidate.
-//! These leave porter with inferd.
+//! inferd's interfaces and vocabulary: inference (`Inference`) and the agents' endpoints
+//! (`Agents`), with the bus names, option keys, row keys and error prefixes that go with them, and
+//! the codec of a need and a candidate. These leave porter with inferd. The AI keys, the agent
+//! launcher's calls and the AI broker's questions are accountd's (`crate::accounts`).
 
 mod agents;
 mod codec;
 mod failure;
 mod interface;
-mod keys;
-mod launcher;
-mod launcher_iface;
 mod local_engines;
 mod names;
 mod running;
@@ -22,17 +19,10 @@ pub use agents::{
     MODELS_LISTED, ROUTE_ACCOUNT, ROUTE_MODEL, RouteArg,
 };
 pub use codec::{NeedArg, need_from_dbus, need_to_dbus};
-pub use failure::{PLACE_ERROR_PREFIX, computer_refusal_of, launcher_fault_of, place_refusal_of};
+pub use failure::{PLACE_ERROR_PREFIX, computer_refusal_of, place_refusal_of};
 pub use interface::{
     GuestAsks, GuestAsksStream, GuestsChanged, GuestsChangedStream, InferenceProxy,
     InferenceServed, InferenceServer,
-};
-pub use keys::{KeysProxy, KeysServed, KeysServer};
-pub use launcher::LauncherFault;
-pub use launcher_iface::{
-    AgentLoginRequested, AgentLoginRequestedStream, AgentLogoutRequested,
-    AgentLogoutRequestedStream, LauncherProxy, LauncherServed, LauncherServer,
-    ProcessCredentialRevoked, ProcessCredentialRevokedStream,
 };
 pub use local_engines::{
     ENGINE_KEY_NAME, ENGINE_KEY_PATH, ENGINE_KEY_PLACE, ENGINE_KEY_SLOTS, ENGINE_KEY_STATE,
@@ -55,14 +45,4 @@ pub const INFERENCE: Document = Document {
 pub const AGENTS: Document = Document {
     file_name: "org.quire.Inference1.Agents.xml",
     interfaces: &[AgentsServed::<Unserved>::introspect],
-};
-/// `org.quire.Inference1.Launcher`, on inferd's bus name.
-pub const LAUNCHER: Document = Document {
-    file_name: "org.quire.Inference1.Launcher.xml",
-    interfaces: &[LauncherServed::<Unserved>::introspect],
-};
-/// `org.quire.Inference1.Keys`, on inferd's bus name.
-pub const KEYS: Document = Document {
-    file_name: "org.quire.Inference1.Keys.xml",
-    interfaces: &[KeysServed::<Unserved>::introspect],
 };

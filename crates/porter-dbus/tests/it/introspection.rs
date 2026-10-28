@@ -13,8 +13,6 @@ fn checked_in_introspection_matches_the_interfaces() {
         sync::SYNC,
         inference::INFERENCE,
         inference::AGENTS,
-        inference::LAUNCHER,
-        inference::KEYS,
         accounts::KEYS,
         accounts::LAUNCHER,
         accounts::BROKER,
@@ -276,57 +274,6 @@ fn inference_calls_carry_an_options_dict_for_the_reserved_traceparent() {
         "Availability, Open, Prepare and HardwareNotes"
     );
     assert_eq!(porter_dbus::inference::OPTION_TRACEPARENT, "traceparent");
-}
-
-#[test]
-fn the_launcher_interface_is_the_agent_launchers_nine_methods_and_three_signals() {
-    let xml = porter_dbus::inference::LAUNCHER.introspection();
-    for member in [
-        "<interface name=\"org.quire.Inference1.Launcher\">",
-        "<method name=\"SetAgentState\">",
-        "<method name=\"RegisterLauncher\">",
-        "<method name=\"BeginSession\">",
-        "<method name=\"EndSession\">",
-        "<method name=\"RequestAgentKey\">",
-        "<method name=\"ReportAgentLogin\">",
-        "<method name=\"ReportAgentLogout\">",
-        "<method name=\"IssueProcessCredential\">",
-        "<method name=\"RevokeProcessCredential\">",
-        "<signal name=\"AgentLoginRequested\">",
-        "<signal name=\"AgentLogoutRequested\">",
-        "<signal name=\"ProcessCredentialRevoked\">",
-        // The permit, not a grant, at the bus edge; and no `kind`: a key is always an AI key.
-        "<arg name=\"permit\" type=\"s\" direction=\"in\"/>",
-    ] {
-        assert!(xml.contains(member), "missing {member}");
-    }
-    assert_eq!(xml.matches("<method ").count(), 9);
-    assert_eq!(xml.matches("<signal ").count(), 3);
-    assert!(
-        !xml.contains("name=\"kind\""),
-        "RequestAgentKey has no kind"
-    );
-    assert!(!xml.contains("grant"), "the launcher speaks of permits");
-}
-
-#[test]
-fn the_keys_interface_is_a_request_for_a_permit_and_adding_a_key_and_nothing_else() {
-    let xml = porter_dbus::inference::KEYS.introspection();
-    for member in [
-        "<interface name=\"org.quire.Inference1.Keys\">",
-        "<method name=\"RequestKey\">",
-        "<method name=\"AddAccount\">",
-    ] {
-        assert!(xml.contains(member), "missing {member}");
-    }
-    // Both return a Request object; no listing and no revoking (Settings does those through
-    // inferd's settings rows).
-    assert_eq!(xml.matches("<method ").count(), 2);
-    assert_eq!(xml.matches("<signal ").count(), 0);
-    assert_eq!(
-        xml.matches("<arg type=\"o\" direction=\"out\"/>").count(),
-        2
-    );
 }
 
 #[test]

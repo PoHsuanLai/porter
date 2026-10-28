@@ -97,15 +97,15 @@ mod tests {
             None
         );
         assert_eq!(refusal_from_error_name("org.other.Denied"), None);
-        // Each service names the same refusals under its own prefix, and all three read back.
+        // Each service names the same refusals under its own prefix, and both read back.
         for service in ServiceRoot::ALL {
             let name = refusal_error_name_in(service, &Refusal::Denied);
             assert!(name.starts_with(service.error_prefix()), "{name}");
             assert_eq!(refusal_from_error_name(&name), Some(Refusal::Denied));
         }
         assert_eq!(
-            refusal_error_name_in(ServiceRoot::Inference, &Refusal::NoLauncher),
-            "org.quire.Inference1.Error.NoLauncher"
+            refusal_error_name_in(ServiceRoot::Accounts, &Refusal::NoLauncher),
+            "org.quire.Accounts1.Error.NoLauncher"
         );
     }
 

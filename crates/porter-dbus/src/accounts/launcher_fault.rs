@@ -1,8 +1,7 @@
 //! The typed errors of the launcher interface (`org.quire.Accounts1.Launcher`, served by accountd),
 //! beside the refusals of `refusal`: `org.quire.Accounts1.Error.<Name>`. `NoLauncher` is a
 //! `Refusal` (the sheet's answer to a login nobody can do); these are the launcher's own. A reader
-//! also takes the same names under another service's prefix, as inferd sent them before
-//! accountd held the keys.
+//! takes the same names under any service's prefix.
 
 use crate::accounts::ServiceRoot;
 

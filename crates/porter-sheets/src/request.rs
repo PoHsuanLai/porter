@@ -174,7 +174,6 @@ impl RequestObjects {
     fn service_word(&self) -> &'static str {
         match self.service {
             ServiceRoot::Accounts => "accountd",
-            ServiceRoot::Inference => "inferd",
             ServiceRoot::Sync => "syncd",
             _ => "porter",
         }
