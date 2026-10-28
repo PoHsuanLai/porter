@@ -11,8 +11,9 @@
 //! second field.
 
 use crate::attached::ComputerError;
-use porter_core::Bytes;
-use porter_dbus::{COMPUTER_ERROR_PREFIX, PLACE_ERROR_PREFIX};
+use porter_dbus::inference::COMPUTER_ERROR_PREFIX;
+use porter_dbus::inference::PLACE_ERROR_PREFIX;
+use porter_ids::Bytes;
 use porter_infer::{HardwareNote, NoPlaceReason, PlaceRefusal};
 use zbus::DBusError;
 use zbus::fdo;
@@ -82,6 +83,8 @@ pub fn words_of(reason: NoPlaceReason) -> &'static str {
             "The model chosen for one of the places you allowed is not available there."
         }
         NoPlaceReason::NoneCapable => "None of the places you allowed can do this.",
+        // a reason a newer porter adds
+        _ => "None of the places you allowed can do this.",
     }
 }
 

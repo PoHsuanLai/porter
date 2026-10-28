@@ -2,14 +2,15 @@
 //! run against the real session machine: `Routed` and `Waiting` come from it, a queued request
 //! queues, and a computer-use step before a begin is refused.
 
-use inferd::serve::{
-    AuditSink, Carried, EngineFailed, EngineHost, Router, RunningTurn, TurnRunner, TurnStep,
-};
-use inferd::session::{RouteDecision, SessionSpec};
 use porter_infer::testing::{Script, ScriptStep};
 use porter_infer::{
     AudioFrame, InferEvent, InferRefusal, InferReply, InferRequest, ModelRef, ServedBy,
 };
+use porter_router::carried::Carried;
+use porter_router::seams::{
+    AuditSink, EngineFailed, EngineHost, Router, RunningTurn, TurnRunner, TurnStep,
+};
+use porter_router::session::{RouteDecision, SessionSpec};
 use std::collections::VecDeque;
 use std::os::fd::OwnedFd;
 use std::sync::{Arc, Mutex};
@@ -97,7 +98,7 @@ impl TurnRunner for Scripted {
     fn start_heard(
         &self,
         chat: porter_infer::ChatRequest,
-        _: inferd::session::HeardAudio,
+        _: porter_router::session::HeardAudio,
     ) -> Played {
         self.start(InferRequest::Chat(chat), Vec::new())
     }

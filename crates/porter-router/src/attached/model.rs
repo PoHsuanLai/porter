@@ -10,7 +10,9 @@ use engine_supervisor::{EngineId, EnginePaths, EngineSpec, ProgramPath, SocketPa
 use model_catalog::{EngineKind, EngineProfile, MiB, ModelEntry, Serving, WeightFiles};
 use model_openai_compat::Flavor;
 use model_provider::ModelName;
-use porter_core::{AccountId, Billing, Capability, Offer};
+use porter_capability::Billing;
+use porter_capability::{Capability, Offer};
+use porter_core::AccountId;
 use porter_infer::ModelCard;
 use std::path::{Path, PathBuf};
 
@@ -96,6 +98,7 @@ pub fn local_model(
         llama_server: ProgramPath(PathBuf::new()),
         speech_host: ProgramPath(PathBuf::new()),
         kokoro_python: ProgramPath(PathBuf::new()),
+        strata_python: ProgramPath(PathBuf::new()),
         hf_cache: PathBuf::new(),
     };
     Ok(LocalModel {

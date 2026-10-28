@@ -1,6 +1,6 @@
 //! One chat turn to a hosted model: the caps are asked again, the key is fetched from accountd
 //! for this turn only, the request goes out through stoker's `OpenAiCompat` driver over the TLS
-//! transport, the events stream back, and what the reply says it used is metered.
+//! transport, the events stream back, and what the reply says it used and was charged is metered.
 //!
 //! The key lives from `Peer.ResolveKey` to the end of the turn: it is read from a sealed
 //! descriptor into a [`porter_core::SecretText`], copied once into the endpoint's bearer header of
@@ -10,22 +10,21 @@
 use super::Cloud;
 use super::accountd::AccountdFault;
 use super::models::RemoteModel;
-use super::spend::{SpendGuard, worst_case};
 use super::wire::{BodyShape, Temperature, flavor_of};
-use crate::bridge::{self, DefaultSampling, Frames, JsonReply, Target};
-use crate::runner::{RETRY, TokioSleep};
 use crate::settings::SpendLine;
 use model_openai_compat::OpenAiCodec;
 use model_provider as sp;
 use model_provider::{Provider, Retrying};
 use model_wire::Driver;
-use porter_core::{AppId, Tokens};
+use porter_core::AppId;
 use porter_infer::{
     ChatReply, ChatRequest, ChatSink, EmbedReply, EmbedRequest, Flow, InferRefusal, Knob, Model,
     ModelCard, ModelError, ServedBy, SpendVerdict, TaskRequest, TokenUsage, TurnError,
 };
+use porter_turns::bridge::{self, DefaultSampling, Frames, JsonReply, Target};
+use porter_turns::local::{RETRY, TokioSleep};
 use std::os::fd::OwnedFd;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::Arc;
 
 /// The longest reply asked for when the app names no limit: a hosted model's entry says what it
 /// can write (a hundred and twenty-eight thousand tokens), and some gateways hold back credit for
@@ -100,7 +99,7 @@ fn fault(fault: AccountdFault) -> ModelError {
 /// The most a hosted turn may take once its connection is open, however many keep-alive frames
 /// arrive: the per-stage waits bound a silent server, never one that trickles. Three minutes for
 /// a first byte, then the longest reply inferd asks for (16 384 tokens) at a slow twenty a second
-/// is about fourteen more; an overrun is a timeout, which keeps the turn's hold charged.
+/// is about fourteen more; an overrun is a timeout.
 const TURN_DEADLINE: sp::WaitMs = sp::WaitMs(900_000);
 
 /// A request on the hosted model a [`CloudPin`] names, as a [`Model`]. It exists only while the
@@ -110,7 +109,7 @@ pub struct CloudModel<'a> {
     cloud: &'a Cloud,
     pin: &'a CloudPin,
     served: ServedBy,
-    tier: porter_core::Tier,
+    tier: porter_capability::Tier,
     frames: Frames,
 }
 
@@ -121,7 +120,7 @@ impl<'a> CloudModel<'a> {
         cloud: &'a Cloud,
         pin: &'a CloudPin,
         served: &ServedBy,
-        tier: porter_core::Tier,
+        tier: porter_capability::Tier,
         attachments: Vec<OwnedFd>,
     ) -> Result<Self, TurnError> {
         if cloud.spend(pin.line, &pin.app, &pin.model) == SpendVerdict::Stop {
@@ -138,7 +137,7 @@ impl<'a> CloudModel<'a> {
     }
 
     /// `turn` on the hosted model, its events going to `sink`: the key is fetched for this turn
-    /// only, the worst cost is held before it goes out, and what it used is settled.
+    /// only, and what each attempt used and was charged is counted when it ends.
     async fn run(
         &self,
         mut turn: sp::TurnRequest,
@@ -157,26 +156,11 @@ impl<'a> CloudModel<'a> {
         };
         drop(key);
         turn.limits.deadline = Some(TURN_DEADLINE);
-        // The worst this turn can cost is held before it goes out, so turns that run together see
-        // each other's holds. The prompt's size is read off the request as it will be sent.
-        let prompt_bytes = serde_json::to_vec(&turn).map_or(0, |body| body.len());
-        let Some(first) = cloud.ledger().reserve(
-            pin.line,
-            &pin.app,
-            &pin.model.card.account,
-            &pin.model.price(),
-            worst_case(prompt_bytes, Tokens(turn.limits.max_output.0)),
-            cloud.now(),
-        ) else {
-            return Err(InferRefusal::OverBudget.into());
-        };
         let provider = Retrying::new(
             Billed {
                 inner: Driver::new(OpenAiCodec::new(flavor_of(&reach.provider)), transport),
                 cloud,
                 pin,
-                worst: worst_case(prompt_bytes, Tokens(turn.limits.max_output.0)),
-                first: Mutex::new(Some(first)),
             },
             RETRY,
             TokioSleep,
@@ -188,7 +172,7 @@ impl<'a> CloudModel<'a> {
         match provider.turn(&turn, &mut forward).await {
             Ok(end) => {
                 let (chat, why) = forward.gathered.chat_reply_noted(&end, self.served.clone());
-                crate::runner::note_no_scores(why);
+                porter_turns::local::note_no_scores(why);
                 Ok(chat)
             }
             Err(error) => Err(bridge::model_error(&error).into()),
@@ -233,15 +217,12 @@ impl Model for CloudModel<'_> {
     }
 }
 
-/// A provider whose every attempt is held against the caps before it goes out and settled when
-/// it ends, so a retry that reached the provider is charged as the first try was.
+/// A provider whose every attempt is asked of the caps before it goes out and counted when it
+/// ends, so a retry that reached the provider is counted as the first try was.
 struct Billed<'a, P> {
     inner: P,
     cloud: &'a Cloud,
     pin: &'a CloudPin,
-    worst: TokenUsage,
-    /// The hold taken for the first attempt, before it was known to be wanted.
-    first: Mutex<Option<SpendGuard<'a>>>,
 }
 
 /// Keeps what the provider reports an attempt cost when it ends ([`sp::TurnSink::ended`]), and
@@ -267,84 +248,84 @@ impl<P: Provider> Provider for Billed<'_, P> {
         self.inner.describe().await
     }
 
+    fn charges(&self) -> sp::Charges {
+        self.inner.charges()
+    }
+
     async fn turn<K: sp::TurnSink>(
         &self,
         request: &sp::TurnRequest,
         sink: &mut K,
     ) -> Result<sp::TurnEnd, sp::ProviderError> {
-        let held = self
-            .first
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .take();
-        let guard = match held {
-            Some(guard) => guard,
-            None => self
-                .cloud
-                .ledger()
-                .reserve(
-                    self.pin.line,
-                    &self.pin.app,
-                    &self.pin.model.card.account,
-                    &self.pin.model.price(),
-                    self.worst,
-                    self.cloud.now(),
-                )
-                .ok_or_else(|| sp::ProviderError::Refused("a spend cap is reached".to_owned()))?,
-        };
+        // The caps compare what providers have reported so far, so a retry can be stopped by the
+        // attempt before it; an attempt already running is never cut off.
+        let (app, line) = (&self.pin.app, self.pin.line);
+        if self.cloud.spend(line, app, &self.pin.model) == SpendVerdict::Stop {
+            return Err(sp::ProviderError::Refused(
+                "a spend cap is reached".to_owned(),
+            ));
+        }
         let mut watched = Watched {
             inner: sink,
             report: None,
         };
-        // A guard dropped before this returns (the client went away and the task was aborted)
-        // leaves its hold counted.
         let result = self.inner.turn(request, &mut watched).await;
-        guard.settle(charge_of(watched.report));
+        if let Some(used) = counted(watched.report) {
+            let account = &self.pin.model.card.account;
+            self.cloud
+                .ledger()
+                .record(app, account, used, self.cloud.now());
+        }
         result
     }
 }
 
-/// What to charge an attempt, from the provider's report of how it ended: its count when the
-/// server gave one, nothing when no model ran, and the hold (`None`) when the model may have run
-/// and no count came, or no report did.
-fn charge_of(report: Option<sp::UsageReport>) -> Option<TokenUsage> {
+/// What to count for an attempt, from the provider's report of how it ended: its usage and charge
+/// when the server gave a count, nothing when no model ran, and what was seen (an unpriced turn,
+/// unless the provider had already said the charge) when the model may have run and no count
+/// came. No charge is ever estimated.
+fn counted(report: Option<sp::UsageReport>) -> Option<TokenUsage> {
     match report {
         Some(sp::UsageReport::Known(used)) => Some(bridge::usage(used)),
-        Some(sp::UsageReport::Nothing) => Some(TokenUsage {
-            input: Tokens(0),
-            output: Tokens(0),
-            cached: Tokens(0),
-        }),
-        _ => None,
+        Some(sp::UsageReport::Unknown { seen }) => Some(bridge::usage(seen)),
+        Some(sp::UsageReport::Nothing) => None,
+        // No report at all, or one a later stoker adds: a model may have run.
+        _ => Some(bridge::usage(sp::TurnUsage::default())),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use porter_ids::Tokens;
+    use rust_decimal::Decimal;
 
-    /// A count is charged as given, a request no model ran is charged nothing, and an attempt
-    /// that may have run without a count (or sent no report) keeps the hold.
+    /// A count is counted as given with its charge, a request no model ran is counted as
+    /// nothing, and an attempt that may have run without a count (or sent no report) is counted
+    /// as a turn with what was seen and no charge.
     #[test]
-    fn an_attempt_is_charged_from_how_the_provider_says_it_ended() {
+    fn an_attempt_is_counted_from_how_the_provider_says_it_ended() {
+        let charge = sp::Money::usd(Decimal::new(95, 5));
         let used = sp::TurnUsage {
             input: sp::Tokens(10),
             output: sp::Tokens(5),
+            charge: Some(charge),
             ..sp::TurnUsage::default()
         };
-        assert_eq!(
-            charge_of(Some(sp::UsageReport::Known(used))),
-            Some(bridge::usage(used))
-        );
-        let none = charge_of(Some(sp::UsageReport::Nothing)).expect("a charge");
-        assert_eq!(
-            (none.input, none.output, none.cached),
-            (Tokens(0), Tokens(0), Tokens(0))
-        );
-        let seen = sp::UsageReport::Unknown {
-            seen: sp::TurnUsage::default(),
+        let known = counted(Some(sp::UsageReport::Known(used))).expect("counted");
+        assert_eq!(known, bridge::usage(used));
+        assert_eq!(known.charge, Some(charge));
+        assert_eq!(counted(Some(sp::UsageReport::Nothing)), None);
+        let seen = sp::TurnUsage {
+            input: sp::Tokens(3),
+            ..sp::TurnUsage::default()
         };
-        assert_eq!(charge_of(Some(seen)), None);
-        assert_eq!(charge_of(None), None);
+        let cut = counted(Some(sp::UsageReport::Unknown { seen })).expect("counted");
+        assert_eq!((cut.input, cut.charge), (Tokens(3), None));
+        let silent = counted(None).expect("counted");
+        assert_eq!(
+            (silent.input, silent.output, silent.charge),
+            (Tokens(0), Tokens(0), None)
+        );
     }
 }

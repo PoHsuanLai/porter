@@ -110,7 +110,8 @@ fn is_word(text: &str) -> bool {
 /// `text` as a unit name component: `\xHH` for each byte outside `[A-Za-z0-9:_.]` and for a
 /// leading `.`. Unlike `systemd-escape` a `/` is escaped too rather than written `-`, because
 /// this is a name and not a path, and a `-` here would split it.
-fn escape(text: &str) -> String {
+#[must_use]
+pub fn escape(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for (i, byte) in text.bytes().enumerate() {
         let plain = byte.is_ascii_alphanumeric() || matches!(byte, b':' | b'_' | b'.');

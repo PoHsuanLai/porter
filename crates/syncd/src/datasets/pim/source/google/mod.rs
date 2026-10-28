@@ -35,16 +35,19 @@ pub use tasks::{GoogleTasksFeed, GoogleTasksSource};
 
 use super::graph::{encode, get, retry_after, unreached};
 use crate::datasets::pim::discover::DiscoverError;
-use crate::datasets::pim::relay::{PimDial, pim_http};
+use crate::datasets::pim::relay::pim_http;
 use porter_client::{Accounts, Transport};
-use porter_core::{EndpointUrl, GrantId, WebUrl};
-use porter_http::{HttpError, HttpResponse};
+use porter_core::EndpointUrl;
+use porter_core::GrantId;
+use porter_http::HttpError;
+use porter_http::http::Response;
+use porter_http_relay::{RelayDial, RelayHttp};
+use porter_ids::{UnixSeconds, WebUrl};
 use porter_sync::ReplicaError;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
-use storage_webdav::StreamHttp;
 
 /// The pages a listing of collections is followed for before a looping server is given up on.
 const MAX_PAGES: usize = 50;
@@ -52,7 +55,7 @@ const MAX_PAGES: usize = 50;
 /// One Google API at one endpoint, reached through the relay.
 #[derive(Debug)]
 pub(super) struct Api<T: Transport> {
-    http: StreamHttp<PimDial<T>>,
+    http: RelayHttp<RelayDial<T>>,
     base: String,
 }
 
@@ -87,12 +90,12 @@ impl<T: Transport> Api<T> {
         &self.base
     }
 
-    pub(super) async fn get(&self, url: &str) -> Result<HttpResponse, HttpError> {
+    pub(super) async fn get(&self, url: &str) -> Result<Response<Vec<u8>>, HttpError> {
         get(&self.http, url, None).await
     }
 
     /// A GET whose failure is a replica's: unreachable is transient.
-    pub(super) async fn read(&self, url: &str) -> Result<HttpResponse, ReplicaError> {
+    pub(super) async fn read(&self, url: &str) -> Result<Response<Vec<u8>>, ReplicaError> {
         self.get(url).await.map_err(unreached)
     }
 }
@@ -107,8 +110,8 @@ struct Listing<I> {
 }
 
 /// Whether an error body says the caller is going too fast (Google answers some of these `403`).
-pub(super) fn rate_limited(response: &HttpResponse) -> bool {
-    let body = String::from_utf8_lossy(&response.body);
+pub(super) fn rate_limited(response: &Response<Vec<u8>>) -> bool {
+    let body = String::from_utf8_lossy(response.body());
     [
         "rateLimitExceeded",
         "userRateLimitExceeded",
@@ -119,12 +122,12 @@ pub(super) fn rate_limited(response: &HttpResponse) -> bool {
 }
 
 /// What a failed read means to a replica.
-pub(super) fn read_error(response: &HttpResponse) -> ReplicaError {
-    match response.status.0 {
-        403 if rate_limited(response) => ReplicaError::Transient(retry_after(response)),
+pub(super) fn read_error(response: &Response<Vec<u8>>, now: UnixSeconds) -> ReplicaError {
+    match response.status().as_u16() {
+        403 if rate_limited(response) => ReplicaError::Transient(retry_after(response, now)),
         401 | 403 => ReplicaError::Unauthorized,
         404 => ReplicaError::Gone,
-        _ => ReplicaError::Transient(retry_after(response)),
+        _ => ReplicaError::Transient(retry_after(response, now)),
     }
 }
 
@@ -145,14 +148,14 @@ pub(super) async fn list_all<T: Transport, I: DeserializeOwned>(
             HttpError::Unreachable | HttpError::TimedOut => DiscoverError::Unreachable,
             _ => DiscoverError::Unreadable,
         })?;
-        match response.status.0 {
+        match response.status().as_u16() {
             200 => {}
             403 if rate_limited(&response) => return Err(DiscoverError::Status(429)),
             401 | 403 => return Err(DiscoverError::Unauthorized),
             other => return Err(DiscoverError::Status(other)),
         }
         let page: Listing<I> =
-            serde_json::from_slice(&response.body).map_err(|_| DiscoverError::Unreadable)?;
+            serde_json::from_slice(response.body()).map_err(|_| DiscoverError::Unreadable)?;
         all.extend(page.items);
         match page.next.filter(|next| !next.is_empty()) {
             Some(next) => token = Some(next),
@@ -167,7 +170,7 @@ pub(super) async fn list_all<T: Transport, I: DeserializeOwned>(
 pub(super) fn segment_of(id: &str) -> String {
     format!(
         "google-{}",
-        super::graph::hex(&Sha256::digest(id.as_bytes())[..6])
+        hex::encode(&Sha256::digest(id.as_bytes())[..6])
     )
 }
 
@@ -183,14 +186,14 @@ pub(super) fn id_in(url: &WebUrl) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_http::{Header, Status};
+    use porter_http::http::Response;
 
-    fn response(status: u16, body: &str) -> HttpResponse {
-        HttpResponse {
-            status: Status(status),
-            headers: vec![Header::new("Retry-After", "7")],
-            body: body.as_bytes().to_vec(),
-        }
+    fn response(status: u16, body: &str) -> Response<Vec<u8>> {
+        Response::builder()
+            .status(status)
+            .header("Retry-After", "7")
+            .body(body.as_bytes().to_vec())
+            .expect("response")
     }
 
     #[test]
@@ -207,7 +210,11 @@ mod tests {
             (503, "", E::Transient(porter_sync::RetryAfter(7))),
         ];
         for (status, body, want) in cases {
-            assert_eq!(read_error(&response(status, body)), want, "{status}");
+            assert_eq!(
+                read_error(&response(status, body), UnixSeconds(0)),
+                want,
+                "{status}"
+            );
         }
     }
 

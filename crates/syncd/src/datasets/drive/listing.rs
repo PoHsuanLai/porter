@@ -105,6 +105,8 @@ pub async fn list_once<R: DriveReplica>(
                     ReplicaError::Gone => Listed::Gone,
                     // A listing from the start that the feed calls expired: try again later.
                     ReplicaError::AnchorExpired => Listed::Retry(RetryAfter(30)),
+                    // a failure a later porter-sync adds: tried again later
+                    _ => Listed::Retry(RetryAfter(30)),
                 };
                 return Ok(pass);
             }

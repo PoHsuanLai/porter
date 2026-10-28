@@ -4,7 +4,7 @@
 //! Events are kept as the JSON a test gives; the fake adds `id`, `changeKey` and
 //! `lastModifiedDateTime`. Behind the same bearer as the drive.
 
-use crate::http::{Request, Response, percent_decode};
+use crate::http::{Request, Response};
 use serde_json::{Value, json};
 
 /// One calendar.
@@ -212,10 +212,11 @@ fn route(rest: &str) -> Route {
     }
     let parts: Vec<&str> = rest.split('/').collect();
     match parts.as_slice() {
-        [calendar, "events", "delta"] => Route::Delta(percent_decode(calendar)),
-        [calendar, "events", event] => {
-            Route::Event(percent_decode(calendar), percent_decode(event))
-        }
+        [calendar, "events", "delta"] => Route::Delta(porter_ids::percent::decode(calendar)),
+        [calendar, "events", event] => Route::Event(
+            porter_ids::percent::decode(calendar),
+            porter_ids::percent::decode(event),
+        ),
         _ => Route::Unknown,
     }
 }

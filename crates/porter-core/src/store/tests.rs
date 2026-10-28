@@ -1,16 +1,17 @@
 use super::*;
+use crate::SessionToken;
 use crate::app_id::{AppName, Isolation};
-use crate::consent::{Decision, GrantKey, GrantScope, Usage};
 use crate::endpoint::{LoginName, ServiceEndpoint, Tls};
-use crate::launcher_session::LauncherSession;
-use crate::offer::{Claim, Offer, Provenance, Subject};
 use crate::restriction::{Restriction, TokenLifetime};
 use crate::space::SpaceScope;
-use crate::units::UnixSeconds;
+use crate::{AccountLabel, AccountState, AppId, AuthKind, DataClass, EndpointUrl, Family};
+use crate::{GrantId, ProviderId};
 use crate::{
-    AccountLabel, AccountState, AppId, AuthKind, DataClass, EndpointUrl, Family, GrantId,
-    ProviderId,
+    GrantKey,
+    consent::{Decision, GrantScope, Usage},
 };
+use porter_capability::{Claim, Offer, Provenance, Subject};
+use porter_ids::UnixSeconds;
 
 fn account(endpoints: Vec<ServiceEndpoint>) -> Account {
     Account {
@@ -23,7 +24,7 @@ fn account(endpoints: Vec<ServiceEndpoint>) -> Account {
             subject: Subject::Account,
             offer: Offer::Absent {
                 kind: CapabilityKind::Notes,
-                reason: crate::AbsentReason::NotOnServer,
+                reason: porter_capability::AbsentReason::NotOnServer,
             },
             provenance: Provenance::Probed,
         }],
@@ -59,7 +60,7 @@ fn filled() -> Persisted {
                 class: DataClass::Photos,
                 usage: Usage::Interactive,
                 space: SpaceScope::Any,
-                reach: crate::capability::StorageScope::AppFolder,
+                reach: porter_capability::StorageScope::AppFolder,
             },
             decision: Decision::Allow,
             scope: GrantScope::Always,
@@ -152,16 +153,18 @@ fn a_file_that_cannot_be_read_is_refused_not_emptied() {
     }
 }
 
+/// A version that changed the stored shape has a row in the table with its frozen document in
+/// this file; none has yet, so a document from any stored version reads by moving its version
+/// (`a_document_frozen_at_each_vocabulary_since_the_first_stored_one_reads` has one per version).
 #[test]
-fn every_version_since_the_first_stored_one_has_a_migration() {
-    for from in (FIRST_PERSISTED.0..).take_while(|v| *v < VocabVersion::CURRENT.0) {
-        assert!(
-            MIGRATIONS.iter().any(|(start, _)| start.0 == from),
-            "vocabulary {from} to {} has no migration row; add one and a fixture of the old \
-             document to these tests",
-            from + 1
-        );
-    }
+fn a_version_without_a_migration_row_is_read_as_it_was() {
+    assert!(MIGRATIONS.is_empty());
+    let stored = filled().to_json().expect("json").replacen(
+        &format!("\"vocab\": {}", VocabVersion::CURRENT.0),
+        &format!("\"vocab\": {}", FIRST_PERSISTED.0),
+        1,
+    );
+    assert_eq!(Persisted::from_json(&stored), Ok(filled()));
 }
 
 /// A document exactly as the build at vocabulary 7 wrote it: no account, two grants of the two
@@ -329,33 +332,6 @@ const AT_THIRTEEN: &str = r#"{
   "toggles": []
 }"#;
 
-/// An old file with an identity, an API key, a Tailscale account, a grant and a toggle: accountd
-/// keeps the identity and Tailscale, and nothing else.
-#[test]
-fn pruning_to_identities_keeps_the_sign_in_accounts_and_tailscale_and_empties_the_rest() {
-    let mut mixed = Persisted::from_json(AT_THIRTEEN).expect("reads");
-    let mut identity = account(Vec::new());
-    identity.id = AccountId::parse("google-ada").expect("id");
-    identity.auth = AuthKind::OAuthPkce;
-    let mut password = account(Vec::new());
-    password.id = AccountId::parse("fastmail-ada").expect("id");
-    password.auth = AuthKind::AppPassword;
-    let mut key = account(Vec::new());
-    key.id = AccountId::parse("anthropic").expect("id");
-    key.auth = AuthKind::ApiKey;
-    mixed.accounts.extend([identity, key, password]);
-    mixed.toggles.push(AccountToggle {
-        account: AccountId::parse("google-ada").expect("id"),
-        kind: CapabilityKind::Storage,
-        toggle: Toggle::Off,
-    });
-    prune_to_identities(&mut mixed);
-    let kept: Vec<_> = mixed.accounts.iter().map(|a| a.id.as_str()).collect();
-    assert_eq!(kept, ["tailscale", "google-ada", "fastmail-ada"]);
-    assert!(mixed.grants.is_empty());
-    assert!(mixed.toggles.is_empty());
-}
-
 /// Every frozen document reads, whatever version wrote it, as the current vocabulary, with what
 /// that version could hold: the rows say what each is expected to come out as.
 #[test]
@@ -436,7 +412,7 @@ fn what_a_version_added_reads_as_what_it_was() {
     let eight = Persisted::from_json(AT_EIGHT).expect("eight");
     assert_eq!(
         eight.grants[0].scope,
-        GrantScope::Session(LauncherSession::parse("sess-1").expect("id"))
+        GrantScope::Session(SessionToken::parse("sess-1").expect("id"))
     );
 }
 
@@ -455,7 +431,7 @@ fn a_document_stored_at_vocabulary_ten_is_read_unchanged() {
 #[test]
 fn a_session_grant_survives_the_document_and_keeps_its_form() {
     let mut registry = filled();
-    registry.grants[0].scope = GrantScope::Session(LauncherSession::parse("sess-1").expect("id"));
+    registry.grants[0].scope = GrantScope::Session(SessionToken::parse("sess-1").expect("id"));
     let json = registry.to_json().expect("json");
     let document: Value = serde_json::from_str(&json).expect("value");
     assert_eq!(

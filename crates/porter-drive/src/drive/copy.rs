@@ -2,10 +2,10 @@
 //! computer, "Waiting to upload" until it is sent.
 
 use super::{Drive, NodeId, held, now_secs};
+use crate::Reason;
 use crate::index::{Dirty, Edit};
 use crate::naming;
 use crate::source::CopyError;
-use crate::words;
 use porter_fs::atomic::AtomicWrite;
 use porter_sync::ItemKind;
 
@@ -19,43 +19,43 @@ impl Drive {
     /// taken); the copy's node.
     ///
     /// # Errors
-    /// The words Files shows: `NOT_A_DOCUMENT` for an item that is no online document,
-    /// `NO_FILE_FORMAT` for one with no file format (a Form, a Site, a Map), `TOO_LARGE` past
-    /// what the drive exports, `COPY_FAILED` when the drive could not be reached.
-    pub async fn save_copy(&self, id: &NodeId) -> Result<NodeId, &'static str> {
+    /// [`Reason::NotADocument`] for an item that is no online document, [`Reason::NoFileFormat`]
+    /// for one with no file format (a Form, a Site, a Map), [`Reason::TooLarge`] past what the
+    /// drive exports, [`Reason::CopyFailed`] when the drive could not be reached.
+    pub async fn save_copy(&self, id: &NodeId) -> Result<NodeId, Reason> {
         let NodeId::Remote(remote) = id else {
-            return Err(words::NOT_A_DOCUMENT);
+            return Err(Reason::NotADocument);
         };
         let inner = &self.inner;
         let entry = inner
             .entry(remote)
             .ok()
             .flatten()
-            .ok_or(words::NOT_A_DOCUMENT)?;
+            .ok_or(Reason::NotADocument)?;
         let ItemKind::Online { export, .. } = &entry.kind else {
-            return Err(words::NOT_A_DOCUMENT);
+            return Err(Reason::NotADocument);
         };
         let (mime, extension) = export
             .as_deref()
             .and_then(|mime| Some((mime, naming::copy_extension(mime)?)))
-            .ok_or(words::NO_FILE_FORMAT)?;
+            .ok_or(Reason::NoFileFormat)?;
         let bytes = inner
             .source
             .export(remote, mime)
             .await
             .map_err(|why| match why {
-                CopyError::NoFormat => words::NO_FILE_FORMAT,
-                CopyError::TooLarge => words::TOO_LARGE,
-                CopyError::Failed => words::COPY_FAILED,
+                CopyError::NoFormat => Reason::NoFileFormat,
+                CopyError::TooLarge => Reason::TooLarge,
+                CopyError::Failed => Reason::CopyFailed,
             })?;
         let folder = inner
             .parent_of(id)
             .ok()
             .flatten()
-            .ok_or(words::NOT_A_DOCUMENT)?;
+            .ok_or(Reason::NotADocument)?;
         let taken: Vec<String> = inner
             .children(&folder)
-            .map_err(|_| words::COPY_FAILED)?
+            .map_err(|_| Reason::CopyFailed)?
             .into_iter()
             .map(|node| node.name)
             .collect();
@@ -64,7 +64,7 @@ impl Drive {
         let n = held(&inner.index).take_local();
         AtomicWrite::PRIVATE
             .write(&inner.local_file(n), &bytes)
-            .map_err(|_| words::COPY_FAILED)?;
+            .map_err(|_| Reason::CopyFailed)?;
         let made = now_secs();
         let dirty = Dirty {
             file: n,
@@ -87,7 +87,7 @@ impl Drive {
             held(&inner.index).edits.remove(&NodeId::Local(n));
             let _ = std::fs::remove_file(inner.local_file(n));
             inner.touched();
-            return Err(words::COPY_FAILED);
+            return Err(Reason::CopyFailed);
         }
         let copy = NodeId::Local(n);
         inner.ino(&copy);

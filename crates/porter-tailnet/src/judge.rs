@@ -20,7 +20,7 @@
 use crate::guests::{Guests, State};
 use crate::identity::Identity;
 use crate::refusal::Refusal;
-use porter_core::{MachineOwner, NodeId};
+use porter_tailscale::{MachineOwner, NodeId};
 use porter_tailscale::{TailscaleError, WhoIs};
 use std::net::IpAddr;
 
@@ -66,7 +66,7 @@ impl Welcome {
     /// not answered about is put on the list of those waiting (the person is told once) and
     /// refused with [`Refusal::Waiting`] until they answer. The record is read now, so a yes
     /// taken back is taken back at once.
-    pub fn admit(&self, guests: &Guests, now: porter_core::UnixSeconds) -> Result<(), Refusal> {
+    pub fn admit(&self, guests: &Guests, now: porter_ids::UnixSeconds) -> Result<(), Refusal> {
         match guests.state_of(&self.peer.node) {
             Some(State::Approved) => Ok(()),
             Some(State::Denied) => Err(Refusal::Denied),
@@ -134,6 +134,8 @@ pub fn judge(
             }),
             MachineOwner::Tagged => Err(Refusal::Tagged),
             MachineOwner::Shared => Err(Refusal::Shared),
+            // An owner this build does not know is not the person: refused as somebody else's.
+            _ => Err(Refusal::Shared),
         },
     }
 }

@@ -3,8 +3,8 @@
 //! runs on a computer), never guessed from its name; a model whose capabilities say nothing about
 //! text is [`Takes::Unknown`] and gets no words.
 
-use porter_core::Capability;
-use porter_core::capability::LlmFeature;
+use porter_capability::Capability;
+use porter_capability::LlmFeature;
 use serde::{Deserialize, Serialize};
 
 /// What a model reads or hears, besides how it answers.
@@ -84,17 +84,6 @@ impl Takes {
         }
     }
 
-    /// The words beside the model in a list; none when nothing says.
-    pub fn words(self) -> Option<&'static str> {
-        match self {
-            Takes::Unknown => None,
-            Takes::TextOnly => Some("Text only"),
-            Takes::TextAndImages => Some("Reads text and images"),
-            Takes::TextAndAudio => Some("Reads text, hears audio"),
-            Takes::TextImagesAndAudio => Some("Reads text and images, hears audio"),
-        }
-    }
-
     /// The name on the bus (the serde form).
     pub fn slug(self) -> &'static str {
         match self {
@@ -139,8 +128,8 @@ pub const NO_MODEL_SEES_SCREEN: &str =
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_core::capability::{CuaBatching, CuaCap, CuaEnv, LlmCap, LlmWire, Offered};
-    use porter_core::{Px, Tokens};
+    use porter_capability::{CuaBatching, CuaCap, CuaEnv, LlmCap, LlmWire};
+    use porter_ids::{Px, Tokens};
 
     fn llm(features: &[LlmFeature]) -> Capability {
         Capability::Llm(LlmCap {
@@ -155,7 +144,7 @@ mod tests {
         Capability::ComputerUse(CuaCap {
             environments: [CuaEnv::Desktop].into(),
             batching: CuaBatching::One,
-            zoom: Offered::Absent,
+            zoom: false,
             max_image: Px(1024),
             wire: LlmWire::ChatCompletions,
         })
@@ -206,6 +195,5 @@ mod tests {
             );
         }
         assert_eq!(Takes::from_slug("video"), Takes::Unknown);
-        assert_eq!(Takes::Unknown.words(), None);
     }
 }

@@ -7,8 +7,8 @@
 use crate::common;
 
 use common::{Replica, Server};
-use porter_core::WebUrl;
-use porter_core::capability::StorageScope;
+use porter_capability::StorageScope;
+use porter_ids::WebUrl;
 use porter_sync::{
     Anchor, Change, Cursor, ExportError, Folders, ItemKind, More, RemoteId, Replica as _,
     ReplicaError,

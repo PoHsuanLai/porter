@@ -14,14 +14,16 @@ use crate::dataset::fingerprint;
 use crate::datasets::pim::PimKind;
 use crate::datasets::pim::discover::{DiscoverError, Found};
 use porter_client::{Accounts, Transport};
-use porter_core::{Bytes, EndpointUrl, GrantId, WebUrl};
+use porter_core::EndpointUrl;
+use porter_core::GrantId;
+use porter_ids::{Bytes, WebUrl};
+use porter_sync::{Clock, DELETED};
 use porter_sync::{
     ItemKind, ItemPath, More, RemoteId, RemoteItem, RemoteVersion, ReplicaError, RetryAfter,
     Tombstone,
 };
 use serde::Deserialize;
 use std::sync::Arc;
-use storage_webdav::{Clock, DELETED};
 
 /// How many tasks a page asks for (Google's most).
 const PAGE: &str = "100";
@@ -39,6 +41,7 @@ struct TasksPage {
 #[derive(Debug)]
 pub struct GoogleTasksSource<T: Transport> {
     api: Arc<Api<T>>,
+    clock: Clock,
 }
 
 impl<T: Transport> GoogleTasksSource<T> {
@@ -47,9 +50,11 @@ impl<T: Transport> GoogleTasksSource<T> {
         accounts: Arc<Accounts<T>>,
         grant: GrantId,
         endpoint: EndpointUrl,
+        clock: Clock,
     ) -> Result<Self, DiscoverError> {
         Ok(Self {
             api: Arc::new(Api::new(accounts, grant, endpoint)?),
+            clock,
         })
     }
 }
@@ -87,7 +92,7 @@ impl<T: Transport + 'static> PimSource for GoogleTasksSource<T> {
         GoogleTasksFeed {
             api: Arc::clone(&self.api),
             list: id_in(&found.url),
-            clock: Clock::system(),
+            clock: self.clock.clone(),
         }
     }
 }
@@ -153,10 +158,10 @@ impl<T: Transport + 'static> Feed for GoogleTasksFeed<T> {
             .api
             .read(&self.api.url(&self.tasks_path(""), &query))
             .await?;
-        if response.status.0 != 200 {
-            return Err(read_error(&response));
+        if response.status().as_u16() != 200 {
+            return Err(read_error(&response, self.clock.now()));
         }
-        let listing: TasksPage = serde_json::from_slice(&response.body)
+        let listing: TasksPage = serde_json::from_slice(response.body())
             .map_err(|_| ReplicaError::Transient(RetryAfter(30)))?;
         // `updated` is always `YYYY-MM-DDTHH:MM:SS.sssZ`, which orders as text.
         let newest = listing
@@ -201,10 +206,10 @@ impl<T: Transport + 'static> Feed for GoogleTasksFeed<T> {
             .api
             .read(&self.api.url(&self.tasks_path(&tail), &[]))
             .await?;
-        if response.status.0 != 200 {
-            return Err(read_error(&response));
+        if response.status().as_u16() != 200 {
+            return Err(read_error(&response, self.clock.now()));
         }
-        let task: Task = serde_json::from_slice(&response.body)
+        let task: Task = serde_json::from_slice(response.body())
             .map_err(|_| ReplicaError::Transient(RetryAfter(30)))?;
         match task.is_deleted() {
             true => Err(ReplicaError::Gone),

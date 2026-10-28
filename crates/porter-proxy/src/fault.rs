@@ -3,6 +3,7 @@
 /// Why a relay ended without finishing. The host maps it to the account's state: `Refused` is
 /// `NeedsReauth`, `Unreachable` is `Offline`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum RelayFault {
     /// The server refused the credential.
     Refused,

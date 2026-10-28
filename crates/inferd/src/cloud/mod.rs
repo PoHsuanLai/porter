@@ -25,7 +25,6 @@ pub mod transport;
 pub mod turn;
 pub mod wire;
 
-use crate::clock::Clock;
 use crate::settings::SpendLine;
 use accountd::{AccountVerdict, Accountd, AccountdFault};
 use model_catalog::{ModelEntry, ProviderId, Wire};
@@ -38,9 +37,12 @@ use model_http::{UrlPath, WaitMs};
 use models::{RemoteModel, remote_entries, remote_models};
 use own::{OwnBook, OwnServer, Place};
 use porter_core::consent::Usage;
-use porter_core::{AccountId, AppId, DataClass, GrantId, SecretText, UnixSeconds};
+use porter_core::{AccountId, GrantId};
+use porter_core::{AppId, DataClass, SecretText};
+use porter_ids::UnixSeconds;
+use porter_ids::clock::Clock;
 use porter_infer::SpendVerdict;
-use spend::{Ledger, estimate};
+use spend::Ledger;
 use std::sync::Arc;
 use transport::ShapedTransport;
 use wire::{BodyShape, Doors};
@@ -195,15 +197,12 @@ impl Cloud {
         self.0.own.record(server, names, self.now());
     }
 
-    /// What the caps say about one more turn of `app` on `model`.
+    /// What the caps say about one more turn of `app` on `model`: they compare what providers have
+    /// reported so far.
     pub fn spend(&self, line: SpendLine, app: &AppId, model: &RemoteModel) -> SpendVerdict {
-        self.0.ledger.verdict(
-            line,
-            app,
-            &model.card.account,
-            estimate(&model.price()),
-            self.now(),
-        )
+        self.0
+            .ledger
+            .verdict(line, app, &model.card.account, self.now())
     }
 
     /// The key behind `grant`, fetched now.

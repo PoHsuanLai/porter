@@ -2,7 +2,7 @@
 
 use crate::anchor::Anchor;
 use crate::item::{RemoteId, RemoteItem, RemoteVersion};
-use porter_core::UnixSeconds;
+use porter_ids::UnixSeconds;
 use serde::{Deserialize, Serialize};
 
 /// One change.
@@ -14,6 +14,10 @@ pub enum Change {
     /// Deleted.
     Tombstone(Tombstone),
 }
+
+/// The version a deletion has: a store that keeps none for what it removed has the replica name
+/// it, and a removal, the feed's tombstone and a refused write all agree.
+pub const DELETED: &str = "deleted";
 
 /// A deletion, kept with its time until every replica has acknowledged it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]

@@ -2,19 +2,21 @@
 //! loopback (no network, no real model).
 #![cfg(feature = "engines")]
 
+use porter_capability::{Locality, Tier};
 use porter_client::engines::{
     Dialect, Engine, EngineHost, EngineId, EngineUrl, KeySource, NoKeys, Route,
 };
 use porter_client::{InferRefusal, InferSession, OpenOptions, Policy, SessionHost, Slot};
-use porter_core::need::{DimsNeed, EmbedNeed, LlmNeed};
-use porter_core::{
-    AccountId, AppId, AppName, DataClass, Isolation, Locality, Need, SecretText, Tier, Tokens,
-};
+use porter_core::AccountId;
+use porter_core::{AppId, AppName, DataClass, Isolation, SecretText};
 use porter_fake_servers::{FakeModels, ModelDef, ModelsHandle, Running, Wire};
+use porter_ids::Tokens;
 use porter_infer::{
     ChatControl, ChatMessage, ChatRequest, ClientFrame, InferEvent, InferReply, InferRequest,
     MessagePart, ModelError, Role, ToolParallelism,
 };
+use porter_match::Need;
+use porter_match::{DimsNeed, EmbedNeed, LlmNeed};
 use std::sync::{Arc, Mutex};
 
 fn app() -> AppId {

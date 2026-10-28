@@ -8,24 +8,39 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "ds-settings",
+ "porter-callers",
+ "porter-capability",
  "porter-core",
  "porter-daemon",
  "porter-dbus",
  "porter-fake",
  "porter-fake-servers",
  "porter-families",
+ "porter-family-oauth",
  "porter-fs",
  "porter-http",
+ "porter-http-reqwest",
+ "porter-identities",
+ "porter-ids",
+ "porter-match",
  "porter-oauth",
  "porter-provider",
  "porter-secrets",
  "porter-service",
+ "porter-service-accounts",
+ "porter-service-core",
+ "porter-settings",
+ "porter-sheet",
  "porter-sheets",
+ "porter-spaces",
  "porter-store",
  "porter-tailscale",
+ "porter-wire",
  "rustix",
  "serde",
  "serde_json",
+ "sha2",
+ "test-kit",
  "thiserror",
  "tokio",
  "toml",
@@ -290,6 +305,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
+name = "base64"
+version = "0.23.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
+
+[[package]]
 name = "bit-set"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -355,6 +376,30 @@ dependencies = [
  "futures-io",
  "futures-lite",
  "piper",
+]
+
+[[package]]
+name = "borsh"
+version = "1.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "553c5d846a6ba5150c65e3b1b8ec073bcf1abc20f9b7220de384a4443ea4e20a"
+dependencies = [
+ "borsh-derive",
+ "bytes",
+ "cfg_aliases",
+]
+
+[[package]]
+name = "borsh-derive"
+version = "1.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "12cdfe656708a01f89b451a7d36466e6fe6c414de0aa18fc54f864f6f9ca9f56"
+dependencies = [
+ "once_cell",
+ "proc-macro-crate",
+ "proc-macro2",
+ "quote",
+ "syn 3.0.6",
 ]
 
 [[package]]
@@ -435,6 +480,15 @@ version = "0.1.0"
 source = "git+https://github.com/PoHsuanLai/chordkit.git?rev=99eec9ddd03ee345b669fcc7954ed44590724290#99eec9ddd03ee345b669fcc7954ed44590724290"
 dependencies = [
  "thiserror",
+]
+
+[[package]]
+name = "chrono"
+version = "0.4.45"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1aa79e62e7697b8e29b513a68abacf485adcd1fe8284a4316c5ae868e6633327"
+dependencies = [
+ "num-traits",
 ]
 
 [[package]]
@@ -615,7 +669,7 @@ dependencies = [
 [[package]]
 name = "cua-action"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=f30d2808a9f05901a952c1fac6db2c6479a1bfe2#f30d2808a9f05901a952c1fac6db2c6479a1bfe2"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=c8fed624534867659448ac417992bac4f0f47e28#c8fed624534867659448ac417992bac4f0f47e28"
 dependencies = [
  "keyboard-types",
  "serde",
@@ -625,7 +679,7 @@ dependencies = [
 [[package]]
 name = "cua-parse"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=f30d2808a9f05901a952c1fac6db2c6479a1bfe2#f30d2808a9f05901a952c1fac6db2c6479a1bfe2"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=c8fed624534867659448ac417992bac4f0f47e28#c8fed624534867659448ac417992bac4f0f47e28"
 dependencies = [
  "cua-action",
  "keyboard-types",
@@ -638,7 +692,7 @@ dependencies = [
 [[package]]
 name = "cua-session"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=f30d2808a9f05901a952c1fac6db2c6479a1bfe2#f30d2808a9f05901a952c1fac6db2c6479a1bfe2"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=c8fed624534867659448ac417992bac4f0f47e28#c8fed624534867659448ac417992bac4f0f47e28"
 dependencies = [
  "cua-action",
  "cua-parse",
@@ -651,7 +705,7 @@ dependencies = [
 [[package]]
 name = "cua-vendors"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=f30d2808a9f05901a952c1fac6db2c6479a1bfe2#f30d2808a9f05901a952c1fac6db2c6479a1bfe2"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=c8fed624534867659448ac417992bac4f0f47e28#c8fed624534867659448ac417992bac4f0f47e28"
 dependencies = [
  "cua-action",
  "cua-parse",
@@ -697,12 +751,6 @@ dependencies = [
  "quote",
  "syn 3.0.6",
 ]
-
-[[package]]
-name = "doctest-file"
-version = "1.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2db04e74f0a9a93103b50e90b96024c9b2bdca8bce6a632ec71b88736d3d359"
 
 [[package]]
 name = "document-features"
@@ -824,7 +872,7 @@ checksum = "66b7e2430c6dff6a955451e2cfc438f09cea1965a9d6f87f7e3b90decc014099"
 [[package]]
 name = "engine-supervisor"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=f30d2808a9f05901a952c1fac6db2c6479a1bfe2#f30d2808a9f05901a952c1fac6db2c6479a1bfe2"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=c8fed624534867659448ac417992bac4f0f47e28#c8fed624534867659448ac417992bac4f0f47e28"
 dependencies = [
  "model-catalog",
  "serde",
@@ -1087,7 +1135,7 @@ dependencies = [
 [[package]]
 name = "genai-names"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=f30d2808a9f05901a952c1fac6db2c6479a1bfe2#f30d2808a9f05901a952c1fac6db2c6479a1bfe2"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=c8fed624534867659448ac417992bac4f0f47e28#c8fed624534867659448ac417992bac4f0f47e28"
 
 [[package]]
 name = "generic-array"
@@ -1100,14 +1148,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "generic-proto"
+version = "0.1.0"
+dependencies = [
+ "dav-proto",
+ "http",
+ "porter-capability",
+ "porter-core",
+ "porter-ids",
+ "porter-provider",
+ "porter-sheet",
+ "thiserror",
+]
+
+[[package]]
 name = "getrandom"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ff2abc00be7fca6ebc474524697ae276ad847ad0a6b3faa4bcb027e9a4614ad0"
 dependencies = [
  "cfg-if",
+ "js-sys",
  "libc",
  "wasi",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -1129,9 +1193,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "300e883d756b2e4ec94e02791f39b04b522276138852cfc41d9fb7e904106099"
 dependencies = [
  "cfg-if",
+ "js-sys",
  "libc",
  "r-efi 6.0.0",
  "rand_core 0.10.1",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -1307,6 +1373,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6dbf3de79e51f3d586ab4cb9d5c3e2c14aa28ed23d180cf89b4df0454a69cc87"
 
 [[package]]
+name = "httpdate"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
+
+[[package]]
 name = "hyper"
 version = "1.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1335,7 +1407,6 @@ dependencies = [
  "http",
  "hyper",
  "hyper-util",
- "log",
  "rustls",
  "rustls-native-certs",
  "tokio",
@@ -1349,6 +1420,7 @@ version = "0.1.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ddc03d96684f9226b8a787cdb71488417b53ab5ea8fdb1dac946cb9431cc8bff"
 dependencies = [
+ "base64 0.23.1",
  "bytes",
  "futures-channel",
  "futures-util",
@@ -1356,7 +1428,9 @@ dependencies = [
  "http-body",
  "httparse",
  "hyper",
+ "ipnet",
  "libc",
+ "percent-encoding",
  "pin-project-lite",
  "socket2",
  "tokio",
@@ -1497,6 +1571,7 @@ dependencies = [
 name = "inferd"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "clap",
  "cua-action",
  "cua-parse",
@@ -1505,6 +1580,8 @@ dependencies = [
  "ds-settings",
  "engine-supervisor",
  "getrandom 0.4.3",
+ "hex",
+ "iso_currency",
  "model-catalog",
  "model-extract",
  "model-http",
@@ -1513,6 +1590,8 @@ dependencies = [
  "model-replay",
  "model-wire",
  "porter-bridge",
+ "porter-callers",
+ "porter-capability",
  "porter-client",
  "porter-core",
  "porter-daemon",
@@ -1521,19 +1600,22 @@ dependencies = [
  "porter-engines",
  "porter-fake",
  "porter-fake-servers",
- "porter-families",
  "porter-fs",
  "porter-http",
+ "porter-http-reqwest",
+ "porter-ids",
  "porter-infer",
+ "porter-match",
  "porter-provider",
  "porter-router",
  "porter-secrets",
- "porter-service",
- "porter-sheets",
+ "porter-settings",
  "porter-store",
  "porter-tailnet",
  "porter-tailscale",
  "porter-turns",
+ "porter-wire",
+ "rust_decimal",
  "rustix",
  "serde",
  "serde_json",
@@ -1541,6 +1623,7 @@ dependencies = [
  "speech-host-client",
  "speech-provider",
  "subtle",
+ "test-kit",
  "thiserror",
  "tokio",
  "toml",
@@ -1579,19 +1662,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "interprocess"
-version = "2.4.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6cb02ffbf25e8ef0f4a95bff054eef75f6d1bf16919474cf2caa63b21997478a"
-dependencies = [
- "doctest-file",
- "libc",
- "recvmsg",
- "widestring",
- "windows-sys 0.61.2",
-]
-
-[[package]]
 name = "ipconfig"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1618,6 +1688,27 @@ name = "is_terminal_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
+
+[[package]]
+name = "iso_country"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "20633e788d3948ea7336861fdb09ec247f5dae4267e8f0743fa97de26c28624d"
+dependencies = [
+ "lazy_static",
+]
+
+[[package]]
+name = "iso_currency"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "52d721074ff687a7ac523217a2bedb8277ac81d83dc10216ffc2a19128ca3dd5"
+dependencies = [
+ "iso_country",
+ "proc-macro2",
+ "quote",
+ "serde",
+]
 
 [[package]]
 name = "itoa"
@@ -1697,6 +1788,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "keyring-chunked"
+version = "0.1.0"
+dependencies = [
+ "keyring-core",
+ "thiserror",
+]
+
+[[package]]
 name = "keyring-core"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1726,14 +1825,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "latchkey"
-version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/latchkey?rev=b10ae1b8c49c55cce2c5affde8f5db76edb66ab4#b10ae1b8c49c55cce2c5affde8f5db76edb66ab4"
-dependencies = [
- "interprocess",
- "rustix",
- "widestring",
-]
+name = "lazy_static"
+version = "1.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb"
 
 [[package]]
 name = "libc"
@@ -1766,6 +1861,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
 
 [[package]]
+name = "listenfd"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b87bc54a4629b4294d0b3ef041b64c40c611097a677d9dc07b2c67739fe39dba"
+dependencies = [
+ "libc",
+ "uuid",
+ "winapi",
+]
+
+[[package]]
 name = "litemap"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1793,6 +1899,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
+name = "lru-slab"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4050469837a6ff301cd14c1f8f24f88549e6d548f24f64e2148eb0f72cebc51f"
+
+[[package]]
 name = "md-5"
 version = "0.10.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1815,6 +1927,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "488016bfae457b036d996092f6cb448677611ce4449e970ceaf42695203f218a"
 dependencies = [
  "autocfg",
+]
+
+[[package]]
+name = "mime"
+version = "0.3.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a"
+
+[[package]]
+name = "mime_guess"
+version = "2.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f7c44f8e672c00fe5308fa235f821cb4198414e1c77935c1ab6948d3fd78550e"
+dependencies = [
+ "mime",
+ "unicase",
 ]
 
 [[package]]
@@ -1852,7 +1980,7 @@ dependencies = [
 [[package]]
 name = "model-catalog"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=f30d2808a9f05901a952c1fac6db2c6479a1bfe2#f30d2808a9f05901a952c1fac6db2c6479a1bfe2"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=c8fed624534867659448ac417992bac4f0f47e28#c8fed624534867659448ac417992bac4f0f47e28"
 dependencies = [
  "model-provider",
  "serde",
@@ -1864,7 +1992,7 @@ dependencies = [
 [[package]]
 name = "model-extract"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=f30d2808a9f05901a952c1fac6db2c6479a1bfe2#f30d2808a9f05901a952c1fac6db2c6479a1bfe2"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=c8fed624534867659448ac417992bac4f0f47e28#c8fed624534867659448ac417992bac4f0f47e28"
 dependencies = [
  "model-provider",
  "serde_json",
@@ -1873,29 +2001,26 @@ dependencies = [
 [[package]]
 name = "model-http"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=f30d2808a9f05901a952c1fac6db2c6479a1bfe2#f30d2808a9f05901a952c1fac6db2c6479a1bfe2"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=c8fed624534867659448ac417992bac4f0f47e28#c8fed624534867659448ac417992bac4f0f47e28"
 dependencies = [
- "http-body-util",
- "hyper",
- "hyper-util",
- "rustls-native-certs",
- "rustls-pki-types",
+ "reqwest 0.13.5",
+ "rustls",
  "serde",
  "thiserror",
  "tokio",
- "tokio-rustls",
  "zeroize",
 ]
 
 [[package]]
 name = "model-openai-compat"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=f30d2808a9f05901a952c1fac6db2c6479a1bfe2#f30d2808a9f05901a952c1fac6db2c6479a1bfe2"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=c8fed624534867659448ac417992bac4f0f47e28#c8fed624534867659448ac417992bac4f0f47e28"
 dependencies = [
  "log",
  "model-http",
  "model-provider",
  "model-wire",
+ "rust_decimal",
  "serde",
  "serde_json",
  "speech-provider",
@@ -1905,11 +2030,13 @@ dependencies = [
 [[package]]
 name = "model-provider"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=f30d2808a9f05901a952c1fac6db2c6479a1bfe2#f30d2808a9f05901a952c1fac6db2c6479a1bfe2"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=c8fed624534867659448ac417992bac4f0f47e28#c8fed624534867659448ac417992bac4f0f47e28"
 dependencies = [
- "base64",
+ "base64 0.22.1",
  "cua-action",
  "genai-names",
+ "iso_currency",
+ "rust_decimal",
  "serde",
  "serde_json",
  "thiserror",
@@ -1919,7 +2046,7 @@ dependencies = [
 [[package]]
 name = "model-replay"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=f30d2808a9f05901a952c1fac6db2c6479a1bfe2#f30d2808a9f05901a952c1fac6db2c6479a1bfe2"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=c8fed624534867659448ac417992bac4f0f47e28#c8fed624534867659448ac417992bac4f0f47e28"
 dependencies = [
  "blake3",
  "model-http",
@@ -1934,7 +2061,7 @@ dependencies = [
 [[package]]
 name = "model-wire"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=f30d2808a9f05901a952c1fac6db2c6479a1bfe2#f30d2808a9f05901a952c1fac6db2c6479a1bfe2"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=c8fed624534867659448ac417992bac4f0f47e28#c8fed624534867659448ac417992bac4f0f47e28"
 dependencies = [
  "model-http",
  "model-provider",
@@ -1969,10 +2096,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "nanohtml2text"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "04bf3af3ecff3fa29350cd5c1b356599e96203305ed24b70c7e9574d3880dad5"
+
+[[package]]
 name = "ndk-context"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27b02d87554356db9e9a873add8782d4ea6e3e58ea071a9adb9a2e8ddb884a8b"
+
+[[package]]
+name = "nextcloud-proto"
+version = "0.1.0"
+dependencies = [
+ "http",
+ "porter-capability",
+ "porter-core",
+ "porter-ids",
+ "serde_json",
+ "thiserror",
+]
 
 [[package]]
 name = "nix"
@@ -2126,6 +2271,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "oauth-probe-proto"
+version = "0.1.0"
+dependencies = [
+ "http",
+ "porter-capability",
+ "porter-ids",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "objc2-core-foundation"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2270,8 +2426,8 @@ dependencies = [
 
 [[package]]
 name = "peephole"
-version = "0.1.9"
-source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.9#f22e99b447d1ef7f84d81ddce6ceb614088ee0ef"
+version = "0.1.11"
+source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.11#06a97c105d833b07a37feb48a16dde49ef4d8bc0"
 dependencies = [
  "nix",
  "peephole-core",
@@ -2281,8 +2437,8 @@ dependencies = [
 
 [[package]]
 name = "peephole-bus"
-version = "0.1.9"
-source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.9#f22e99b447d1ef7f84d81ddce6ceb614088ee0ef"
+version = "0.1.11"
+source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.11#06a97c105d833b07a37feb48a16dde49ef4d8bc0"
 dependencies = [
  "futures-timer",
  "peephole",
@@ -2294,8 +2450,8 @@ dependencies = [
 
 [[package]]
 name = "peephole-core"
-version = "0.1.9"
-source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.9#f22e99b447d1ef7f84d81ddce6ceb614088ee0ef"
+version = "0.1.11"
+source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.11#06a97c105d833b07a37feb48a16dde49ef4d8bc0"
 dependencies = [
  "serde",
  "thiserror",
@@ -2371,8 +2527,12 @@ dependencies = [
  "model-catalog",
  "model-openai-compat",
  "model-provider",
+ "porter-capability",
  "porter-core",
+ "porter-ids",
  "porter-infer",
+ "porter-match",
+ "rust_decimal",
  "thiserror",
  "vision-prep",
 ]
@@ -2381,17 +2541,43 @@ dependencies = [
 name = "porter-calendar"
 version = "0.1.0"
 dependencies = [
- "base64",
+ "base64 0.22.1",
  "dav-proto",
- "porter-core",
- "porter-dav",
- "porter-fake",
  "porter-fake-servers",
  "porter-http",
+ "porter-http-relay",
+ "porter-ids",
  "serde_json",
+ "test-kit",
  "thiserror",
  "tokio",
  "zbus",
+]
+
+[[package]]
+name = "porter-callers"
+version = "0.1.0"
+dependencies = [
+ "peephole",
+ "peephole-bus",
+ "peephole-core",
+ "porter-core",
+ "serde",
+ "serde_json",
+ "test-kit",
+ "thiserror",
+ "tokio",
+ "toml",
+ "zbus",
+]
+
+[[package]]
+name = "porter-capability"
+version = "0.1.0"
+dependencies = [
+ "porter-ids",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -2402,29 +2588,41 @@ dependencies = [
  "cua-action",
  "ds-settings",
  "inferd",
- "latchkey",
  "model-http",
  "model-openai-compat",
  "model-provider",
  "model-wire",
  "porter-bridge",
+ "porter-callers",
+ "porter-capability",
  "porter-core",
  "porter-dbus",
  "porter-fake",
  "porter-fake-servers",
  "porter-families",
+ "porter-family-generic",
  "porter-fs",
  "porter-http",
+ "porter-http-reqwest",
+ "porter-ids",
  "porter-infer",
+ "porter-match",
  "porter-provider",
  "porter-proxy",
+ "porter-router",
  "porter-secrets",
  "porter-service",
+ "porter-service-core",
+ "porter-sheet",
+ "porter-spaces",
+ "porter-tailnet",
  "porter-tailscale",
  "porter-turns",
+ "porter-wire",
  "rustix",
  "serde",
  "serde_json",
+ "test-kit",
  "thiserror",
  "tokio",
  "zbus",
@@ -2436,10 +2634,14 @@ name = "porter-core"
 version = "0.1.0"
 dependencies = [
  "peephole-core",
- "porter-fake",
- "proptest",
+ "porter-capability",
+ "porter-ids",
+ "porter-match",
+ "secrecy",
  "serde",
  "serde_json",
+ "subtle",
+ "test-kit",
  "thiserror",
  "zeroize",
 ]
@@ -2449,37 +2651,37 @@ name = "porter-daemon"
 version = "0.1.0"
 dependencies = [
  "notify",
- "porter-fake",
+ "test-kit",
  "thiserror",
-]
-
-[[package]]
-name = "porter-dav"
-version = "0.1.0"
-dependencies = [
- "dav-proto",
- "porter-core",
- "porter-fake",
- "porter-http",
- "roxmltree",
 ]
 
 [[package]]
 name = "porter-dbus"
 version = "0.1.0"
 dependencies = [
- "peephole",
- "peephole-bus",
- "peephole-core",
+ "porter-capability",
  "porter-core",
- "porter-fake",
+ "porter-dbus-macros",
+ "porter-ids",
+ "porter-match",
+ "porter-tailscale",
+ "porter-wire",
  "proptest",
  "serde",
  "serde_json",
+ "test-kit",
  "thiserror",
  "tokio",
- "toml",
  "zbus",
+]
+
+[[package]]
+name = "porter-dbus-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -2487,8 +2689,10 @@ name = "porter-discover"
 version = "0.1.0"
 dependencies = [
  "hickory-resolver",
+ "porter-capability",
  "porter-core",
  "porter-http",
+ "porter-ids",
  "porter-provider",
  "roxmltree",
  "serde",
@@ -2502,17 +2706,20 @@ dependencies = [
 name = "porter-drive"
 version = "0.1.0"
 dependencies = [
+ "hex",
  "md-5",
- "porter-core",
+ "porter-capability",
  "porter-drive",
- "porter-fake",
  "porter-fs",
+ "porter-ids",
  "porter-sync",
  "quickxorhash",
+ "rangemap",
  "rustix",
  "serde",
  "serde_json",
  "sha2",
+ "test-kit",
  "thiserror",
  "tokio",
 ]
@@ -2523,9 +2730,9 @@ version = "0.1.0"
 dependencies = [
  "fuser",
  "porter-drive",
- "porter-fake",
  "porter-mountd",
  "rustix",
+ "test-kit",
  "thiserror",
  "tokio",
 ]
@@ -2534,10 +2741,10 @@ dependencies = [
 name = "porter-engines"
 version = "0.1.0"
 dependencies = [
- "porter-fake",
  "serde",
  "serde_json",
  "sha2",
+ "test-kit",
  "thiserror",
 ]
 
@@ -2546,14 +2753,15 @@ name = "porter-engines-install"
 version = "0.1.0"
 dependencies = [
  "flate2",
- "porter-core",
  "porter-engines",
- "porter-fake",
  "porter-fake-servers",
  "porter-http",
+ "porter-http-reqwest",
+ "porter-ids",
  "rustix",
  "sha2",
  "tar",
+ "test-kit",
  "thiserror",
  "tokio",
 ]
@@ -2562,11 +2770,19 @@ dependencies = [
 name = "porter-fake"
 version = "0.1.0"
 dependencies = [
+ "porter-capability",
  "porter-core",
- "porter-infer",
+ "porter-ids",
+ "porter-match",
  "porter-provider",
  "porter-secrets",
  "porter-service",
+ "porter-service-accounts",
+ "porter-service-core",
+ "porter-sheet",
+ "porter-wire",
+ "serde_json",
+ "test-kit",
  "tokio",
 ]
 
@@ -2574,16 +2790,23 @@ dependencies = [
 name = "porter-fake-servers"
 version = "0.1.0"
 dependencies = [
- "base64",
+ "base64 0.22.1",
+ "dav-proto",
+ "form_urlencoded",
+ "hex",
+ "http",
+ "md-5",
  "porter-core",
  "porter-discover",
  "porter-fake",
+ "porter-ids",
  "porter-provider",
  "quickxorhash",
  "rustls",
  "rustls-pki-types",
  "serde_json",
  "sha2",
+ "test-kit",
  "tokio",
  "tokio-rustls",
 ]
@@ -2592,85 +2815,235 @@ dependencies = [
 name = "porter-families"
 version = "0.1.0"
 dependencies = [
- "base64",
+ "base64 0.22.1",
  "dav-proto",
+ "porter-capability",
  "porter-core",
- "porter-dav",
  "porter-discover",
  "porter-fake",
  "porter-fake-servers",
+ "porter-family-generic",
+ "porter-family-kit",
+ "porter-family-nextcloud",
+ "porter-family-oauth",
  "porter-http",
+ "porter-http-reqwest",
+ "porter-ids",
+ "porter-match",
  "porter-oauth",
  "porter-provider",
  "porter-proxy",
  "porter-secrets",
  "porter-service",
+ "porter-service-accounts",
+ "porter-service-core",
+ "porter-sheet",
  "porter-tailscale",
+ "porter-wire",
  "serde",
  "serde_json",
+ "test-kit",
  "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "porter-family-generic"
+version = "0.1.0"
+dependencies = [
+ "generic-proto",
+ "porter-capability",
+ "porter-core",
+ "porter-discover",
+ "porter-family-kit",
+ "porter-http",
+ "porter-provider",
+ "porter-proxy",
+ "porter-sheet",
+ "tokio",
+]
+
+[[package]]
+name = "porter-family-kit"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "porter-core",
+ "porter-http",
+ "porter-provider",
+ "porter-sheet",
+ "test-kit",
+ "tokio",
+]
+
+[[package]]
+name = "porter-family-nextcloud"
+version = "0.1.0"
+dependencies = [
+ "dav-proto",
+ "nextcloud-proto",
+ "porter-capability",
+ "porter-core",
+ "porter-family-kit",
+ "porter-http",
+ "porter-provider",
+ "porter-sheet",
+]
+
+[[package]]
+name = "porter-family-oauth"
+version = "0.1.0"
+dependencies = [
+ "oauth-probe-proto",
+ "porter-capability",
+ "porter-core",
+ "porter-family-kit",
+ "porter-http",
+ "porter-http-reqwest",
+ "porter-ids",
+ "porter-oauth",
+ "porter-provider",
+ "porter-sheet",
+ "serde",
+ "serde_json",
+ "test-kit",
  "tokio",
 ]
 
 [[package]]
 name = "porter-fs"
 version = "0.1.0"
+dependencies = [
+ "test-kit",
+]
 
 [[package]]
 name = "porter-http"
 version = "0.1.0"
 dependencies = [
+ "http",
+ "httpdate",
+ "porter-core",
+ "porter-ids",
+ "thiserror",
+]
+
+[[package]]
+name = "porter-http-relay"
+version = "0.1.0"
+dependencies = [
  "http-body-util",
  "hyper",
- "hyper-rustls",
  "hyper-util",
+ "porter-client",
  "porter-core",
- "porter-fake",
+ "porter-http",
+ "porter-ids",
+ "porter-wire",
+ "test-kit",
+ "tokio",
+]
+
+[[package]]
+name = "porter-http-reqwest"
+version = "0.1.0"
+dependencies = [
+ "porter-core",
  "porter-fake-servers",
+ "porter-http",
+ "porter-ids",
+ "reqwest 0.12.28",
  "rustls",
- "rustls-native-certs",
- "rustls-pki-types",
+ "test-kit",
+ "tokio",
+]
+
+[[package]]
+name = "porter-identities"
+version = "0.1.0"
+dependencies = [
+ "porter-core",
+ "porter-fs",
+ "porter-ids",
+ "porter-secrets",
+ "porter-service-core",
+ "porter-wire",
+ "serde",
+ "serde_json",
+ "test-kit",
  "thiserror",
  "tokio",
+]
+
+[[package]]
+name = "porter-ids"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "percent-encoding",
+ "serde",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]
 name = "porter-infer"
 version = "0.1.0"
 dependencies = [
- "base64",
+ "base64 0.22.1",
  "cua-action",
+ "iso_currency",
+ "model-provider",
+ "porter-capability",
  "porter-core",
  "porter-fake",
+ "porter-ids",
  "porter-infer",
+ "porter-match",
  "proptest",
+ "rust_decimal",
  "serde",
  "serde_json",
+ "test-kit",
  "thiserror",
  "tokio",
+]
+
+[[package]]
+name = "porter-match"
+version = "0.1.0"
+dependencies = [
+ "porter-capability",
+ "porter-ids",
+ "serde",
 ]
 
 [[package]]
 name = "porter-mountd"
 version = "0.1.0"
 dependencies = [
- "porter-fake",
+ "listenfd",
  "rustix",
+ "test-kit",
 ]
 
 [[package]]
 name = "porter-oauth"
 version = "0.1.0"
 dependencies = [
- "base64",
+ "base64 0.22.1",
+ "form_urlencoded",
+ "httparse",
  "porter-core",
- "porter-fake",
  "porter-fake-servers",
  "porter-http",
+ "porter-ids",
  "porter-provider",
  "serde",
  "serde_json",
  "sha2",
+ "subtle",
+ "test-kit",
  "thiserror",
  "tokio",
  "toml",
@@ -2680,9 +3053,13 @@ dependencies = [
 name = "porter-provider"
 version = "0.1.0"
 dependencies = [
+ "porter-capability",
  "porter-core",
- "porter-fake",
+ "porter-ids",
+ "porter-match",
+ "porter-sheet",
  "serde",
+ "test-kit",
  "thiserror",
  "toml",
 ]
@@ -2691,13 +3068,17 @@ dependencies = [
 name = "porter-proxy"
 version = "0.1.0"
 dependencies = [
- "base64",
+ "base64 0.22.1",
+ "httparse",
+ "porter-capability",
  "porter-core",
  "porter-fake",
  "porter-fake-servers",
+ "porter-ids",
  "porter-proxy",
  "rustls-native-certs",
  "rustls-pki-types",
+ "test-kit",
  "tokio",
  "tokio-rustls",
  "webpki-roots",
@@ -2710,21 +3091,27 @@ dependencies = [
  "accountd",
  "clap",
  "fake-secret-service",
+ "porter-callers",
+ "porter-capability",
  "porter-client",
  "porter-core",
  "porter-dbus",
  "porter-fake",
  "porter-fake-servers",
+ "porter-ids",
  "porter-infer",
+ "porter-match",
  "porter-provider",
  "porter-secrets",
  "porter-service",
+ "porter-service-core",
  "porter-sync",
+ "porter-wire",
  "rustix",
  "serde",
  "serde_json",
  "syncd",
- "syncd-fakes",
+ "test-kit",
  "tokio",
  "zbus",
 ]
@@ -2739,11 +3126,18 @@ dependencies = [
  "model-http",
  "model-openai-compat",
  "model-provider",
+ "porter-capability",
  "porter-core",
+ "porter-engines",
+ "porter-ids",
  "porter-infer",
+ "porter-match",
+ "porter-tailnet",
+ "porter-tailscale",
  "rustix",
  "serde",
  "speech-provider",
+ "test-kit",
  "thiserror",
  "toml",
  "vision-prep",
@@ -2754,14 +3148,17 @@ name = "porter-secrets"
 version = "0.1.0"
 dependencies = [
  "apple-native-keyring-store",
+ "keyring-chunked",
  "keyring-core",
  "oo7",
+ "porter-capability",
  "porter-core",
- "porter-fake",
  "porter-fs",
+ "porter-ids",
  "porter-secrets",
  "rustix",
  "serde_json",
+ "test-kit",
  "thiserror",
  "tokio",
  "windows-native-keyring-store",
@@ -2772,38 +3169,141 @@ dependencies = [
 name = "porter-service"
 version = "0.1.0"
 dependencies = [
+ "porter-capability",
  "porter-core",
- "porter-fake",
+ "porter-ids",
+ "porter-match",
  "porter-provider",
  "porter-secrets",
+ "porter-service-accounts",
+ "porter-service-core",
+ "porter-service-grants",
+ "porter-wire",
+]
+
+[[package]]
+name = "porter-service-accounts"
+version = "0.1.0"
+dependencies = [
+ "porter-capability",
+ "porter-core",
+ "porter-ids",
+ "porter-match",
+ "porter-provider",
+ "porter-secrets",
+ "porter-service-core",
+ "porter-sheet",
+ "porter-tailscale",
+ "porter-wire",
+]
+
+[[package]]
+name = "porter-service-core"
+version = "0.1.0"
+dependencies = [
+ "porter-capability",
+ "porter-core",
+ "porter-ids",
+ "porter-match",
+ "porter-provider",
+ "porter-secrets",
+ "porter-sheet",
+ "porter-wire",
  "serde",
  "serde_json",
  "thiserror",
- "tokio",
+]
+
+[[package]]
+name = "porter-service-grants"
+version = "0.1.0"
+dependencies = [
+ "porter-capability",
+ "porter-core",
+ "porter-ids",
+ "porter-match",
+ "porter-provider",
+ "porter-secrets",
+ "porter-service-accounts",
+ "porter-service-core",
+ "porter-wire",
+]
+
+[[package]]
+name = "porter-settings"
+version = "0.1.0"
+dependencies = [
+ "ds-settings",
+ "porter-capability",
+ "porter-core",
+ "porter-fake",
+ "porter-ids",
+ "porter-provider",
+ "porter-service-core",
+ "porter-sheet",
+ "toml",
+]
+
+[[package]]
+name = "porter-sheet"
+version = "0.1.0"
+dependencies = [
+ "porter-capability",
+ "porter-core",
+ "porter-ids",
+ "porter-tailscale",
+ "proptest",
+ "serde",
+ "serde_json",
+ "test-kit",
+ "thiserror",
 ]
 
 [[package]]
 name = "porter-sheets"
 version = "0.1.0"
 dependencies = [
+ "porter-callers",
+ "porter-capability",
  "porter-core",
  "porter-dbus",
- "porter-fake",
  "porter-provider",
- "porter-service",
+ "porter-service-core",
+ "porter-sheet",
+ "porter-wire",
  "serde_json",
+ "test-kit",
  "tokio",
  "zbus",
+]
+
+[[package]]
+name = "porter-spaces"
+version = "0.1.0"
+dependencies = [
+ "porter-core",
+ "porter-fs",
+ "porter-ids",
+ "serde",
+ "serde_json",
+ "test-kit",
+ "thiserror",
+ "tokio",
 ]
 
 [[package]]
 name = "porter-store"
 version = "0.1.0"
 dependencies = [
+ "porter-capability",
  "porter-core",
  "porter-fake",
  "porter-fs",
- "porter-service",
+ "serde",
+ "serde_json",
+ "sha2",
+ "test-kit",
+ "thiserror",
  "tokio",
 ]
 
@@ -2811,11 +3311,13 @@ dependencies = [
 name = "porter-sync"
 version = "0.1.0"
 dependencies = [
- "porter-core",
- "porter-fake",
+ "porter-capability",
+ "porter-http",
+ "porter-ids",
  "porter-sync",
  "serde",
  "serde_json",
+ "test-kit",
  "thiserror",
  "tokio",
 ]
@@ -2827,14 +3329,14 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
- "porter-core",
- "porter-fake",
  "porter-fake-servers",
  "porter-fs",
+ "porter-ids",
  "porter-tailnet",
  "porter-tailscale",
  "serde",
  "serde_json",
+ "test-kit",
  "thiserror",
  "tokio",
  "toml",
@@ -2847,12 +3349,12 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
- "porter-core",
- "porter-fake",
  "porter-fake-servers",
+ "porter-ids",
  "porter-tailscale",
  "serde",
  "serde_json",
+ "test-kit",
  "thiserror",
  "tokio",
 ]
@@ -2871,14 +3373,32 @@ dependencies = [
  "model-openai-compat",
  "model-provider",
  "porter-bridge",
+ "porter-capability",
  "porter-core",
+ "porter-ids",
  "porter-infer",
+ "porter-match",
  "porter-router",
  "rustix",
  "serde",
  "serde_json",
+ "test-kit",
  "tokio",
  "vision-prep",
+]
+
+[[package]]
+name = "porter-wire"
+version = "0.1.0"
+dependencies = [
+ "porter-capability",
+ "porter-core",
+ "porter-ids",
+ "porter-match",
+ "serde",
+ "serde_json",
+ "test-kit",
+ "thiserror",
 ]
 
 [[package]]
@@ -2939,24 +3459,12 @@ dependencies = [
  "bitflags",
  "num-traits",
  "rand 0.9.5",
- "rand_chacha",
+ "rand_chacha 0.9.0",
  "rand_xorshift",
  "regex-syntax",
  "rusty-fork",
  "tempfile",
  "unarray",
-]
-
-[[package]]
-name = "prov"
-version = "0.1.0"
-dependencies = [
- "porter-core",
- "porter-fake",
- "proptest",
- "serde",
- "serde_json",
- "thiserror",
 ]
 
 [[package]]
@@ -2976,6 +3484,63 @@ name = "quickxorhash"
 version = "0.1.0"
 dependencies = [
  "digest",
+ "hex",
+]
+
+[[package]]
+name = "quinn"
+version = "0.11.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4051e23e9185c255a7e33ef59cdbca87a22d359052eecd22fc6b901fb37d9d11"
+dependencies = [
+ "bytes",
+ "cfg_aliases",
+ "pin-project-lite",
+ "quinn-proto",
+ "quinn-udp",
+ "rustc-hash",
+ "rustls",
+ "socket2",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "web-time",
+]
+
+[[package]]
+name = "quinn-proto"
+version = "0.11.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e750cca55fe4f0439a15d0bb529da9651e79993e8e72c61a899a36d462befbe"
+dependencies = [
+ "bytes",
+ "getrandom 0.4.3",
+ "lru-slab",
+ "rand 0.10.3",
+ "rand_pcg",
+ "ring",
+ "rustc-hash",
+ "rustls",
+ "rustls-pki-types",
+ "slab",
+ "thiserror",
+ "tinyvec",
+ "tracing",
+ "web-time",
+]
+
+[[package]]
+name = "quinn-udp"
+version = "0.5.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "af66907df18639dcf4db56ca65490cabc4b27a97dbadd96f2926cca73298f016"
+dependencies = [
+ "cfg_aliases",
+ "libc",
+ "once_cell",
+ "socket2",
+ "tracing",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3001,11 +3566,22 @@ checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
 name = "rand"
+version = "0.8.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e058c7de0b26af77780c769414d6257830bb240f3c38477dbc2c16e5f54d6d4c"
+dependencies = [
+ "libc",
+ "rand_chacha 0.3.1",
+ "rand_core 0.6.4",
+]
+
+[[package]]
+name = "rand"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9ef1d0d795eb7d84685bca4f72f3649f064e6641543d3a8c415898726a57b41"
 dependencies = [
- "rand_chacha",
+ "rand_chacha 0.9.0",
  "rand_core 0.9.5",
 ]
 
@@ -3022,12 +3598,31 @@ dependencies = [
 
 [[package]]
 name = "rand_chacha"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6c10a63a0fa32252be49d21e7709d4d4baf8d231c2dbce1eaa8141b9b127d88"
+dependencies = [
+ "ppv-lite86",
+ "rand_core 0.6.4",
+]
+
+[[package]]
+name = "rand_chacha"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3022b5f1df60f26e1ffddd6c66e8aa15de382ae63b3a0c1bfc0e4d3e3f325cb"
 dependencies = [
  "ppv-lite86",
  "rand_core 0.9.5",
+]
+
+[[package]]
+name = "rand_core"
+version = "0.6.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
+dependencies = [
+ "getrandom 0.2.17",
 ]
 
 [[package]]
@@ -3046,6 +3641,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "63b8176103e19a2643978565ca18b50549f6101881c443590420e4dc998a3c69"
 
 [[package]]
+name = "rand_pcg"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "caa0f4137e1c0a72f4c651489402276c8e8e1cf081f3b0ba156d2cbeef09e86a"
+dependencies = [
+ "rand_core 0.10.1",
+]
+
+[[package]]
 name = "rand_xorshift"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3055,10 +3659,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "recvmsg"
-version = "1.0.0"
+name = "rangemap"
+version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d3edd4d5d42c92f0a659926464d4cce56b562761267ecf0f469d85b7de384175"
+checksum = "a611d15b50743feb4c76b7d03edcb0e64f399c26961e4efe6975bc398be6aa3d"
 
 [[package]]
 name = "redox_syscall"
@@ -3119,6 +3723,78 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
+name = "reqwest"
+version = "0.12.28"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eddd3ca559203180a307f12d114c268abf583f59b03cb906fd0b3ff8646c1147"
+dependencies = [
+ "base64 0.22.1",
+ "bytes",
+ "futures-core",
+ "http",
+ "http-body",
+ "http-body-util",
+ "hyper",
+ "hyper-rustls",
+ "hyper-util",
+ "js-sys",
+ "log",
+ "percent-encoding",
+ "pin-project-lite",
+ "quinn",
+ "rustls",
+ "rustls-native-certs",
+ "rustls-pki-types",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+ "sync_wrapper",
+ "tokio",
+ "tokio-rustls",
+ "tower",
+ "tower-http",
+ "tower-service",
+ "url",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
+
+[[package]]
+name = "reqwest"
+version = "0.13.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "16a1cfa75cc186dd73d5818e510e042e40927bccc9c236b061cea97e1eb08029"
+dependencies = [
+ "base64 0.23.1",
+ "bytes",
+ "futures-core",
+ "http",
+ "http-body",
+ "http-body-util",
+ "hyper",
+ "hyper-rustls",
+ "hyper-util",
+ "js-sys",
+ "log",
+ "percent-encoding",
+ "pin-project-lite",
+ "rustls",
+ "rustls-pki-types",
+ "rustls-platform-verifier",
+ "sync_wrapper",
+ "tokio",
+ "tokio-rustls",
+ "tower",
+ "tower-http",
+ "tower-service",
+ "url",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
+
+[[package]]
 name = "resolv-conf"
 version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3171,6 +3847,29 @@ dependencies = [
  "smallvec",
  "sqlite-wasm-rs",
 ]
+
+[[package]]
+name = "rust_decimal"
+version = "1.43.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7653272e75dcac41dc199fbea6f5797633994fafd339943c06c9af16bf29cd3a"
+dependencies = [
+ "arrayvec",
+ "borsh",
+ "bytes",
+ "num-traits",
+ "rand 0.8.8",
+ "rand 0.9.5",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+]
+
+[[package]]
+name = "rustc-hash"
+version = "2.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6b1e7f9a428571be2dc5bc0505c13fb6bf936822b894ec87abf8a08a4e51742d"
 
 [[package]]
 name = "rustc_version"
@@ -3227,8 +3926,36 @@ version = "1.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2f4925028c7eb5d1fcdaf196971378ed9d2c1c4efc7dc5d011256f76c99c0a96"
 dependencies = [
+ "web-time",
  "zeroize",
 ]
+
+[[package]]
+name = "rustls-platform-verifier"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1167586491e2b18b8bfbb293e8180ec17c201c4f076d7cb3070ca964e7598f98"
+dependencies = [
+ "core-foundation 0.10.1",
+ "core-foundation-sys",
+ "jni",
+ "log",
+ "once_cell",
+ "rustls",
+ "rustls-native-certs",
+ "rustls-platform-verifier-android",
+ "rustls-webpki",
+ "security-framework",
+ "security-framework-sys",
+ "webpki-root-certs",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "rustls-platform-verifier-android"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eec689c0bc40ff2458a5977b6619cb718087084a18e02a131c599b62d05e1a5f"
 
 [[package]]
 name = "rustls-webpki"
@@ -3260,6 +3987,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "ryu"
+version = "1.0.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
+
+[[package]]
 name = "same-file"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3282,6 +4015,16 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "secrecy"
+version = "0.10.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e891af845473308773346dc847b2c23ee78fe442e0472ac50e22a18a93d3ae5a"
+dependencies = [
+ "serde",
+ "zeroize",
+]
 
 [[package]]
 name = "security-framework"
@@ -3386,6 +4129,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_urlencoded"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3491c14715ca2294c4d6a88f15e84739788c1d030eed8c110436aafdaa2f3fd"
+dependencies = [
+ "form_urlencoded",
+ "itoa",
+ "ryu",
+ "serde",
+]
+
+[[package]]
 name = "sha2"
 version = "0.10.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3459,7 +4214,7 @@ dependencies = [
 [[package]]
 name = "speech-host-client"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=f30d2808a9f05901a952c1fac6db2c6479a1bfe2#f30d2808a9f05901a952c1fac6db2c6479a1bfe2"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=c8fed624534867659448ac417992bac4f0f47e28#c8fed624534867659448ac417992bac4f0f47e28"
 dependencies = [
  "model-provider",
  "serde",
@@ -3470,9 +4225,9 @@ dependencies = [
 [[package]]
 name = "speech-provider"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=f30d2808a9f05901a952c1fac6db2c6479a1bfe2#f30d2808a9f05901a952c1fac6db2c6479a1bfe2"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=c8fed624534867659448ac417992bac4f0f47e28#c8fed624534867659448ac417992bac4f0f47e28"
 dependencies = [
- "base64",
+ "base64 0.22.1",
  "model-provider",
  "serde",
  "serde_json",
@@ -3502,14 +4257,15 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 name = "storage-gdrive"
 version = "0.1.0"
 dependencies = [
- "porter-core",
- "porter-fake",
+ "porter-capability",
  "porter-fake-servers",
  "porter-http",
+ "porter-http-relay",
+ "porter-ids",
  "porter-sync",
  "serde",
  "serde_json",
- "storage-webdav",
+ "test-kit",
  "tokio",
 ]
 
@@ -3517,15 +4273,17 @@ dependencies = [
 name = "storage-graph"
 version = "0.1.0"
 dependencies = [
- "base64",
- "porter-core",
- "porter-fake",
+ "base64 0.22.1",
+ "hex",
+ "porter-capability",
  "porter-fake-servers",
  "porter-http",
+ "porter-http-relay",
+ "porter-ids",
  "porter-sync",
  "serde",
  "serde_json",
- "storage-webdav",
+ "test-kit",
  "tokio",
 ]
 
@@ -3533,15 +4291,16 @@ dependencies = [
 name = "storage-webdav"
 version = "0.1.0"
 dependencies = [
- "base64",
+ "base64 0.22.1",
  "dav-proto",
- "porter-core",
- "porter-dav",
- "porter-fake",
+ "porter-capability",
  "porter-fake-servers",
  "porter-http",
+ "porter-http-relay",
+ "porter-ids",
  "porter-sync",
  "roxmltree",
+ "test-kit",
  "tokio",
 ]
 
@@ -3580,31 +4339,54 @@ dependencies = [
 ]
 
 [[package]]
+name = "sync_wrapper"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0bf256ce5efdfa370213c1dabab5935a12e49f2c58d15e9eac2870d3b4f27263"
+dependencies = [
+ "futures-core",
+]
+
+[[package]]
 name = "syncd"
 version = "0.1.0"
 dependencies = [
- "base64",
+ "base64 0.22.1",
+ "chrono",
  "clap",
  "dav-proto",
  "ds-settings",
+ "hex",
+ "mime_guess",
+ "nanohtml2text",
+ "porter-callers",
+ "porter-capability",
  "porter-client",
  "porter-core",
  "porter-daemon",
- "porter-dav",
  "porter-dbus",
  "porter-drive",
  "porter-drive-fuse",
  "porter-fake",
  "porter-fake-servers",
  "porter-families",
+ "porter-family-oauth",
  "porter-fs",
  "porter-http",
+ "porter-http-relay",
+ "porter-http-reqwest",
+ "porter-ids",
+ "porter-match",
  "porter-provider",
  "porter-secrets",
  "porter-service",
+ "porter-service-accounts",
+ "porter-service-core",
+ "porter-sheet",
  "porter-sheets",
  "porter-store",
  "porter-sync",
+ "porter-wire",
  "rusqlite",
  "serde",
  "serde_json",
@@ -3613,9 +4395,13 @@ dependencies = [
  "storage-graph",
  "storage-webdav",
  "syncd",
+ "syncd-fakes",
+ "tempfile",
+ "test-kit",
  "thiserror",
  "tokio",
  "toml",
+ "windows-zones",
  "zbus",
 ]
 
@@ -3625,8 +4411,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "porter-dbus",
- "porter-drive",
- "porter-fake",
+ "test-kit",
  "tokio",
  "zbus",
 ]
@@ -3691,6 +4476,10 @@ dependencies = [
  "rustix",
  "windows-sys 0.61.2",
 ]
+
+[[package]]
+name = "test-kit"
+version = "0.1.0"
 
 [[package]]
 name = "thiserror"
@@ -3819,6 +4608,45 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d56353a2a665ad0f41a421187180aab746c8c325620617ad883a99a1cbe66d2"
 
 [[package]]
+name = "tower"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ebe5ef63511595f1344e2d5cfa636d973292adc0eec1f0ad45fae9f0851ab1d4"
+dependencies = [
+ "futures-core",
+ "futures-util",
+ "pin-project-lite",
+ "sync_wrapper",
+ "tokio",
+ "tower-layer",
+ "tower-service",
+]
+
+[[package]]
+name = "tower-http"
+version = "0.6.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4cfcf7e2740e6fc6d4d688b4ef00650406bb94adf4731e43c096c3a19fe40840"
+dependencies = [
+ "bitflags",
+ "bytes",
+ "futures-util",
+ "http",
+ "http-body",
+ "pin-project-lite",
+ "tower",
+ "tower-layer",
+ "tower-service",
+ "url",
+]
+
+[[package]]
+name = "tower-layer"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "121c2a6cda46980bb0fcd1647ffaf6cd3fc79a013de288782836f6df9c48780e"
+
+[[package]]
 name = "tower-service"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3883,6 +4711,12 @@ name = "unarray"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eaea85b334db583fe3274d12b4cd1880032beab409c0d774be044d4480ab9a94"
+
+[[package]]
+name = "unicase"
+version = "2.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "357cc3acc6a036009fd6c973ed009037c732d60d0b4f6c673e9041497482a28f"
 
 [[package]]
 name = "unicode-ident"
@@ -3953,7 +4787,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 [[package]]
 name = "vision-prep"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=f30d2808a9f05901a952c1fac6db2c6479a1bfe2#f30d2808a9f05901a952c1fac6db2c6479a1bfe2"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=c8fed624534867659448ac417992bac4f0f47e28#c8fed624534867659448ac417992bac4f0f47e28"
 dependencies = [
  "cua-action",
  "fast_image_resize",
@@ -4014,8 +4848,20 @@ dependencies = [
  "cfg-if",
  "once_cell",
  "rustversion",
+ "serde",
  "wasm-bindgen-macro",
  "wasm-bindgen-shared",
+]
+
+[[package]]
+name = "wasm-bindgen-futures"
+version = "0.4.79"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3cbab34de2d982e9b48e18d216d04c4a6f641066ff19ffb699980f591ee3610e"
+dependencies = [
+ "js-sys",
+ "tokio",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -4048,6 +4894,35 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23f0c9c52aa7cd7d77769a4cfe2a9adb1b331f489a41d912ce14513d5ab995c6"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "web-sys"
+version = "0.3.106"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "88261b9deccee56594c11a3460c462c41f58d148598fe70ad77070126a68aba4"
+dependencies = [
+ "js-sys",
+ "wasm-bindgen",
+]
+
+[[package]]
+name = "web-time"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a6580f308b1fad9207618087a65c04e7a10bc77e02c8e84e9b00dd4b12fa0bb"
+dependencies = [
+ "js-sys",
+ "wasm-bindgen",
+]
+
+[[package]]
+name = "webpki-root-certs"
+version = "1.0.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e49d0e65abc00c142e8f9428da991da9f1a250c39be97459901eb12b9b49f62a"
+dependencies = [
+ "rustls-pki-types",
 ]
 
 [[package]]
@@ -4203,6 +5078,10 @@ dependencies = [
  "windows_x86_64_gnullvm 0.53.1",
  "windows_x86_64_msvc 0.53.1",
 ]
+
+[[package]]
+name = "windows-zones"
+version = "0.1.0"
 
 [[package]]
 name = "windows_aarch64_gnullvm"

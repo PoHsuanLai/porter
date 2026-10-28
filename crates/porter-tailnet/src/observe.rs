@@ -87,6 +87,8 @@ async fn look(api: &LocalApi) -> Found {
             },
             Standing::SignedOut | Standing::Down => Found::Gone,
             Standing::Changing => Found::Unsure,
+            // A standing this build does not know settles nothing.
+            _ => Found::Unsure,
         },
         Err(
             TailscaleError::NotInstalled | TailscaleError::NotRunning | TailscaleError::Refused,

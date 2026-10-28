@@ -3,7 +3,8 @@
 //! either; from anyone else the call is refused, not ignored.
 
 use crate::peers::Caller;
-use porter_dbus::{Details, OPTION_ASKER, OPTION_MODEL};
+use porter_dbus::Details;
+use porter_dbus::inference::{OPTION_ASKER, OPTION_MODEL};
 use porter_infer::{Asker, ModelRef};
 use zbus::fdo;
 

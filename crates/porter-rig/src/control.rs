@@ -275,7 +275,7 @@ impl Levers {
 
 /// Binds the control endpoint on loopback and serves it on a task; its URL.
 pub async fn serve_levers(levers: Levers) -> io::Result<(String, tokio::task::JoinHandle<()>)> {
-    let listener = Listener::bind(&Bind::Loopback, "control").await?;
+    let listener = Listener::bind(&Bind::Port(0), "control").await?;
     let port = porter_fake_servers::net::port_of(listener.address());
     let task = tokio::spawn(serve(
         listener,

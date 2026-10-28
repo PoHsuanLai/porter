@@ -5,6 +5,7 @@
 mod agents;
 mod agents_local;
 mod attached;
+mod broker;
 mod cloud;
 mod daemon;
 mod dist;
@@ -13,12 +14,6 @@ mod engine_start;
 mod hosted;
 mod hosting;
 mod isolation;
-mod keys_local;
-mod launcher_credential;
-mod launcher_login;
-mod launcher_register;
-mod launcher_rig;
-mod launcher_session;
 mod local_engines;
 mod own_server;
 mod places;
@@ -37,7 +32,7 @@ mod voice_chat;
 
 #[test]
 fn every_module_is_declared() {
-    porter_fake::guard::every_module_is_declared(
+    test_kit::guard::every_module_is_declared(
         env!("CARGO_MANIFEST_DIR"),
         "tests/it",
         include_str!("main.rs"),

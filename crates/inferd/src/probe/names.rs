@@ -8,8 +8,11 @@
 //! lists one name and the probe found one model, they are the same model.
 
 use super::{Probed, Runtime, model_of};
-use porter_core::{Claim, ModelId, WebUrl};
-use porter_http::{Http, HttpRequest, Method};
+use porter_capability::Claim;
+use porter_capability::ModelId;
+use porter_http::http::Method;
+use porter_http::{Http, request};
+use porter_ids::WebUrl;
 use porter_provider::Port;
 use serde_json::Value;
 
@@ -30,11 +33,14 @@ impl Listing {
         let Ok(url) = WebUrl::parse(&format!("http://127.0.0.1:{}{path}", port.0)) else {
             return Self::default();
         };
-        let Ok(response) = http.send(HttpRequest::new(Method::Get, url)).await else {
+        let Ok(asked) = request(Method::GET, &url).body(Vec::new()) else {
             return Self::default();
         };
-        match response.status.is_success() {
-            true => serde_json::from_slice(&response.body)
+        let Ok(response) = http.send(asked).await else {
+            return Self::default();
+        };
+        match response.status().is_success() {
+            true => serde_json::from_slice(response.body())
                 .map(|body| Self::of(runtime, &body))
                 .unwrap_or_default(),
             false => Self::default(),

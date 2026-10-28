@@ -179,7 +179,7 @@ fn frame_with_logprobs(delta: Value, logprobs: Value) -> String {
 
 fn stream_for(answer: &Chat) -> Vec<Vec<u8>> {
     let head = b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n".to_vec();
-    let usage = "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":2}}\n\ndata: [DONE]\n\n";
+    let usage = "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":2,\"cost\":0.00095}}\n\ndata: [DONE]\n\n";
     let mut pieces = vec![head];
     match answer {
         Chat::Say(deltas) => {

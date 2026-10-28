@@ -7,21 +7,27 @@
 use crate::common::bus::PrivateBus;
 use crate::common::hosted::{Link, host};
 use crate::common::{Known, PhotosGrant, client};
+use porter_callers::CallerRole;
+use porter_capability::StorageScope;
+use porter_capability::{CapabilityKind, Claim, Offer, Provenance, Subject};
 use porter_client::Accounts;
-use porter_core::capability::StorageScope;
-use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
 use porter_core::{
-    Account, AccountId, AccountLabel, AccountState, AuthKind, Candidate, CapabilityKind, Claim,
-    Credential, DataClass, EndpointUrl, Family, GrantId, LoginName, Offer, Provenance, Restriction,
-    SecretKey, SecretPurpose, SecretText, ServiceEndpoint, SpaceScope, Subject, Tls, UnixSeconds,
+    Account, AccountLabel, AccountState, AuthKind, Candidate, Credential, DataClass, EndpointUrl,
+    Family, LoginName, Restriction, SecretKey, SecretPurpose, SecretText, ServiceEndpoint,
+    SpaceScope, Tls,
 };
-use porter_dbus::CallerRole;
+use porter_core::{AccountId, GrantId};
+use porter_core::{
+    GrantKey,
+    consent::{Decision, Grant, GrantScope, Usage},
+};
 use porter_fake::FakeProvider;
 use porter_fake_servers::google::MediaOrigin;
 use porter_fake_servers::{FakeGoogle, GoogleHandle, Running};
+use porter_ids::UnixSeconds;
 use porter_provider::Provider;
 use porter_secrets::{MemorySecrets, Secrets};
-use porter_service::Registry;
+use porter_service_core::registry::Registry;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use syncd::datasets::pim::{AccountdUnavailable, Wiring};
@@ -121,7 +127,7 @@ impl Rig {
 }
 
 /// Polls every 20 ms; the limit is idle time (`common::eventually_alive`): the wait ends only
-/// when the rig has not begun a cycle or served a request for [`porter_fake::GENEROUS`], so a
+/// when the rig has not begun a cycle or served a request for [`test_kit::GENEROUS`], so a
 /// loaded machine that works slowly is never cut short.
 pub async fn eventually(rig: &Rig, what: &str, check: impl FnMut() -> bool) {
     crate::common::eventually_alive(what, || rig.pulse(), check).await;
@@ -183,6 +189,9 @@ impl Rig {
             settings: quick(),
             network: self.network.clone(),
             owners: Access::default(),
+            clock: porter_sync::Clock::new(porter_ids::clock::SystemClock),
+            nonce: "t1".to_owned(),
+            millis: Arc::new(syncd::datasets::photos::ManualMillis::at(1_700_000_000_000)),
         };
         StorageSupervisor::new(
             wiring,
@@ -267,8 +276,8 @@ async fn build(photos: PhotosGrant, media: Media, picker_only: bool) -> Rig {
             .endpoints
             .retain(|e| e.family != Family::GooglePhotosUpload);
         for claim in &mut account.capabilities {
-            if let Offer::Present(porter_core::Capability::Photos(cap)) = &mut claim.offer {
-                cap.upload = porter_core::capability::Offered::Absent;
+            if let Offer::Present(porter_capability::Capability::Photos(cap)) = &mut claim.offer {
+                cap.upload = false;
             }
         }
     }
@@ -355,6 +364,9 @@ fn placeholder(
             settings: quick(),
             network: network.clone(),
             owners: Access::default(),
+            clock: porter_sync::Clock::new(porter_ids::clock::SystemClock),
+            nonce: "t1".to_owned(),
+            millis: Arc::new(syncd::datasets::photos::ManualMillis::at(1_700_000_000_000)),
         },
         Gate {
             real: ClientStorageGrants::new(Arc::clone(accounts)),

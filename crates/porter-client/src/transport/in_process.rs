@@ -21,16 +21,25 @@ use super::broker::SessionHost;
 use crate::authenticated::{AuthenticatedStream, Relayed};
 use crate::error::TransportError;
 use crate::relays::{NoRelays, RelayHost};
-use porter_core::stream::duplex;
-use porter_core::wire::Refusal;
-use porter_core::{AccountsReply, AccountsRequest, AppId, EndpointUrl, GrantId, RelayPlan};
 #[cfg(feature = "infer")]
-use porter_core::{DataClass, Need, Tier};
+use porter_capability::Tier;
+use porter_core::DataClass;
+use porter_core::GrantId;
+use porter_core::consent::{Availability, Usage};
+use porter_core::store::RegistryStore;
+use porter_core::stream::duplex;
+use porter_core::{AppId, Candidate, EndpointUrl, RelayPlan};
+use porter_ids::clock::Clock;
 #[cfg(feature = "infer")]
 use porter_infer::{OpenOptions, Readiness};
+use porter_match::Need;
 use porter_provider::Provider;
 use porter_secrets::Secrets;
-use porter_service::{AccountService, AuditSink, Clock, RegistryStore, Sheets};
+use porter_service::AccountService;
+use porter_service_core::audit::AuditSink;
+use porter_service_core::sheets::Sheets;
+use porter_wire::Refusal;
+use porter_wire::{AccountsReply, AccountsRequest};
 use std::future::Future;
 use std::sync::Arc;
 
@@ -49,6 +58,24 @@ pub trait HostedCore: Send + Sync {
         app: &AppId,
         request: AccountsRequest,
     ) -> impl Future<Output = AccountsReply> + Send;
+
+    /// The accounts that fit `need` for `app` and that it holds a grant for.
+    fn candidates(
+        &self,
+        app: &AppId,
+        need: &Need,
+        class: DataClass,
+        usage: Usage,
+    ) -> Vec<Candidate>;
+
+    /// Whether `need` can be met for `app`, revealing no identity.
+    fn availability(
+        &self,
+        app: &AppId,
+        need: &Need,
+        class: DataClass,
+        usage: Usage,
+    ) -> Availability;
 
     /// The plan for a relay that authenticates to one endpoint of a granted account, or why not.
     fn relay_authenticated(
@@ -78,6 +105,26 @@ where
 {
     async fn answer(&self, app: &AppId, request: AccountsRequest) -> AccountsReply {
         self.handle(app, request).await
+    }
+
+    fn candidates(
+        &self,
+        app: &AppId,
+        need: &Need,
+        class: DataClass,
+        usage: Usage,
+    ) -> Vec<Candidate> {
+        AccountService::candidates(self, app, need, class, usage)
+    }
+
+    fn availability(
+        &self,
+        app: &AppId,
+        need: &Need,
+        class: DataClass,
+        usage: Usage,
+    ) -> Availability {
+        AccountService::availability(self, app, need, class, usage)
     }
 
     async fn relay_authenticated(
@@ -183,6 +230,21 @@ where
             }
             Err(refusal) => Relayed::Refused(refusal),
         }
+    }
+}
+
+impl<C, B, H> InProcess<C, B, H>
+where
+    C: HostedCore,
+{
+    /// The accounts that fit `need` for this app and that it holds a grant for.
+    pub(crate) fn granted(&self, need: &Need, class: DataClass, usage: Usage) -> Vec<Candidate> {
+        self.service.candidates(&self.app, need, class, usage)
+    }
+
+    /// Whether `need` can be met for this app, revealing no identity.
+    pub(crate) fn availability(&self, need: &Need, class: DataClass, usage: Usage) -> Availability {
+        self.service.availability(&self.app, need, class, usage)
     }
 }
 

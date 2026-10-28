@@ -1,6 +1,8 @@
 use super::*;
+use porter_capability::Tier;
+use porter_core::DataClass;
 use porter_core::consent::Usage;
-use porter_core::{DataClass, Permille, Tier};
+use porter_ids::Permille;
 
 fn target(sampling: DefaultSampling) -> Target {
     Target {

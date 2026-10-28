@@ -4,15 +4,19 @@
 //! `Refused`.
 
 use crate::form;
+use crate::issuer::{IssuerSays, issuer_says, oauth_error};
 use crate::loopback::AuthCode;
 use crate::pkce::Pkce;
-use porter_core::{SecretText, UnixSeconds};
-use porter_http::{Http, HttpResponse};
+use porter_core::{EndpointUrl, SecretText};
+use porter_http::http::header::{ACCEPT, CONTENT_TYPE};
+use porter_http::http::{Method, Response};
+use porter_http::{Http, request_to};
+use porter_ids::UnixSeconds;
 use porter_provider::{ClientEntry, IssuerEndpoints};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 /// A token endpoint's answer, as the issuer writes it. Secret fields redact in `Debug`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct TokenResponse {
     /// The access token.
     pub access_token: SecretText,
@@ -55,6 +59,7 @@ impl TokenResponse {
 
 /// Why an exchange failed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum ExchangeFault {
     /// `invalid_grant`, or a 401: the credential is gone; the account needs signing in again.
     #[error("the grant was refused")]
@@ -67,20 +72,6 @@ pub enum ExchangeFault {
     Unreadable,
 }
 
-/// What an issuer wrote in its error body: the `error` code and the human `error_description`
-/// (RFC 6749 section 5.2), for a host to show. Both are untrusted text from the network, so each
-/// has its control characters stripped and is cut to [`SAYS_MAX_CHARS`] characters.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IssuerSays {
-    /// The `error` code, e.g. `invalid_grant`.
-    pub error: Option<String>,
-    /// The `error_description`.
-    pub description: Option<String>,
-}
-
-/// The most characters kept of each of an issuer's `error` and `error_description`.
-pub const SAYS_MAX_CHARS: usize = 200;
-
 /// An [`ExchangeFault`] with what the issuer said about it, from the `*_detailed` calls. The
 /// plain calls return the fault alone, unchanged; a host that wants to show the issuer's reason
 /// (mailo does) calls the detailed one and reads `says`.
@@ -91,21 +82,6 @@ pub struct ExchangeFailure {
     pub fault: ExchangeFault,
     /// The issuer's own words, when its answer had an OAuth error body.
     pub says: Option<IssuerSays>,
-}
-
-impl IssuerSays {
-    /// Whether the issuer refused because the person never gave the access asked for, not
-    /// because the grant is gone: Google's `invalid_scope` (a refresh that names a scope the
-    /// grant lacks), and Microsoft's `AADSTS65001` ("the user or administrator has not
-    /// consented"), which it sends as `invalid_grant`. Signing in again as before would not
-    /// help; asking for that access would.
-    pub fn wants_consent(&self) -> bool {
-        self.error.as_deref() == Some("invalid_scope")
-            || self
-                .description
-                .as_deref()
-                .is_some_and(|d| d.contains("AADSTS65001"))
-    }
 }
 
 impl ExchangeFailure {
@@ -221,8 +197,8 @@ pub async fn revoke<H: Http>(
     let Some(url) = &endpoints.revoke else {
         return Ok(());
     };
-    let response = form::send_form(http, url, &[("token", token.expose())]).await?;
-    match response.status.0 {
+    let response = send_form(http, url, &[("token", token.expose())]).await?;
+    match response.status().as_u16() {
         200..=299 => Ok(()),
         401 => Err(ExchangeFault::Refused),
         429 | 500..=599 => Err(ExchangeFault::Unreachable),
@@ -243,40 +219,50 @@ pub(crate) async fn token_call_detailed<H: Http>(
             .as_ref()
             .map(|s| ("client_secret", s.expose())),
     );
-    let response = form::send_form(http, &endpoints.token, &pairs).await?;
+    let response = send_form(http, &endpoints.token, &pairs).await?;
     read_tokens_detailed(&response)
 }
 
-/// A token endpoint's answer as tokens, or the fault it amounts to.
-pub(crate) fn read_tokens(response: &HttpResponse) -> Result<TokenResponse, ExchangeFault> {
-    read_tokens_detailed(response).map_err(|failure| failure.fault)
-}
-
-/// [`read_tokens`] keeping what the issuer said.
-pub(crate) fn read_tokens_detailed(
-    response: &HttpResponse,
-) -> Result<TokenResponse, ExchangeFailure> {
-    let fault = match response.status.0 {
+/// A token endpoint's answer as tokens, or the fault it amounts to with what the issuer said.
+fn read_tokens_detailed(response: &Response<Vec<u8>>) -> Result<TokenResponse, ExchangeFailure> {
+    let fault = match response.status().as_u16() {
         200..=299 => {
-            return serde_json::from_slice(&response.body)
+            return serde_json::from_slice(response.body())
                 .map_err(|_| ExchangeFault::Unreadable.into());
         }
         401 => ExchangeFault::Refused,
-        400 if form::oauth_error(response).as_deref() == Some("invalid_grant") => {
-            ExchangeFault::Refused
-        }
+        400 if oauth_error(response).as_deref() == Some("invalid_grant") => ExchangeFault::Refused,
         429 | 500..=599 => ExchangeFault::Unreachable,
         _ => ExchangeFault::Unreadable,
     };
     Err(ExchangeFailure {
         fault,
-        says: form::issuer_says(response),
+        says: issuer_says(response),
     })
+}
+
+/// A form POST to `url`, sent over `http`. An endpoint that is not a web URL, a request that
+/// went nowhere: both are an issuer that cannot be reached.
+async fn send_form<H: Http>(
+    http: &H,
+    url: &EndpointUrl,
+    pairs: &[(&str, &str)],
+) -> Result<Response<Vec<u8>>, ExchangeFault> {
+    let request = request_to(Method::POST, url)
+        .map_err(|_| ExchangeFault::Unreachable)?
+        .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .header(ACCEPT, "application/json")
+        .body(form::body(pairs).into_bytes())
+        .map_err(|_| ExchangeFault::Unreachable)?;
+    http.send(request)
+        .await
+        .map_err(|_| ExchangeFault::Unreachable)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::issuer::SAYS_MAX_CHARS;
     use crate::scripted::{Scripted, answer};
     use porter_http::HttpError;
     use porter_provider::{ClientChannel, ClientId, Issuer};
@@ -293,12 +279,12 @@ mod tests {
 
     type Case = (
         &'static str,
-        Result<HttpResponse, HttpError>,
+        Result<Response<Vec<u8>>, HttpError>,
         Result<(&'static str, Option<&'static str>), ExchangeFault>,
     );
 
     async fn refresh_with(
-        answers: Vec<Result<HttpResponse, HttpError>>,
+        answers: Vec<Result<Response<Vec<u8>>, HttpError>>,
     ) -> Result<TokenResponse, ExchangeFault> {
         let http = Scripted::new(answers);
         refresh(
@@ -379,11 +365,11 @@ mod tests {
         let body = http.body_of(0);
         assert_eq!(
             body,
-            "grant_type=refresh_token&refresh_token=r%261&scope=a%20b&client_id=cid&client_secret=app%20secret"
+            "grant_type=refresh_token&refresh_token=r%261&scope=a+b&client_id=cid&client_secret=app+secret"
         );
         let seen = http.seen.lock().expect("lock");
         assert_eq!(
-            seen[0].url.as_str(),
+            seen[0].uri().to_string(),
             Issuer::Google.endpoints().token.as_str()
         );
     }
@@ -467,7 +453,8 @@ mod tests {
 
     #[tokio::test]
     async fn the_issuers_words_come_only_from_the_detailed_calls_and_only_when_there_are_some() {
-        let cases: Vec<(&str, Result<HttpResponse, HttpError>, ExchangeFault, bool)> = vec![
+        type Reply = Result<Response<Vec<u8>>, HttpError>;
+        let cases: Vec<(&str, Reply, ExchangeFault, bool)> = vec![
             (
                 "401 with a body",
                 answer(

@@ -38,7 +38,7 @@ pub fn chat_turn(
 pub fn task_turn(
     model: &LocalModel,
     request: &pi::TaskRequest,
-    tier: porter_core::Tier,
+    tier: porter_capability::Tier,
 ) -> Result<sp::TurnRequest, BridgeError> {
     task_turn_for(&local_target(model), request, tier)
 }

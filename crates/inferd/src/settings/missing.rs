@@ -2,7 +2,7 @@
 //! give them: which slots each serves and whether its program is there.
 
 use model_catalog::EngineKind;
-use porter_dbus::EngineState;
+use porter_dbus::inference::EngineState;
 use porter_infer::Slot;
 use porter_router::local::EngineConfig;
 use std::path::PathBuf;
@@ -38,6 +38,7 @@ impl Engine {
             EngineKind::Vllm => Self::Vllm,
             EngineKind::SpeechHost => Self::Speech,
             EngineKind::KokoroFastApi => Self::Kokoro,
+            EngineKind::Strata => Self::Strata,
         }
     }
 
@@ -106,11 +107,15 @@ mod tests {
             EngineKind::Vllm,
             EngineKind::SpeechHost,
             EngineKind::KokoroFastApi,
+            EngineKind::Strata,
         ]
         .into_iter()
         .map(|kind| Engine::of(kind).name())
         .collect();
-        assert_eq!(names, ["llama.cpp", "vLLM", "the speech engine", "Kokoro"]);
+        assert_eq!(
+            names,
+            ["llama.cpp", "vLLM", "the speech engine", "Kokoro", "Strata"]
+        );
     }
 
     #[test]

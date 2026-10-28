@@ -10,6 +10,9 @@ publish.workspace = true
 
 [dependencies]
 porter-core = { workspace = true }
+porter-match = { workspace = true }
+porter-capability = { workspace = true }
+porter-ids = { workspace = true }
 porter-infer = { workspace = true }
 porter-bridge = { workspace = true }
 porter-router = { workspace = true }
@@ -20,7 +23,7 @@ cua-vendors = { workspace = true }
 engine-supervisor = { workspace = true }
 model-extract = { workspace = true }
 # The HTTP client to a local engine (`hyper`); a plain Unix socket or loopback, so no `tls`.
-model-http = { workspace = true, features = ["hyper"] }
+model-http = { workspace = true, features = ["client"] }
 model-openai-compat = { workspace = true }
 model-provider = { workspace = true }
 # `pixels`: the frame resize of a computer-use step.
@@ -33,6 +36,7 @@ tokio = { workspace = true }
 model-provider = { workspace = true, features = ["testing"] }
 porter-router = { workspace = true, features = ["testing"] }
 rustix = { workspace = true }
+test-kit = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 
 [lints]

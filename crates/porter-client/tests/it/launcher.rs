@@ -1,18 +1,21 @@
-//! The launcher's side of an agent's login and key, against a hand-written inferd
-//! (`common::fake_inferd`) on a private bus: register, a stream of requests, report, sessions, and
-//! the sheet that asks for an agent's key. inferd's own behaviour (who may call, the wait, the
-//! permit book) is in inferd's launcher tests.
+//! The launcher's side of an agent's login and key, against a hand-written accountd
+//! (`common::fake_accountd`) on a private bus: register, a stream of requests, report, sessions, and
+//! the sheet that asks for an agent's key. accountd's own behaviour (who may call, the wait, the
+//! permit book) is in accountd's launcher tests.
 #![cfg(feature = "dbus")]
 
 use crate::common;
 
 use common::bus::PrivateBus;
-use common::fake_inferd::{FakeInferd, Sheets};
+use common::fake_accountd::{FakeAccountd, Sheets};
+use porter_capability::AgentProgram;
+use porter_capability::LoginOutcome;
 use porter_client::{AskKind, Launcher, LauncherError};
-use porter_core::capability::AgentProgram;
-use porter_core::wire::Refusal;
-use porter_core::{DataClass, LauncherSession, LoginOutcome};
+use porter_core::DataClass;
+use porter_core::SessionToken;
 use porter_dbus::BusStream;
+use porter_dbus::accounts::LauncherFault;
+use porter_wire::Refusal;
 
 fn program(name: &str) -> AgentProgram {
     AgentProgram::parse(name).expect("program")
@@ -21,14 +24,14 @@ fn program(name: &str) -> AgentProgram {
 struct Rig {
     _bus: PrivateBus,
     daemon: zbus::Connection,
-    fake: FakeInferd,
+    fake: FakeAccountd,
     launcher: Launcher,
 }
 
 async fn rig(sheets: Sheets) -> Rig {
     let bus = PrivateBus::start();
     let daemon = bus.connect().await;
-    let fake = FakeInferd::new(bus.scratch().to_path_buf(), sheets);
+    let fake = FakeAccountd::new(sheets);
     fake.serve(&daemon).await;
     let launcher = Launcher::connect(&bus.connect().await)
         .await
@@ -65,7 +68,7 @@ async fn the_launcher_registers_hears_a_login_and_a_logout_and_reports_each_once
         rig.fake
             .tell_launcher(&rig.daemon, signal, (request, "claude-code", "claude-code"))
             .await;
-        let ask = tokio::time::timeout(porter_fake::GENEROUS, next(&mut requests))
+        let ask = tokio::time::timeout(test_kit::GENEROUS, next(&mut requests))
             .await
             .expect("a request in time")
             .expect("open stream")
@@ -92,7 +95,7 @@ async fn the_launcher_registers_hears_a_login_and_a_logout_and_reports_each_once
             rig.launcher
                 .report_login(&ask.request, LoginOutcome::Ready)
                 .await,
-            Err(LauncherError::UnknownRequest)
+            Err(LauncherError::Fault(LauncherFault::UnknownRequest))
         );
     }
     assert_eq!(
@@ -105,7 +108,7 @@ async fn the_launcher_registers_hears_a_login_and_a_logout_and_reports_each_once
 #[tokio::test(flavor = "multi_thread")]
 async fn a_session_is_opened_and_ended_by_name() {
     let rig = rig(Sheets::Hang).await;
-    let session = LauncherSession::parse("sess-1").expect("session");
+    let session = SessionToken::parse("sess-1").expect("session");
     rig.launcher.begin_session(&session).await.expect("begun");
     assert_eq!(
         rig.fake.seen(|seen| seen.sessions.clone()),
@@ -118,7 +121,7 @@ async fn a_session_is_opened_and_ended_by_name() {
 #[tokio::test(flavor = "multi_thread")]
 async fn asking_for_an_agents_key_answers_the_chosen_account_and_its_permit() {
     let rig = rig(Sheets::Permit("permit-7")).await;
-    let session = LauncherSession::parse("sess-1").expect("session");
+    let session = SessionToken::parse("sess-1").expect("session");
     let key = rig
         .launcher
         .request_agent_key(&program("claude-code"), DataClass::Files, Some(&session))

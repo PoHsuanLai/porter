@@ -10,12 +10,13 @@
 //! use porter_sync::{ConflictRule, DatasetKind, mass_delete};
 //!
 //! assert_eq!(DatasetKind::Files.conflict_rule(), ConflictRule::KeepBoth);
-//! assert_eq!(DatasetKind::Keychain.conflict_rule(), ConflictRule::ShowInApp);
+//! assert_eq!(DatasetKind::PhotosOriginals.conflict_rule(), ConflictRule::Impossible);
 //! assert_eq!(mass_delete(&[], &[]), None);
 //! ```
 
 mod anchor;
 mod change;
+mod clock;
 mod dataset;
 mod drive_write;
 mod folders;
@@ -27,10 +28,12 @@ mod memory;
 mod quota;
 mod refusal;
 mod replica;
+pub mod status;
 mod transfer;
 
 pub use anchor::{Anchor, Cursor};
-pub use change::{Change, ChangePage, More, Tombstone};
+pub use change::{Change, ChangePage, DELETED, More, Tombstone};
+pub use clock::Clock;
 pub use dataset::{ConflictRule, DatasetKind};
 pub use drive_write::{
     Content, DriveWrite, Found, Place, Progress, Session, Unheard, Upload, UploadTo, Written,

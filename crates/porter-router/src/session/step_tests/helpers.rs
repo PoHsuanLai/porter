@@ -3,15 +3,20 @@
 pub(super) use crate::session::{
     AudioCursor, CuaProgress, Phase, RoutedNote, Routing, SessionIn, SessionOut, SessionSpec, step,
 };
-use porter_core::capability::{CuaEnv, LanguageTag, SpeechMode};
+use porter_capability::ModelId;
+use porter_capability::{CuaEnv, LanguageTag, SpeechMode};
+use porter_capability::{Locality, Tier};
+use porter_core::AccountId;
+use porter_core::DataClass;
 use porter_core::consent::Usage;
-use porter_core::need::{CuaNeed, LlmNeed, SpeechNeed};
-use porter_core::{AccountId, DataClass, Locality, ModelId, Need, Tier, Tokens};
+use porter_ids::Tokens;
 use porter_infer::{
     AudioFrame, AudioRate, Base64Bytes, ClientFrame, CuaBegin, CuaStepReply, InferEvent,
     InferRefusal, InferReply, InferRequest, LangPick, ModelError, ModelRef, Readiness, RequestKind,
     ServedBy, ShowReason, SpeakRequest, Task, TaskRequest, TranscribeBegin, TranscribeMode, Why,
 };
+use porter_match::Need;
+use porter_match::{CuaNeed, LlmNeed, SpeechNeed};
 
 pub(super) fn model() -> ModelRef {
     ModelRef {

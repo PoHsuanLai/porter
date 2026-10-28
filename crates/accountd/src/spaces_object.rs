@@ -14,12 +14,18 @@
 //!   app's choice, and porter moves or deletes no memory (almanac's and docket's).
 
 use crate::callers::Callers;
-use crate::core::{Core, Host, Standing};
 use crate::errors::RefusedError;
-use crate::spaces::{CREATES_PER_WINDOW, Registered, SpaceFault, unix_now};
+use crate::host::Host;
+use crate::state::{Core, Standing};
+use porter_callers::CallerRole;
 use porter_core::{DesktopSpace, SpaceChange, SpaceLook, SpaceName};
-use porter_dbus::{CallerRole, Details, SPACES_PATH};
-use porter_service::audit::AuditEvent;
+use porter_dbus::accounts::SPACES_PATH;
+use porter_dbus::accounts::{SpacesServed, SpacesServer};
+use porter_dbus::{Call, Details};
+use porter_ids::clock::Clock;
+use porter_ids::word::word as word_of;
+use porter_service_core::audit::AuditEvent;
+use porter_spaces::{CREATES_PER_WINDOW, SpaceFault, SpacesApi};
 use std::sync::Arc;
 use std::time::Instant;
 use zbus::message::Header;
@@ -45,7 +51,8 @@ fn fault(fault: SpaceFault) -> RefusedError {
             "Too many new Spaces at once: at most {CREATES_PER_WINDOW} a minute. Try again in a \
              minute."
         )),
-        SpaceFault::Unsaved => RefusedError::failed("The Spaces could not be saved."),
+        // Unsaved, and a fault a later porter adds.
+        _ => RefusedError::failed("The Spaces could not be saved."),
     }
 }
 
@@ -66,7 +73,7 @@ fn look_arg(text: &str) -> Result<SpaceLook, RefusedError> {
 
 impl<H: Host, C: Callers> SpacesObject<H, C> {
     /// The caller, which must be Settings or the shell.
-    async fn manager(&self, header: &Header<'_>) -> Result<porter_dbus::Caller, RefusedError> {
+    async fn manager(&self, header: &Header<'_>) -> Result<porter_callers::Caller, RefusedError> {
         let caller = self.0.identify(header, Standing::Any).await?;
         match caller.role {
             CallerRole::Settings | CallerRole::SheetHost => Ok(caller),
@@ -79,7 +86,7 @@ impl<H: Host, C: Callers> SpacesObject<H, C> {
     /// The caller, which must be an app, Settings or the shell: a Space is how the person
     /// arranges the desktop and consent hangs off it, so an assistant, computer use or an agent
     /// launcher never makes one on its own (an assistant asks the person through an app).
-    async fn maker(&self, header: &Header<'_>) -> Result<porter_dbus::Caller, RefusedError> {
+    async fn maker(&self, header: &Header<'_>) -> Result<porter_callers::Caller, RefusedError> {
         let caller = self.0.identify(header, Standing::Any).await?;
         match caller.role {
             CallerRole::App | CallerRole::Settings | CallerRole::SheetHost => Ok(caller),
@@ -101,7 +108,7 @@ impl<H: Host, C: Callers> SpacesObject<H, C> {
     /// The caller, which must be the compositor, Settings or the shell: an id minted elsewhere is
     /// taken only from the processes that draw the workspaces, never from an app (which could
     /// take an id the compositor mints later).
-    async fn registrar(&self, header: &Header<'_>) -> Result<porter_dbus::Caller, RefusedError> {
+    async fn registrar(&self, header: &Header<'_>) -> Result<porter_callers::Caller, RefusedError> {
         let caller = self.0.identify(header, Standing::Spaces).await?;
         match caller.role {
             CallerRole::Compositor | CallerRole::Settings | CallerRole::SheetHost => Ok(caller),
@@ -121,16 +128,17 @@ impl<H: Host, C: Callers> SpacesObject<H, C> {
                 continue;
             };
             let emitter = emitter.set_destination(destination);
-            let _ = Self::changed(&emitter, id.as_str(), change.word()).await;
+            let _ = SpacesServed::<Self>::changed(&emitter, id.as_str(), word_of(&change)).await;
         }
     }
 }
 
-#[zbus::interface(name = "org.quire.Spaces1")]
-impl<H: Host, C: Callers> SpacesObject<H, C> {
+impl<H: Host, C: Callers> SpacesServer for SpacesObject<H, C> {
+    type Error = RefusedError;
+
     async fn list(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
     ) -> Result<Vec<(String, Details)>, RefusedError> {
         self.0.identify(&header, Standing::Spaces).await?;
         let book = self.0.spaces.lock().await;
@@ -154,7 +162,7 @@ impl<H: Host, C: Callers> SpacesObject<H, C> {
 
     async fn create(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         name: String,
         look: String,
     ) -> Result<String, RefusedError> {
@@ -165,7 +173,12 @@ impl<H: Host, C: Callers> SpacesObject<H, C> {
             .spaces
             .lock()
             .await
-            .create(&caller.app.name, name, look, (Instant::now(), unix_now()))
+            .create(
+                &caller.app.name,
+                name,
+                look,
+                (Instant::now(), self.0.clock.now()),
+            )
             .await
             .map_err(fault)?;
         self.0.host.audit_app(
@@ -180,7 +193,7 @@ impl<H: Host, C: Callers> SpacesObject<H, C> {
 
     async fn register(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         id: String,
         name: String,
         look: String,
@@ -203,25 +216,22 @@ impl<H: Host, C: Callers> SpacesObject<H, C> {
                 id.clone(),
                 name,
                 look,
-                (Instant::now(), unix_now()),
+                (Instant::now(), self.0.clock.now()),
             )
             .await
             .map_err(fault)?;
-        match done {
-            Registered::New => {
-                self.0
-                    .host
-                    .audit_app(&caller.app, AuditEvent::SpaceCreated { space: id.clone() });
-                self.tell(&id, SpaceChange::Created).await;
-            }
-            Registered::Known => {}
+        if done {
+            self.0
+                .host
+                .audit_app(&caller.app, AuditEvent::SpaceCreated { space: id.clone() });
+            self.tell(&id, SpaceChange::Created).await;
         }
         Ok(())
     }
 
     async fn rename(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         id: String,
         name: String,
     ) -> Result<(), RefusedError> {
@@ -243,7 +253,7 @@ impl<H: Host, C: Callers> SpacesObject<H, C> {
 
     async fn set_look(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         id: String,
         look: String,
     ) -> Result<(), RefusedError> {
@@ -260,11 +270,7 @@ impl<H: Host, C: Callers> SpacesObject<H, C> {
         Ok(())
     }
 
-    async fn remove(
-        &self,
-        #[zbus(header)] header: Header<'_>,
-        id: String,
-    ) -> Result<(), RefusedError> {
+    async fn remove(&self, Call { header, .. }: Call<'_>, id: String) -> Result<(), RefusedError> {
         let caller = self.manager(&header).await?;
         let id = space_arg(&id)?;
         self.0
@@ -280,7 +286,4 @@ impl<H: Host, C: Callers> SpacesObject<H, C> {
         self.tell(&id, SpaceChange::Removed).await;
         Ok(())
     }
-
-    #[zbus(signal)]
-    async fn changed(emitter: &SignalEmitter<'_>, id: &str, what: &str) -> zbus::Result<()>;
 }

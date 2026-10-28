@@ -11,19 +11,24 @@ use crate::common;
 use common::bus::PrivateBus;
 use common::caller as caller_of;
 use common::hosted::host;
-use porter_core::capability::StorageScope;
-use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
+use porter_callers::CallerRole;
+use porter_capability::StorageScope;
+use porter_capability::{CapabilityKind, Claim, Offer, Provenance, Subject};
 use porter_core::{
-    Account, AccountId, AccountLabel, AccountState, AuthKind, CapabilityKind, Claim, Credential,
-    DataClass, EndpointUrl, Family, GrantId, LoginName, Offer, Provenance, Restriction, SecretKey,
-    SecretPurpose, SecretText, ServiceEndpoint, SpaceScope, Subject, Tls, UnixSeconds,
+    Account, AccountLabel, AccountState, AuthKind, Credential, DataClass, EndpointUrl, Family,
+    LoginName, Restriction, SecretKey, SecretPurpose, SecretText, ServiceEndpoint, SpaceScope, Tls,
 };
-use porter_dbus::CallerRole;
+use porter_core::{AccountId, GrantId};
+use porter_core::{
+    GrantKey,
+    consent::{Decision, Grant, GrantScope, Usage},
+};
 use porter_fake::FakeProvider;
 use porter_fake_servers::{FakeGraph, GraphHandle, Running};
+use porter_ids::UnixSeconds;
 use porter_provider::Provider;
 use porter_secrets::{MemorySecrets, Secrets};
-use porter_service::Registry;
+use porter_service_core::registry::Registry;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -58,7 +63,7 @@ v = { access = "read_write", delta = "poll", transport = "graph", collections = 
 "#;
 
 /// Polls every 20 ms; the limit is idle time (`common::eventually_alive`): the wait ends only when
-/// the rig has not begun a cycle or served a request for [`porter_fake::GENEROUS`], so a loaded
+/// the rig has not begun a cycle or served a request for [`test_kit::GENEROUS`], so a loaded
 /// machine that mirrors slowly is never cut short.
 async fn eventually(rig: &Rig, what: &str, check: impl FnMut() -> bool) {
     common::eventually_alive(what, || rig.pulse(), check).await;
@@ -220,6 +225,9 @@ async fn rig(seed: bool) -> Rig {
         settings: Settings::quick(),
         network,
         owners: Access::default(),
+        clock: porter_sync::Clock::new(porter_ids::clock::SystemClock),
+        nonce: "t1".to_owned(),
+        millis: Arc::new(syncd::datasets::photos::ManualMillis::at(1_700_000_000_000)),
     };
     let supervisor = PimSupervisor::new(
         wiring,

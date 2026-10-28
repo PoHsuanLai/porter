@@ -11,30 +11,42 @@ cd "$(dirname "$0")/.."
 # RULES: what a crate reaches through ANY path (transitive, default features). The pure crates
 # never reach a bus, a runtime, an HTTP client or a keyring; porter-client reaches zbus only
 # through its `dbus` feature; porter-dbus reaches tokio only through zbus's `tokio` feature.
-# porter-http, porter-proxy and porter-oauth reach tokio (and porter-http hyper) only through
-# their named I/O feature (`hyper`, `io`). porter-families reaches none with default features;
+# porter-http is the pure seam and reaches none of them; porter-proxy and porter-oauth reach tokio
+# only through their named I/O feature (`io`). reqwest is named by one crate, porter-http-reqwest
+# (see ONE CLIENT below), and reached through it by the families that send directly. porter-families reaches none with default features;
 # each of its family features is checked on its own in FAMILY_FORBIDS below. porter-drive and
 # porter-drive-fuse reach tokio (a drive fetches in the background) but never a bus or a client.
 # porter-calendar reaches zbus only through its `eds` feature.
 # porter-mountd, the mount helper outside syncd's sandbox, reaches no effect crate and none of
-# porter's own: std and rustix only (no network, keyring or account data).
+# porter's own: std, rustix and listenfd only (no network, keyring or account data).
 EFFECTS="zbus zvariant tokio reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
 RULES=(
+  "porter-ids: $EFFECTS toml"
+  "porter-capability: $EFFECTS toml"
+  "porter-match: $EFFECTS toml"
   "porter-core: $EFFECTS toml"
+  "porter-wire: $EFFECTS toml"
+  "porter-sheet: $EFFECTS toml"
   "porter-fs: $EFFECTS"
-  "prov: $EFFECTS"
   "porter-provider: $EFFECTS"
   "porter-secrets: $EFFECTS"
   "porter-sync: $EFFECTS"
   "porter-infer: $EFFECTS"
   "porter-bridge: $EFFECTS"
   "porter-router: $EFFECTS inferd"
-  "porter-turns: zbus zvariant reqwest ureq oo7 keyring secret-service interprocess latchkey ds-settings inferd"
+  "porter-turns: zbus zvariant ureq oo7 keyring secret-service interprocess latchkey ds-settings inferd"
+  "porter-service-core: $EFFECTS"
+  "porter-service-accounts: $EFFECTS"
+  "porter-service-grants: $EFFECTS"
   "porter-service: $EFFECTS"
+  "porter-identities: zbus zvariant reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
+  "porter-spaces: zbus zvariant reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
+  "porter-settings: reqwest hyper ureq oo7 keyring secret-service interprocess latchkey"
   "porter-store: zbus zvariant reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
   "porter-client: $EFFECTS"
   "porter-sheets: reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
   "porter-fake: $EFFECTS"
+  "test-kit: $EFFECTS"
   "porter-http: $EFFECTS"
   "porter-proxy: $EFFECTS"
   "porter-oauth: $EFFECTS"
@@ -43,18 +55,25 @@ RULES=(
   "porter-tailscale: $EFFECTS"
   "porter-tailnet: $EFFECTS"
   "dav-proto: $EFFECTS"
-  "porter-dav: $EFFECTS"
   "porter-calendar: $EFFECTS"
+  "nextcloud-proto: $EFFECTS"
+  "generic-proto: $EFFECTS"
+  "oauth-probe-proto: $EFFECTS"
   "porter-families: $EFFECTS"
+  "porter-family-kit: $EFFECTS"
+  "porter-family-nextcloud: $EFFECTS"
+  "porter-family-generic: zbus zvariant hyper reqwest ureq oo7 keyring secret-service interprocess latchkey ds-settings"
+  "porter-family-oauth: zbus zvariant ureq oo7 keyring secret-service interprocess latchkey ds-settings"
   "porter-engines: $EFFECTS"
-  "porter-engines-install: zbus zvariant reqwest ureq oo7 keyring secret-service interprocess latchkey ds-settings inferd"
+  "porter-engines-install: zbus zvariant ureq oo7 keyring secret-service interprocess latchkey ds-settings inferd"
   "storage-webdav: $EFFECTS"
   "storage-graph: $EFFECTS"
   "storage-gdrive: $EFFECTS"
   "porter-drive: zbus zvariant reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
-  "porter-mountd: $EFFECTS fuser porter-core porter-fs porter-http porter-secrets porter-service porter-client porter-sync porter-drive porter-drive-fuse"
+  "porter-mountd: $EFFECTS fuser porter-ids porter-core porter-fs porter-http porter-secrets porter-service porter-client porter-sync porter-drive porter-drive-fuse"
   "porter-drive-fuse: zbus zvariant reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
   "porter-dbus: reqwest hyper ureq oo7 keyring secret-service ds-settings"
+  "porter-callers: reqwest hyper ureq oo7 keyring secret-service ds-settings"
 )
 fail=0
 
@@ -81,40 +100,68 @@ for rule in "${RULES[@]}"; do
   fi
 done
 
+# SANS-IO PROTOCOL CRATES: every `crates/*-proto` is sans-IO: request builders return
+# `http::Request<Vec<u8>>`, parsers take `&http::Response<Vec<u8>>`, and the caller sends and
+# reads the clock. So none reaches the HTTP seam (porter-http), a runtime (tokio) or an HTTP client
+# (reqwest), and none has an `async fn`. The crates are found by name, so a new one is checked
+# without a row here; the crates they may depend on are in EDGES.
+for dir in crates/*-proto; do
+  crate="$(basename "$dir")"
+  if ! cargo tree -p "$crate" --depth 0 >/dev/null 2>&1; then
+    echo "ERROR: cargo tree cannot resolve $crate; the sans-IO rule was not checked"
+    fail=1
+    continue
+  fi
+  clean=1
+  for dep in porter-http tokio reqwest; do
+    if cargo tree -p "$crate" -i "$dep" -e normal,build 2>/dev/null | grep -q .; then
+      echo "LEAK: $crate (sans-IO) depends on $dep"
+      cargo tree -p "$crate" -i "$dep" -e normal,build 2>/dev/null | head -20
+      clean=0
+      fail=1
+    fi
+  done
+  if grep -rn --include='*.rs' -E '\basync[[:space:]]+fn\b' "$dir/src"; then
+    echo "LEAK: $crate (sans-IO) has an async fn"
+    clean=0
+    fail=1
+  fi
+  if [ "$clean" -eq 1 ]; then
+    echo "sans-IO holds: $crate reaches none of porter-http tokio reqwest and has no async fn"
+  fi
+done
+
 # FAMILY FEATURES: porter-families with each of its family features on, one at a time, and no
 # other. Its default build is checked by RULES above (it reaches none of EFFECTS). A family
 # reaches only what it really uses, so each feature forbids EFFECTS minus what it uses today:
 #   generic:            tokio (porter-proxy's `io`, for the relay's login)
-#   microsoft, google:  tokio, hyper (porter-oauth's `io`, porter-http's `hyper`)
-#   api_key:            hyper, tokio (porter-http's `hyper`)
+#   oauth:              tokio, hyper, reqwest (porter-oauth's `io`, porter-http-reqwest)
+#   api_key:            hyper, reqwest, tokio (porter-http-reqwest)
 #   tailnet:            hyper, tokio (porter-tailscale's `io`)
-#   nextcloud, agent_login, openrouter: none
-#   set:                every family a daemon maps (what microsoft, google, generic, api_key and
-#                       tailnet reach together), with the system resolver (porter-discover's `io`)
+#   nextcloud, agent_login: none
+#   set:                every family a daemon maps (what oauth, generic, api_key and tailnet
+#                       reach together), with the system resolver (porter-discover's `io`)
 # Every feature in porter-families' Cargo.toml must have a row, so a new family cannot slip in
 # unchecked; the direct porter-* edges of each feature are exact too (FAMILY_EDGES).
 MS_FORBIDS="zbus zvariant reqwest ureq oo7 keyring secret-service interprocess latchkey ds-settings"
+DIRECT_FORBIDS="zbus zvariant ureq oo7 keyring secret-service interprocess latchkey ds-settings"
 declare -A FAMILY_FORBIDS=(
   [nextcloud]="$EFFECTS"
   [generic]="zbus zvariant hyper reqwest ureq oo7 keyring secret-service interprocess latchkey ds-settings"
-  [microsoft]="$MS_FORBIDS"
-  [google]="$MS_FORBIDS"
-  [api_key]="$MS_FORBIDS"
+  [oauth]="$DIRECT_FORBIDS"
+  [api_key]="$DIRECT_FORBIDS"
   [agent_login]="$EFFECTS"
-  [openrouter]="$EFFECTS"
   [tailnet]="$MS_FORBIDS"
-  [set]="$MS_FORBIDS"
+  [set]="$DIRECT_FORBIDS"
 )
 declare -A FAMILY_EDGES=(
-  [nextcloud]="dav-proto porter-core porter-dav porter-discover porter-http porter-provider"
-  [generic]="dav-proto porter-core porter-dav porter-discover porter-http porter-provider porter-proxy"
-  [microsoft]="porter-core porter-discover porter-http porter-oauth porter-provider"
-  [google]="porter-core porter-http porter-oauth porter-provider"
-  [api_key]="porter-core porter-http porter-provider"
-  [agent_login]="porter-core porter-http porter-provider"
-  [openrouter]="porter-core porter-http porter-oauth porter-provider"
-  [tailnet]="porter-core porter-http porter-provider porter-tailscale"
-  [set]="dav-proto porter-core porter-dav porter-discover porter-http porter-oauth porter-provider porter-proxy porter-tailscale"
+  [nextcloud]="porter-family-kit porter-family-nextcloud porter-core porter-capability porter-sheet porter-ids porter-http porter-provider"
+  [generic]="porter-family-kit porter-family-generic porter-core porter-capability porter-sheet porter-ids porter-http porter-provider"
+  [oauth]="porter-family-kit porter-family-oauth porter-core porter-capability porter-sheet porter-ids porter-http porter-provider"
+  [api_key]="porter-family-kit porter-core porter-capability porter-sheet porter-ids porter-http porter-http-reqwest porter-provider"
+  [agent_login]="porter-family-kit porter-core porter-capability porter-sheet porter-ids porter-http porter-provider"
+  [tailnet]="porter-family-kit porter-core porter-capability porter-sheet porter-ids porter-http porter-provider porter-tailscale"
+  [set]="porter-family-kit porter-family-nextcloud porter-family-generic porter-family-oauth porter-core porter-capability porter-sheet porter-ids porter-discover porter-http porter-http-reqwest porter-provider porter-tailscale"
 )
 family_features=$(awk '/^\[features\]/{f=1;next} /^\[/{f=0} f && /^[A-Za-z0-9_-]+ *=/{sub(/ *=.*/,""); if ($0!="default") print}' crates/porter-families/Cargo.toml)
 for feature in $family_features; do
@@ -151,7 +198,7 @@ done
 # account service, its secrets and the provider catalogue. A bus-only consumer (`dbus` with no
 # default features) reaches none of them.
 in_process_leaked=0
-for dep in porter-service porter-secrets porter-provider; do
+for dep in porter-service porter-service-core porter-service-accounts porter-service-grants porter-secrets porter-provider; do
   if cargo tree -p porter-client --no-default-features --features dbus -i "$dep" -e normal,build 2>/dev/null | grep -q .; then
     echo "LEAK: porter-client[dbus] without in-process depends on $dep"
     cargo tree -p porter-client --no-default-features --features dbus -i "$dep" -e normal,build 2>/dev/null | head -20
@@ -160,22 +207,17 @@ for dep in porter-service porter-secrets porter-provider; do
   fi
 done
 if [ "$in_process_leaked" -eq 0 ]; then
-  echo "boundary holds: porter-client[dbus] without in-process reaches none of porter-service, porter-secrets, porter-provider"
+  echo "boundary holds: porter-client[dbus] without in-process reaches none of porter-service and its domains, porter-secrets, porter-provider"
 fi
 
-# STREAM FEATURE: porter-http's `stream` (HTTP/1.1 over a byte stream, porter-core's ByteStream)
-# adds no dependency, so the crate with that feature alone reaches none of EFFECTS.
-stream_leaked=0
-for dep in $EFFECTS; do
-  if cargo tree -p porter-http --no-default-features --features stream -i "$dep" -e normal,build 2>/dev/null | grep -q .; then
-    echo "LEAK: porter-http[stream] depends on $dep"
-    cargo tree -p porter-http --no-default-features --features stream -i "$dep" -e normal,build 2>/dev/null | head -20
-    stream_leaked=1
-    fail=1
-  fi
-done
-if [ "$stream_leaked" -eq 0 ]; then
-  echo "boundary holds: porter-http[stream] reaches none of $EFFECTS"
+# ONE CLIENT: reqwest is named by porter-http-reqwest and by no other crate of this workspace. Every
+# other crate that sends over a direct connection takes `ReqwestHttp` from it.
+named=$(grep -lE '^reqwest[ .=]' crates/*/Cargo.toml | grep -v '^crates/porter-http-reqwest/' || true)
+if [ -n "$named" ]; then
+  echo "LEAK: reqwest is named outside porter-http-reqwest: $named"
+  fail=1
+else
+  echo "boundary holds: only porter-http-reqwest names reqwest"
 fi
 
 # LENDING FEATURE: porter-client reaches porter-fs (the writer of the tailnet drop-in) only
@@ -192,7 +234,7 @@ fi
 STD_EFFECTS='std::(fs|io|env|process|net|os)\b|\b(File|Command|TcpStream|UnixStream)::'
 PURE_FILES=(
   "crates/porter-core/src/identity.rs"
-  "crates/porter-core/src/clock.rs"
+  "crates/porter-ids/src/clock.rs"
 )
 for file in "${PURE_FILES[@]}"; do
   if [ ! -f "$file" ]; then
@@ -206,14 +248,17 @@ for file in "${PURE_FILES[@]}"; do
   fi
 done
 
-# porter-core's source is pure: its file writer is porter-fs, so no file, process or environment
-# access is named anywhere in the crate (a dependency rule cannot see std's own modules).
-if grep -rnE 'std::(fs|process|env)\b' crates/porter-core/src; then
-  echo "LEAK: porter-core's source reaches std's file, process or environment access"
-  fail=1
-else
-  echo "pure: porter-core's source names no std::fs, std::process or std::env"
-fi
+# porter-core's and porter-ids' source is pure: the file writer is porter-fs, so no file, process or
+# environment access is named anywhere in either crate (a dependency rule cannot see std's own
+# modules).
+for pure in porter-ids porter-core; do
+  if grep -rnE 'std::(fs|process|env)\b' "crates/$pure/src"; then
+    echo "LEAK: $pure's source reaches std's file, process or environment access"
+    fail=1
+  else
+    echo "pure: $pure's source names no std::fs, std::process or std::env"
+  fi
+done
 
 # The three daemons' libraries read the environment in no function but `from_env` (the daemon's
 # `Config::from_env` and the directory helpers it calls), so a program that runs a daemon inside
@@ -253,53 +298,97 @@ else
   echo "pure: the inference libraries and porter-daemon read no environment variable"
 fi
 
+# DELETED HELPERS: hand-rolled code that a crate or one shared function replaced must not come
+# back. Each rule names the code and where its one home is (a path prefix that is allowed to hold
+# it, if any); the allowlist is otherwise empty, and every crate is covered.
+ratchet() {
+  local what="$1" pattern="$2" home="${3:-}" hits
+  hits=$(grep -rniE --include='*.rs' -e "$pattern" crates | grep -v "^${home:-/nonexistent}" || true)
+  if [ -n "$hits" ]; then
+    echo "$hits"
+    echo "LEAK: $what is back; use ${4:-the crate that replaced it}"
+    fail=1
+  else
+    echo "deleted: $what is not in any crate"
+  fi
+}
+ratchet "a hand-rolled percent encoder or decoder" 'fn percent_(en|de)code\b' "" "porter_ids::percent"
+ratchet "hand-rolled civil-date arithmetic" '(days_from_civil|civil_from_days|719_468)' "" "chrono"
+ratchet "a hand-written MD5 (its first round constant)" '0xd76aa478' "" "md-5"
+ratchet "a second Windows-to-IANA zone table" 'Pacific Standard Time", *"America/Los_Angeles' "crates/windows-zones/" "windows_zones::iana"
+ratchet "an XOAUTH2 format string" '(\\x01|\\u\{1\})auth=Bearer|auth=Bearer \{|"auth=Bearer' "crates/porter-core/src/token.rs" "porter_core::token"
+ratchet "a hand-written scratch directory type" '^[[:space:]]*(pub(\([a-z]+\))? )?struct Scratch\b' "crates/test-kit/" "test_kit::Scratch"
+
 # The allowed edges between our own crates: each crate's DIRECT normal and build path
 # dependencies (all features), and nothing else. A dependency not listed is a leak; so is one
 # the crate no longer has, so the table stays exact. Dev dependencies are outside it.
 EDGES=(
-  "porter-core:"
+  "porter-ids:"
+  "porter-capability: porter-ids"
+  "porter-match: porter-capability porter-ids"
+  "porter-core: porter-ids porter-capability"
+  "porter-wire: porter-core porter-match porter-capability"
+  "porter-sheet: porter-core porter-tailscale porter-capability porter-ids"
   "porter-daemon:"
   "porter-fs:"
   "quickxorhash:"
-  "prov: porter-core"
-  "porter-provider: porter-core"
-  "porter-secrets: porter-core porter-fs"
-  "porter-sync: porter-core"
-  "porter-infer: porter-core cua-action"
-  "porter-service: porter-core porter-provider porter-secrets"
-  "porter-store: porter-core porter-fs porter-service"
-  "porter-router: porter-core porter-infer cua-action engine-supervisor model-catalog model-http model-openai-compat model-provider speech-provider vision-prep"
-  "porter-turns: porter-core porter-infer porter-bridge porter-router cua-action cua-parse cua-session cua-vendors engine-supervisor model-extract model-http model-openai-compat model-provider vision-prep"
-  "porter-dbus: porter-core"
-  "porter-bridge: porter-core porter-infer model-catalog model-openai-compat model-provider vision-prep"
-  "porter-sheets: porter-core porter-dbus porter-provider porter-service"
-  "porter-client: porter-bridge porter-core porter-dbus porter-fs porter-infer porter-provider porter-proxy porter-secrets porter-service porter-turns model-http model-openai-compat model-provider model-wire"
-  "porter-fake: porter-core porter-infer porter-provider porter-secrets porter-service"
-  "porter-fake-servers: porter-core porter-discover porter-fake porter-provider quickxorhash"
-  "porter-http: porter-core"
+  "windows-zones:"
+  "keyring-chunked:"
+  "porter-provider: porter-core porter-match porter-capability porter-sheet porter-ids"
+  "porter-secrets: keyring-chunked porter-core porter-capability porter-ids porter-fs"
+  "porter-sync: porter-capability porter-ids porter-http"
+  "porter-infer: porter-core porter-match porter-capability porter-ids cua-action model-provider"
+  "porter-service-core: porter-core porter-match porter-capability porter-sheet porter-wire porter-ids porter-provider porter-secrets"
+  "porter-service-accounts: porter-service-core porter-core porter-tailscale porter-match porter-capability porter-sheet porter-wire porter-ids porter-provider porter-secrets"
+  "porter-service-grants: porter-service-core porter-service-accounts porter-core porter-match porter-capability porter-wire porter-ids porter-provider porter-secrets"
+  "porter-service: porter-service-core porter-service-accounts porter-service-grants porter-core porter-match porter-capability porter-wire porter-ids porter-provider porter-secrets"
+  "porter-store: porter-core porter-capability porter-fs"
+  "porter-identities: porter-service-core porter-core porter-ids porter-fs porter-secrets porter-wire"
+  "porter-spaces: porter-core porter-ids porter-fs"
+  "porter-settings: ds-settings porter-service-core porter-capability porter-core porter-ids porter-provider porter-sheet"
+  "porter-router: porter-core porter-tailnet porter-tailscale porter-match porter-capability porter-ids porter-engines porter-infer cua-action engine-supervisor model-catalog model-http model-openai-compat model-provider speech-provider vision-prep"
+  "porter-turns: porter-core porter-match porter-capability porter-ids porter-infer porter-bridge porter-router cua-action cua-parse cua-session cua-vendors engine-supervisor model-extract model-http model-openai-compat model-provider vision-prep"
+  "porter-dbus-macros:"
+  "porter-callers: porter-core"
+  "porter-dbus: porter-core porter-dbus-macros porter-tailscale porter-match porter-wire porter-ids"
+  "porter-bridge: porter-core porter-capability porter-match porter-ids porter-infer model-catalog model-openai-compat model-provider vision-prep"
+  "porter-sheets: porter-core porter-capability porter-sheet porter-wire porter-callers porter-dbus porter-provider porter-service-core"
+  "porter-client: porter-bridge porter-core porter-tailnet porter-tailscale porter-match porter-capability porter-wire porter-ids porter-callers porter-dbus porter-fs porter-infer porter-provider porter-proxy porter-secrets porter-service porter-service-core porter-turns model-http model-openai-compat model-provider model-wire"
+  "porter-fake: porter-core porter-capability porter-sheet porter-wire porter-ids porter-provider porter-secrets porter-service porter-service-core"
+  "test-kit:"
+  "porter-fake-servers: dav-proto porter-core porter-ids porter-discover porter-fake porter-provider quickxorhash test-kit"
+  "porter-http: porter-core porter-ids"
+  "porter-http-reqwest: porter-ids porter-http"
+  "porter-http-relay: porter-client porter-core porter-wire porter-ids porter-http"
   "porter-engines:"
-  "porter-engines-install: porter-core porter-engines porter-http"
-  "porter-proxy: porter-core"
-  "porter-oauth: porter-core porter-http porter-provider"
-  "porter-discover: porter-core porter-http porter-provider"
-  "porter-tailscale: porter-core"
-  "porter-tailnet: porter-core porter-fs porter-tailscale"
+  "porter-engines-install: porter-ids porter-engines porter-http porter-http-reqwest"
+  "porter-proxy: porter-core porter-capability porter-ids"
+  "porter-oauth: porter-core porter-ids porter-http porter-provider"
+  "porter-discover: porter-core porter-capability porter-ids porter-http porter-provider"
+  "porter-tailscale: porter-ids"
+  "porter-tailnet: porter-ids porter-fs porter-tailscale"
   "dav-proto:"
-  "porter-dav: dav-proto porter-core porter-http"
-  "porter-calendar: dav-proto porter-core porter-dav porter-http"
-  "porter-families: dav-proto porter-core porter-dav porter-discover porter-http porter-oauth porter-provider porter-proxy porter-tailscale"
-  "accountd: ds-settings porter-core porter-daemon porter-dbus porter-families porter-fs porter-provider porter-secrets porter-service porter-sheets porter-store porter-tailscale"
-  "storage-webdav: dav-proto porter-core porter-dav porter-http porter-sync"
-  "storage-graph: porter-core porter-http porter-sync storage-webdav"
-  "storage-gdrive: porter-core porter-http porter-sync storage-webdav"
-  "porter-drive: porter-core porter-fs porter-sync quickxorhash"
+  "porter-calendar: dav-proto porter-http porter-ids"
+  "nextcloud-proto: porter-core porter-capability porter-ids"
+  "oauth-probe-proto: porter-capability porter-ids"
+  "generic-proto: dav-proto porter-core porter-capability porter-ids porter-provider porter-sheet"
+  "porter-families: porter-family-kit porter-family-nextcloud porter-family-generic porter-family-oauth porter-core porter-capability porter-sheet porter-ids porter-discover porter-http porter-http-reqwest porter-provider porter-tailscale"
+  "porter-family-kit: porter-core porter-provider porter-sheet porter-http"
+  "porter-family-nextcloud: porter-family-kit nextcloud-proto dav-proto porter-core porter-capability porter-sheet porter-provider porter-http"
+  "porter-family-generic: porter-family-kit generic-proto porter-core porter-capability porter-sheet porter-provider porter-http porter-discover porter-proxy"
+  "porter-family-oauth: porter-family-kit oauth-probe-proto porter-core porter-capability porter-sheet porter-ids porter-provider porter-http porter-http-reqwest porter-oauth"
+  "accountd: ds-settings porter-core porter-match porter-capability porter-sheet porter-wire porter-ids porter-daemon porter-callers porter-dbus porter-families porter-family-oauth porter-fs porter-identities porter-provider porter-secrets porter-service porter-service-accounts porter-service-core porter-settings porter-sheets porter-spaces porter-store porter-tailscale"
+  "storage-webdav: dav-proto porter-capability porter-ids porter-http porter-sync"
+  "storage-graph: porter-capability porter-ids porter-http porter-sync"
+  "storage-gdrive: porter-capability porter-ids porter-http porter-sync"
+  "porter-drive: porter-capability porter-ids porter-fs porter-sync quickxorhash"
   "porter-drive-fuse: porter-drive porter-mountd"
   "porter-mountd:"
-  "syncd: dav-proto ds-settings porter-client porter-core porter-daemon porter-dav porter-dbus porter-drive porter-drive-fuse porter-families porter-fs porter-http porter-provider porter-secrets porter-service porter-sheets porter-store porter-sync storage-gdrive storage-graph storage-webdav"
-  "porter-rig: fake-secret-service porter-client porter-core porter-dbus porter-fake porter-fake-servers porter-infer syncd-fakes"
+  "syncd: dav-proto ds-settings porter-client porter-core porter-match porter-capability porter-sheet porter-wire porter-ids porter-daemon porter-callers porter-dbus porter-drive porter-drive-fuse porter-families porter-family-oauth porter-fs porter-http porter-http-relay porter-provider porter-secrets porter-service porter-service-accounts porter-service-core porter-sheets porter-store porter-sync storage-gdrive storage-graph storage-webdav windows-zones"
+  "porter-rig: fake-secret-service porter-client porter-core porter-match porter-capability porter-wire porter-ids porter-callers porter-dbus porter-fake porter-fake-servers porter-infer test-kit"
   "fake-secret-service:"
-  "syncd-fakes: porter-dbus porter-drive"
-  "inferd: ds-settings porter-bridge porter-engines porter-families porter-secrets porter-service porter-sheets porter-store porter-router porter-turns porter-core porter-daemon porter-dbus porter-discover porter-fs porter-http porter-infer porter-provider porter-tailnet porter-tailscale cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-host-client speech-provider vision-prep"
+  "syncd-fakes: porter-dbus"
+  "inferd: ds-settings porter-bridge porter-client porter-engines porter-settings porter-store porter-router porter-turns porter-core porter-match porter-capability porter-wire porter-ids porter-daemon porter-callers porter-dbus porter-discover porter-fs porter-http porter-http-reqwest porter-infer porter-provider porter-tailnet porter-tailscale cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-host-client speech-provider vision-prep"
 )
 for edge in "${EDGES[@]}"; do
   crate="${edge%%:*}"
@@ -344,11 +433,11 @@ else
   echo "test-only: syncd's default features do not include test-proc-root"
 fi
 
-# porter-dbus's test-only caller fixtures (feature `test-proc-root`, which turns on peephole's
+# porter-callers' test-only caller fixtures (feature `test-proc-root`, which turns on peephole's
 # `fake`) are never in a daemon's normal dependency tree.
 for crate in accountd inferd syncd; do
-  if cargo tree -p "$crate" -e normal --prefix none -f '{p} {f}' 2>/dev/null | grep -E '^(porter-dbus|peephole) ' | grep -Eq 'test-proc-root|fake'; then
-    echo "LEAK: $crate's default build enables porter-dbus test-proc-root or peephole fake"
+  if cargo tree -p "$crate" -e normal --prefix none -f '{p} {f}' 2>/dev/null | grep -E '^(porter-callers|peephole) ' | grep -Eq 'test-proc-root|fake'; then
+    echo "LEAK: $crate's default build enables porter-callers test-proc-root or peephole fake"
     fail=1
   else
     echo "test-only: $crate's default build has no caller fixtures"
@@ -358,6 +447,19 @@ done
 # Every workspace member has a row above, so a new crate cannot slip in unchecked.
 for member in $(sed -n 's#^  "crates/\(.*\)",$#\1#p' Cargo.toml); do
   printf '%s\n' "${EDGES[@]}" | grep -q "^$member:" || { echo "ERROR: $member has no row in EDGES"; fail=1; }
+done
+
+# porter-fake is built over porter-core, porter-provider, porter-secrets and porter-service, so none
+# of them (nor anything below them) may take it, even as a dev dependency: a dev-dependency
+# cycle makes the crate's own tests compile it twice. Their tests use `test-kit`, which knows
+# nothing of porter; tests that need the fakes live in porter-fake's own tests.
+for below in porter-core porter-provider porter-secrets porter-service-core porter-service-accounts porter-service-grants porter-service; do
+  if cargo tree -p "$below" -e normal,build,dev --prefix none 2>/dev/null | grep -qx 'porter-fake v.*'; then
+    echo "LEAK: $below reaches porter-fake, which depends on it (a dev-dependency cycle)"
+    fail=1
+  else
+    echo "no cycle: $below does not reach porter-fake"
+  fi
 done
 
 # A test-only crate is never a dependency (normal, build or dev) of another crate of ours:
@@ -393,6 +495,44 @@ if grep -rq 'porter-rig' dist; then
   fail=1
 else
   echo "test-only: nothing depends on porter-rig, and dist/ does not name it"
+fi
+
+# LIBRARY ERRORS CAN GROW: every `pub enum` whose name ends in `Error`, in a library crate, is
+# `#[non_exhaustive]`, so a variant added later breaks no caller's `match`. A library crate is
+# one a shipped program links: the programs are the binaries dist/ names, the crates they reach
+# through normal and build dependencies are the shipped ones, and of those a daemon (a crate
+# with a `daemon` module) holds its own errors for itself. Test tooling is never reached from a
+# shipped program, so it is outside the rule by what it is.
+shipped_programs=$(cargo metadata --format-version 1 --no-deps 2>/dev/null \
+  | jq -r '.packages[] | .name as $p | .targets[] | select(.kind | index("bin")) | "\($p) \(.name)"' \
+  | while read -r package program; do grep -rqF -- "$program" dist && echo "$package"; done | sort -u)
+shipped=$(for package in $shipped_programs; do
+  cargo tree -p "$package" -e normal,build --prefix none 2>/dev/null | grep -E '\(/' | awk '{print $1}'
+done | sort -u)
+grow_leaks=""
+for crate in $shipped; do
+  [ -f "crates/$crate/src/lib.rs" ] && [ ! -f "crates/$crate/src/daemon.rs" ] || continue
+  found=$(find "crates/$crate/src" -name '*.rs' ! -name 'tests.rs' ! -name '*_tests.rs' ! -name 'testing.rs' \
+    ! -name 'testkit.rs' ! -path '*/tests/*' ! -path '*/testkit/*' ! -path '*/testing/*' -print0 \
+    | xargs -0 awk '
+      FNR == 1 { exhaustive = 1 }
+      /^[[:space:]]*#\[non_exhaustive\]/ { exhaustive = 0; next }
+      /^[[:space:]]*pub enum [A-Za-z0-9_]*Error([^A-Za-z0-9_]|$)/ {
+        if (exhaustive) print FILENAME ":" FNR ": " $0
+        exhaustive = 1
+        next
+      }
+      /^[[:space:]]*(pub(\([a-z]+\))? )?(fn|struct|enum|impl|trait|mod|use|const|static|type|union|extern|unsafe|async)[[:space:]]/ { exhaustive = 1 }
+      /^}/ { exhaustive = 1 }')
+  [ -n "$found" ] && grow_leaks="$grow_leaks$found
+"
+done
+if [ -n "$grow_leaks" ]; then
+  printf '%s' "$grow_leaks"
+  echo "LEAK: a public error enum of a library crate is not #[non_exhaustive]"
+  fail=1
+else
+  echo "grows: every public *Error enum of the libraries is #[non_exhaustive] ($(echo $shipped | wc -w) shipped crates looked at)"
 fi
 
 # The portable cores build without the desktop and reach no D-Bus; the accounts-only client

@@ -2,8 +2,8 @@
 //! The structured-output rows inside it (`StructuredConfig`) are `porter-turns`'; the rest are
 //! read by `settings`.
 
-use super::StructuredConfig;
-use super::limits::Resolved;
+use porter_turns::structured::StructuredConfig;
+use porter_turns::structured::limits::Resolved;
 use serde::{Deserialize, Serialize};
 
 /// The `[ai]` table: every settings row of the `ai` domain at its settings path, as a settings

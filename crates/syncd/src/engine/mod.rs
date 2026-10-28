@@ -14,11 +14,10 @@ mod resolve;
 #[cfg(test)]
 mod tests;
 
-use crate::clock::Clock;
 use crate::dataset::{Dataset, DatasetError, Direction, replica_hash};
 use crate::journal::{Journal, JournalError, Op};
-use porter_core::UnixSeconds;
-use porter_core::capability::QuotaReport;
+use porter_ids::UnixSeconds;
+use porter_ids::clock::Clock;
 use porter_sync::{
     Acknowledgement, BaseVersion, Blob, ByteRange, Conflict, ItemState, JournalItem, LocalId,
     MassDelete, Quota, RemoteId, RemoteSide, RemoteVersion, Replica, ReplicaError, RetryAfter,
@@ -107,7 +106,8 @@ pub(crate) fn halt(error: ReplicaError) -> Halt {
         ReplicaError::Unauthorized => Outcome::Unauthorized,
         ReplicaError::NeedsConsent => Outcome::NeedsConsent,
         ReplicaError::Transient(after) => Outcome::Retry(after),
-        ReplicaError::AnchorExpired | ReplicaError::Gone => Outcome::Gone,
+        // anchor expired, gone, and a failure a later porter-sync adds
+        _ => Outcome::Gone,
     })
 }
 
@@ -187,7 +187,7 @@ impl<R: Replica, D: Dataset, K: Clock> Engine<R, D, K> {
             Direction::PullOnly => Ok(()),
         };
         // Uploads that stopped for room still leave the cycle's other work and the quota read.
-        if self.replica.features().quota == QuotaReport::Reported {
+        if self.replica.features().quota {
             report.quota = self.replica.quota().await.ok();
         }
         if self

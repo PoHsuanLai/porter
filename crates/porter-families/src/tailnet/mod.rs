@@ -10,7 +10,10 @@
 
 mod sign_in;
 
-use porter_core::{Account, AccountId, Audience, Claim, Credential, IssuedToken};
+use porter_capability::Claim;
+use porter_core::AccountId;
+use porter_core::{Account, Audience, Credential, IssuedToken};
+use porter_family_kit::Conversation;
 use porter_http::SharedSleep;
 use porter_provider::{
     Presented, Provider, ProviderError, ProviderSession, ProviderSpec, RevokeOutcome, SignInMode,
@@ -18,7 +21,7 @@ use porter_provider::{
 };
 use porter_tailscale::LocalApi;
 
-pub use sign_in::TailnetSignIn;
+pub use sign_in::TailnetFlow;
 
 /// The Tailnet family's provider.
 #[derive(Debug, Clone)]
@@ -42,7 +45,7 @@ pub struct TailnetSession;
 
 impl Provider for TailnetProvider {
     type Session = TailnetSession;
-    type SignIn = TailnetSignIn;
+    type SignIn = Conversation<TailnetFlow>;
 
     fn spec(&self) -> &ProviderSpec {
         &self.spec
@@ -68,15 +71,15 @@ impl Provider for TailnetProvider {
         }
     }
 
-    fn sign_in(&self, start: SignInStart) -> Result<TailnetSignIn, ProviderError> {
+    fn sign_in(&self, start: SignInStart) -> Result<Self::SignIn, ProviderError> {
         // Signing in again is the same conversation as adding, ending without a review: the
         // account is already there.
         let review = matches!(start.mode, SignInMode::Add);
-        Ok(TailnetSignIn::new(
+        Ok(Conversation::new(TailnetFlow::new(
             self.api.clone(),
             self.sleep.clone(),
             review,
-        ))
+        )))
     }
 
     async fn revoke(
@@ -96,5 +99,21 @@ impl ProviderSession for TailnetSession {
 
     fn renewed(&self) -> Option<Credential> {
         None
+    }
+}
+
+/// This family for `spec` when it is Tailscale on this computer, else the spec back.
+#[cfg(feature = "set")]
+pub(crate) fn build(spec: ProviderSpec, io: &crate::set::FamilyIo) -> crate::set::Built {
+    match spec.auth.kind {
+        porter_core::AuthKind::OwnProgram => {
+            let sleep = SharedSleep::new(porter_http_reqwest::TokioSleep);
+            Ok(Box::new(TailnetProvider::new(
+                spec,
+                io.tailscale.clone(),
+                sleep,
+            )))
+        }
+        _ => Err(Box::new(spec)),
     }
 }

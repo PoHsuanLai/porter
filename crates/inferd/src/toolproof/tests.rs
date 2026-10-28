@@ -1,9 +1,13 @@
 use super::*;
-use crate::testkit::Scratch;
-use porter_core::capability::LlmFeature;
-use porter_core::need::LlmNeed;
-use porter_core::{AccountId, Count, DataClass, Locality, ModelId, Tier, Tokens};
+use porter_capability::LlmFeature;
+use porter_capability::ModelId;
+use porter_capability::{Locality, Tier};
+use porter_core::AccountId;
+use porter_core::DataClass;
+use porter_ids::{Count, Tokens};
+use porter_match::LlmNeed;
 use std::sync::Mutex as StdMutex;
+use test_kit::Scratch;
 
 fn model(name: &str) -> ModelRef {
     ModelRef {

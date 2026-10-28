@@ -9,7 +9,7 @@ use crate::listing::Entry;
 use crate::local_only;
 use crate::naming;
 use crate::online;
-use porter_core::{Bytes, UnixSeconds};
+use porter_ids::{Bytes, UnixSeconds};
 use porter_sync::{ItemKind, RemoteId, RemoteVersion};
 
 /// `listed` (the listing's entry of `id`, if it has one) as `edit` changed it here; `None` when

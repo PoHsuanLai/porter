@@ -1,14 +1,5 @@
 use super::*;
 use crate::policy::{ClassFloor, Floor};
-use porter_core::{MicroUsd, PriceTable};
-
-fn metered(input: u64) -> Billing {
-    Billing::Metered(PriceTable {
-        input_per_mtok: MicroUsd(input),
-        output_per_mtok: MicroUsd(0),
-    })
-}
-
 fn candidate(name: &str, locality: Locality, billing: Billing) -> RouteCandidate {
     RouteCandidate {
         account: AccountId::parse(name).expect("id"),
@@ -27,8 +18,11 @@ fn ollama() -> RouteCandidate {
 fn peer() -> RouteCandidate {
     candidate("peer", Locality::LocalNetwork, Billing::Free)
 }
-fn cloud(name: &str, input: u64) -> RouteCandidate {
-    candidate(name, Locality::Cloud { region: None }, metered(input))
+fn cloud(name: &str) -> RouteCandidate {
+    candidate(name, Locality::Cloud { region: None }, Billing::Metered)
+}
+fn cloud_on_plan(name: &str) -> RouteCandidate {
+    candidate(name, Locality::Cloud { region: None }, Billing::PlanBudget)
 }
 
 fn open_policy() -> Policy {
@@ -53,11 +47,11 @@ struct Case {
 fn cases() -> Vec<Case> {
     let tier_other = RouteCandidate {
         tier: TierChoice::Other,
-        ..cloud("cheap", 1)
+        ..cloud("cheap")
     };
     let stopped = RouteCandidate {
         spend: SpendVerdict::Stop,
-        ..cloud("capped", 1)
+        ..cloud("capped")
     };
     let asking = RouteCandidate {
         permission: Permit::Askable,
@@ -79,28 +73,28 @@ fn cases() -> Vec<Case> {
             name: "on device wins over cloud",
             class: DataClass::Public,
             policy: open_policy(),
-            candidates: vec![cloud("a", 1), ollama()],
+            candidates: vec![cloud("a"), ollama()],
             expected: picked("ollama"),
         },
         Case {
             name: "local network wins over cloud",
             class: DataClass::Public,
             policy: open_policy(),
-            candidates: vec![cloud("a", 1), peer()],
+            candidates: vec![cloud("a"), peer()],
             expected: picked("peer"),
         },
         Case {
             name: "local-only leaves nothing but cloud: unavailable",
             class: DataClass::Public,
             policy: Policy::proposed(),
-            candidates: vec![cloud("a", 1)],
+            candidates: vec![cloud("a")],
             expected: Err(InferRefusal::Unavailable),
         },
         Case {
             name: "local-only mail runs on ollama",
             class: DataClass::Mail,
             policy: Policy::proposed(),
-            candidates: vec![cloud("a", 1), ollama()],
+            candidates: vec![cloud("a"), ollama()],
             expected: picked("ollama"),
         },
         Case {
@@ -110,49 +104,49 @@ fn cases() -> Vec<Case> {
                 local_only: LocalOnly::Off,
                 ..Policy::proposed()
             },
-            candidates: vec![cloud("a", 1)],
+            candidates: vec![cloud("a")],
             expected: Err(InferRefusal::RequiresCloud(DataClass::Mail)),
         },
         Case {
             name: "a local-network floor admits a peer",
             class: DataClass::Notes,
             policy: peer_floor.clone(),
-            candidates: vec![cloud("a", 1), peer()],
+            candidates: vec![cloud("a"), peer()],
             expected: picked("peer"),
         },
         Case {
             name: "a local-network floor refuses the cloud",
             class: DataClass::Notes,
             policy: peer_floor,
-            candidates: vec![cloud("a", 1)],
+            candidates: vec![cloud("a")],
             expected: Err(InferRefusal::RequiresCloud(DataClass::Notes)),
         },
         Case {
             name: "public goes to the cloud when local-only is off",
             class: DataClass::Public,
             policy: open_policy(),
-            candidates: vec![cloud("a", 1)],
+            candidates: vec![cloud("a")],
             expected: picked("a"),
         },
         Case {
             name: "the tier's choice beats a cheaper model",
             class: DataClass::Public,
             policy: open_policy(),
-            candidates: vec![tier_other, cloud("dear", 9)],
+            candidates: vec![tier_other, cloud("dear")],
             expected: picked("dear"),
         },
         Case {
-            name: "cheaper wins among equals",
+            name: "a plan's allowance beats a metered model",
             class: DataClass::Public,
             policy: open_policy(),
-            candidates: vec![cloud("dear", 9), cloud("cheap", 1)],
-            expected: picked("cheap"),
+            candidates: vec![cloud("metered"), cloud_on_plan("plan")],
+            expected: picked("plan"),
         },
         Case {
             name: "a stopped cap is skipped",
             class: DataClass::Public,
             policy: open_policy(),
-            candidates: vec![stopped.clone(), cloud("dear", 9)],
+            candidates: vec![stopped.clone(), cloud("dear")],
             expected: picked("dear"),
         },
         Case {
@@ -253,7 +247,7 @@ fn legacy_route(
     permitted
         .into_iter()
         .filter(|c| c.spend != SpendVerdict::Stop)
-        .min_by_key(|c| (closeness(&c.locality), c.tier, price_rank(&c.billing)))
+        .min_by_key(|c| (closeness(&c.locality), c.tier, billing_rank(&c.billing)))
         .map(|c| Chosen {
             account: c.account.clone(),
             model: c.model.clone(),
@@ -263,7 +257,7 @@ fn legacy_route(
 }
 
 /// Every combination of locality, tier choice, consent and spend verdict, each with its own
-/// account name and a price that varies with its index.
+/// account name and a billing that varies with its index.
 fn pool() -> Vec<RouteCandidate> {
     let localities = [
         Locality::OnDevice,
@@ -282,7 +276,7 @@ fn pool() -> Vec<RouteCandidate> {
                     let billing = match n % 3 {
                         0 => Billing::Free,
                         1 => Billing::PlanBudget,
-                        _ => metered(u64::try_from(n % 7).expect("small")),
+                        _ => Billing::Metered,
                     };
                     pool.push(RouteCandidate {
                         tier,
@@ -338,7 +332,7 @@ fn route_decides_as_it_did_before_admit_was_split_out() {
 
 #[test]
 fn admit_keeps_the_input_order_and_names_the_first_rule_that_leaves_none() {
-    let pool = [cloud("a", 1), ollama(), peer()];
+    let pool = [cloud("a"), ollama(), peer()];
     let all = admit(
         RouteAsk {
             class: DataClass::Public,

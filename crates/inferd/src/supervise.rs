@@ -10,13 +10,13 @@
 //! Time is `tokio::time::Instant` from the driver's start, so a test with paused time is
 //! deterministic.
 
-use crate::startup::{Cause, Diagnostics, Tail};
 use engine_supervisor::{
     EngineFailure, EngineHost, EngineId, EngineSpec, EngineState, ExitCode, GpuMemory, GpuProbe,
     MonoMs, Probe, ReadyProbe, Supervisor, SupervisorConfig, SupervisorIn, SupervisorOut, UnitSpec,
     step,
 };
 use model_catalog::MiB;
+use porter_router::startup::{Cause, Diagnostics, Tail};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -111,8 +111,9 @@ pub struct Supervised {
     probe_every: Duration,
     headroom: MiB,
     sizing: Sizing,
-    /// The wall clock when the driver's clock began, to tell a `MonoMs` as a date.
-    began: SystemTime,
+    /// The wall clock when the driver's clock began, to tell a `MonoMs` as a date: the host
+    /// says it ([`Supervised::dated`]); none until then.
+    began: Option<SystemTime>,
 }
 
 /// The turns of `porter-turns` tell the supervisor which engine they use (the inherent `used`).
@@ -133,8 +134,16 @@ impl Supervised {
             probe_every: SupervisorConfig::default().probe_every,
             headroom: SupervisorConfig::default().headroom,
             sizing: Sizing::default(),
-            began: SystemTime::now(),
+            began: None,
         }
+    }
+
+    /// The same supervisor telling the times of its clock as dates: `began` is the wall clock
+    /// when the driver started, which the host reads (the supervisor reads no clock).
+    #[must_use]
+    pub fn dated(mut self, began: SystemTime) -> Self {
+        self.began = Some(began);
+        self
     }
 
     /// Starts the driver over `specs` and `ports`. Must be called inside a tokio runtime.
@@ -224,7 +233,6 @@ impl Supervised {
             released: BTreeMap::new(),
             failed: 0,
         };
-        let began = SystemTime::now();
         tokio::spawn(driver.run(inbox));
         Self {
             commands,
@@ -232,13 +240,14 @@ impl Supervised {
             probe_every: config.probe_every,
             headroom: config.headroom,
             sizing,
-            began,
+            began: None,
         }
     }
 
-    /// The date a time of the driver's clock (a `MonoMs` of a snapshot) was.
-    pub fn wall_clock(&self, at: MonoMs) -> SystemTime {
-        self.began + Duration::from_millis(at.0)
+    /// The date a time of the driver's clock (a `MonoMs` of a snapshot) was; none until the host
+    /// has said when the driver started ([`Supervised::dated`]).
+    pub fn wall_clock(&self, at: MonoMs) -> Option<SystemTime> {
+        Some(self.began? + Duration::from_millis(at.0))
     }
 
     /// The memory the engine takes: `served` (what its spec asks) unless it was started with a
@@ -254,12 +263,12 @@ impl Supervised {
     }
 
     /// What the person set for the length of a conversation and a reply.
-    pub fn lengths(&self) -> crate::local::Lengths {
+    pub fn lengths(&self) -> porter_router::local::Lengths {
         self.sizing.lengths()
     }
 
     /// Sets the lengths the person set; an engine started after this reads them.
-    pub fn set_lengths(&self, lengths: crate::local::Lengths) {
+    pub fn set_lengths(&self, lengths: porter_router::local::Lengths) {
         self.sizing.set_lengths(lengths);
     }
 

@@ -1,7 +1,8 @@
 use super::*;
 use crate::step::{Effect, Input, RelayEnd, Relaying, Side};
 use crate::testing::{bytewise, sent, whole};
-use porter_core::{CapabilityKind, EndpointUrl, Family, LoginName, SecretText, ServiceEndpoint};
+use porter_capability::CapabilityKind;
+use porter_core::{EndpointUrl, Family, LoginName, SecretText, ServiceEndpoint};
 
 fn password() -> RelayAuth {
     RelayAuth::Password(SecretText::new("hunter2"))
@@ -17,6 +18,7 @@ fn relay(tls: Tls, auth: RelayAuth) -> SieveRelay {
         },
         CapabilityKind::Mail,
         auth,
+        porter_core::Reach::origin(),
     ))
 }
 

@@ -7,11 +7,12 @@
 //! seeds one). Until then syncd mirrors nothing and says so on standard error, once per kind.
 
 use super::PimKind;
-use porter_client::{Accounts, Found, Transport};
-use porter_core::capability::{Access, Delta};
+use porter_capability::{Access, Delta};
+use porter_client::{Accounts, Found, HostedCore, InProcess};
+use porter_core::Candidate;
 use porter_core::consent::Usage;
-use porter_core::need::PimNeed;
-use porter_core::{Candidate, Need};
+use porter_match::Need;
+use porter_match::PimNeed;
 use std::future::Future;
 use std::sync::Arc;
 
@@ -56,7 +57,7 @@ impl<T> ClientGrants<T> {
     }
 }
 
-impl<T: Transport> PimGrants for ClientGrants<T> {
+impl<C: HostedCore, B: Send + Sync, H: Send + Sync> PimGrants for ClientGrants<InProcess<C, B, H>> {
     async fn granted(&self, kind: PimKind) -> Result<Vec<Candidate>, AccountdUnavailable> {
         let found = self
             .accounts

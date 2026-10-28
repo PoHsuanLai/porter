@@ -40,7 +40,6 @@ fn the_address_in_the_query_is_encoded_so_nothing_in_it_can_end_the_url() {
         ("é@x.test", "%C3%A9%40x.test"),
     ];
     for (address, encoded) in cases {
-        assert_eq!(percent_encode(address), encoded, "{address}");
         let urls = autoconfig_urls(&name("x.test"), address);
         assert_eq!(urls.len(), 3, "{address}");
         assert_eq!(

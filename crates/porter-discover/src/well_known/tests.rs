@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::testing::{ADDRESS, Table, name, respond};
-use porter_http::{Header, Status};
+use porter_http::http::Response;
 
 fn login() -> LoginName {
     LoginName(ADDRESS.to_owned())
@@ -12,12 +12,12 @@ fn url(text: &str) -> EndpointUrl {
     EndpointUrl::parse(text).expect("url")
 }
 
-fn redirect(status: u16, location: &str) -> HttpResponse {
-    HttpResponse {
-        status: Status(status),
-        headers: vec![Header::new("Location", location)],
-        body: Vec::new(),
-    }
+fn redirect(status: u16, location: &str) -> Response<Vec<u8>> {
+    Response::builder()
+        .status(status)
+        .header("Location", location)
+        .body(Vec::new())
+        .expect("response")
 }
 
 #[test]
@@ -182,7 +182,7 @@ fn the_recorded_jmap_session_names_its_endpoint_and_capabilities() {
         panic!("{:?}", found.claims[0])
     };
     assert_eq!(mail.transport, MailTransport::Jmap);
-    assert_eq!(mail.send, Offered::Present);
+    assert!(mail.send);
 }
 
 #[test]
@@ -192,7 +192,7 @@ fn mail_without_the_submission_capability_cannot_send_and_calendars_are_read() {
     let Offer::Present(Capability::Mail(mail)) = &found.claims[0].offer else {
         panic!("{:?}", found.claims[0])
     };
-    assert_eq!(mail.send, Offered::Absent);
+    assert!(!mail.send);
     assert_eq!(found.claims[1].offer.kind(), CapabilityKind::Calendar);
     assert_eq!(found.endpoints[0].login.0, "", "no username in the session");
 }

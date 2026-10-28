@@ -7,7 +7,8 @@
 
 use crate::error::TailscaleError;
 use crate::time::unix_seconds;
-use porter_core::{Machine, MachineLink, MachineOwner, NodeId, UnixSeconds};
+use crate::{Machine, MachineLink, MachineOwner, NodeId};
+use porter_ids::UnixSeconds;
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::net::IpAddr;
@@ -82,6 +83,7 @@ impl Backend {
 
 /// What tailscaled's state means for the account porter keeps for it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Standing {
     /// Running and signed in.
     Ready,

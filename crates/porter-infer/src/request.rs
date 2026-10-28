@@ -5,9 +5,10 @@ use crate::control::{ChatControl, ThoughtSeal};
 use crate::cua::{CuaBegin, CuaStepRequest};
 use crate::ids::{AttachIndex, Base64Bytes, JsonSchemaText, JsonText, ToolCallId, ToolName};
 use crate::speech::{SpeakRequest, TranscribeBegin};
+use porter_capability::Tier;
+use porter_core::DataClass;
 use porter_core::consent::Usage;
-use porter_core::need::DimsNeed;
-use porter_core::{DataClass, Tier};
+use porter_match::DimsNeed;
 use serde::{Deserialize, Serialize};
 
 /// One request to inferd.

@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::testing::{Table, respond};
-use porter_core::capability::CapabilityKind;
+use porter_capability::CapabilityKind;
 
 fn url(port: u16, path: &str) -> String {
     format!("http://127.0.0.1:{port}{path}")
@@ -13,7 +13,7 @@ fn model_ids(claims: &[Claim]) -> Vec<(String, CapabilityKind)> {
         .iter()
         .map(|c| match &c.subject {
             Subject::Model(id) => (id.to_string(), c.offer.kind()),
-            Subject::Account | Subject::Agent(_) => panic!("{c:?}"),
+            _ => panic!("{c:?}"),
         })
         .collect()
 }
@@ -32,7 +32,7 @@ fn ollama() -> Table {
             respond(200, include_str!("../../fixtures/ollama-tags.json")),
         )
         .with(
-            Method::Post,
+            Method::POST,
             &url(11434, "/api/show"),
             respond(200, include_str!("../../fixtures/ollama-show-llama.json")),
         )

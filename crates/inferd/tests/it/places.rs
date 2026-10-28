@@ -11,8 +11,10 @@ use hosting::lab::Lab;
 use hosting::rig::{Hosted, Plan, Trust, World};
 use inferd::attached::{Attached, Place, Reach};
 use inferd::peers::{Caller, Role};
+use porter_capability::ModelId;
+use porter_capability::Tier;
 use porter_client::{ClientError, TransportError};
-use porter_core::{AppId, AppName, DataClass, Isolation, ModelId, Tier};
+use porter_core::{AppId, AppName, DataClass, Isolation};
 use porter_infer::{ComputerName, PlaceKind, PlaceRow, PlaceState, Takes};
 
 fn app(name: &str) -> AppId {
@@ -25,7 +27,7 @@ fn app(name: &str) -> AppId {
 /// A world with one model on this computer, a lab machine called `lab` with one model, and two
 /// cloud accounts: a working one and one that has to be signed in again.
 async fn world(lab_dir: &str, role: Role, who: &str) -> (World, Lab) {
-    let dir = porter_fake::Scratch::new(&format!("pl-{lab_dir}"));
+    let dir = test_kit::Scratch::new(&format!("pl-{lab_dir}"));
     let lab = Lab::start_in(dir, "lab", &[entries::SERVED], None).await;
     let plan = Plan {
         catalog: vec![
@@ -187,9 +189,9 @@ async fn only_settings_the_shell_the_companion_and_cuad_may_list_the_places() {
 async fn the_shell_may_list_the_places_and_ask_for_no_model() {
     let (world, _lab) = world("shell", Role::Shell, "org.quire.Shell").await;
     assert!(world.accounts.places().await.is_ok());
-    let need = porter_core::Need::Llm(porter_core::need::LlmNeed::new(
-        [porter_core::capability::LlmFeature::Chat].into(),
-        porter_core::Tokens(1000),
+    let need = porter_match::Need::Llm(porter_match::LlmNeed::new(
+        [porter_capability::LlmFeature::Chat].into(),
+        porter_ids::Tokens(1000),
     ));
     let opened = world
         .accounts
@@ -223,7 +225,8 @@ async fn the_shell_may_list_the_places_and_ask_for_no_model() {
 /// The fake key store wakes the same news.
 #[tokio::test(flavor = "multi_thread")]
 async fn an_account_that_appears_makes_inferd_say_engines_changed() {
-    use porter_dbus::{BusStream, InferenceProxy};
+    use porter_dbus::BusStream;
+    use porter_dbus::inference::InferenceProxy;
     let (world, _lab) = world("news", Role::Settings, "org.quire.Settings").await;
     let proxy = InferenceProxy::new(&world.client).await.expect("proxy");
     let mut changed = proxy.receive_engines_changed().await.expect("stream");
@@ -244,9 +247,7 @@ async fn an_account_that_appears_makes_inferd_say_engines_changed() {
 }
 
 async fn within_generous(work: impl std::future::Future<Output = ()>) -> bool {
-    tokio::time::timeout(porter_fake::GENEROUS, work)
-        .await
-        .is_ok()
+    tokio::time::timeout(test_kit::GENEROUS, work).await.is_ok()
 }
 
 // ---- routing inside the allowed set -------------------------------------------------------
@@ -254,18 +255,19 @@ async fn within_generous(work: impl std::future::Future<Output = ()>) -> bool {
 mod routing {
     use super::*;
     use hosting::bus::within;
-    use inferd::router::placed::Allowed;
-    use inferd::session::SessionSpec;
+    use porter_capability::LlmFeature;
     use porter_client::InferSession;
-    use porter_core::capability::LlmFeature;
     use porter_core::consent::Usage;
-    use porter_core::need::LlmNeed;
-    use porter_core::{Need, Tokens};
-    use porter_dbus::InferenceProxy;
+    use porter_dbus::inference::InferenceProxy;
+    use porter_ids::Tokens;
     use porter_infer::{
         ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRequest, LocalOnly, MessagePart,
         NoPlaceReason, OpenOptions, PlaceId, Policy, Role as ChatRole,
     };
+    use porter_match::LlmNeed;
+    use porter_match::Need;
+    use porter_router::router::placed::Allowed;
+    use porter_router::session::SessionSpec;
     use std::collections::BTreeMap;
 
     const COMPANION: &str = "org.quire.Companion";
@@ -298,7 +300,7 @@ mod routing {
 
     /// `placed_world`, with the local chat model only when `local` says so.
     pub async fn placed_world_with(dir: &str, role: Role, who: &str, local: bool) -> (World, Lab) {
-        let scratch = porter_fake::Scratch::new(&format!("pr-{dir}"));
+        let scratch = test_kit::Scratch::new(&format!("pr-{dir}"));
         let lab = Lab::start_in(scratch, "lab", &[entries::SERVED], None).await;
         let mut catalog = vec![
             ("a-attached.toml", entries::attached()),
@@ -428,12 +430,12 @@ mod routing {
                 caller.role,
                 &offered,
                 Some(&allowed),
-                inferd::router::Unchosen::Refuse,
+                porter_router::router::Unchosen::Refuse,
             )
             .expect_err("nothing in the set can serve");
         assert_eq!(
             refused,
-            inferd::router::placed::Unplaced::NoPlace(porter_infer::PlaceRefusal::new(
+            porter_router::router::placed::Unplaced::NoPlace(porter_infer::PlaceRefusal::new(
                 NoPlaceReason::NotReady,
                 Some(porter_infer::PlaceKind::CloudAccount),
             ))
@@ -524,7 +526,7 @@ mod routing {
     async fn a_places_option_that_is_not_what_the_interface_says_is_invalid_args() {
         let (world, _lab) = placed_world("invalid", Role::Placer, COMPANION).await;
         let proxy = InferenceProxy::new(&world.client).await.expect("proxy");
-        let need = porter_dbus::need_to_dbus(&llm());
+        let need = porter_dbus::inference::need_to_dbus(&llm());
         let text = |value: &str| {
             porter_dbus::zvariant::OwnedValue::try_from(porter_dbus::zvariant::Value::from(
                 value.to_owned(),
@@ -592,11 +594,12 @@ mod refusals {
     use super::routing::placed_world_with;
     use super::*;
     use hosting::rig::World;
-    use porter_core::capability::{LlmFeature, Modality};
-    use porter_core::need::{DimsNeed, EmbedNeed, LlmNeed};
-    use porter_core::{Need, Tokens};
-    use porter_dbus::{InferenceProxy, PLACE_ERROR_PREFIX, place_refusal_of};
+    use porter_capability::{LlmFeature, Modality};
+    use porter_dbus::inference::{InferenceProxy, PLACE_ERROR_PREFIX, place_refusal_of};
+    use porter_ids::Tokens;
     use porter_infer::{LocalOnly, NoPlaceReason, OpenOptions, PlaceId, Policy};
+    use porter_match::Need;
+    use porter_match::{DimsNeed, EmbedNeed, LlmNeed};
 
     const COMPANION: &str = "org.quire.Companion";
 
@@ -744,7 +747,7 @@ mod refusals {
         let (world, _lab) = placed_world_with("r-pin", Role::Placer, COMPANION, true).await;
         let options = only(&["this-computer"]).with_place_model(
             PlaceId::this_computer(),
-            porter_core::ModelId::parse("no-such-model").expect("id"),
+            porter_capability::ModelId::parse("no-such-model").expect("id"),
         );
         // The lab machine and the account, outside the set, could have served.
         both_ways(
@@ -805,7 +808,7 @@ mod refusals {
             Ok(value) => [("places".to_owned(), value)].into(),
             Err(e) => panic!("{e}"),
         };
-        let need = porter_dbus::need_to_dbus(&llm());
+        let need = porter_dbus::inference::need_to_dbus(&llm());
         let error = proxy
             .availability(&need, "public", &options)
             .await
@@ -874,8 +877,10 @@ mod computers {
     use hosting::bus::within;
     use inferd::peers::Caller;
     use porter_client::InferSession;
+    use porter_dbus::inference::COMPUTER_ERROR_PREFIX;
+    use porter_dbus::inference::InferenceProxy;
     use porter_dbus::zvariant::{OwnedValue, Value};
-    use porter_dbus::{BusStream, COMPUTER_ERROR_PREFIX, Details, InferenceProxy};
+    use porter_dbus::{BusStream, Details};
     use porter_infer::{
         ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRequest, LocalOnly, MessagePart,
         OpenOptions, PlaceId, Policy, Role as ChatRole,
@@ -914,7 +919,7 @@ mod computers {
 
     /// A world with no engine written by hand, and a lab machine that wants `KEY`.
     async fn world(name: &str) -> (World, Lab) {
-        let dir = porter_fake::Scratch::new(&format!("cp-{name}"));
+        let dir = test_kit::Scratch::new(&format!("cp-{name}"));
         let lab = Lab::start_in(dir, "lab", &[entries::SERVED], Some(KEY)).await;
         let plan = Plan {
             catalog: vec![("a-attached.toml", entries::attached())],
@@ -1001,9 +1006,7 @@ mod computers {
         assert_eq!(placed, "computer:studio-pc");
         let told = std::future::poll_fn(|cx| std::pin::Pin::new(&mut changed).poll_next(cx));
         assert!(
-            tokio::time::timeout(porter_fake::GENEROUS, told)
-                .await
-                .is_ok(),
+            tokio::time::timeout(test_kit::GENEROUS, told).await.is_ok(),
             "EnginesChanged after an addition"
         );
 
@@ -1024,9 +1027,9 @@ mod computers {
         as_caller(&world, Role::Placer, COMPANION);
         let options = OpenOptions::default()
             .with_places(vec![PlaceId::parse("computer:studio-pc").expect("place")]);
-        let need = porter_core::Need::Llm(porter_core::need::LlmNeed::new(
-            [porter_core::capability::LlmFeature::Chat].into(),
-            porter_core::Tokens(1000),
+        let need = porter_match::Need::Llm(porter_match::LlmNeed::new(
+            [porter_capability::LlmFeature::Chat].into(),
+            porter_ids::Tokens(1000),
         ));
         let mut session = within(
             "Open",
@@ -1094,9 +1097,7 @@ mod computers {
             .expect("removed");
         let told = std::future::poll_fn(|cx| std::pin::Pin::new(&mut changed).poll_next(cx));
         assert!(
-            tokio::time::timeout(porter_fake::GENEROUS, told)
-                .await
-                .is_ok(),
+            tokio::time::timeout(test_kit::GENEROUS, told).await.is_ok(),
             "EnginesChanged after a removal"
         );
         let rows = world.accounts.places().await.expect("places");

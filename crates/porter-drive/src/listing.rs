@@ -1,7 +1,7 @@
 //! The drive's listing as the core reads it: entries by id, each with its parent and its own
 //! name, never a path.
 
-use porter_core::{Bytes, UnixSeconds};
+use porter_ids::{Bytes, UnixSeconds};
 use porter_sync::{ContentHash, ItemKind, RemoteId, RemoteVersion};
 use std::collections::{BTreeSet, VecDeque};
 

@@ -15,6 +15,7 @@ use std::path::Path;
 
 /// Why an install did not happen.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum InstallError {
     /// Not enough free space.
     #[error("not enough free space: needs {need} bytes, {free} are free")]

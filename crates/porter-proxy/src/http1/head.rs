@@ -5,7 +5,8 @@ use super::reach;
 use crate::fault::RelayFault;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
-use porter_core::{Origin, RelayAuth, RelayPlan, UrlScheme};
+use porter_core::{RelayAuth, RelayPlan};
+use porter_ids::{Origin, UrlScheme};
 
 /// How the request's body is framed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,14 +28,8 @@ pub struct Rewritten {
     pub framing: Framing,
 }
 
-const VERSIONS: [&str; 2] = ["HTTP/1.1", "HTTP/1.0"];
-
-fn is_token(text: &str) -> bool {
-    !text.is_empty()
-        && text
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&b))
-}
+/// The most header lines a request head may carry; one with more is refused.
+const MAX_HEADERS: usize = 256;
 
 /// `host[:port]` or `[v6][:port]` as written in a `Host` header or a URI authority: the host in
 /// lower case and the port if one is named. User info is refused.
@@ -128,32 +123,38 @@ pub fn rewrite(head: &[u8], plan: &RelayPlan) -> Result<Rewritten, RelayFault> {
     if body.bytes().any(|b| b == 0) || body.replace("\r\n", "").contains(['\r', '\n']) {
         return Err(RelayFault::Protocol);
     }
-    let mut lines = body.split("\r\n");
-    let request_line = lines.next().ok_or(RelayFault::Protocol)?;
-    let mut parts = request_line.split(' ');
-    let (Some(method), Some(target), Some(version), None) =
-        (parts.next(), parts.next(), parts.next(), parts.next())
+    // httparse reads the request line and the headers, and refuses a method or a name that is
+    // not a token, whitespace before the colon, line folding, a control byte in a value and a
+    // version other than HTTP/1.0 and 1.1. It stops at the first blank line: anything it did
+    // not consume is a second head.
+    let mut headers = [httparse::EMPTY_HEADER; MAX_HEADERS];
+    let mut request = httparse::Request::new(&mut headers);
+    match request.parse(head) {
+        Ok(httparse::Status::Complete(used)) if used == head.len() => {}
+        _ => return Err(RelayFault::Protocol),
+    }
+    let (Some(method), Some(target), Some(minor)) = (request.method, request.path, request.version)
     else {
         return Err(RelayFault::Protocol);
     };
-    if !is_token(method) || method.eq_ignore_ascii_case("CONNECT") || !VERSIONS.contains(&version) {
+    if method.eq_ignore_ascii_case("CONNECT") {
         return Err(RelayFault::Protocol);
     }
+    let version = format!("HTTP/1.{minor}");
     let target = target_for(target, &origin)?;
 
     let mut kept = Vec::new();
     let mut hosts = Vec::new();
     let mut depths = Vec::new();
     let (mut lengths, mut codings) = (Vec::new(), Vec::new());
-    for line in lines {
-        let (name, value) = line.split_once(':').ok_or(RelayFault::Protocol)?;
-        // Leading whitespace is obsolete line folding, and whitespace before the colon is
-        // refused by RFC 9112 5.1: each is a way to disagree with the server about the head.
-        if !is_token(name) {
-            return Err(RelayFault::Protocol);
-        }
+    for header in request.headers.iter() {
+        let value = std::str::from_utf8(header.value).map_err(|_| RelayFault::Protocol)?;
         let value = value.trim_matches([' ', '\t']);
-        match name.to_ascii_lowercase().as_str() {
+        let line = match value.is_empty() {
+            true => format!("{}:", header.name),
+            false => format!("{}: {value}", header.name),
+        };
+        match header.name.to_ascii_lowercase().as_str() {
             "authorization" | "proxy-authorization" => {}
             "host" => hosts.push(value),
             "upgrade" => return Err(RelayFault::Protocol),
@@ -210,7 +211,7 @@ pub fn rewrite(head: &[u8], plan: &RelayPlan) -> Result<Rewritten, RelayFault> {
         canonical_host(&origin)
     );
     for line in kept {
-        out.push_str(line);
+        out.push_str(&line);
         out.push_str("\r\n");
     }
     if let Some(value) = credential(&plan.auth, &plan.endpoint.login.0)? {

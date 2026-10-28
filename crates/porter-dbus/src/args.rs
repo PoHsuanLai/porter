@@ -1,13 +1,7 @@
-//! The D-Bus shapes of porter's values: a kind slug plus a vardict, as portals pass options.
+//! The D-Bus shape every interface passes options and rows in: a vardict, as portals do.
 
 use std::collections::HashMap;
-use zbus::zvariant::{OwnedObjectPath, OwnedValue};
+use zbus::zvariant::OwnedValue;
 
 /// A vardict (`a{sv}`).
 pub type Details = HashMap<String, OwnedValue>;
-
-/// A need (`(sa{sv})`): the kind's slug and its fields by name.
-pub type NeedArg = (String, Details);
-
-/// A candidate (`(osa{sv})`): the account's object path, its label, and the rest by name.
-pub type CandidateArg = (OwnedObjectPath, String, Details);

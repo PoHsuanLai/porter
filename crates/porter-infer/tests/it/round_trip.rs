@@ -1,12 +1,15 @@
 //! Every wire or stored type of porter-infer survives its serde form.
 
+use model_provider::Money;
+use porter_capability::ModelId;
+use porter_capability::{Locality, Tier};
+use porter_core::AccountId;
 use porter_core::consent::Usage;
-use porter_core::need::DimsNeed;
-use porter_core::{
-    AccountId, AppId, AppName, Bytes, Count, DataClass, Isolation, Locality, MicroUsd, ModelId,
-    Permille, Tier, Tokens, UnixSeconds,
-};
+use porter_core::{AppId, AppName, DataClass, Isolation};
+use porter_ids::{Bytes, Count, Permille, Tokens, TurnCount, UnixSeconds};
 use porter_infer::*;
+use porter_match::DimsNeed;
+use rust_decimal::Decimal;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::fmt::Debug;
@@ -111,6 +114,7 @@ fn replies_and_records_round_trip() {
         input: Tokens(10),
         output: Tokens(5),
         cached: Tokens(4),
+        charge: Some(Money::usd(Decimal::new(95, 5))),
     };
     round_trip(&InferReply::Chat(
         ChatReply::new("ok".into(), StopReason::MaxTokens, usage, served())
@@ -142,7 +146,7 @@ fn replies_and_records_round_trip() {
     round_trip(&SpendCap {
         scope: SpendScope::App(app()),
         period: Period::Monthly,
-        limit: MicroUsd(1_000_000),
+        limit: Money::usd(Decimal::new(100, 0)),
         warn_at: Permille(800),
     });
     round_trip(&SpendVerdict::Warn);
@@ -158,7 +162,33 @@ fn replies_and_records_round_trip() {
         images: Count(1),
         audio_ms: Count(1500),
         why: Some(porter_infer::Why::Warm),
-        cost: Some(MicroUsd(42)),
+    });
+}
+
+#[test]
+fn a_usage_writes_a_charge_only_when_the_provider_reported_one() {
+    let counted = TokenUsage {
+        input: Tokens(1),
+        output: Tokens(2),
+        cached: Tokens(0),
+        charge: None,
+    };
+    let json = serde_json::to_value(counted).expect("serializes");
+    assert!(json.get("charge").is_none(), "{json}");
+    // A payload written before the field decodes as one with no charge.
+    let old = serde_json::json!({"input": 1, "output": 2, "cached": 0});
+    assert_eq!(
+        serde_json::from_value::<TokenUsage>(old).expect("old"),
+        counted
+    );
+    let charged = TokenUsage {
+        charge: Some(Money::usd(Decimal::new(95, 5))),
+        ..counted
+    };
+    round_trip(&charged);
+    round_trip(&ChargeTotal {
+        reported: Money::usd(Decimal::new(125, 2)),
+        unpriced: TurnCount(3),
     });
 }
 
@@ -170,6 +200,7 @@ fn plain_chat_reply() -> ChatReply {
             input: Tokens(1),
             output: Tokens(1),
             cached: Tokens(0),
+            charge: None,
         },
         served(),
     )

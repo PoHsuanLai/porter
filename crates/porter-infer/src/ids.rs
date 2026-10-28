@@ -1,6 +1,6 @@
 //! Names and checked text on the inference wire. These mirror stoker's `model-provider` ids
 //! (stoker has no porter dependency and porter-infer does not name its provider crate);
-//! `inferd::bridge` converts between the two.
+//! `porter_turns::bridge` converts between the two.
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;

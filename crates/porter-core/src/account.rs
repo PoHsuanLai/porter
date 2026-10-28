@@ -2,9 +2,9 @@
 
 use crate::auth_kind::AuthKind;
 use crate::endpoint::ServiceEndpoint;
-use crate::id::{AccountId, ProviderId};
-use crate::offer::Claim;
 use crate::restriction::Restriction;
+use crate::{AccountId, ProviderId};
+use porter_capability::Claim;
 use serde::{Deserialize, Serialize};
 
 /// An account: a provider, a person's credential for it, what it can do and where it is.
@@ -20,7 +20,7 @@ pub struct Account {
     pub state: AccountState,
     /// How it signs in.
     pub auth: AuthKind,
-    /// Its effective capabilities (`crate::effective`), one claim per subject and kind.
+    /// Its effective capabilities (`porter_capability::effective`), one claim per subject and kind.
     pub capabilities: Vec<Claim>,
     /// What limits it.
     pub restriction: Restriction,

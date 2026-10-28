@@ -1,8 +1,8 @@
 use super::*;
-use crate::testkit::Scratch;
 use engine_supervisor::{EnvPair, GpuAccess, Network, ProgramPath, Sandbox};
 use model_catalog::EngineArg;
 use std::path::Path;
+use test_kit::Scratch;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixListener;
 
@@ -267,7 +267,7 @@ async fn a_process_that_says_a_great_deal_is_read_to_the_end_and_kept_to_the_cap
     .expect("spawn");
     assert_eq!(host.exited(&id("chatty")).await, ExitCode(0));
     let tail = host.diagnostics().tail(&id("chatty"));
-    assert_eq!(tail.0.len(), crate::startup::TAIL_LINES);
+    assert_eq!(tail.0.len(), porter_router::startup::TAIL_LINES);
     assert_eq!(
         tail.0.last().map(String::as_str),
         Some("line 3999 of the noise")
@@ -400,7 +400,7 @@ fn forking(pidfile: &Path) -> UnitSpec {
 
 /// The pid in `pidfile`, once the engine has written it.
 async fn pid_in(pidfile: &Path) -> i32 {
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         if let Some(pid) = std::fs::read_to_string(pidfile)
             .ok()
@@ -425,7 +425,7 @@ fn gone(pid: i32) -> bool {
 }
 
 async fn gone_soon(pid: i32) -> bool {
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         if gone(pid) {
             return true;

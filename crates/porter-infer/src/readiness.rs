@@ -1,6 +1,6 @@
 //! Whether a model can answer now (design/31 §3.3).
 
-use porter_core::Permille;
+use porter_ids::Permille;
 use serde::{Deserialize, Serialize};
 
 /// How ready one model is. Ordered by how soon it can answer.

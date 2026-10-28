@@ -3,7 +3,8 @@
 //! once) and again for each turn (copied once into that turn's request header, and dropped with
 //! it). It is in no field of the host, no event, no log line.
 
-use porter_core::{AccountId, SecretText};
+use porter_core::AccountId;
+use porter_core::SecretText;
 use std::future::Future;
 use std::sync::Arc;
 

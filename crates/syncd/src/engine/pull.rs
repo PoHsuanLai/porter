@@ -1,9 +1,9 @@
 //! The replica's side coming in: finishing interrupted fetches and discards, then the feed.
 
 use super::{Compared, Engine, Halt, Outcome, Report, conflict_of, halt, provisional};
-use crate::clock::Clock;
 use crate::dataset::{Dataset, Direction, fingerprint};
 use crate::journal::Op;
+use porter_ids::clock::Clock;
 use porter_sync::{
     Acknowledgement, Anchor, BaseVersion, Blob, ByteRange, Change, Cursor, ItemState, JournalItem,
     More, RemoteId, RemoteItem, RemoteSide, Replica, ReplicaError, StoredAnchor, Tombstone,

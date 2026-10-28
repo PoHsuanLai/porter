@@ -38,11 +38,11 @@ pub mod local_only;
 pub mod naming;
 pub mod online;
 mod ranges;
+mod reason;
 mod sink;
 mod source;
 #[cfg(feature = "testing")]
 pub mod testing;
-pub mod words;
 
 pub use drive::{
     Attrs, Changed, Drive, DriveConfig, DriveError, FreeSpace, ItemState, Node, NodeId, NodeKind,
@@ -51,5 +51,6 @@ pub use drive::{
 pub use limit::{AUTOMATIC_FLOOR, CacheLimit};
 pub use listing::{Entry, Listing, ListingError};
 pub use porter_sync::{ContentHash, RemoteId};
+pub use reason::Reason;
 pub use sink::{Sending, Sink};
 pub use source::{CopyError, Exporting, Fetching, ReplicaSource, Source, SourceError};

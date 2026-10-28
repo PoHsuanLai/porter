@@ -1,31 +1,33 @@
 //! A key for a process the launcher spawns, through `porter-client`'s `Launcher`, against a
-//! hand-written inferd (`common::fake_inferd`) on a private bus: issue by memfd and by tmpfs
-//! file, set a child up with it, end it, and hear inferd end it. What inferd checks before it
-//! issues one (the permit, the program, the caller) is in inferd's launcher tests.
+//! hand-written accountd (`common::fake_accountd`) on a private bus: issue on a memfd, set a
+//! child up with it, end it, and hear accountd end it. What accountd checks before it issues one
+//! (the permit, the program, the caller) is in accountd's launcher tests.
 #![cfg(feature = "dbus")]
 
 use crate::common;
+use porter_ids::word::word as word_of;
 
 use common::bus::PrivateBus;
 use common::eventually;
-use common::fake_inferd::{FakeInferd, KEY, Sheets};
-use porter_client::credential::{ChildKey, ChildKeyError, CredentialHandle, Delivery};
+use common::fake_accountd::{FakeAccountd, KEY, Sheets};
+use porter_capability::{AgentProgram, EnvName};
+use porter_client::credential::{ChildKey, ChildKeyError, Delivery};
 use porter_client::{Launcher, LauncherError};
-use porter_core::KeyPermitId;
-use porter_core::audit::{CredentialEnd, Handoff};
-use porter_core::capability::{AgentProgram, EnvName};
-use porter_core::wire::Refusal;
+use porter_core::GrantId;
+use porter_core::audit::CredentialEnd;
 use porter_dbus::BusStream;
+use porter_dbus::accounts::LauncherFault;
+use porter_wire::Refusal;
 use std::io::Read;
 use std::os::fd::AsFd;
-use std::os::unix::fs::{FileExt, PermissionsExt};
+use std::os::unix::fs::FileExt;
 
 fn program() -> AgentProgram {
     AgentProgram::parse("claude-code").expect("program")
 }
 
-fn permit(id: &str) -> KeyPermitId {
-    KeyPermitId::parse(id).expect("permit")
+fn permit(id: &str) -> GrantId {
+    GrantId::parse(id).expect("permit")
 }
 
 fn key_env() -> EnvName {
@@ -33,23 +35,23 @@ fn key_env() -> EnvName {
 }
 
 struct Rig {
-    bus: PrivateBus,
+    _bus: PrivateBus,
     daemon: zbus::Connection,
-    fake: FakeInferd,
+    fake: FakeAccountd,
     launcher: Launcher,
 }
 
 async fn rig() -> Rig {
     let bus = PrivateBus::start();
     let daemon = bus.connect().await;
-    let fake = FakeInferd::new(bus.scratch().to_path_buf(), Sheets::Hang);
+    let fake = FakeAccountd::new(Sheets::Hang);
     fake.serve(&daemon).await;
     let launcher = Launcher::connect(&bus.connect().await)
         .await
         .expect("launcher");
     launcher.register(&[program()]).await.expect("registered");
     Rig {
-        bus,
+        _bus: bus,
         daemon,
         fake,
         launcher,
@@ -61,30 +63,28 @@ async fn a_memfd_credential_sets_a_child_up_by_value_or_by_an_inherited_descript
     let rig = rig().await;
     let credential = rig
         .launcher
-        .issue_credential(&permit("g-always"), &program(), Handoff::Memfd)
+        .issue_credential(&permit("g-always"), &program())
         .await
         .expect("issued");
-    assert_eq!(credential.handoff(), Handoff::Memfd);
-    assert!(matches!(credential.handle(), CredentialHandle::Memfd(_)));
     assert_eq!(
         rig.fake.seen(|seen| seen.issued.clone()),
-        [(
-            "g-always".to_owned(),
-            "claude-code".to_owned(),
-            "memfd".to_owned()
-        )],
+        [("g-always".to_owned(), "claude-code".to_owned())],
         "the permit, not a grant, is what is asked by"
     );
 
     // The key, read without moving the position the descriptor's holders share.
     assert_eq!(credential.read_key().expect("key").expose(), KEY);
     assert_eq!(credential.read_key().expect("again").expose(), KEY);
-    if let CredentialHandle::Memfd(fd) = credential.handle() {
-        let mut shared = std::fs::File::from(fd.as_fd().try_clone_to_owned().expect("dup"));
-        let mut text = String::new();
-        shared.read_to_string(&mut text).expect("a plain read");
-        assert_eq!(text, KEY, "still at the start after read_key");
-    }
+    let mut shared = std::fs::File::from(
+        credential
+            .descriptor()
+            .as_fd()
+            .try_clone_to_owned()
+            .expect("dup"),
+    );
+    let mut text = String::new();
+    shared.read_to_string(&mut text).expect("a plain read");
+    assert_eq!(text, KEY, "still at the start after read_key");
 
     // By value: the variable the program declares, holding the key.
     match credential
@@ -105,7 +105,6 @@ async fn a_memfd_credential_sets_a_child_up_by_value_or_by_an_inherited_descript
         ChildKey::File { var, path, inherit } => {
             assert_eq!(var.as_str(), "ANTHROPIC_API_KEY_FILE");
             assert_eq!(path, "/proc/self/fd/7");
-            let inherit = inherit.expect("a descriptor to pass");
             assert_eq!(inherit.number, 7);
             let file = std::fs::File::from(inherit.fd);
             let mut bytes = vec![0u8; KEY.len()];
@@ -122,56 +121,17 @@ async fn a_memfd_credential_sets_a_child_up_by_value_or_by_an_inherited_descript
         .expect("revoked");
     assert_eq!(
         rig.launcher.revoke_credential(credential.id()).await,
-        Err(LauncherError::UnknownCredential)
+        Err(LauncherError::Fault(LauncherFault::UnknownCredential))
     );
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_tmpfs_credential_is_a_private_file_that_ending_it_removes() {
-    let rig = rig().await;
-    let credential = rig
-        .launcher
-        .issue_credential(&permit("g-always"), &program(), Handoff::TmpfsFile)
-        .await
-        .expect("issued");
-    let CredentialHandle::TmpfsFile(path) = credential.handle() else {
-        panic!("a path");
-    };
-    assert!(path.starts_with(rig.bus.scratch()));
-    assert_eq!(
-        std::fs::metadata(path).expect("file").permissions().mode() & 0o777,
-        0o600
-    );
-    assert_eq!(credential.read_key().expect("key").expose(), KEY);
-    match credential
-        .child_key(&key_env(), Delivery::File { child_fd: 3 })
-        .expect("by file")
-    {
-        ChildKey::File {
-            var,
-            path: shown,
-            inherit,
-        } => {
-            assert_eq!(var.as_str(), "ANTHROPIC_API_KEY_FILE");
-            assert_eq!(shown, path.to_string_lossy());
-            assert!(inherit.is_none(), "a path needs no descriptor");
-        }
-        other => panic!("{other:?}"),
-    }
-    rig.launcher
-        .revoke_credential(credential.id())
-        .await
-        .expect("revoked");
-    assert!(!path.exists());
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn inferd_ending_a_credential_reaches_the_launcher_as_a_revocation() {
+async fn accountd_ending_a_credential_reaches_the_launcher_as_a_revocation() {
     let rig = rig().await;
     let mut revocations = rig.launcher.revocations().await.expect("stream");
     let credential = rig
         .launcher
-        .issue_credential(&permit("g-always"), &program(), Handoff::TmpfsFile)
+        .issue_credential(&permit("g-always"), &program())
         .await
         .expect("issued");
 
@@ -179,12 +139,12 @@ async fn inferd_ending_a_credential_reaches_the_launcher_as_a_revocation() {
         .revoke_for_launcher(
             &rig.daemon,
             credential.id().as_str(),
-            CredentialEnd::GrantRevoked.word(),
+            word_of(&CredentialEnd::GrantRevoked),
         )
         .await;
 
     let told = tokio::time::timeout(
-        porter_fake::GENEROUS,
+        test_kit::GENEROUS,
         std::future::poll_fn(|cx| std::pin::Pin::new(&mut revocations).poll_next(cx)),
     )
     .await
@@ -193,14 +153,13 @@ async fn inferd_ending_a_credential_reaches_the_launcher_as_a_revocation() {
     .expect("well formed");
     assert_eq!(&told.id, credential.id());
     assert_eq!(told.reason, CredentialEnd::GrantRevoked);
-    // The launcher ends the process and tells inferd; the file goes with it.
+    // The launcher ends the process and tells accountd.
     rig.launcher
         .revoke_credential(credential.id())
         .await
         .expect("revoked");
-    eventually("the file to go", || match credential.handle() {
-        CredentialHandle::TmpfsFile(path) => !path.exists(),
-        _ => false,
+    eventually("the credential to be ended", || {
+        rig.fake.seen(|seen| seen.revoked.len()) == 1
     })
     .await;
 }
@@ -210,13 +169,13 @@ async fn a_refusal_is_a_typed_error_and_a_key_is_never_part_of_it() {
     let rig = rig().await;
     assert!(matches!(
         rig.launcher
-            .issue_credential(&permit("g-once"), &program(), Handoff::Memfd)
+            .issue_credential(&permit("g-once"), &program())
             .await,
-        Err(LauncherError::OnceGrant)
+        Err(LauncherError::Fault(LauncherFault::OnceGrant))
     ));
     assert!(matches!(
         rig.launcher
-            .issue_credential(&permit("g-gone"), &program(), Handoff::TmpfsFile)
+            .issue_credential(&permit("g-gone"), &program())
             .await,
         Err(LauncherError::Refused(Refusal::UnknownGrant))
     ));

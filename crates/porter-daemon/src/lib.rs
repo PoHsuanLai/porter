@@ -2,43 +2,21 @@
 //!
 //! Three small pieces, each used by several daemons that used to carry a copy:
 //!
-//! - [`ProcRoot`]: which `/proc` a daemon reads its callers from. The system's, unless a test
-//!   build is told to read a fixture tree. Which process a caller is decides what it may do, so
-//!   an environment variable must never be able to move this in a shipped build: the build says
-//!   whether it honours the variable ([`ProcGate`]), and a shipped build does not.
 //! - [`Watch`]: a watch on one settings file, which survives the atomic rename an editor or the
 //!   Settings app writes it with.
 //! - [`xdg`]: the XDG base directories a daemon keeps its files under, resolved from the lookup
 //!   the daemon passes in.
+//! - [`registry_words`]: the words a registry file's errors are told in.
 //!
 //! The library reads no environment variable. The daemon passes in how it looks one up, so a
-//! test (or a program that runs a daemon inside itself) passes a table instead.
-//!
-//! ```
-//! use std::ffi::OsString;
-//! use porter_daemon::{ProcGate, ProcRoot};
-//!
-//! // The daemon's own build decides the gate; here, a test build.
-//! let lookup = |name: &str| (name == "MYD_PROC_ROOT").then(|| OsString::from("/fixture/proc"));
-//! let root = ProcRoot::choose(ProcGate::Honour, "MYD_PROC_ROOT", lookup);
-//! assert_eq!(root.path(), std::path::Path::new("/fixture/proc"));
-//!
-//! // A shipped build ignores the same variable.
-//! let root = ProcRoot::choose(ProcGate::Ignore, "MYD_PROC_ROOT", lookup);
-//! assert_eq!(root.path(), std::path::Path::new("/proc"));
-//! assert!(root.notice("myd", "MYD_PROC_ROOT").is_some());
-//! ```
+//! test (or a program that runs a daemon inside itself) passes a table instead. Which `/proc` and
+//! which caller tables a daemon reads are in `porter-callers`.
 
-mod proc_root;
-mod system_callers;
+mod registry;
 #[cfg(feature = "watch")]
 mod watch;
 pub mod xdg;
 
-pub use proc_root::{ProcGate, ProcRoot};
-pub use system_callers::{
-    CALLERS, INFERD_CALLERS, SYSTEM_CALLERS, SYSTEM_CALLERS_VAR, SystemCallers, SystemFile,
-    TABLE_DIRS, TableChoice, held_by, held_under, root_held,
-};
+pub use registry::registry_words;
 #[cfg(feature = "watch")]
 pub use watch::{Watch, WatchError};

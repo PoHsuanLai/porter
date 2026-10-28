@@ -2,9 +2,10 @@
 //! removed by its UID, and one stored under another name found by a calendar-query.
 
 use crate::common::{Client, Server};
-use porter_calendar::porter_http::{Http, HttpRequest, Method};
+use porter_calendar::porter_http::http::{Method, header::CONTENT_TYPE};
+use porter_calendar::porter_http::{Http, request};
 use porter_calendar::{CalDav, CalendarError, CalendarStore, Event, Instant, When};
-use porter_core::WebUrl;
+use porter_ids::WebUrl;
 
 fn ics(uid: &str, summary: &str) -> String {
     format!(
@@ -32,13 +33,14 @@ fn event(uid: &str, summary: &str) -> Event {
 async fn put_elsewhere(client: &Client, at: &str, uid: &str, summary: &str) {
     let made = client
         .send(
-            HttpRequest::new(Method::Put, WebUrl::parse(at).unwrap())
-                .with_header("Content-Type", "text/calendar")
-                .with_body(ics(uid, summary)),
+            request(Method::PUT, &WebUrl::parse(at).unwrap())
+                .header(CONTENT_TYPE, "text/calendar")
+                .body(ics(uid, summary).into_bytes())
+                .unwrap(),
         )
         .await
         .unwrap();
-    assert!(made.status.is_success());
+    assert!(made.status().is_success());
 }
 
 #[tokio::test]

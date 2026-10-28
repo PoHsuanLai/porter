@@ -8,11 +8,12 @@ use crate::common;
 use common::*;
 use ds_settings::live::{AnyOwner, LiveClient, LiveError, Snapshot};
 use ds_settings::schema::KeyPath;
+use porter_callers::CallerRole;
 use porter_core::{AccountState, SecretKey, SecretPurpose};
-use porter_dbus::{CallerRole, IdentitiesProxy};
-use porter_fake::Scratch;
+use porter_dbus::accounts::IdentitiesProxy;
 use porter_secrets::{Secrets, SecretsError};
-use porter_service::audit::AuditEvent;
+use porter_service_core::audit::AuditEvent;
+use test_kit::Scratch;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn only_the_settings_role_may_read_or_set_anything() {
@@ -59,7 +60,7 @@ async fn only_the_settings_role_may_read_or_set_anything() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn describe_lists_the_identities_and_their_actions_and_nothing_of_the_old_model() {
+async fn describe_lists_every_account_with_its_actions_and_an_ai_account_its_switches() {
     let rig = Rig::start().await;
     let schema = settings(&rig).await.describe().await.expect("schema");
     assert!(schema.check().is_ok());
@@ -69,11 +70,13 @@ async fn describe_lists_the_identities_and_their_actions_and_nothing_of_the_old_
         "accounts.fake-mail.reauth",
         "accounts.fake-mail.state",
         "accounts.clients.microsoft",
+        "accounts.fake-llm.state",
+        "accounts.fake-llm.service.llm",
     ] {
         assert!(paths.contains(&want), "{want} in {paths:?}");
     }
-    // No service switch, grant or sync row, and the AI account is inferd's to list.
-    for gone in [".service.", ".grant.", ".sync.", ".sign_out", "fake-llm"] {
+    // An identity has no service switch, and no sync row is accountd's.
+    for gone in ["accounts.fake-mail.service.", ".sync."] {
         assert!(
             !paths.iter().any(|p| p.contains(gone)),
             "{gone} in {paths:?}"
@@ -384,7 +387,7 @@ async fn a_client_id_is_written_to_the_users_file_only_by_settings() {
         toml::Value::String(String::new())
     );
     // Both changes are audited, never with the id (sec-5); the refused one is not.
-    use porter_service::audit::{ClientIdChange, IssuerSlug};
+    use porter_service_core::audit::ClientIdChange;
     let changed: Vec<_> = rig
         .audit
         .entries()
@@ -394,7 +397,7 @@ async fn a_client_id_is_written_to_the_users_file_only_by_settings() {
             _ => None,
         })
         .collect();
-    let microsoft = IssuerSlug("microsoft".into());
+    let microsoft = "microsoft".to_owned();
     assert_eq!(
         changed,
         [
@@ -453,7 +456,7 @@ async fn a_google_key_and_its_secret_set_in_settings_are_the_families_google_cli
         settings.get(&secret_row).await.expect("get"),
         toml::Value::String("GOCSPX-mine".into())
     );
-    let families = porter_families::ClientFiles {
+    let families = porter_family_oauth::ClientFiles {
         shipped: dir.join("none.toml"),
         own: file.clone(),
     }
@@ -478,7 +481,7 @@ async fn word_on(changes: &mut ds_settings::live::Changes, row: &KeyPath) -> Str
     use zbus::export::futures_core::Stream;
     loop {
         let change = tokio::time::timeout(
-            porter_fake::GENEROUS,
+            test_kit::GENEROUS,
             std::future::poll_fn(|cx| std::pin::Pin::new(&mut *changes).poll_next(cx)),
         )
         .await
@@ -499,7 +502,7 @@ async fn a_sign_in_again_that_ends_without_signing_in_is_said_on_its_row() {
     // sheet that says so.
     let rig = Rig::start_over(
         Default::default(),
-        SheetHost::answering(porter_core::sheet::SheetInput::Dismiss),
+        SheetHost::answering(porter_sheet::SheetInput::Dismiss),
         vec![porter_fake::cloud_provider(), porter_fake::llm_provider()],
     )
     .await;

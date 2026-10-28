@@ -1,6 +1,6 @@
 //! This computer, as its own Tailscale says it is.
 
-use porter_core::NodeId;
+use porter_tailscale::NodeId;
 use porter_tailscale::{Standing, Status, UserId};
 use std::net::IpAddr;
 

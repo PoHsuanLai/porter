@@ -4,7 +4,11 @@ use crate::{
     ChatReply, ChatRequest, ChatSink, EmbedReply, EmbedRequest, EmbedVector, InferEvent,
     MessagePart, Model, ModelCard, ServedBy, StopReason, TaskRequest, TokenUsage, TurnError,
 };
-use porter_core::{AccountId, Billing, Capability, Locality, ModelId, Tokens};
+use porter_capability::Capability;
+use porter_capability::ModelId;
+use porter_capability::{Billing, Locality};
+use porter_core::AccountId;
+use porter_ids::Tokens;
 
 /// An on-device model of the fake runtime.
 #[derive(Debug, Clone)]
@@ -63,6 +67,7 @@ impl Model for FakeModel {
             input: Tokens(1),
             output: Tokens(1),
             cached: Tokens(0),
+            charge: None,
         };
         let _ = sink.event(InferEvent::TextDelta(text.clone()));
         let _ = sink.event(InferEvent::Usage(usage));
@@ -84,6 +89,7 @@ impl Model for FakeModel {
             input: Tokens(1),
             output: Tokens(1),
             cached: Tokens(0),
+            charge: None,
         };
         let _ = sink.event(InferEvent::TextDelta(text.clone()));
         let _ = sink.event(InferEvent::Usage(usage));
@@ -105,6 +111,7 @@ impl Model for FakeModel {
             input: Tokens(1),
             output: Tokens(0),
             cached: Tokens(0),
+            charge: None,
         };
         Ok(EmbedReply::new(vectors, usage, self.served()))
     }

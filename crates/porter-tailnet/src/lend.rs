@@ -20,7 +20,7 @@ use crate::judge::{Welcome, judge};
 use crate::observe::Seen;
 use crate::refusal::Refusal;
 use crate::{PORT, is_network_address};
-use porter_core::NodeId;
+use porter_tailscale::NodeId;
 use porter_tailscale::{LocalApi, TailscaleError};
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
@@ -68,12 +68,15 @@ pub struct Config {
     pub first_pause: Duration,
     /// The longest pause between two tries.
     pub longest_pause: Duration,
+    /// The words a person reads for a refusal, which the answer carries beside its code (this
+    /// crate writes none).
+    pub words: fn(&Refusal) -> &'static str,
 }
 
 impl Config {
     /// What a product uses: [`PORT`], the network's own addresses only, a try after a second
-    /// and then after longer, up to half a minute.
-    pub const fn product() -> Self {
+    /// and then after longer, up to half a minute, and `words` for a refusal.
+    pub const fn product(words: fn(&Refusal) -> &'static str) -> Self {
         Self {
             port: PORT,
             allowed: is_network_address,
@@ -83,6 +86,7 @@ impl Config {
             },
             first_pause: Duration::from_secs(1),
             longest_pause: Duration::from_secs(30),
+            words,
         }
     }
 }
@@ -201,6 +205,7 @@ struct Shared<V> {
     guests: Arc<Guests>,
     visits: Arc<V>,
     limiter: Limiter,
+    words: fn(&Refusal) -> &'static str,
 }
 
 /// Starts listening whenever `on` says so and `seen` says Tailscale is running and signed in.
@@ -221,6 +226,7 @@ pub fn lend<V: Visits>(
         guests,
         visits,
         limiter: Limiter::new(config.limits),
+        words: config.words,
     });
     let task = tokio::spawn(run(shared, seen, on, config, tx));
     Lending { listening, task }
@@ -354,7 +360,7 @@ async fn accept<V: Visits>(listener: TcpListener, shared: Arc<Shared<V>>) {
 }
 
 /// What a refusal is answered with: a JSON error in the shape model clients read.
-fn refusal_response(refusal: &Refusal) -> String {
+fn refusal_response(refusal: &Refusal, words: fn(&Refusal) -> &'static str) -> String {
     let status = refusal.status();
     let reason = match status {
         403 => "Forbidden",
@@ -362,7 +368,7 @@ fn refusal_response(refusal: &Refusal) -> String {
         _ => "Service Unavailable",
     };
     let body = serde_json::json!({
-        "error": {"message": refusal.to_string(), "type": "refused", "code": "refused"}
+        "error": {"message": words(refusal), "type": "refused", "code": refusal.slug()}
     })
     .to_string();
     format!(
@@ -374,11 +380,11 @@ fn refusal_response(refusal: &Refusal) -> String {
 /// Answers a refused connection with the sentence, after taking what the other side has sent
 /// first (so that the answer is not lost to a reset), and closes it. A computer that sends
 /// nothing is not waited for for ever.
-async fn refuse(mut stream: TcpStream, refusal: Refusal) {
+async fn refuse(mut stream: TcpStream, refusal: Refusal, words: fn(&Refusal) -> &'static str) {
     let mut first = [0_u8; 4096];
     let _ = tokio::time::timeout(Duration::from_secs(10), stream.read(&mut first)).await;
     let _ = stream
-        .write_all(refusal_response(&refusal).as_bytes())
+        .write_all(refusal_response(&refusal, words).as_bytes())
         .await;
     let _ = stream.shutdown().await;
 }
@@ -386,7 +392,7 @@ async fn refuse(mut stream: TcpStream, refusal: Refusal) {
 async fn connection<V: Visits>(stream: TcpStream, from: SocketAddr, shared: Arc<Shared<V>>) {
     let from = SocketAddr::new(from.ip().to_canonical(), from.port());
     let Some(me) = shared.seen.borrow().clone() else {
-        return refuse(stream, Refusal::Off).await;
+        return refuse(stream, Refusal::Off, shared.words).await;
     };
     match admit(&shared, &me, from).await {
         Ok(welcome) => match shared.limiter.take(&welcome.peer().node) {
@@ -403,9 +409,9 @@ async fn connection<V: Visits>(stream: TcpStream, from: SocketAddr, shared: Arc<
                     })
                     .await;
             }
-            None => refuse(stream, Refusal::Busy).await,
+            None => refuse(stream, Refusal::Busy, shared.words).await,
         },
-        Err(refusal) => refuse(stream, refusal).await,
+        Err(refusal) => refuse(stream, refusal, shared.words).await,
     }
 }
 

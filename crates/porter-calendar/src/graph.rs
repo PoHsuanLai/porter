@@ -7,9 +7,10 @@
 use crate::CalendarStore;
 use crate::error::CalendarError;
 use crate::event::{CalendarRef, Event, Stored, When};
-use crate::json::{bare, body, encode, exchange, removed, request, text, url};
-use porter_core::WebUrl;
-use porter_http::{Http, Method};
+use crate::json::{bare, body, encode, exchange, if_match, removed, request, text, url};
+use porter_http::Http;
+use porter_http::http::Method;
+use porter_ids::WebUrl;
 use serde_json::{Value, json};
 
 /// Graph's v1.0 endpoint.
@@ -51,7 +52,7 @@ impl<H: Http> Graph<H> {
             encode(calendar),
             encode(filter)
         ))?;
-        let response = exchange(&self.http, bare(Method::Get, at), "a search of events").await?;
+        let response = exchange(&self.http, bare(Method::GET, &at)?, "a search of events").await?;
         Ok(body(&response)?
             .get("value")
             .and_then(Value::as_array)
@@ -105,7 +106,8 @@ fn stored(calendar: &str, uid: &str, event: &Value) -> Result<Stored, CalendarEr
 impl<H: Http> CalendarStore for Graph<H> {
     async fn calendars(&self) -> Result<Vec<CalendarRef>, CalendarError> {
         let at = self.url("/me/calendars?$select=id,name,hexColor,canEdit")?;
-        let response = exchange(&self.http, bare(Method::Get, at), "the list of calendars").await?;
+        let response =
+            exchange(&self.http, bare(Method::GET, &at)?, "the list of calendars").await?;
         let listed = body(&response)?;
         Ok(listed
             .get("value")
@@ -149,12 +151,12 @@ impl<H: Http> CalendarStore for Graph<H> {
         let response = match self.find(calendar, &event.uid).await? {
             Some(held) => {
                 let mut asked = request(
-                    Method::Patch,
-                    self.url(&format!("/me/events/{}", encode(&held.id)))?,
+                    Method::PATCH,
+                    &self.url(&format!("/me/events/{}", encode(&held.id)))?,
                     &written,
-                );
+                )?;
                 if let Some(etag) = &held.version {
-                    asked = asked.with_header("If-Match", etag.clone());
+                    asked = if_match(asked, etag)?;
                 }
                 exchange(&self.http, asked, "the update of an event").await?
             }
@@ -162,7 +164,7 @@ impl<H: Http> CalendarStore for Graph<H> {
                 let at = self.url(&format!("/me/calendars/{}/events", encode(calendar)))?;
                 exchange(
                     &self.http,
-                    request(Method::Post, at, &written),
+                    request(Method::POST, &at, &written)?,
                     "the creation of an event",
                 )
                 .await?
@@ -176,7 +178,7 @@ impl<H: Http> CalendarStore for Graph<H> {
             return Ok(false);
         };
         let at = self.url(&format!("/me/events/{}", encode(&held.id)))?;
-        let response = self.http.send(bare(Method::Delete, at)).await?;
+        let response = self.http.send(bare(Method::DELETE, &at)?).await?;
         removed(&response, "the deletion of an event")
     }
 }

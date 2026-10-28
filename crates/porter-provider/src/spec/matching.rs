@@ -4,7 +4,6 @@
 
 use porter_core::CoreError;
 use serde::{Deserialize, Serialize};
-use std::fmt;
 
 /// A DNS name in lower case: dot-separated labels of `[a-z0-9-]`, none empty or over 63 bytes,
 /// at most 253 in all. A trailing root dot is dropped.
@@ -33,11 +32,6 @@ impl DomainName {
         }
     }
 
-    /// The name's text.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-
     /// Whether this name is `suffix` or a name under it, compared label by label:
     /// `mx.outlook.com` is within `outlook.com`, `evil-outlook.com` is not.
     pub fn is_within(&self, suffix: &DomainName) -> bool {
@@ -49,24 +43,7 @@ impl DomainName {
     }
 }
 
-impl TryFrom<String> for DomainName {
-    type Error = CoreError;
-    fn try_from(text: String) -> Result<Self, CoreError> {
-        Self::parse(&text)
-    }
-}
-
-impl From<DomainName> for String {
-    fn from(name: DomainName) -> String {
-        name.0
-    }
-}
-
-impl fmt::Display for DomainName {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
+porter_ids::string_newtype!(DomainName, CoreError);
 
 /// The `[matching]` table of a provider file.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]

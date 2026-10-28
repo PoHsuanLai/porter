@@ -65,17 +65,13 @@ pub struct LocalApi {
 }
 
 impl LocalApi {
-    /// A client of the LocalAPI at `socket`.
+    /// A client of the LocalAPI at `socket`. Tailscale's program is looked for in the usual
+    /// system directories only: a host that wants its `PATH` searched too says so with
+    /// [`LocalApi::with_path`]; the client reads no environment.
     pub fn new(socket: impl Into<PathBuf>) -> Self {
-        let path_dirs = std::env::var_os("PATH")
-            .map(|path| std::env::split_paths(&path).collect::<Vec<_>>())
-            .unwrap_or_default();
         Self {
             socket: socket.into(),
-            program_dirs: path_dirs
-                .into_iter()
-                .chain(PROGRAM_DIRS.iter().map(PathBuf::from))
-                .collect(),
+            program_dirs: PROGRAM_DIRS.iter().map(PathBuf::from).collect(),
             timeout: Duration::from_secs(10),
         }
     }
@@ -83,6 +79,17 @@ impl LocalApi {
     /// A client of this computer's own Tailscale, at the path it uses.
     pub fn system() -> Self {
         Self::new(DEFAULT_SOCKET)
+    }
+
+    /// The same client also looking for Tailscale's program in the directories of `path` (the
+    /// text of a `PATH`, read by the host), before the usual ones.
+    pub fn with_path(self, path: &std::ffi::OsStr) -> Self {
+        let mut dirs: Vec<PathBuf> = std::env::split_paths(path).collect();
+        dirs.extend(self.program_dirs);
+        Self {
+            program_dirs: dirs,
+            ..self
+        }
     }
 
     /// The same client looking for Tailscale's program only in `dirs` (to tell "not installed"

@@ -1,9 +1,9 @@
 use super::*;
-use crate::catalog::parse_entry_text;
 use crate::entries;
 use porter_core::AccountId;
 use porter_core::consent::Verdict;
 use porter_infer::Slot;
+use porter_router::catalog::parse_entry_text;
 
 fn catalogue() -> Vec<ModelEntry> {
     [
@@ -14,13 +14,7 @@ fn catalogue() -> Vec<ModelEntry> {
             "claude-haiku-4.5",
             "Claude Haiku 4.5",
             "claude",
-            &[(
-                "openrouter",
-                "anthropic/claude-haiku-4.5",
-                "open_ai_compat",
-                1,
-                5,
-            )],
+            &[("openrouter", "anthropic/claude-haiku-4.5", "open_ai_compat")],
         ),
     ]
     .iter()

@@ -26,7 +26,7 @@ impl ContentId {
     }
 
     fn from_digest(digest: &[u8]) -> Self {
-        Self(digest.iter().map(|b| format!("{b:02x}")).collect())
+        Self(hex::encode(digest))
     }
 
     /// The 64 hex digits.
@@ -134,7 +134,8 @@ mod tests {
 
     #[test]
     fn hashing_a_file_matches_hashing_its_bytes_and_counts_them() {
-        let dir = scratch("cas-hash");
+        let _dir_guard = scratch("cas-hash");
+        let dir = _dir_guard.path().to_owned();
         let bytes: Vec<u8> = (0..200_000u32).map(|i| (i % 251) as u8).collect();
         std::fs::write(dir.join("big"), &bytes).expect("file");
         assert_eq!(
@@ -142,12 +143,12 @@ mod tests {
             (ContentId::of(&bytes), 200_000)
         );
         assert!(hash_file(&dir.join("missing")).is_err());
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
     fn an_atomic_write_replaces_whole_and_leaves_no_temp_file() {
-        let dir = scratch("cas-atomic");
+        let _dir_guard = scratch("cas-atomic");
+        let dir = _dir_guard.path().to_owned();
         let target = dir.join("a/b/file");
         write_atomic(&target, b"one").expect("first");
         write_atomic(&target, b"two").expect("second");
@@ -166,6 +167,5 @@ mod tests {
             .map(|e| e.expect("entry").file_name())
             .collect();
         assert_eq!(names, vec![std::ffi::OsString::from("file")]);
-        let _ = std::fs::remove_dir_all(dir);
     }
 }

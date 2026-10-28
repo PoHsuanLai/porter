@@ -10,7 +10,10 @@ publish.workspace = true
 
 [dependencies]
 base64 = { workspace = true }
+httparse = { workspace = true }
 porter-core = { workspace = true }
+porter-capability = { workspace = true }
+porter-ids = { workspace = true }
 rustls-native-certs = { workspace = true, optional = true }
 rustls-pki-types = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true, features = ["io-util"] }
@@ -18,6 +21,7 @@ tokio-rustls = { workspace = true, optional = true }
 webpki-roots = { workspace = true, optional = true }
 
 [dev-dependencies]
+test-kit = { workspace = true }
 porter-fake-servers = { workspace = true }
 porter-proxy = { workspace = true, features = ["tls"] }
 porter-fake = { workspace = true }

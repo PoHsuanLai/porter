@@ -1,6 +1,6 @@
 [package]
 name = "porter-service"
-description = "accountd's core over its seams (providers, secrets, the consent prompter, the clock): answers AccountsRequest for any transport, or in process."
+description = "accountd's core over its seams (providers, secrets, the consent prompter, the clock): AccountService, the facade a host holds over the accounts and grants domains. It answers AccountsRequest for any transport, or in process."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,16 +9,16 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+porter-service-core = { workspace = true }
+porter-service-accounts = { workspace = true }
+porter-service-grants = { workspace = true }
 porter-core = { workspace = true }
+porter-match = { workspace = true }
+porter-capability = { workspace = true }
+porter-wire = { workspace = true }
+porter-ids = { workspace = true }
 porter-provider = { workspace = true }
 porter-secrets = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-thiserror = { workspace = true }
-
-[dev-dependencies]
-porter-fake = { workspace = true }
-tokio = { workspace = true }
 
 [lints]
 workspace = true

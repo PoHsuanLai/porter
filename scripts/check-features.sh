@@ -4,8 +4,8 @@
 # The workspace gate builds `--workspace --all-features`, which unifies every feature into one
 # build and so never sees the build a consumer makes on its own. docket builds inferd that way
 # (`cargo install --git porter`, -D warnings): porter-client with `dbus` and `infer` and no
-# `socket` left two framed.rs methods unused, and the gate passed (porter 5bdda62; fixed in
-# b12886e). Each set below is checked here, alone, so the same break fails this script.
+# other feature once left two framed.rs methods unused, and the gate passed (porter 5bdda62;
+# fixed in b12886e). Each set below is checked here, alone, so the same break fails this script.
 #
 # The sets come from the consumers' manifests at origin/master (porter-client and the other
 # porter crates each consumer takes with default-features = false). The comment above each set
@@ -29,18 +29,16 @@ BUILDS=(
   "accountd (default) :: -p accountd"
   "syncd (default) :: -p syncd"
 
-  # porter-client, in the sets its consumers name. Consumers that say default-features = false:
-  # mailo's pure client (no features), and detent's Settings (dbus). inferd and syncd take dbus
-  # with the defaults on (docket, almanac, cua and their daemons too). The dbus-plus-infer set
-  # without socket is the one docket's inferd build broke (see the header).
+  # porter-client, in the sets its consumers name. No feature is on by default, so each consumer
+  # names its own: mailo's pure client (no features), detent's Settings (dbus, infer, lending),
+  # inferd's tests (dbus, infer), syncd (dbus, in-process, relays), docket and almanac (dbus,
+  # infer). The dbus-plus-infer set is the one docket's inferd build broke (see the header).
   "porter-client (no features: mailo) :: -p porter-client --no-default-features"
   "porter-client (dbus only) :: -p porter-client --no-default-features --features dbus"
   "porter-client (dbus,infer,lending: detent's Settings) :: -p porter-client --no-default-features --features dbus,infer,lending"
   "porter-client (dbus,infer: inferd's build as docket makes it) :: -p porter-client --no-default-features --features dbus,infer"
-  "porter-client (dbus with defaults: inferd, syncd, docket, almanac, cua) :: -p porter-client --features dbus"
-  "porter-client (socket: the other desktops and macOS) :: -p porter-client --no-default-features --features socket"
-  "porter-client (socket,infer) :: -p porter-client --no-default-features --features socket,infer"
-  "porter-client (defaults: docket, almanac, cua) :: -p porter-client"
+  "porter-client (dbus,in-process,relays: syncd) :: -p porter-client --features dbus,in-process,relays"
+  "porter-client (infer: docket, almanac) :: -p porter-client --features infer"
   "porter-client (engines) :: -p porter-client --features engines"
 
   # The other porter crates a consumer takes with default-features = false (mailo's workspace

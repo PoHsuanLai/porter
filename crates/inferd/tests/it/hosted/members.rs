@@ -2,14 +2,15 @@
 //! session must survive.
 
 use super::*;
-use inferd::audit::Discard;
-use inferd::clock::FixedClock;
 use inferd::engines::Engines;
 use inferd::peers::TablePeers;
 use inferd::service::Inference;
-use porter_core::UnixSeconds;
-use porter_dbus::{Details, InferenceProxy, need_to_dbus};
+use porter_dbus::Details;
+use porter_dbus::inference::{InferenceProxy, InferenceServed, need_to_dbus};
+use porter_ids::UnixSeconds;
+use porter_ids::clock::FixedClock;
 use porter_infer::{InferRefusal, ModelError, Readiness};
+use porter_turns::audit::Discard;
 use zbus::object_server::Interface;
 
 async fn proxy(world: &World) -> InferenceProxy<'_> {
@@ -29,8 +30,8 @@ async fn availability_prepare_and_the_gpu_answer_over_the_bus() {
         "granted"
     );
     // A class nobody has a model for under the floor, and a need nothing here can serve.
-    let speech = need_to_dbus(&Need::Speech(porter_core::need::SpeechNeed::new(
-        [porter_core::capability::SpeechMode::Stt].into(),
+    let speech = need_to_dbus(&Need::Speech(porter_match::SpeechNeed::new(
+        [porter_capability::SpeechMode::Stt].into(),
     )));
     assert_eq!(
         inference
@@ -50,7 +51,7 @@ async fn availability_prepare_and_the_gpu_answer_over_the_bus() {
         "loading"
     );
     let mut answer = String::new();
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         answer = inference
             .prepare(&need, "notes", "fast", &Details::new())
@@ -94,12 +95,12 @@ async fn a_bad_class_or_tier_is_an_invalid_argument() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn the_object_introspects_as_the_frozen_interface() {
-    let object = Inference::new(
+    let object = InferenceServed(Inference::new(
         Engines::default(),
         TablePeers::new(),
         Discard,
         FixedClock(UnixSeconds(0)),
-    );
+    ));
     let mut xml = String::from(
         "<!DOCTYPE node PUBLIC \"-//freedesktop//DTD D-BUS Object Introspection 1.0//EN\"\n \"http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd\">\n<node>\n",
     );

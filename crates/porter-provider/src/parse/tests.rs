@@ -1,7 +1,9 @@
 use super::*;
 use crate::spec::{Discovery, Port};
-use porter_core::capability::{Access, Delta, StorageScope};
-use porter_core::{AuthKind, Capability, Family};
+use porter_capability::Capability;
+use porter_capability::LlmWire;
+use porter_capability::{Access, Ask, Delta, StorageScope};
+use porter_core::{AuthKind, Family};
 
 const HEAD: &str = r#"
 id = "example"
@@ -14,6 +16,19 @@ const STORAGE_ROW: &str = r#"
 family = "webdav"
 kind = "storage"
 v = { access = "read_write", delta = "poll", quota = "unreported", scope = "full", hashes = "none", ranges = "absent", chunked_upload = "absent" }
+"#;
+
+const FLAT_STORAGE_ROW: &str = r#"
+[[capability]]
+family = "webdav"
+kind = "storage"
+access = "read_write"
+delta = "poll"
+quota = "unreported"
+scope = "full"
+hashes = "none"
+ranges = "absent"
+chunked_upload = "absent"
 "#;
 
 const LLM_ROW: &str = r#"
@@ -33,7 +48,7 @@ v = { program = "claude-code", key_env = "ANTHROPIC_API_KEY", base_url_env = "AN
 const AI: &str = r#"
 [ai]
 locality = { kind = "cloud", v = { region = "eu-west-1" } }
-billing = { kind = "metered", v = { input_per_mtok = 3000000, output_per_mtok = 15000000 } }
+billing = { kind = "metered" }
 "#;
 
 fn file(auth: &str, discovery: &str, rest: &[&str]) -> String {
@@ -41,6 +56,50 @@ fn file(auth: &str, discovery: &str, rest: &[&str]) -> String {
         "{HEAD}\n[auth]\n{auth}\n\n[discovery]\n{discovery}\n{}",
         rest.concat()
     )
+}
+
+#[test]
+fn a_capability_row_is_written_flat_and_the_old_shape_with_a_v_table_reads_the_same() {
+    let spec = |row: &str| {
+        let text = file(
+            r#"kind = "app_password""#,
+            r#"kind = "well_known""#,
+            &[row, "ask = \"on_use\"\n"],
+        );
+        parse_provider(&text).expect("parses")
+    };
+    assert_eq!(spec(FLAT_STORAGE_ROW), spec(STORAGE_ROW));
+    assert_eq!(spec(FLAT_STORAGE_ROW).capabilities[0].ask, Ask::OnUse);
+}
+
+#[test]
+fn a_language_model_row_speaks_its_family_and_may_not_say_otherwise() {
+    let row = |wire: &str| {
+        format!(
+            "[[capability]]\nfamily = \"messages\"\nkind = \"llm\"\nfeatures = [\"chat\"]\ncontext = 8192\nmax_output = 1024\n{wire}"
+        )
+    };
+    let spec = |wire: &str| {
+        let text = file(
+            r#"kind = "api_key""#,
+            r#"kind = "model_list""#,
+            &[AI, &row(wire)],
+        );
+        parse_provider(&text)
+    };
+    let wire_of = |spec: ProviderSpec| match &spec.capabilities[0].capability {
+        Capability::Llm(llm) => llm.wire,
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(wire_of(spec("").expect("parses")), LlmWire::Messages);
+    assert_eq!(
+        wire_of(spec("wire = \"messages\"").expect("parses")),
+        LlmWire::Messages
+    );
+    assert!(matches!(
+        spec("wire = \"responses\""),
+        Err(ProviderFileError::WireFamily(_))
+    ));
 }
 
 #[test]
@@ -217,7 +276,7 @@ issuer = "microsoft""#;
 
 #[test]
 fn an_agent_row_parses_to_its_typed_fields() {
-    use porter_core::capability::{AgentProgram, AgentProtocol};
+    use porter_capability::{AgentProgram, AgentProtocol};
     let text = file(r#"kind = "agent_login""#, r#"kind = "fixed""#, &[AGENT_ROW]);
     let spec = parse_provider(&text).expect("parses");
     assert_eq!(spec.auth.kind, AuthKind::AgentLogin);
@@ -365,7 +424,7 @@ fn with_group(word: &str, text: String) -> String {
 
 #[test]
 fn a_group_word_in_the_file_gives_the_spec_and_the_row_that_group() {
-    use porter_core::sheet::ProviderGroup;
+    use porter_sheet::ProviderGroup;
     let plain = || file(r#"kind = "password""#, r#"kind = "fixed""#, &[STORAGE_ROW]);
     for (word, group) in [
         ("internet", ProviderGroup::Internet),
@@ -385,7 +444,7 @@ fn a_group_word_in_the_file_gives_the_spec_and_the_row_that_group() {
 
 #[test]
 fn a_file_without_a_group_gets_one_from_its_sign_in_and_its_services() {
-    use porter_core::sheet::ProviderGroup;
+    use porter_sheet::ProviderGroup;
     let agent_login = file(r#"kind = "agent_login""#, r#"kind = "fixed""#, &[AGENT_ROW]);
     let key_ai = file(
         r#"kind = "api_key""#,

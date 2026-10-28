@@ -2,6 +2,218 @@
 
 ## Unreleased
 
+### AI keys are accountd's
+
+- accountd keeps the AI keys, the agent logins and the local runtimes with the identities: one
+  registry, one secret namespace (`porter.accountd`), one grant store, one audit file. inferd's
+  second store (`keys/`, `launcher/`, the namespace `porter.inferd`, `INFERD_KEYS`, the
+  `test-keys` feature and `inferd add`) is deleted. `accountd add` adds a key from a terminal;
+  `ACCOUNTD_KEYS=file:<path>` reads the file format `INFERD_KEYS` did.
+- Wire. `org.quire.Inference1.Keys` is `org.quire.Accounts1.Keys` (`RequestKey` unchanged;
+  `AddAccount` is `Manager.AddAccount`). `org.quire.Inference1.Launcher` is
+  `org.quire.Accounts1.Launcher` with the same members and signatures, minus `SetAgentState`;
+  `IssueProcessCredential(permit, program) -> (id, h)` hands the key on a sealed memfd, the one
+  way (the `target` argument and `Handoff` are gone, and so is the `handoff` field of the
+  `process_credential_issued` audit line). The Request objects of key sheets are under
+  `/org/quire/Accounts1/request`, errors under `org.quire.Accounts1.Error.*`, and
+  `ServiceRoot::Inference` is gone. New: `org.quire.Accounts1.Broker`, for the new role
+  `CallerRole::AiBroker` (`ai_broker`, inferd's row in `callers.toml`): `Verdicts`, `ReadKey`,
+  `Accounts`, `Servers`, `ReadServerKey`, `ReportLocal` and `Changed`. The AI account rows move
+  from `/org/quire/Inference1/settings` to accountd's settings module; only
+  `accounts.<id>.spend.month` and `.spend.cap` stay with inferd.
+- porter-client. `AiKeys` and `Launcher` talk to accountd; `AiKeys::add_account` and the `target`
+  of `Launcher::issue_credential` are gone, `CredentialHandle` with them (`ProcessCredential`
+  holds the memfd: `descriptor()`, `read_key()`, `child_key()`). New `AiAccounts` for the AI
+  broker.
+- Data. accountd copies inferd's registry, keys, permits, switches and audit lines in at its
+  start, reads both stores back before it removes the old keys, and puts the copy off while an
+  inferd that still keeps its own keys is on the bus. inferd removes its old registry and audit
+  file once accountd's record (`ai-import.json`) covers them. The registry is no longer pruned to
+  identities, and `registry.pre-split.json` is no longer made.
+- Sandboxes. No limit changes: accountd's unit has no new directory, and inferd's loses
+  `inferd/agent` from `RuntimeDirectory`.
+
+### Capability kinds are written once
+
+- `capability_kinds!` in porter-capability is the one list of kinds. `Capability`,
+  `CapabilityKind` (with `ALL`, `name` and `is_ai`), porter-match's `Need`, the dispatch that
+  meets a need with an offer and the `Service` type of each kind (`porter_capability::service::*`,
+  with `Asks` in porter-match for its need) are expanded from it; a new kind is one row, its
+  capability struct and its need struct. Each need says how it meets its capability by
+  `Wants<C>::short_of`, and `Shortfall` is unchanged. The serde forms are unchanged and pinned by
+  a test. `porter_sheet::words::service_name(kind)` is `kind.name()`.
+
+### Settings rows are written once
+
+- New crate porter-settings: `AccountRow` and one unit struct per row every account has, which
+  accountd and inferd list their accounts through in place of two copies of the same eight
+  `Key` variants. accountd's keys (`Key`, `parse`, `path`, `schema`) and the edit of
+  `clients.toml` moved there from accountd; the daemon hosts the module. The row paths and words
+  are unchanged.
+
+### The service is a facade over domains
+
+- porter-service is split. New crates: porter-service-core (`Ctx<E: Ports>`, the registry, the
+  audit trail, the sheets seam, the reach policy, the per-account turns at an issuer),
+  porter-service-accounts (`AccountsApi`), porter-service-grants (`GrantsApi`), porter-identities
+  (`UseBook`, `Picks`, the `IdentityDesk`) and porter-spaces (`SpaceBook`), the last two taken out of
+  accountd. `porter_service` keeps `AccountService`, which a host builds as before. `Ports` names
+  the six seams once, so the domains' impls carry one parameter in place of six; `Parts<P, S, U, K,
+  R, A>` is the `Ports` a host builds, and `AccountService` is still generic over the six.
+- Moved: `porter_service::{Registry}` is `porter_service_core::registry::Registry`;
+  `{audit::*, AuditSink, NoAudit}` are `porter_service_core::audit::*`; `{Sheets, SheetLink,
+  SheetOpen, SheetFault}` are `porter_service_core::sheets::*`; `{SignInAs, AllowFor, AgentFault,
+  Launchers, LoginEnd, NoLauncher, Roster, Waiting, program_of, LocalFault, MAX_LOCAL_CLAIMS,
+  OwnMachines}` are `porter_service_accounts::*`; `accountd::{IdentityDesk, SheetsDesk}` are
+  `porter_identities::*` and `accountd::{CREATES_PER_WINDOW, CREATE_WINDOW}` are
+  `porter_spaces::*`.
+- `LauncherSession` is `SessionToken`, with the same text on the wire and in `registry.json`:
+  consent only compares tokens and no longer names the agent launcher. `choose_for_agent` is
+  `AccountService::choose`, which takes the session.
+
+### The wire carries only sheets
+
+- `AccountsRequest` is `Choose`, `AddAccount` and `Reauthenticate`, and `AccountsReply` is
+  `Chosen`, `Added`, `AlreadyAdded`, `Reauthenticated` and `Refused`. Deleted, because no daemon
+  served them: the requests `Query`, `Availability`, `ListGrants`, `Revoke` and `IssueToken`, and
+  the replies `Candidates`, `Availability`, `Grants`, `Revoked` and `Token`. What an app read of
+  its grants is typed on the service: `AccountService::{candidates, availability, grants,
+  revoke}`. `porter_client::Accounts::find` reads it through the in-process transport and is
+  offered only there (`Accounts<InProcess<..>>`); over the bus it was already unsupported.
+  Nothing called `IssueToken` outside tests, so the token it issued is gone with it
+  (`AccountService` has no `issue_token`, `porter_client::Accounts` no `token`), and so are the
+  client's `grants` and `revoke`. `AuditEvent::TokenIssued` is read and never written: an old
+  `audit.jsonl` line of that kind still reads and shows. `Choose` stays: inferd's `Keys` sheet
+  and syncd's own grants use it, and accountd will serve it.
+
+### Sans-IO is checked
+
+- check-boundary fails when a `*-proto` crate depends on porter-http, tokio or reqwest, or has an
+  `async fn`. No crate failed it.
+
+### porter-families is the registry, and each family is a crate
+
+- New crates porter-family-kit, porter-family-nextcloud, porter-family-generic and
+  porter-family-oauth. porter-families keeps `DynProvider`, `set` and the small families, and its
+  `nextcloud`, `generic` and `oauth` features turn the crates on. The paths moved:
+  `porter_families::{Conversation, Flow, Move, Pacing}` are `porter_family_kit::..`;
+  `{NextcloudProvider, NextcloudFlow, NextcloudSession}` are `porter_family_nextcloud::..`;
+  `{GenericProvider, GenericFlow, GenericSession, MailLookup, DavLookup, FixedLookup, Lookup,
+  Located, Mid, Outcome, Seams, SharedDns}` are `porter_family_generic::..`; `{OAuthProvider,
+  OAuthSession, OAuthEnv, BrowserFlow, BrowserIssuer, Browser, Cx, Grant, Standard, Google,
+  Microsoft, GoogleState, ClientFiles, Clock, Random}` are `porter_family_oauth::..`.
+
+### The OAuth probes
+
+- New crate oauth-probe-proto: the bearer read and the readings of Google's and Graph's answers as
+  claims. Which path shows which service is a `[[<issuer>.probe]]` row of `issuers.toml`
+  (`IssuerData::probe`, `ProbeRow`). `porter_families::is_personal` is
+  `oauth_probe_proto::microsoft::is_personal`.
+
+### generic-proto
+
+- New crate generic-proto: the typed and file-named mail servers (`typed`, `fixed`, `domain_of`),
+  the `.well-known` and PROPFIND requests of DAV discovery with their verdicts, the JMAP session
+  request and the plan of the password check, with no IO. The generic family only sends them.
+
+### nextcloud-proto
+
+- New crate nextcloud-proto: Login Flow v2, the OCS capabilities (moved from porter-discover:
+  `parse_ocs_capabilities` is `nextcloud_proto::ocs::parse_capabilities` and returns the claims,
+  and `Source::Ocs` is gone), the app-password revoke, the paths of a server and the account's
+  endpoints, as requests and parsers. The Nextcloud family only sends them. porter-core gains
+  `EndpointUrl::join`, `EndpointUrl::typed_server` and `ServiceEndpoint::coherent`,
+  porter-capability `offers`; the families' own copies are gone.
+
+### One DAV discovery, and porter-dav is gone
+
+- dav-proto: feature `discover` adds `discover::Walk`, the one sans-IO state machine for the
+  principal, home-set and collection walk (`start` returns the walk and its first request,
+  `advance` takes the reply and returns `Next::Ask` or `Next::Done(Found)`), with `Reach`,
+  `Scope`, `Home`, `Collection`, `Found`, `Error` and the readers `current_user_principal`,
+  `home_set` and `collections`. `quota` and `Quota` move in from porter-dav. `http::bytes` builds
+  the requests as `Request<Vec<u8>>`. `names::CALENDAR_COLOR`, `Multistatus::first_found`,
+  `first_found_items`, `Response::found_items` and `Prop::items` are new. Nothing is removed.
+- A home-set or principal href with a literal space in it is one href: it was split on the space.
+- porter-dav is deleted. Its `propfind` and `report_sync_collection` are `dav_proto::http::bytes`
+  (with `porter_http::uri` for a `WebUrl`), and its readers are dav-proto's. The Nextcloud and
+  generic families and syncd's PIM discovery all drive `Walk`.
+
+### Families are traits, and OAuth is one family
+
+- porter-families: `FamilyProvider`, `FamilySession` and `FamilySignIn` are gone. A family is held
+  as `Box<dyn DynProvider>` (`DynProvider::boxed(provider)`), which is a `Provider`; `DynSession`
+  and `DynSignIn` are its session and sign-in. `set::family_of` walks a table of builders.
+- The `google` and `microsoft` features are one `oauth` feature. `GoogleProvider`,
+  `MicrosoftProvider`, `GoogleEnv`, `MicrosoftEnv`, `GoogleSession`, `MicrosoftSession`,
+  `GoogleSignIn` and `MicrosoftSignIn` are `OAuthProvider<Google | Microsoft>`, `OAuthEnv`,
+  `OAuthSession<..>` and `Conversation<BrowserFlow<..>>`. An issuer whose row in
+  porter-provider's `issuers.toml` names a userinfo endpoint is served by `Standard` with no Rust.
+- porter-families: the sign-in types of the other families are `Conversation<NextcloudFlow>`,
+  `Conversation<ApiKeyFlow<H>>`, `Conversation<AgentLoginFlow>`, `Conversation<TailnetFlow>` and
+  `Conversation<GenericFlow<L>>`; `GenericProvider<L>` takes the `Lookup` (`MailLookup`,
+  `DavLookup`, `FixedLookup`) its discovery names.
+- porter-provider: `Issuer::Yahoo`; `Issuer::data()` (endpoints, userinfo, scopes by capability
+  kind, scope classes, API origins) replaces the endpoint match, and `scopes_of`,
+  `on_use_scopes_of`, `scope_sensitivity` and `Sensitivity` of porter-families are
+  `IssuerData::{kind_scopes, on_use_scopes, class_of}` and `ScopeClass`. Yahoo is an issuer row
+  (endpoints and userinfo); a Yahoo provider file comes once its scopes are confirmed against a
+  registered client.
+
+### Dead API, no-op migrations, the one-batch shims and the socket carrier are deleted
+
+- porter-oauth: the device-code flow, `mint_key`, `openrouter_auth_url`, `clients_toml`,
+  `MovedEndpoints` and `ClientRegistry::moved_endpoints` are gone, with the fake issuer's device
+  grant. porter-families has no `openrouter` feature or skeleton family. `AuditEvent::Adopted`
+  and `porter_sync::DatasetKind::{Settings, Keychain}` are gone; an `audit.jsonl` line written
+  for `adopted` is skipped on read, like any line of a kind this build does not know.
+- The registry's ten version-only migrations are gone: a vocabulary that changed no stored
+  shape has no row in the table, and a document from any stored version still reads.
+- Every re-export "kept for one batch" is deleted, and each caller names the real path:
+  `porter_core::clock::{Clock, FixedClock, SystemClock}` replace `porter_service::Clock`,
+  `porter_fake::FixedClock` and `syncd::clock`'s; porter-dbus's `names`, `callers` and `sheet`
+  items are named through those modules, not at the crate root; `porter_http::{Method, Status,
+  HeaderName, HeaderValue}`, `porter_dav`'s dav-proto types, `storage_webdav`, `storage_graph`
+  and `storage_gdrive`'s `Dial`, `StreamHttp` and `StreamLimits`, `porter_tailnet::{GuestRow,
+  RowState}`, porter-rig's `secrets_service` and `storage_fake`, accountd's and syncd's
+  `proc_root`, and porter-fake's `infer` feature with its `FakeModel`, `FakeInferSession`,
+  `Script` and `ScriptStep` (use `porter_infer::testing`) are gone.
+- porter-client has no default features: name `infer`, `in-process`, `dbus` and the rest as
+  needed. The latchkey socket carrier is deleted: `SocketTransport`, `SocketSession`,
+  `SocketAgent`, `StartAgent`, `Place`, `START_WAIT`, `LinkChoice::Socket`, the `socket` and
+  `framed` features and the `latchkey` dependency, with porter-infer's `LinkHello` and
+  `OpenFrame`. `ClientEnv`, `LinkChoice`, `AnyTransport` and `AnySession` are gone with it:
+  `Accounts::<DbusTransport>::connect()` connects over the session bus (feature `dbus`), and
+  callers name `DbusTransport` and `DbusSession`.
+- `IssuerEndpoints::device` is gone: nothing reads a device endpoint now.
+
+### porter-http speaks the `http` crate's request and response
+
+- `HttpRequest` and `HttpResponse` are now `http::Request<Vec<u8>>` and `http::Response<Vec<u8>>`
+  (http 1.x, re-exported as `porter_http::http`). The `Http` trait, `SharedHttp`, `HyperHttp` and
+  `stream::StreamHttp` take and return them. The body stays a whole `Vec<u8>`: what porter sends
+  and reads is small, and every caller reads it as a slice or a string.
+- porter-http's own `Method`, `Status`, `Header`, `HeaderName` and `HeaderValue` are gone. Use
+  `http::Method` (`Method::GET`; `porter_http::webdav::{propfind, report, mkcol}` for WebDAV's),
+  `http::StatusCode`, and `http::HeaderMap`. `porter_http::{Method, Status, HeaderName,
+  HeaderValue}` re-export the `http` crate's types for one batch; `Header` has no re-export.
+- A request is built with `porter_http::request(method, &web_url)`, the one place a `WebUrl`
+  becomes the request's URI, which returns `http::request::Builder`; `request_to` does the same
+  for an `EndpointUrl` (it replaces `HttpRequest::to`). A header value the `http` crate refuses
+  (a line break in a token) now fails when the request is built; `HttpError` converts from
+  `http::Error` as `Malformed`, which is what the hyper client answered for it before.
+- `HeaderText` reads a header as text (`header(name)`) and `retry_after_seconds()` on a request,
+  a response or a `HeaderMap`; it replaces `HttpResponse::header` and
+  `HttpResponse::retry_after_seconds`. `SensitiveHeader::sensitive_header` marks a credential's
+  value sensitive, so a request's `Debug` shows `Sensitive` for it. A request's `Debug` is now
+  the `http` crate's and shows the whole URI, not only its origin.
+- `HyperHttp` checks the rule that plain `http` goes to this computer only on the request's URI
+  itself, since a request no longer has to come from a `WebUrl`. `BodySink::head` takes
+  `(StatusCode, &HeaderMap)` and `HyperHttp::stream` returns `StatusCode`.
+- `porter_dav::propfind` and `porter_dav::report_sync_collection` return
+  `Result<HttpRequest, HttpError>`: building the request can fail on a URL the `http` crate does
+  not take.
+
 ### WebDAV as a library: dav-proto
 
 - New crate `dav-proto`: WebDAV, CalDAV and CardDAV bodies built as `String` and replies read
@@ -34,6 +246,19 @@
   new test crate, `syncd-fakes` (`syncd_fakes::storage`). The binary keeps its name and flags;
   build it with `cargo build -p syncd-fakes`. `porter_rig::storage_fake` re-exports the module
   for one batch.
+
+### Keyring chunking is its own crate
+
+- `keyring-chunked` is a new library crate: `ChunkedStore<S>`, a keyring-core store over any
+  other that keeps a value too long for one entry (the Windows Credential Manager's 2560 bytes) in
+  parts, with its own `ChunkError`. porter-secrets' `StoreSecrets` uses it, and its private
+  `keyring/chunks.rs` is gone. What porter wrote reads unchanged: the head `porter-parts:<count>`
+  and the parts `<name>#1`, `<name>#2`, ...
+- A write that fails part-way now removes what it overwrote, so the credential reads as missing
+  instead of as two values mixed; one that fails before any part is written leaves the old value.
+- Parts left past the new count by an earlier failed write are swept on the next write or delete.
+- A value that would need more than 64 parts is refused when it is written (`TooLong`), not when
+  it is read back.
 
 ### Engine archives are unpacked in process
 

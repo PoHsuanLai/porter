@@ -10,13 +10,16 @@ publish.workspace = true
 
 [dependencies]
 porter-core = { workspace = true }
+porter-match = { workspace = true }
+porter-capability = { workspace = true }
+porter-sheet = { workspace = true }
+porter-ids = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 toml = { workspace = true }
 
 [dev-dependencies]
-# Only for the include guard of tests/it (`porter_fake::guard`).
-porter-fake = { workspace = true }
+test-kit = { workspace = true }
 
 [lints]
 workspace = true

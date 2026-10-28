@@ -17,49 +17,34 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// Numbers the staging files of this process.
 static STAGED: AtomicU64 = AtomicU64::new(0);
 
-/// What a write does about the directories above the target.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Parents {
-    /// Missing directories are made.
-    Create,
-    /// The directory must be there already: a write into one that is gone fails with `NotFound`
-    /// and brings nothing back.
-    MustExist,
-}
-
-/// The permissions a written file gets.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Visibility {
-    /// Readable and writable by the owner alone (mode 0600 where the platform has modes).
-    OwnerOnly,
-    /// The platform's default for a new file (the process's umask).
-    Default,
-}
-
 /// A way of writing a file atomically.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AtomicWrite {
-    parents: Parents,
-    visibility: Visibility,
+    /// Whether missing directories above the target are made; when not, a write into a directory
+    /// that is gone fails with `NotFound` and brings nothing back.
+    create_parents: bool,
+    /// Whether a new file is readable and writable by the owner alone (mode 0600 where the
+    /// platform has modes); when not, it gets the platform's default (the process's umask).
+    owner_only: bool,
 }
 
 impl AtomicWrite {
     /// Owner-only files, missing directories made: credentials, settings, ledgers.
     pub const PRIVATE: Self = Self {
-        parents: Parents::Create,
-        visibility: Visibility::OwnerOnly,
+        create_parents: true,
+        owner_only: true,
     };
 
     /// Files with the default permissions, missing directories made: data other programs read.
     pub const SHARED: Self = Self {
-        parents: Parents::Create,
-        visibility: Visibility::Default,
+        create_parents: true,
+        owner_only: false,
     };
 
-    /// The same writer, but it never makes a directory (see [`Parents::MustExist`]).
+    /// The same writer, but it never makes a directory (a write into a missing one fails with `NotFound`).
     pub const fn in_existing_dir(self) -> Self {
         Self {
-            parents: Parents::MustExist,
+            create_parents: false,
             ..self
         }
     }
@@ -108,7 +93,7 @@ impl AtomicWrite {
         fill: impl FnOnce(&mut std::fs::File) -> io::Result<()>,
     ) -> io::Result<PathBuf> {
         let dir = directory_of(target);
-        if self.parents == Parents::Create {
+        if self.create_parents {
             std::fs::create_dir_all(dir)?;
         }
         let staged = staging_beside(target);
@@ -130,7 +115,7 @@ impl AtomicWrite {
         let mut options = std::fs::OpenOptions::new();
         options.write(true).create_new(true);
         #[cfg(unix)]
-        if self.visibility == Visibility::OwnerOnly {
+        if self.owner_only {
             use std::os::unix::fs::OpenOptionsExt;
             options.mode(0o600);
         }

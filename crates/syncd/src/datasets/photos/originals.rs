@@ -9,7 +9,7 @@
 use super::cas::{self, ContentId};
 use super::library::{PhotoLibrary, originals_dir};
 use crate::dataset::{Dataset, DatasetError, DatasetId};
-use porter_core::Bytes;
+use porter_ids::Bytes;
 use porter_sync::{Blob, ConflictRule, ContentHash, ItemPath, LocalId, Scanned};
 use std::io;
 use std::path::Path;
@@ -169,10 +169,10 @@ mod tests {
     use crate::testing::scratch;
     use std::sync::Arc;
 
-    fn dataset(name: &str) -> (PhotoOriginals, PhotoLibrary, std::path::PathBuf) {
+    fn dataset(name: &str) -> (PhotoOriginals, PhotoLibrary, tempfile::TempDir) {
         let dir = scratch(name);
         let library = PhotoLibrary::open(
-            dir.join("lib"),
+            dir.path().join("lib"),
             DeviceId::parse("a").expect("device"),
             Arc::new(ManualMillis::at(1)),
         )
@@ -182,7 +182,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_scan_names_each_original_by_its_content_hash_and_ignores_strays() {
-        let (originals, library, dir) = dataset("orig-scan");
+        let (originals, library, _dir) = dataset("orig-scan");
         let id = ContentId::of(b"pixels");
         originals
             .store(None, &ItemPath(id.rel()), Blob(b"pixels".to_vec()))
@@ -204,12 +204,11 @@ mod tests {
             (scan[0].size, scan[0].path.0.as_str()),
             (Bytes(6), id.rel().as_str())
         );
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[tokio::test]
     async fn store_refuses_bytes_that_are_not_the_named_original_and_paths_that_are_not_ids() {
-        let (originals, _, dir) = dataset("orig-refuse");
+        let (originals, _, _dir) = dataset("orig-refuse");
         let id = ContentId::of(b"pixels");
         assert!(
             originals
@@ -232,12 +231,11 @@ mod tests {
             );
         }
         assert_eq!(originals.scan().await.expect("scan"), vec![]);
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[tokio::test]
     async fn store_is_idempotent_read_returns_the_bytes_and_discard_of_a_gone_original_is_fine() {
-        let (originals, _, dir) = dataset("orig-roundtrip");
+        let (originals, _, _dir) = dataset("orig-roundtrip");
         let id = ContentId::of(b"pixels");
         let path = ItemPath(id.rel());
         let first = originals
@@ -256,18 +254,16 @@ mod tests {
         originals.discard(&first.local).await.expect("discard");
         originals.discard(&first.local).await.expect("again");
         assert!(originals.read(&first.local).await.is_err());
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
     fn the_dataset_is_immutable_content_with_no_possible_conflict() {
-        let (originals, _, dir) = dataset("orig-rule");
+        let (originals, _, _dir) = dataset("orig-rule");
         assert_eq!(originals.id().as_str(), "photos_originals");
         assert_eq!(originals.conflict_rule(), ConflictRule::Impossible);
         assert_eq!(
             porter_sync::DatasetKind::PhotosOriginals.conflict_rule(),
             originals.conflict_rule()
         );
-        let _ = std::fs::remove_dir_all(dir);
     }
 }

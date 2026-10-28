@@ -8,8 +8,8 @@
 //! engine then stands as [`Standing::Changed`] and is not started until it is installed again.
 
 use crate::hosts::LaunchGuard;
-use crate::startup::Cause;
 use porter_engines::{EngineId, Finder, Found, Manifest, Roots, Verdict, Verifier, pointed_strata};
+use porter_router::startup::Cause;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};

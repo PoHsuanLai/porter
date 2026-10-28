@@ -7,12 +7,15 @@ use crate::common;
 
 use common::bus::PrivateBus;
 use common::inferd::{Behaviour, FakeInferd, Seen, slugs};
+use porter_capability::ModelId;
+use porter_capability::Tier;
 use porter_client::{
     Accounts, ClientError, DbusSession, DbusTransport, InferSession, SessionError, TransportError,
 };
+use porter_core::AccountId;
+use porter_core::DataClass;
 use porter_core::consent::Usage;
-use porter_core::need::{DimsNeed, EmbedNeed, LlmNeed};
-use porter_core::{AccountId, DataClass, Dims, ModelId, Need, Permille, Tier, Tokens};
+use porter_ids::{Dims, Permille, Tokens};
 use porter_infer::testing::{Script, ScriptStep};
 use porter_infer::{
     AttachIndex, ChatControl, ChatMessage, ChatReply, ChatRequest, ClientFrame, EmbedReply,
@@ -21,6 +24,8 @@ use porter_infer::{
     ReplyShape, RequestKind, Role, ScoreOptions, ServedBy, StopReason, TokenUsage, ToolParallelism,
     Traceparent,
 };
+use porter_match::Need;
+use porter_match::{DimsNeed, EmbedNeed, LlmNeed};
 use std::os::fd::OwnedFd;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -32,7 +37,7 @@ fn llm() -> Need {
 fn embeddings() -> Need {
     Need::Embeddings(EmbedNeed::new(
         DimsNeed::Exactly(Dims(3)),
-        [porter_core::capability::Modality::Text].into(),
+        [porter_capability::Modality::Text].into(),
     ))
 }
 
@@ -40,7 +45,7 @@ fn served() -> ServedBy {
     ServedBy {
         account: AccountId::parse("local").expect("id"),
         model: ModelId::parse("echo").expect("id"),
-        locality: porter_core::Locality::OnDevice,
+        locality: porter_capability::Locality::OnDevice,
     }
 }
 
@@ -49,6 +54,7 @@ fn usage() -> TokenUsage {
         input: Tokens(2),
         output: Tokens(1),
         cached: Tokens(0),
+        charge: None,
     }
 }
 
@@ -421,17 +427,14 @@ async fn no_daemon_on_the_bus_is_unreachable() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_daemon_that_errors_on_open_is_not_unreachable() {
-    // The frozen skeleton answers every method NotSupported: the daemon is there but does not
-    // speak this call, which is not "unreachable".
+    // A daemon that owns the name but serves no such object answers `UnknownObject`: it is there
+    // but does not speak this call, which is not "unreachable".
     let bus = PrivateBus::start();
     let daemon = bus.connect().await;
+    // The connection answers for the objects it serves, none here, once its object server runs.
+    let _ = daemon.object_server();
     daemon
-        .object_server()
-        .at(porter_dbus::INFERENCE_PATH, porter_dbus::InferenceSkeleton)
-        .await
-        .expect("serve");
-    daemon
-        .request_name(porter_dbus::INFERENCE_BUS)
+        .request_name(porter_dbus::inference::INFERENCE_BUS)
         .await
         .expect("name");
     let accounts = Accounts::over(DbusTransport::over(bus.connect().await));

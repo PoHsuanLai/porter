@@ -21,8 +21,9 @@
 //! A series' exceptions are separate events in Graph and separate files here, sharing the
 //! master's `UID` with a `RECURRENCE-ID`; the master has no `EXDATE` for them.
 
+use super::super::civil::{compact_date, compact_local};
 use super::json::{Address, Attendee, Event, When};
-use super::recur::{Rule, compact_date, rule};
+use super::recur::{Rule, rule};
 use super::zones::{Zone, zone};
 
 /// Why an event could not be written.
@@ -91,17 +92,7 @@ pub(in crate::datasets::pim::source) fn param(text: &str) -> String {
 
 /// `20261006T100000` from `2026-10-06T10:00:00.0000000`.
 fn local(date_time: &str) -> Result<String, ConvertError> {
-    let date = compact_date(date_time).ok_or(ConvertError::BadDateTime)?;
-    let time = date_time
-        .get(11..19)
-        .filter(|t| {
-            t.as_bytes().iter().enumerate().all(|(at, b)| match at {
-                2 | 5 => *b == b':',
-                _ => b.is_ascii_digit(),
-            })
-        })
-        .ok_or(ConvertError::BadDateTime)?;
-    Ok(format!("{date}T{}", time.replace(':', "")))
+    compact_local(date_time).ok_or(ConvertError::BadDateTime)
 }
 
 /// A DTSTART or DTEND line for `when`; the zone's comment, if it needs one.
@@ -134,44 +125,31 @@ fn stamp(text: &str) -> Option<String> {
     local(text).ok().map(|t| format!("{t}Z"))
 }
 
-/// Text from an HTML body: tags dropped, block ends as newlines, the common entities decoded.
+/// Text from an HTML body, by `nanohtml2text`: tags dropped, block ends as line breaks, `<style>`
+/// and `<script>` contents left out, named and numeric entities decoded, a `>` inside a quoted
+/// attribute not taken for the end of its tag. Line ends are `\n`, a no-break space is a space, a
+/// line's trailing blanks are cut, and no more than one blank line is kept.
 pub fn html_text(html: &str) -> String {
-    let mut out = String::with_capacity(html.len());
-    let mut tag = String::new();
-    let mut in_tag = false;
-    for c in html.chars() {
-        match (in_tag, c) {
-            (false, '<') => {
-                in_tag = true;
-                tag.clear();
+    let text = nanohtml2text::html2text(html)
+        .replace("\r\n", "\n")
+        .replace('\u{a0}', " ");
+    let mut out = String::with_capacity(text.len());
+    let mut blank = false;
+    for line in text.trim().lines().map(str::trim_end) {
+        match (line.is_empty(), blank) {
+            (true, true) => {}
+            (true, false) => {
+                blank = true;
+                out.push('\n');
             }
-            (true, '>') => {
-                in_tag = false;
-                let name: String = tag
-                    .trim_start_matches('/')
-                    .chars()
-                    .take_while(char::is_ascii_alphanumeric)
-                    .collect::<String>()
-                    .to_ascii_lowercase();
-                let closing = tag.starts_with('/');
-                if name == "br" || (closing && matches!(name.as_str(), "p" | "div" | "li" | "tr")) {
-                    out.push('\n');
-                }
+            (false, _) => {
+                blank = false;
+                out.push_str(line);
+                out.push('\n');
             }
-            (true, c) => tag.push(c),
-            (false, c) => out.push(c),
         }
     }
-    let decoded = out
-        .replace("&nbsp;", " ")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&#39;", "'")
-        .replace("&amp;", "&");
-    // A `<head><style>` block leaves its CSS; a body that is a whole page is rare enough.
-    let lines: Vec<&str> = decoded.lines().map(str::trim_end).collect();
-    lines.join("\n").trim().to_owned()
+    out.trim_end().to_owned()
 }
 
 fn description(event: &Event) -> Option<String> {

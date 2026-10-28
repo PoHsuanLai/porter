@@ -5,8 +5,10 @@
 
 use crate::startup::SUN_PATH;
 use model_http::Port;
-use porter_core::{Locality, ModelId, NodeId};
+use porter_capability::Locality;
+use porter_capability::ModelId;
 use porter_infer::ComputerName;
+use porter_tailscale::NodeId;
 use serde::{Deserialize, Serialize};
 use std::net::Ipv4Addr;
 use std::os::unix::ffi::OsStrExt;

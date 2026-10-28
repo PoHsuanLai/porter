@@ -1,12 +1,12 @@
 use super::rig::*;
-use porter_core::capability::CapabilityKind as K;
-use porter_core::sheet::{ServiceChoice, SignInFault, SignInInput};
-use porter_core::{
-    AbsentReason, AccountId, Credential, Family, Offer, Provenance, SecretPurpose, TenantConsent,
-    Toggle,
-};
+use porter_capability::CapabilityKind as K;
+use porter_capability::KindToggle;
+use porter_capability::{AbsentReason, Offer, Provenance, Toggle};
+use porter_core::AccountId;
+use porter_core::{Credential, Family, SecretPurpose, TenantConsent};
 use porter_fake_servers::{Consent, IssuerEvent, TokenResult};
 use porter_provider::{LoginHint, Provider, SignIn, SignInMode, SignInStart, SignInStep};
+use porter_sheet::{SignInFault, SignInInput};
 
 fn grant_types(rig: &Rig) -> Vec<String> {
     rig.issuer
@@ -24,7 +24,14 @@ fn grant_types(rig: &Rig) -> Vec<String> {
 }
 
 /// Signs in by loopback up to the review, with the browser answering.
-async fn to_review(rig: &Rig) -> (porter_families::MicrosoftSignIn<Wire>, SignInStep) {
+async fn to_review(
+    rig: &Rig,
+) -> (
+    porter_family_kit::Conversation<
+        porter_family_oauth::BrowserFlow<porter_family_oauth::Microsoft, Wire>,
+    >,
+    SignInStep,
+) {
     to_review_from(rig, start()).await
 }
 
@@ -32,7 +39,12 @@ async fn to_review(rig: &Rig) -> (porter_families::MicrosoftSignIn<Wire>, SignIn
 async fn to_review_from(
     rig: &Rig,
     begun: SignInStart,
-) -> (porter_families::MicrosoftSignIn<Wire>, SignInStep) {
+) -> (
+    porter_family_kit::Conversation<
+        porter_family_oauth::BrowserFlow<porter_family_oauth::Microsoft, Wire>,
+    >,
+    SignInStep,
+) {
     let mut signin = rig.provider.sign_in(begun).expect("sign in");
     let SignInStep::OpenBrowser { url } = signin.next(SignInInput::Start).await else {
         panic!("expected the browser")
@@ -124,7 +136,7 @@ async fn a_loopback_sign_in_reviews_what_graph_allows_then_hands_over_the_creden
     // Nothing is handed over before the person confirms.
     let again = signin.next(SignInInput::Poll).await;
     assert!(matches!(again, SignInStep::Review { .. }));
-    let choices = vec![ServiceChoice {
+    let choices = vec![KindToggle {
         kind: K::Notes,
         toggle: Toggle::Off,
     }];
@@ -226,10 +238,10 @@ async fn onedrive_reports_its_quota() {
         .iter()
         .find(|c| c.offer.kind() == K::Storage)
         .expect("storage");
-    let Offer::Present(porter_core::capability::Capability::Storage(cap)) = &storage.offer else {
+    let Offer::Present(porter_capability::Capability::Storage(cap)) = &storage.offer else {
         panic!("present storage")
     };
-    assert_eq!(cap.quota, porter_core::capability::QuotaReport::Reported);
+    assert!(cap.quota);
 }
 
 #[tokio::test]
@@ -257,21 +269,22 @@ async fn a_build_with_no_client_id_says_so_before_opening_anything() {
 #[tokio::test]
 async fn a_client_id_written_after_start_is_used_by_the_next_sign_in() {
     let rig = Rig::new(false).await;
-    let dir = porter_fake::Scratch::new("families-ux2");
-    let files = porter_families::ClientFiles {
+    let dir = test_kit::Scratch::new("families-ux2");
+    let files = porter_family_oauth::ClientFiles {
         shipped: dir.join("shipped.toml"),
         own: dir.join("clients.toml"),
     };
-    let env = porter_families::MicrosoftEnv::new(
+    let env = porter_family_oauth::OAuthEnv::new(
         Wire {
             graph: std::sync::Arc::clone(&rig.graph),
         },
         porter_oauth::ClientRegistry::default(),
-        porter_core::clock::SystemClock,
+        porter_ids::clock::SystemClock,
     )
     .with_channel(porter_provider::ClientChannel::Development)
     .with_files(files.clone());
-    let provider = porter_families::MicrosoftProvider::with_env(spec(), env);
+    let provider =
+        porter_family_oauth::OAuthProvider::with_env(porter_family_oauth::Microsoft, spec(), env);
 
     // ux-1: the add list leaves it out until then.
     assert_eq!(
@@ -322,7 +335,7 @@ async fn cancelling_closes_the_listeners_and_ends_the_sign_in() {
     );
     drop(signin);
     // The listener's task is aborted with the sign-in; give the runtime a turn to close it.
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         if tokio::net::TcpStream::connect(("127.0.0.1", port))
             .await
@@ -441,7 +454,7 @@ async fn asking_for_the_whole_drive_asks_it_alone_and_records_it_with_the_rest()
             .iter()
             .all(|e| e.login.0 == "ada@contoso.onmicrosoft.com")
     );
-    let choices = vec![ServiceChoice {
+    let choices = vec![KindToggle {
         kind: K::Storage,
         toggle: Toggle::On,
     }];

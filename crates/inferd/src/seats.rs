@@ -8,7 +8,7 @@
 use crate::admit::{Admission, Lane, Place, Priority, Promoted, Seats, Ticket};
 use engine_supervisor::EngineId;
 use model_catalog::{EngineArg, EngineKind};
-use porter_core::Count;
+use porter_ids::Count;
 use porter_infer::Asker;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};

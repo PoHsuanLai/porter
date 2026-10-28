@@ -6,8 +6,8 @@
 # when there is one, is kept in the Secret Service like every other key.
 # `discover` checks the server with one call to the models list. The models themselves are listed
 # by inferd (add time and Rescan) with no limits known: the row below is the floor every chat
-# model meets, with a context and a longest reply of 0, meaning not known. No price is known
-# either, so the price is 0 and a spend cap never counts this account.
+# model meets, with a context and a longest reply of 0, meaning not known. Whether it reports
+# what a reply cost is up to the server, and none of them does, so a spend limit never counts it.
 id = "openai-compatible"
 label = "Other provider (OpenAI-compatible)"
 mark = "openai-compatible"
@@ -25,9 +25,11 @@ kind = "model_list"
 
 [ai]
 locality = { kind = "cloud", v = {} }
-billing = { kind = "metered", v = { input_per_mtok = 0, output_per_mtok = 0 } }
+billing = { kind = "metered" }
 
 [[capability]]
 family = "chat_completions"
 kind = "llm"
-v = { features = ["chat"], context = 0, max_output = 0, wire = "chat_completions" }
+features = ["chat"]
+context = 0
+max_output = 0

@@ -3,7 +3,7 @@
 //! meet on the way out.
 
 use model_provider as sp;
-use porter_core::{Dims, Tokens};
+use porter_ids::{Dims, Tokens};
 use porter_infer as pi;
 
 use crate::scores::{NoScores, option_scores};
@@ -123,12 +123,14 @@ pub fn stop_back(stop: pi::StopReason) -> sp::StopReason {
     }
 }
 
-/// What a turn used, in the units the wire has.
+/// What a turn used, in the units the wire has, with the charge the provider reported for it
+/// (none when it reported none).
 pub fn usage(usage: sp::TurnUsage) -> pi::TokenUsage {
     pi::TokenUsage {
         input: Tokens(usage.input.0),
         output: Tokens(usage.output.0),
         cached: Tokens(usage.cached.0),
+        charge: usage.charge,
     }
 }
 

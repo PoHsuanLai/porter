@@ -1,10 +1,16 @@
 [workspace]
 resolver = "3"
 members = [
+  "crates/porter-ids",
+  "crates/porter-capability",
+  "crates/porter-match",
   "crates/porter-core",
+  "crates/porter-wire",
+  "crates/porter-sheet",
   "crates/porter-fs",
   "crates/quickxorhash",
-  "crates/prov",
+  "crates/windows-zones",
+  "crates/keyring-chunked",
   "crates/porter-provider",
   "crates/porter-secrets",
   "crates/porter-sync",
@@ -13,21 +19,38 @@ members = [
   "crates/porter-mountd",
   "crates/porter-infer",
   "crates/porter-bridge",
+  "crates/porter-service-core",
+  "crates/porter-service-accounts",
+  "crates/porter-service-grants",
   "crates/porter-service",
+  "crates/porter-identities",
+  "crates/porter-spaces",
+  "crates/porter-settings",
   "crates/porter-store",
   "crates/porter-dbus",
+  "crates/porter-dbus-macros",
+  "crates/porter-callers",
   "crates/porter-sheets",
   "crates/porter-client",
   "crates/porter-fake",
   "crates/porter-fake-servers",
+  "crates/test-kit",
   "crates/porter-http",
+  "crates/porter-http-reqwest",
+  "crates/porter-http-relay",
   "crates/porter-proxy",
   "crates/porter-oauth",
   "crates/porter-discover",
   "crates/dav-proto",
-  "crates/porter-dav",
   "crates/porter-calendar",
+  "crates/nextcloud-proto",
+  "crates/generic-proto",
+  "crates/oauth-probe-proto",
   "crates/porter-families",
+  "crates/porter-family-kit",
+  "crates/porter-family-nextcloud",
+  "crates/porter-family-generic",
+  "crates/porter-family-oauth",
   "crates/porter-tailscale",
   "crates/porter-tailnet",
   "crates/porter-router",
@@ -56,10 +79,16 @@ repository = "https://github.com/PoHsuanLai/porter"
 publish = false
 
 [workspace.dependencies]
+porter-ids      = { path = "crates/porter-ids" }
+porter-capability = { path = "crates/porter-capability" }
+porter-match    = { path = "crates/porter-match" }
 porter-core     = { path = "crates/porter-core" }
+porter-wire     = { path = "crates/porter-wire" }
+porter-sheet    = { path = "crates/porter-sheet" }
 porter-fs        = { path = "crates/porter-fs" }
 quickxorhash    = { path = "crates/quickxorhash" }
-prov            = { path = "crates/prov" }
+windows-zones   = { path = "crates/windows-zones" }
+keyring-chunked = { path = "crates/keyring-chunked" }
 porter-provider = { path = "crates/porter-provider" }
 porter-secrets  = { path = "crates/porter-secrets" }
 porter-sync     = { path = "crates/porter-sync" }
@@ -68,23 +97,40 @@ porter-drive-fuse = { path = "crates/porter-drive-fuse" }
 porter-mountd = { path = "crates/porter-mountd" }
 porter-infer    = { path = "crates/porter-infer" }
 porter-bridge   = { path = "crates/porter-bridge" }
+porter-service-core = { path = "crates/porter-service-core" }
+porter-service-accounts = { path = "crates/porter-service-accounts" }
+porter-service-grants = { path = "crates/porter-service-grants" }
 porter-service  = { path = "crates/porter-service" }
+porter-identities = { path = "crates/porter-identities" }
+porter-spaces   = { path = "crates/porter-spaces" }
+porter-settings = { path = "crates/porter-settings" }
 porter-store    = { path = "crates/porter-store" }
 porter-dbus     = { path = "crates/porter-dbus" }
+porter-dbus-macros = { path = "crates/porter-dbus-macros" }
+porter-callers  = { path = "crates/porter-callers" }
 porter-sheets   = { path = "crates/porter-sheets" }
 porter-client   = { path = "crates/porter-client" }
-porter-fake     = { path = "crates/porter-fake", default-features = false }
+porter-fake     = { path = "crates/porter-fake" }
+test-kit        = { path = "crates/test-kit" }
 porter-fake-servers = { path = "crates/porter-fake-servers" }
 fake-secret-service = { path = "crates/fake-secret-service" }
 syncd-fakes     = { path = "crates/syncd-fakes" }
 porter-http     = { path = "crates/porter-http" }
+porter-http-reqwest = { path = "crates/porter-http-reqwest" }
+porter-http-relay = { path = "crates/porter-http-relay" }
 porter-proxy    = { path = "crates/porter-proxy" }
 porter-oauth    = { path = "crates/porter-oauth" }
 porter-discover = { path = "crates/porter-discover" }
 dav-proto       = { path = "crates/dav-proto" }
-porter-dav      = { path = "crates/porter-dav" }
 porter-calendar = { path = "crates/porter-calendar" }
+nextcloud-proto = { path = "crates/nextcloud-proto" }
+generic-proto   = { path = "crates/generic-proto" }
+oauth-probe-proto = { path = "crates/oauth-probe-proto" }
 porter-families = { path = "crates/porter-families" }
+porter-family-kit = { path = "crates/porter-family-kit" }
+porter-family-nextcloud = { path = "crates/porter-family-nextcloud" }
+porter-family-generic = { path = "crates/porter-family-generic" }
+porter-family-oauth = { path = "crates/porter-family-oauth" }
 porter-tailscale = { path = "crates/porter-tailscale" }
 porter-tailnet  = { path = "crates/porter-tailnet" }
 porter-router   = { path = "crates/porter-router" }
@@ -105,34 +151,34 @@ ds-settings     = { git = "https://github.com/PoHsuanLai/quire.git", rev = "d17e
 # peephole: which program is calling (a pinned process, the unit manager's word, a root-owned table),
 # by git tag, never by path. porter-dbus's `ProcCallers` is built over it. peephole-bus runs on zbus's
 # tokio feature here (its default `async-io` stays off, as the zbus line below).
-peephole        = { git = "https://github.com/PoHsuanLai/peephole", tag = "v0.1.9" }
-peephole-core   = { git = "https://github.com/PoHsuanLai/peephole", tag = "v0.1.9", default-features = false }
-peephole-bus    = { git = "https://github.com/PoHsuanLai/peephole", tag = "v0.1.9", default-features = false, features = ["tokio"] }
+peephole        = { git = "https://github.com/PoHsuanLai/peephole", tag = "v0.1.11" }
+peephole-core   = { git = "https://github.com/PoHsuanLai/peephole", tag = "v0.1.11", default-features = false }
+peephole-bus    = { git = "https://github.com/PoHsuanLai/peephole", tag = "v0.1.11", default-features = false, features = ["tokio"] }
 
 # stoker's computer-use vocabulary, by git at stoker's pinned rev (quire
 # CONSUMING.md section 1; a local checkout overrides it, ARCHITECTURE section 1). stoker has no porter dependency, so there is no cycle.
-cua-action      = { git = "https://github.com/PoHsuanLai/stoker", rev = "f30d2808a9f05901a952c1fac6db2c6479a1bfe2" }
+cua-action      = { git = "https://github.com/PoHsuanLai/stoker", rev = "c8fed624534867659448ac417992bac4f0f47e28" }
 # inferd's other stoker edges (it is the one place porter's types and stoker's meet), by git at
-# the same rev. `model-http` carries the hyper client behind its `hyper` feature;
+# the same rev. `model-http` carries the reqwest client behind its `client` feature;
 # `vision-prep` the frame resize behind `pixels`; the testing features hold stoker's scripted
 # fakes of the supervisor's seams.
-model-provider      = { git = "https://github.com/PoHsuanLai/stoker", rev = "f30d2808a9f05901a952c1fac6db2c6479a1bfe2" }
-model-catalog       = { git = "https://github.com/PoHsuanLai/stoker", rev = "f30d2808a9f05901a952c1fac6db2c6479a1bfe2" }
-engine-supervisor   = { git = "https://github.com/PoHsuanLai/stoker", rev = "f30d2808a9f05901a952c1fac6db2c6479a1bfe2" }
-model-http          = { git = "https://github.com/PoHsuanLai/stoker", rev = "f30d2808a9f05901a952c1fac6db2c6479a1bfe2" }
-model-openai-compat = { git = "https://github.com/PoHsuanLai/stoker", rev = "f30d2808a9f05901a952c1fac6db2c6479a1bfe2" }
-speech-provider     = { git = "https://github.com/PoHsuanLai/stoker", rev = "f30d2808a9f05901a952c1fac6db2c6479a1bfe2" }
+model-provider      = { git = "https://github.com/PoHsuanLai/stoker", rev = "c8fed624534867659448ac417992bac4f0f47e28" }
+model-catalog       = { git = "https://github.com/PoHsuanLai/stoker", rev = "c8fed624534867659448ac417992bac4f0f47e28" }
+engine-supervisor   = { git = "https://github.com/PoHsuanLai/stoker", rev = "c8fed624534867659448ac417992bac4f0f47e28" }
+model-http          = { git = "https://github.com/PoHsuanLai/stoker", rev = "c8fed624534867659448ac417992bac4f0f47e28" }
+model-openai-compat = { git = "https://github.com/PoHsuanLai/stoker", rev = "c8fed624534867659448ac417992bac4f0f47e28" }
+speech-provider     = { git = "https://github.com/PoHsuanLai/stoker", rev = "c8fed624534867659448ac417992bac4f0f47e28" }
 # the client of the speech host (the STT engine process): inferd's `SttBackend::SpeechHost`.
-speech-host-client  = { git = "https://github.com/PoHsuanLai/stoker", rev = "f30d2808a9f05901a952c1fac6db2c6479a1bfe2" }
-vision-prep         = { git = "https://github.com/PoHsuanLai/stoker", rev = "f30d2808a9f05901a952c1fac6db2c6479a1bfe2" }
-cua-parse           = { git = "https://github.com/PoHsuanLai/stoker", rev = "f30d2808a9f05901a952c1fac6db2c6479a1bfe2" }
-cua-session         = { git = "https://github.com/PoHsuanLai/stoker", rev = "f30d2808a9f05901a952c1fac6db2c6479a1bfe2" }
-cua-vendors         = { git = "https://github.com/PoHsuanLai/stoker", rev = "f30d2808a9f05901a952c1fac6db2c6479a1bfe2" }
-model-extract       = { git = "https://github.com/PoHsuanLai/stoker", rev = "f30d2808a9f05901a952c1fac6db2c6479a1bfe2" }
-model-replay        = { git = "https://github.com/PoHsuanLai/stoker", rev = "f30d2808a9f05901a952c1fac6db2c6479a1bfe2" }
+speech-host-client  = { git = "https://github.com/PoHsuanLai/stoker", rev = "c8fed624534867659448ac417992bac4f0f47e28" }
+vision-prep         = { git = "https://github.com/PoHsuanLai/stoker", rev = "c8fed624534867659448ac417992bac4f0f47e28" }
+cua-parse           = { git = "https://github.com/PoHsuanLai/stoker", rev = "c8fed624534867659448ac417992bac4f0f47e28" }
+cua-session         = { git = "https://github.com/PoHsuanLai/stoker", rev = "c8fed624534867659448ac417992bac4f0f47e28" }
+cua-vendors         = { git = "https://github.com/PoHsuanLai/stoker", rev = "c8fed624534867659448ac417992bac4f0f47e28" }
+model-extract       = { git = "https://github.com/PoHsuanLai/stoker", rev = "c8fed624534867659448ac417992bac4f0f47e28" }
+model-replay        = { git = "https://github.com/PoHsuanLai/stoker", rev = "c8fed624534867659448ac417992bac4f0f47e28" }
 # the codec-over-transport `Driver`: inferd's TLS transport to a cloud model is a `model_http::Transport`
 # of its own (stoker's hyper client does not speak TLS yet), so it names the driver that takes one.
-model-wire          = { git = "https://github.com/PoHsuanLai/stoker", rev = "f30d2808a9f05901a952c1fac6db2c6479a1bfe2" }
+model-wire          = { git = "https://github.com/PoHsuanLai/stoker", rev = "c8fed624534867659448ac417992bac4f0f47e28" }
 
 # From quire's pinned block (`docs/workspace-deps.toml`), copied verbatim: only the lines porter
 # names itself, as mailo does.
@@ -141,10 +187,31 @@ thiserror = "2"
 # porter-daemon's settings-file watch (CC0-1.0, already in Cargo.lock at 8.2.0 through quire).
 notify = "8"
 roxmltree = "0.21"
-# The request and response types (MIT OR Apache-2.0), already in Cargo.lock through hyper:
-# dav-proto's `http` feature builds its requests as `http::Request`.
+# The request and response types (MIT OR Apache-2.0, already in Cargo.lock at 1.5.0 through
+# hyper): porter-http's `HttpRequest` and `HttpResponse`, and dav-proto's `http` feature.
 http = "1"
-# porter-http's client, as stoker's model-http takes it.
+# syncd's media type by extension (MIT, 2.0.5) and porter-http's Retry-After dates (MIT OR Apache-2.0,
+# 1.0.3).
+mime_guess = { version = "2", default-features = false }
+httpdate = "1"
+# syncd's HTML-to-text of a Graph event body (MIT, 0.3.0, no dependencies; html2text brings
+# html5ever and its tree for a task this small).
+nanohtml2text = "0.3"
+# porter-mountd's socket activation (Apache-2.0, 1.0.2; brings libc).
+listenfd = "1"
+# Scratch directories that remove themselves when dropped (MIT OR Apache-2.0; already in Cargo.lock).
+tempfile = "3"
+# porter-drive's cached byte ranges (MIT OR Apache-2.0, 1.8.0).
+rangemap = "1.8"
+# Calendar dates and RFC 3339 times (MIT OR Apache-2.0; owner's choice 2026-10-28). No default
+# features: no system clock, no time zone database, no locale; `alloc` is for `format`.
+chrono = { version = "0.4", default-features = false, features = ["alloc"] }
+# The loopback redirect request and porter-proxy's request head (MIT OR Apache-2.0; already in Cargo.lock).
+httparse = "1.10"
+# The one direct-connection HTTP client (MIT OR Apache-2.0; mailo has it at the same line):
+# rustls on ring with the platform's roots, no redirects, no compression, HTTP/1 only.
+# Only porter-http-reqwest names it (scripts/check-boundary.sh).
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots"] }
 hyper = "1"
 hyper-util = "0.1.21"
 http-body-util = "0.1"
@@ -152,16 +219,23 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 zbus = { version = "5.19", default-features = false, features = ["tokio"] }  # shell repos only; they also enable ds-settings/tokio. quire itself builds zbus with its async-io default so app consumers keep their own executor.
 toml = "1"
+# porter-dbus-macros, the one attribute that writes a bus interface once (MIT OR Apache-2.0; all three
+# already in Cargo.lock through zbus). syn needs `full` for a trait item.
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["full"] }
 base64 = "0.22"
+# stoker's `Money` (model-provider) is an exact decimal amount in an ISO 4217 currency; the crates
+# that make or read one name these two (both MIT, which deny.toml allows).
+rust_decimal = { version = "1", default-features = false, features = ["std", "serde"] }
+iso_currency = { version = "0.7", features = ["with-serde"] }
 # The fake servers' TLS and PKCE (quire accounts-pins 21c453eb, pending): rustls on `ring`, no
-# default features, as hyper-rustls is pinned.
+# default features.
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
 rustls-pki-types = "1"
 rustls-native-certs = "0.8"
 webpki-roots = "1"
-# porter-http's TLS: hyper-rustls and the platform's roots (quire accounts-pins, on master).
-hyper-rustls = { version = "0.27", default-features = false, features = ["ring", "http1", "tls12", "native-tokio", "logging"] }
 sha2 = "0.10"
 # The RustCrypto hasher traits quickxorhash implements, at the line sha2 and md-5 already bring.
 digest = "0.10"
@@ -175,12 +249,19 @@ subtle = "2.6.1"
 flate2 = "1.1.10"
 tar = { version = "0.4.46", default-features = false }
 md-5 = "0.10"
+# Lower-case hex of a digest or a byte string (MIT OR Apache-2.0; already in Cargo.lock).
+hex = "0.4"
+# Percent-encoding (RFC 3986) and form pairs, MIT OR Apache-2.0; both are in Cargo.lock through url.
+percent-encoding = "2.3"
+form_urlencoded = "1.2"
 clap = { version = "4", features = ["derive"] }
 proptest = "1"
 oo7 = "0.6"
 # porter-core's `SecretText` and porter-secrets' encode buffer are wiped when dropped (quire's
 # pinned line; Apache-2.0 OR MIT).
 zeroize = "1"
+# porter-core's `SecretText` is a `SecretString` (Apache-2.0 OR MIT): redacted Debug, wiped on drop.
+secrecy = { version = "0.10.3", features = ["serde"] }
 # porter-secrets `KeyringSecrets` (macOS, Windows); Linux stays on oo7 (accounts D5).
 keyring-core = "1"
 apple-native-keyring-store = { version = "1", features = ["keychain"] }
@@ -189,9 +270,6 @@ windows-native-keyring-store = "1"
 hickory-resolver = "0.26"
 # syncd's journal: SQLCipher built from source with a vendored OpenSSL, used unkeyed (quire's pinned line).
 rusqlite = { version = "0.40", features = ["bundled-sqlcipher-vendored-openssl"] }
-# The per-user agent's address, lock and start (the `socket` carrier of porter-client). The standalone
-# repo at the rev mailo pins; quire's block still names the old copy inside mailo (see FINDINGS).
-latchkey = { git = "https://github.com/PoHsuanLai/latchkey", rev = "b10ae1b8c49c55cce2c5affde8f5db76edb66ab4" }
 rustix = { version = "1.1", default-features = false, features = ["std", "event", "fs", "net", "time", "process"] }
 
 [workspace.lints.rust]

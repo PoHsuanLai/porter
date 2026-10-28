@@ -12,7 +12,7 @@
 //!   neither is what stays on this computer (`porter_drive::local_only`: the desktop's trash).
 //! - An item changed here is `waiting`, then `uploading` with its fraction while it is sent; a
 //!   file kept in two versions is `conflict`, and `other` is the other version's path; one the
-//!   drive refused is `error` with the words (`porter_drive::words`).
+//!   drive refused is `error` with the words (`crate::words`).
 //! - `SaveCopy` exports each online document (`porter_drive::Drive::save_copy`) and answers each
 //!   copy's absolute path; the copy waits to upload beside its document.
 //! - `Watch` joins the caller's connection to those told `DrivesChanged` and `ItemsChanged`
@@ -22,14 +22,18 @@
 use super::errors::RefusedError;
 use crate::datasets::drive::{DriveEvent, DriveSet, LiveDrive};
 use crate::service::Access;
-use porter_dbus::{
-    Caller, CallerRole, Callers, DRIVE_KEY_ACCOUNT, DRIVE_KEY_LABEL, DRIVE_KEY_LOCAL,
-    DRIVE_KEY_PATH, DRIVE_KEY_PROVIDER, DRIVE_KEY_STATE, DRIVE_KEY_TOTAL, DRIVE_KEY_USED,
-    DRIVE_KEY_WORDS, Details, ITEM_KEY_FRACTION, ITEM_KEY_KEPT, ITEM_KEY_KIND, ITEM_KEY_OTHER,
-    ITEM_KEY_STATE, ITEM_KEY_URL, ITEM_KEY_WORDS, ItemDetails, ItemKind, ItemState, Refused,
-    STORAGE_PATH, Saved,
+use crate::words;
+use porter_callers::{Caller, CallerRole, Callers};
+use porter_dbus::Call;
+use porter_dbus::Details;
+use porter_dbus::sync::STORAGE_PATH;
+use porter_dbus::sync::{
+    DRIVE_KEY_ACCOUNT, DRIVE_KEY_LABEL, DRIVE_KEY_LOCAL, DRIVE_KEY_PATH, DRIVE_KEY_PROVIDER,
+    DRIVE_KEY_STATE, DRIVE_KEY_TOTAL, DRIVE_KEY_USED, DRIVE_KEY_WORDS, ITEM_KEY_FRACTION,
+    ITEM_KEY_KEPT, ITEM_KEY_KIND, ITEM_KEY_OTHER, ITEM_KEY_STATE, ITEM_KEY_URL, ITEM_KEY_WORDS,
+    ItemDetails, ItemKind, ItemState, Refused, Saved, StorageServed, StorageServer,
 };
-use porter_drive::{Node, NodeId, NodeKind, Status, words};
+use porter_drive::{Node, NodeId, NodeKind, Reason, Status};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
@@ -116,8 +120,12 @@ pub fn item_details(drive: &LiveDrive, status: &Status) -> Details {
             Value::from(path.to_string_lossy().as_ref()),
         );
     }
-    if let (ItemState::Error, Some(words)) = (state, &status.words) {
-        put(&mut details, ITEM_KEY_WORDS, Value::from(words.as_str()));
+    if let (ItemState::Error, Some(reason)) = (state, status.reason) {
+        put(
+            &mut details,
+            ITEM_KEY_WORDS,
+            Value::from(words::reason(reason)),
+        );
     }
     if let NodeKind::Online { url, .. } = &status.kind {
         put(&mut details, ITEM_KEY_URL, Value::from(url.as_str()));
@@ -205,18 +213,18 @@ impl<C: Callers> Core<C> {
     fn each(
         &self,
         paths: &[String],
-        mut act: impl FnMut(&LiveDrive, &NodeId) -> Result<(), &'static str>,
+        mut act: impl FnMut(&LiveDrive, &NodeId) -> Result<(), Reason>,
     ) -> Refused {
         let mut refused = Refused::new();
         for text in paths {
             match self.find(text) {
                 Some((drive, node)) => {
                     if let Err(why) = act(&drive, &node.id) {
-                        refused.insert(text.clone(), why.to_owned());
+                        refused.insert(text.clone(), words::reason(why).to_owned());
                     }
                 }
                 None => {
-                    refused.insert(text.clone(), words::NOT_ON_A_DRIVE.to_owned());
+                    refused.insert(text.clone(), words::reason(Reason::NotOnADrive).to_owned());
                 }
             }
         }
@@ -264,8 +272,12 @@ impl<C: Callers> Core<C> {
         }
         for name in self.watcher_names() {
             if let Ok(emitter) = self.emitter(&name) {
-                let _ =
-                    StorageObject::<C>::items_changed(&emitter, &drive.id, details.clone()).await;
+                let _ = StorageServed::<StorageObject<C>>::items_changed(
+                    &emitter,
+                    &drive.id,
+                    details.clone(),
+                )
+                .await;
             }
         }
     }
@@ -273,7 +285,7 @@ impl<C: Callers> Core<C> {
     async fn tell_drives(&self) {
         for name in self.watcher_names() {
             if let Ok(emitter) = self.emitter(&name) {
-                let _ = StorageObject::<C>::drives_changed(&emitter).await;
+                let _ = StorageServed::<StorageObject<C>>::drives_changed(&emitter).await;
             }
         }
     }
@@ -292,11 +304,12 @@ impl<C: Callers> Core<C> {
 /// The interface object.
 struct StorageObject<C>(Arc<Core<C>>);
 
-#[zbus::interface(name = "org.quire.Storage1")]
-impl<C: Callers> StorageObject<C> {
+impl<C: Callers> StorageServer for StorageObject<C> {
+    type Error = RefusedError;
+
     async fn drives(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
     ) -> Result<Vec<(String, Details)>, RefusedError> {
         self.0.identify(&header).await?;
         Ok(self
@@ -310,7 +323,7 @@ impl<C: Callers> StorageObject<C> {
 
     async fn items(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         paths: Vec<String>,
     ) -> Result<ItemDetails, RefusedError> {
         self.0.identify(&header).await?;
@@ -326,7 +339,7 @@ impl<C: Callers> StorageObject<C> {
 
     async fn download(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         paths: Vec<String>,
     ) -> Result<Refused, RefusedError> {
         self.0.identify(&header).await?;
@@ -335,7 +348,7 @@ impl<C: Callers> StorageObject<C> {
 
     async fn keep(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         paths: Vec<String>,
         keep: bool,
     ) -> Result<Refused, RefusedError> {
@@ -345,7 +358,7 @@ impl<C: Callers> StorageObject<C> {
 
     async fn remove_download(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         paths: Vec<String>,
     ) -> Result<Refused, RefusedError> {
         self.0.identify(&header).await?;
@@ -354,10 +367,9 @@ impl<C: Callers> StorageObject<C> {
             .each(&paths, |drive, id| drive.drive.remove_download(id)))
     }
 
-    #[zbus(out_args("saved", "refused"))]
     async fn save_copy(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         paths: Vec<String>,
     ) -> Result<(Saved, Refused), RefusedError> {
         self.0.identify(&header).await?;
@@ -365,7 +377,7 @@ impl<C: Callers> StorageObject<C> {
         let mut refused = Refused::new();
         for text in paths {
             let Some((drive, node)) = self.0.find(&text) else {
-                refused.insert(text, words::NOT_ON_A_DRIVE.to_owned());
+                refused.insert(text, words::reason(Reason::NotOnADrive).to_owned());
                 continue;
             };
             match drive.drive.save_copy(&node.id).await {
@@ -374,11 +386,11 @@ impl<C: Callers> StorageObject<C> {
                         saved.insert(text, path.to_string_lossy().into_owned());
                     }
                     None => {
-                        refused.insert(text, words::COPY_FAILED.to_owned());
+                        refused.insert(text, words::reason(Reason::CopyFailed).to_owned());
                     }
                 },
                 Err(why) => {
-                    refused.insert(text, why.to_owned());
+                    refused.insert(text, words::reason(why).to_owned());
                 }
             }
         }
@@ -387,7 +399,7 @@ impl<C: Callers> StorageObject<C> {
 
     async fn set_paused(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         drives: Vec<String>,
         paused: bool,
     ) -> Result<Refused, RefusedError> {
@@ -401,14 +413,14 @@ impl<C: Callers> StorageObject<C> {
         for id in drives {
             // Kept across restarts.
             if !self.0.drives.set_paused(&id, paused) {
-                refused.insert(id, words::NO_DRIVE.to_owned());
+                refused.insert(id, words::reason(Reason::NoDrive).to_owned());
             }
         }
         self.0.drives.tell_drives();
         Ok(refused)
     }
 
-    async fn watch(&self, #[zbus(header)] header: Header<'_>) -> Result<(), RefusedError> {
+    async fn watch(&self, Call { header, .. }: Call<'_>) -> Result<(), RefusedError> {
         let caller = self.0.identify(&header).await?;
         let sender = header
             .sender()
@@ -428,16 +440,6 @@ impl<C: Callers> StorageObject<C> {
         }
         Ok(())
     }
-
-    #[zbus(signal)]
-    async fn drives_changed(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
-
-    #[zbus(signal)]
-    async fn items_changed(
-        emitter: &SignalEmitter<'_>,
-        drive: &str,
-        items: ItemDetails,
-    ) -> zbus::Result<()>;
 }
 
 /// Serves `org.quire.Storage1` at [`STORAGE_PATH`] on `connection` over `drives`, with
@@ -458,7 +460,10 @@ pub async fn serve_storage<C: Callers>(
     });
     connection
         .object_server()
-        .at(STORAGE_PATH, StorageObject(Arc::clone(&core)))
+        .at(
+            STORAGE_PATH,
+            StorageServed(StorageObject(Arc::clone(&core))),
+        )
         .await?;
     let mut owners = DBusProxy::new(connection)
         .await?
@@ -556,7 +561,7 @@ mod tests {
 
     #[tokio::test]
     async fn events_missed_send_every_tracked_item_again() {
-        let dir = porter_fake::Scratch::new("storage1-gather");
+        let dir = test_kit::Scratch::new("storage1-gather");
         let listing = Arc::new(MemoryListing::default());
         let source = Arc::new(MemorySource::default());
         listing.file("a", None, "a.bin", 4, "1");
@@ -567,6 +572,7 @@ mod tests {
             listing.clone(),
             source.clone(),
         )
+        .await
         .expect("drive");
         let a = NodeId::Remote(RemoteId("a".into()));
         drive.open_file(&a).expect("open");

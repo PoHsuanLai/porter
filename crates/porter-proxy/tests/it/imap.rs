@@ -19,7 +19,7 @@ async fn imap(
     porter_fake_servers::Running<porter_fake_servers::MailHandle>,
     u16,
 ) {
-    let running = FakeImap::start(&Bind::Loopback, tls, accounts(), mailbox(3))
+    let running = FakeImap::start(&Bind::Port(0), tls, accounts(), mailbox(3))
         .await
         .expect("imap");
     let port = port(running.address());

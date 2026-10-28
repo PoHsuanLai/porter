@@ -5,12 +5,14 @@
 #[cfg(feature = "generic")]
 pub mod mail;
 
-use porter_core::sheet::{
-    FieldAnswer, FieldKind, FieldValue, ServiceChoice, SheetInput, SheetView,
-};
-use porter_core::{SecretText, Toggle};
-use porter_http::{Http, HttpError, HttpRequest, HttpResponse, HyperHttp};
+use porter_capability::KindToggle;
+use porter_capability::Toggle;
+use porter_core::SecretText;
+use porter_http::http::{Request, Response};
+use porter_http::{Http, HttpError};
+use porter_http_reqwest::ReqwestHttp;
 use porter_provider::{SignIn, SignInStep};
+use porter_sheet::{FieldAnswer, FieldKind, FieldValue, SheetInput, SheetView};
 use std::sync::{Arc, Mutex};
 
 /// One place a name is served: `host`'s paths under `prefix` go to `port` on loopback.
@@ -27,7 +29,7 @@ pub struct Place {
 #[derive(Debug, Clone)]
 pub struct Fakes {
     pub places: Vec<Place>,
-    pub inner: HyperHttp,
+    pub inner: ReqwestHttp,
     pub sent: Arc<Mutex<Vec<String>>>,
 }
 
@@ -35,7 +37,7 @@ impl Fakes {
     pub fn new(places: Vec<Place>) -> Self {
         Self {
             places,
-            inner: HyperHttp::new(),
+            inner: ReqwestHttp::new(),
             sent: Arc::default(),
         }
     }
@@ -47,25 +49,24 @@ impl Fakes {
 }
 
 impl Http for Fakes {
-    async fn send(&self, mut request: HttpRequest) -> Result<HttpResponse, HttpError> {
-        let origin = request.url.origin();
+    async fn send(&self, mut request: Request<Vec<u8>>) -> Result<Response<Vec<u8>>, HttpError> {
+        let url = porter_ids::WebUrl::parse(&request.uri().to_string())
+            .map_err(|_| HttpError::Malformed)?;
+        let origin = url.origin();
         self.sent
             .lock()
             .expect("sent")
-            .push(format!("{} {}", request.method.token(), request.url));
+            .push(format!("{} {}", request.method(), url));
         if !origin.is_loopback() {
             let place = self
                 .places
                 .iter()
-                .filter(|p| p.host == origin.host && request.url.path().starts_with(p.prefix))
+                .filter(|p| p.host == origin.host && url.path().starts_with(p.prefix))
                 .max_by_key(|p| p.prefix.len())
                 .ok_or(HttpError::Unreachable)?;
-            request.url = porter_core::WebUrl::parse(&format!(
-                "http://127.0.0.1:{}{}",
-                place.port,
-                request.url.path()
-            ))
-            .map_err(|_| HttpError::Malformed)?;
+            *request.uri_mut() = format!("http://127.0.0.1:{}{}", place.port, url.path())
+                .parse()
+                .map_err(|_| HttpError::Malformed)?;
         }
         self.inner.send(request).await
     }
@@ -97,10 +98,12 @@ pub fn secret(kind: FieldKind, text: &str) -> FieldAnswer {
 }
 
 /// Every service of a review, on.
-pub fn all_on(kinds: impl IntoIterator<Item = porter_core::CapabilityKind>) -> Vec<ServiceChoice> {
+pub fn all_on(
+    kinds: impl IntoIterator<Item = porter_capability::CapabilityKind>,
+) -> Vec<KindToggle> {
     kinds
         .into_iter()
-        .map(|kind| ServiceChoice {
+        .map(|kind| KindToggle {
             kind,
             toggle: Toggle::On,
         })
@@ -111,9 +114,9 @@ pub fn all_on(kinds: impl IntoIterator<Item = porter_core::CapabilityKind>) -> V
 /// every step in order.
 pub async fn drive<S: SignIn>(
     signin: &mut S,
-    mut answer: impl FnMut(&SignInStep) -> porter_core::sheet::SignInInput,
+    mut answer: impl FnMut(&SignInStep) -> porter_sheet::SignInInput,
 ) -> Vec<SignInStep> {
-    use porter_core::sheet::SignInInput;
+    use porter_sheet::SignInInput;
     let mut steps = Vec::new();
     let mut input = SignInInput::Start;
     for _ in 0..500 {
@@ -130,13 +133,17 @@ pub async fn drive<S: SignIn>(
 
 // ---- a person at the sheets, and a service to hand them to ----
 
+use porter_capability::CapabilityKind;
+use porter_core::AccountId;
 use porter_core::consent::{ConsentAnswer, ConsentAsk};
-use porter_core::wire::ParentWindow;
-use porter_core::{AccountId, CapabilityKind, Credential, SecretKey};
-use porter_fake::{FixedClock, MemoryStore, RecordingAudit, ScriptedSheets};
-use porter_families::FamilyProvider;
+use porter_core::{Credential, SecretKey};
+use porter_fake::{MemoryStore, RecordingAudit, ScriptedSheets};
+use porter_families::DynProvider;
+use porter_ids::clock::FixedClock;
 use porter_secrets::{MemorySecrets, Secrets, SecretsError};
-use porter_service::{AccountService, SheetFault, SheetLink, SheetOpen, Sheets};
+use porter_service::AccountService;
+use porter_service_core::sheets::{SheetFault, SheetLink, SheetOpen, Sheets};
+use porter_wire::ParentWindow;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 /// What the person at the sheet does.
@@ -201,7 +208,7 @@ impl TestLink {
                     .review
                     .services
                     .iter()
-                    .map(|row| ServiceChoice {
+                    .map(|row| KindToggle {
                         kind: row.kind,
                         toggle: match self.person.off.contains(&row.kind) {
                             true => Toggle::Off,
@@ -314,7 +321,7 @@ impl Secrets for SharedSecrets {
 }
 
 pub type Service = AccountService<
-    FamilyProvider,
+    Box<dyn DynProvider>,
     SharedSecrets,
     TestSheets,
     FixedClock,
@@ -329,7 +336,7 @@ pub struct Kept {
     pub audit: RecordingAudit,
 }
 
-pub fn service(providers: Vec<FamilyProvider>, sheets: TestSheets) -> (Service, Kept) {
+pub fn service(providers: Vec<Box<dyn DynProvider>>, sheets: TestSheets) -> (Service, Kept) {
     let kept = Kept {
         secrets: SharedSecrets::default(),
         store: MemoryStore::default(),
@@ -337,7 +344,7 @@ pub fn service(providers: Vec<FamilyProvider>, sheets: TestSheets) -> (Service, 
     };
     let service = AccountService::new(
         providers,
-        porter_service::Registry::default(),
+        porter_service_core::registry::Registry::default(),
         kept.secrets.clone(),
         sheets,
         FixedClock(porter_fake::NOW),

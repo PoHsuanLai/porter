@@ -1,0 +1,52 @@
+//! `org.quire.Spaces1` at `/org/quire/Spaces1`, on accountd's connection: the registry of
+//! desktop-wide Spaces, the ones an app's own Space can link to (porter-core `space`).
+//!
+//! Who may call: any identified app may `List`; `Create` an app, Settings or the shell (never an
+//! assistant, computer use or an agent launcher); `Register` the compositor, Settings or the shell
+//! (`CallerRole::Compositor`, which may `List` and `Register` and nothing else); `Rename`, `SetLook` and `Remove`
+//! only Settings and the shell (`CallerRole::Settings`, `CallerRole::SheetHost`), and anyone else
+//! is `AccessDenied`, as is a sender accountd does not know.
+
+use crate::Details;
+use porter_dbus_macros::bus_interface;
+
+/// The interface, written once. `#[bus_interface]` makes [`SpacesProxy`] for its callers from this
+/// trait, [`SpacesServer`] for the daemon to implement and [`SpacesServed`] to register.
+#[bus_interface(
+    interface = "org.quire.Spaces1",
+    default_service = "org.quire.Accounts1",
+    default_path = "/org/quire/Spaces1"
+)]
+pub trait Spaces {
+    /// Every desktop-wide Space: its id, then `name` (`s`), `look` (`s`, opaque, as `Create` or
+    /// `SetLook` was given it) and `created` (`x`, Unix seconds), in the order they were made.
+    fn list(&self) -> zbus::Result<Vec<(String, Details)>>;
+    /// Makes a desktop-wide Space named `name` (the person's words, 1 to 64 characters) that
+    /// looks like `look` (at most 1024 bytes, never read by porter; empty is the default look),
+    /// and answers its id, minted here and kept across renames. Errors: `InvalidArgs` for a name
+    /// or look out of bounds; `LimitsExceeded` when the caller made too many Spaces within the
+    /// last minute.
+    fn create(&self, name: &str, look: &str) -> zbus::Result<String>;
+    /// Registers a desktop-wide Space whose id the caller minted: on casement the compositor
+    /// mints one per workspace (`s-` and 32 lowercase hex digits, the ext-workspace id) and
+    /// registers it, named `name` and looking like `look` (as for `Create`). An id that is
+    /// registered already is left as it is, name and look included, and answers success, so the
+    /// compositor registers every workspace again at each start; `Changed(id, "created")` goes out
+    /// only for a new one. Only the compositor, Settings and the shell may call it. Errors:
+    /// `InvalidArgs` for an id outside the id grammar (or `desktop`), or a name or look out of
+    /// bounds; `LimitsExceeded` when the caller registered too many new Spaces within the last
+    /// minute.
+    fn register(&self, id: &str, name: &str, look: &str) -> zbus::Result<()>;
+    /// Renames one. Errors: `InvalidArgs` for a bad name or a Space that is not there.
+    fn rename(&self, id: &str, name: &str) -> zbus::Result<()>;
+    /// Gives one a new look. Errors: `InvalidArgs` for a look too long or a Space that is not
+    /// there.
+    fn set_look(&self, id: &str, look: &str) -> zbus::Result<()>;
+    /// Removes one: every grant scoped to that Space alone ends. Errors: `InvalidArgs` for a
+    /// Space that is not there.
+    fn remove(&self, id: &str) -> zbus::Result<()>;
+    /// A Space changed: `what` is `created`, `renamed`, `look` or `removed`. Sent to each
+    /// identified connection that has called accountd, so a client calls `List` once to be told.
+    #[zbus(signal)]
+    fn changed(&self, id: &str, what: &str) -> zbus::Result<()>;
+}

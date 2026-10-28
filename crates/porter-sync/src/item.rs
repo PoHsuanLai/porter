@@ -1,6 +1,6 @@
 //! A remote item and the versions a write is checked against.
 
-use porter_core::{Bytes, UnixSeconds, WebUrl};
+use porter_ids::{Bytes, UnixSeconds, WebUrl};
 use serde::{Deserialize, Serialize};
 
 /// A replica's own id for an item (a Drive file id, a WebDAV href).

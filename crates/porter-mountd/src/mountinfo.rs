@@ -121,7 +121,7 @@ mod tests {
 
     #[test]
     fn an_abort_writes_one_to_the_connections_abort_file() {
-        let dir = porter_fake::Scratch::new("mountd-abort");
+        let dir = test_kit::Scratch::new("mountd-abort");
         std::fs::create_dir_all(dir.join("52")).expect("connection");
         abort(dir.path(), 52).expect("aborted");
         assert_eq!(std::fs::read(dir.join("52/abort")).expect("abort"), b"1");

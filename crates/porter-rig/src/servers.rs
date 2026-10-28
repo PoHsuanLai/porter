@@ -121,7 +121,7 @@ impl Ollama {
             .take()
             .is_some();
         if was_running {
-            let deadline = porter_fake::Deadline::generous();
+            let deadline = test_kit::Deadline::generous();
             while !deadline.passed() {
                 if tokio::net::TcpStream::connect(("127.0.0.1", self.port))
                     .await
@@ -208,14 +208,14 @@ impl Rig {
         };
         if options.imap {
             rig.imap =
-                Some(FakeImap::start(&Bind::Loopback, options.tls, accounts(), mailbox(3)).await?);
+                Some(FakeImap::start(&Bind::Port(0), options.tls, accounts(), mailbox(3)).await?);
         }
         if options.smtp {
-            rig.smtp = Some(FakeSmtp::start(&Bind::Loopback, options.tls, accounts()).await?);
+            rig.smtp = Some(FakeSmtp::start(&Bind::Port(0), options.tls, accounts()).await?);
         }
         if options.pop3 {
             rig.pop3 =
-                Some(FakePop3::start(&Bind::Loopback, options.tls, accounts(), mailbox(3)).await?);
+                Some(FakePop3::start(&Bind::Port(0), options.tls, accounts(), mailbox(3)).await?);
         }
         if options.dav {
             rig.dav = Some(FakeDav::start(DAV_USER, DAV_PASSWORD).await?);

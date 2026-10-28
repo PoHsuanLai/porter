@@ -1,6 +1,6 @@
 //! Every stored or wire type of porter-sync survives its serde form (the journal stores them).
 
-use porter_core::{Bytes, UnixSeconds};
+use porter_ids::{Bytes, UnixSeconds};
 use porter_sync::{
     Anchor, BaseVersion, Change, ChangePage, Conflict, ConflictRule, ContentHash, Cursor,
     DatasetKind, ItemKind, ItemPath, More, Quota, RemoteId, RemoteItem, RemoteSide, RemoteVersion,
@@ -63,8 +63,8 @@ fn journal_values_round_trip() {
     round_trip(&BaseVersion::Absent);
     for kind in [
         DatasetKind::PhotosOriginals,
-        DatasetKind::Settings,
-        DatasetKind::Keychain,
+        DatasetKind::PhotosMetadata,
+        DatasetKind::Files,
     ] {
         round_trip(&kind);
     }

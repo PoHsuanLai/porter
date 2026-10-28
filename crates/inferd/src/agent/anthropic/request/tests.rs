@@ -1,5 +1,5 @@
 use super::*;
-use porter_core::Tokens;
+use porter_ids::Tokens;
 use porter_infer::{Effort, Knob};
 use serde_json::json;
 
@@ -204,8 +204,8 @@ fn defaults_and_dropped_hints_change_nothing() {
     let Knob::Set(sampling) = chat.control.sampling else {
         panic!("a sampling");
     };
-    assert_eq!(sampling.temperature, porter_core::Permille(250));
-    assert_eq!(sampling.top_k, Knob::Set(porter_core::Count(20)));
+    assert_eq!(sampling.temperature, porter_ids::Permille(250));
+    assert_eq!(sampling.top_k, Knob::Set(porter_ids::Count(20)));
     assert_eq!(chat.messages.len(), 1);
 }
 

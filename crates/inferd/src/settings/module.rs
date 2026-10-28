@@ -7,25 +7,24 @@
 //! `engines.llama_server`; see `programs`).
 
 use super::file::Reload;
-use super::keys::{
-    SLOTS, TIERS, model_path, parse_model_path, parse_pool_path, pool_path, slots_of,
-};
+use super::keys::{SLOTS, TIERS, model_path, parse_model_path, parse_pool_path, pool_path};
 use super::missing::Engine;
 use super::pool;
 use super::programs::{self, Program};
 use super::resolve::{model_text, parse_model, slot_value};
 use crate::cloud::picker::{Availability, Choice, NEEDS_ACCOUNT};
-use crate::keys::KeyRows;
 use crate::peers::{Peers, Role};
+use crate::spend_rows::SpendRows;
 use ds_settings::live::{Access, Caller, LiveError, LiveModule, LiveSchema, Verdict, serve};
 use ds_settings::schema::{
     AgentSetting, ChoiceGroup, ChoicePlace, ChoiceWord, CompanyName, EngineName, Exposure, Help,
     HostName, KeyKind, KeyPath, KeySpec, Label, Page, Section, UnavailableReason, WordLabels,
 };
-use porter_core::{Locality, Tier};
-use porter_dbus::INFERENCE_SETTINGS_PATH;
+use porter_capability::{Locality, Tier};
+use porter_dbus::inference::INFERENCE_SETTINGS_PATH;
 use porter_infer::{Chooser, ModelRef, Slot, tier_label};
 use porter_router::local::LocalModel;
+use porter_router::router::slots_of;
 use std::collections::BTreeMap;
 
 /// The picker value that is Automatic.
@@ -46,8 +45,9 @@ pub const CODING_AGENTS: &str = "Coding Agents";
 pub struct InferdSettings<P> {
     peers: P,
     reload: Reload,
-    /// The `accounts.<id>.*` rows of the AI accounts, when this daemon hosts them.
-    keys: Option<std::sync::Arc<dyn KeyRows>>,
+    /// The spend rows of the AI accounts (`accounts.<id>.spend.*`); the accounts themselves are
+    /// accountd's.
+    spend: Option<SpendRows>,
     news: Option<std::sync::Arc<tokio::sync::Notify>>,
     /// The folder an engine program's folders are looked at from (`/`; a test's own folder).
     programs_below: std::path::PathBuf,
@@ -67,7 +67,7 @@ impl<P: Peers> InferdSettings<P> {
         Self {
             peers,
             reload,
-            keys: None,
+            spend: None,
             news: None,
             programs_below: std::path::PathBuf::from("/"),
         }
@@ -94,12 +94,12 @@ impl<P: Peers> InferdSettings<P> {
         }
     }
 
-    /// The same module, also listing and changing the AI accounts: their rows, the permits'
-    /// Revoke rows included (`accounts.<id>.*`, the same words accountd's rows had).
+    /// The same module, also listing what each AI account has spent this month and its monthly
+    /// limit (`accounts.<id>.spend.*`, read-outs beside the rows accountd lists for the account).
     #[must_use]
-    pub fn with_keys(self, keys: std::sync::Arc<dyn KeyRows>) -> Self {
+    pub fn with_spend_rows(self, spend: SpendRows) -> Self {
         Self {
-            keys: Some(keys),
+            spend: Some(spend),
             ..self
         }
     }
@@ -452,8 +452,8 @@ impl<P: Peers> LiveModule for InferdSettings<P> {
             }
         }
         key.extend(Program::ALL.map(Program::spec));
-        if let Some(keys) = &self.keys {
-            key.extend(keys.schema());
+        if let Some(spend) = &self.spend {
+            key.extend(spend.schema());
         }
         LiveSchema { version: 1, key }
     }
@@ -470,8 +470,8 @@ impl<P: Peers> LiveModule for InferdSettings<P> {
             ));
         }
         let Some((kind, tier)) = parse_model_path(&key.0) else {
-            return match &self.keys {
-                Some(keys) if keys.handles(&key.0) => keys.get(&key.0).await,
+            return match &self.spend {
+                Some(spend) if spend.handles(&key.0) => spend.get(&key.0).await,
                 _ => Err(LiveError::UnknownKey(key.0.clone())),
             };
         };
@@ -486,8 +486,8 @@ impl<P: Peers> LiveModule for InferdSettings<P> {
             return self.set_pool(kind, &chooser, value).await;
         }
         let Some((slot, tier)) = parse_model_path(&key.0) else {
-            return match &self.keys {
-                Some(keys) if keys.handles(&key.0) => keys.set(&key.0, value).await,
+            return match &self.spend {
+                Some(spend) if spend.handles(&key.0) => spend.set(&key.0, value).await,
                 _ => Err(LiveError::UnknownKey(key.0.clone())),
             };
         };
@@ -525,13 +525,8 @@ pub async fn serve_settings<P: Peers>(
     connection: &zbus::Connection,
     module: InferdSettings<P>,
 ) -> zbus::Result<()> {
-    let keys = module.keys.clone();
-    let served = serve(connection, INFERENCE_SETTINGS_PATH, module)
+    serve(connection, INFERENCE_SETTINGS_PATH, module)
         .await
-        .map_err(|e| zbus::Error::Failure(e.to_string()))?;
-    // The account rows announce what changed through the served module.
-    if let Some(keys) = keys {
-        keys.bind(served);
-    }
-    Ok(())
+        .map(drop)
+        .map_err(|e| zbus::Error::Failure(e.to_string()))
 }

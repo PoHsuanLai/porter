@@ -21,8 +21,9 @@
 //! A single event is written in UTC rather than in its `timeZone` on purpose: the instant is
 //! exact whichever way Google states the offset, and a series needs the zone only for the rule.
 
+use super::super::civil::compact_date;
 use super::super::graph::convert::{escape, fold, param};
-use super::time::{Stamp, compact_date};
+use super::time::Stamp;
 use serde::Deserialize;
 
 /// Why an event could not be written.

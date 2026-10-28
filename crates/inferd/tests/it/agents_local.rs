@@ -62,11 +62,14 @@ async fn a_local_route_serves_an_anthropic_tool_conversation_with_no_key_and_no_
     // No key was asked for, nothing was spent, and the audit line says it ran here.
     let calls = world.accountd.as_ref().expect("accountd").calls();
     assert!(calls.resolved.is_empty() && calls.verdicts.is_empty());
-    assert_eq!(spent(&world, "").micro_usd, 0);
+    assert_eq!(
+        spent(&world, "").charges,
+        porter_infer::ChargeTotal::default()
+    );
     let audited = world.audit.entries();
     assert_eq!(audited.len(), 1);
-    assert_eq!(audited[0].locality, porter_core::Locality::OnDevice);
-    assert_eq!(audited[0].cost, None);
+    assert_eq!(audited[0].locality, porter_capability::Locality::OnDevice);
+    assert_eq!(audited[0].usage.charge, None);
     assert_eq!(audited[0].app, agent_app());
     assert!(provider_requests(&world).is_empty());
 }
@@ -227,13 +230,13 @@ async fn a_reply_of_only_reasoning_is_an_error_with_a_status_in_both_shapes() {
 async fn an_attached_my_network_engine_follows_the_floor_and_the_my_network_setting() {
     use hosting::lab::Lab;
     use inferd::attached::{Attached, Place, Reach};
-    let dir = porter_fake::Scratch::new("ag");
+    let dir = test_kit::Scratch::new("ag");
     let lab = Lab::start_in(dir, "lab", &[entries::SERVED], None).await;
     lab.say(&["from the lab"]);
     let mut p = Plan {
         catalog: vec![("attached.toml", entries::attached())],
         attached: vec![Attached {
-            id: porter_core::ModelId::parse(entries::ATTACHED).expect("id"),
+            id: porter_capability::ModelId::parse(entries::ATTACHED).expect("id"),
             reach: Reach::Socket(lab.socket()),
             key_file: None,
             place: Place::MyNetwork,
@@ -276,8 +279,11 @@ async fn an_attached_my_network_engine_follows_the_floor_and_the_my_network_sett
     assert_eq!(lab.chats().len(), 1);
     // Free and keyless: no spend, and the audit line says it was another machine of theirs.
     let audited = world.audit.entries();
-    assert_eq!(audited[0].locality, porter_core::Locality::LocalNetwork);
-    assert_eq!(audited[0].cost, None);
+    assert_eq!(
+        audited[0].locality,
+        porter_capability::Locality::LocalNetwork
+    );
+    assert_eq!(audited[0].usage.charge, None);
     // The setting turned back off: the open session's next request is refused.
     let mut settings = (*world.served.settings()).clone();
     settings.my_network = inferd::settings::MyNetwork::Off;

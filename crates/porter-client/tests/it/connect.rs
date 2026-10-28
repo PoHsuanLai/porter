@@ -1,4 +1,4 @@
-//! `Accounts::connect`: the first reachable link wins. The session bus is found through the
+//! `Accounts::connect`. The session bus is found through the
 //! environment, so the D-Bus case runs the connecting half in a child process whose
 //! environment names a private bus; this process never edits its own. The child is this test
 //! executable run again, by test path (`connect::child_finds_no_bus`).
@@ -7,16 +7,20 @@ use crate::common;
 
 use common::bus::PrivateBus;
 use common::inferd::{Behaviour, FakeInferd};
-use porter_client::{Accounts, ClientEnv, ClientError, LinkChoice, SocketAgent, TransportError};
+use porter_capability::ModelId;
+use porter_capability::Tier;
+use porter_client::{Accounts, ClientError, TransportError};
+use porter_core::AccountId;
+use porter_core::DataClass;
 use porter_core::consent::Usage;
-use porter_core::need::LlmNeed;
-use porter_core::{AccountId, DataClass, ModelId, Need, Tier, Tokens};
+use porter_ids::Tokens;
 use porter_infer::testing::{Script, ScriptStep};
 use porter_infer::{
     ChatControl, ChatReply, ChatRequest, InferEvent, InferReply, InferRequest, RequestKind,
     ServedBy, StopReason, TokenUsage, ToolParallelism,
 };
-use std::path::PathBuf;
+use porter_match::LlmNeed;
+use porter_match::Need;
 
 const CHILD_MARKER: &str = "PORTER_CLIENT_CONNECT_CHILD";
 const CHILD_TEST: &str = "connect::child_connects_over_the_session_bus_it_is_given";
@@ -33,11 +37,12 @@ fn reply() -> InferReply {
             input: Tokens(1),
             output: Tokens(1),
             cached: Tokens(0),
+            charge: None,
         },
         ServedBy {
             account: AccountId::parse("local").expect("id"),
             model: ModelId::parse("echo").expect("id"),
-            locality: porter_core::Locality::OnDevice,
+            locality: porter_capability::Locality::OnDevice,
         },
     ))
 }
@@ -49,33 +54,6 @@ fn request() -> InferRequest {
     )
 }
 
-fn socket_link() -> LinkChoice {
-    LinkChoice::Socket(SocketAgent::porter().in_runtime_dir(PathBuf::from("/nonexistent/runtime")))
-}
-
-#[tokio::test]
-async fn no_links_is_unreachable() {
-    let got = Accounts::connect(&ClientEnv { links: vec![] })
-        .await
-        .map(|_| ());
-    assert_eq!(
-        got,
-        Err(ClientError::Transport(TransportError::Unreachable))
-    );
-}
-
-#[tokio::test]
-async fn a_socket_link_alone_is_unreachable_until_its_carrier_is_built() {
-    let env = ClientEnv {
-        links: vec![socket_link()],
-    };
-    let got = Accounts::connect(&env).await.map(|_| ());
-    assert_eq!(
-        got,
-        Err(ClientError::Transport(TransportError::Unreachable))
-    );
-}
-
 /// The connecting half, run by the parent below with `DBUS_SESSION_BUS_ADDRESS` pointing at a
 /// private bus. Without the marker it does nothing, so a plain test run passes it by.
 #[tokio::test]
@@ -83,10 +61,7 @@ async fn child_connects_over_the_session_bus_it_is_given() {
     if std::env::var_os(CHILD_MARKER).is_none() {
         return;
     }
-    let env = ClientEnv {
-        links: vec![socket_link(), LinkChoice::Dbus],
-    };
-    let accounts = Accounts::connect(&env).await.expect("a link is reachable");
+    let accounts = Accounts::connect().await.expect("the bus is reachable");
     let got = accounts
         .infer(&need(), DataClass::Public, Tier::Fast, request())
         .await;
@@ -94,7 +69,7 @@ async fn child_connects_over_the_session_bus_it_is_given() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn connect_skips_a_dead_link_and_reaches_inferd_over_the_session_bus() {
+async fn connect_reaches_inferd_over_the_session_bus() {
     let bus = PrivateBus::start();
     let (fake, seen) = FakeInferd::new(Behaviour::Scripted(vec![Script {
         kind: RequestKind::Chat,
@@ -143,10 +118,7 @@ async fn child_finds_no_bus() {
     if std::env::var_os(CHILD_MARKER).is_none() {
         return;
     }
-    let env = ClientEnv {
-        links: vec![LinkChoice::Dbus],
-    };
-    let got = Accounts::connect(&env).await.map(|_| ());
+    let got = Accounts::connect().await.map(|_| ());
     assert_eq!(
         got,
         Err(ClientError::Transport(TransportError::Unreachable))

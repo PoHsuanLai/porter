@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 #[non_exhaustive]
 pub enum PathError {
     /// Neither `HOME` nor the XDG variable of a directory is set to an absolute path.
-    #[error("HOME is not set and no XDG directory names where to keep state")]
+    #[error("neither HOME nor an XDG variable is an absolute path")]
     NoHome,
 }
 

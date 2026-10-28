@@ -12,20 +12,24 @@ use accountd::{BusSheets, Options, TableCallers, serve_with};
 use common::bus::PrivateBus;
 use common::host::{HostLog, SheetHost, send_input};
 use common::{Shared, Tap, caller, contains};
-use porter_core::capability::CapabilityKind;
-use porter_core::sheet::{SheetInput, SheetView};
-use porter_core::{
-    AccountId, AccountState, Credential, Offer, ProviderId, SecretKey, SecretPurpose, TokenLifetime,
-};
-use porter_dbus::{CallerRole, ManagerProxy, Sheet};
-use porter_fake::{FixedClock, MemoryStore, RecordingAudit};
+use porter_callers::CallerRole;
+use porter_capability::CapabilityKind;
+use porter_capability::Offer;
+use porter_core::{AccountId, ProviderId};
+use porter_core::{AccountState, Credential, SecretKey, SecretPurpose, TokenLifetime};
+use porter_dbus::accounts::{ManagerProxy, Sheet};
+use porter_fake::{MemoryStore, RecordingAudit};
 use porter_fake_servers::{Google, shipped};
-use porter_families::{FamilyProvider, GoogleEnv, GoogleProvider};
-use porter_http::HyperHttp;
-use porter_oauth::{AppReview, ClientRegistry, ClientTraits, MailRights};
+use porter_families::DynProvider;
+use porter_family_oauth::{Google as GoogleRules, OAuthEnv, OAuthProvider};
+use porter_http_reqwest::ReqwestHttp;
+use porter_ids::clock::FixedClock;
+use porter_oauth::{ClientRegistry, ClientTraits};
 use porter_provider::{ClientChannel, ClientEntry, ClientId, ClientsFile, Issuer};
 use porter_secrets::Secrets;
-use porter_service::{AccountService, Registry};
+use porter_service::AccountService;
+use porter_service_core::registry::Registry;
+use porter_sheet::{SheetInput, SheetView};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -33,7 +37,7 @@ const SECRET: &str = "GOCSPX-bus-test-application-secret";
 const CLIENT_ID: &str = "bus-test.apps.googleusercontent.com";
 
 type Svc = AccountService<
-    FamilyProvider,
+    Box<dyn DynProvider>,
     Shared,
     BusSheets<TableCallers>,
     FixedClock,
@@ -61,16 +65,16 @@ struct World {
 #[derive(Default)]
 struct Sky(std::sync::atomic::AtomicI64);
 
-impl porter_service::Clock for Sky {
-    fn now(&self) -> porter_core::UnixSeconds {
+impl porter_ids::clock::Clock for Sky {
+    fn now(&self) -> porter_ids::UnixSeconds {
         match self.0.load(std::sync::atomic::Ordering::SeqCst) {
             0 => {
                 let since = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default();
-                porter_core::UnixSeconds(i64::try_from(since.as_secs()).unwrap_or(i64::MAX))
+                porter_ids::UnixSeconds(i64::try_from(since.as_secs()).unwrap_or(i64::MAX))
             }
-            at => porter_core::UnixSeconds(at),
+            at => porter_ids::UnixSeconds(at),
         }
     }
 }
@@ -92,23 +96,27 @@ fn client_with(google: &Google, traits: ClientTraits) -> ClientRegistry {
 }
 
 const TESTING: ClientTraits = ClientTraits {
-    mail: MailRights::Withheld,
-    review: AppReview::Testing,
+    byo: false,
+    testing: true,
 };
 
 impl World {
     async fn start(traits: ClientTraits) -> Self {
         let google = Google::start(SECRET).await.expect("fake google");
         let spec = google.api.rewrite(&shipped::google());
-        let env = GoogleEnv::new(
-            HyperHttp::default(),
+        let env = OAuthEnv::new(
+            ReqwestHttp::default(),
             client_with(&google, traits),
-            porter_core::clock::SystemClock,
+            porter_ids::clock::SystemClock,
         )
         .with_channel(ClientChannel::Development)
         .with_poll_slice(Duration::from_millis(50))
         .with_userinfo(porter_core::EndpointUrl::parse(&google.api.userinfo_url()).expect("url"));
-        let providers = vec![FamilyProvider::Google(GoogleProvider::with_env(spec, env))];
+        let providers = vec![DynProvider::boxed(OAuthProvider::with_env(
+            GoogleRules,
+            spec,
+            env,
+        ))];
 
         let bus = PrivateBus::start();
         let callers = Arc::new(TableCallers::new());
@@ -118,14 +126,14 @@ impl World {
         let host_connection = bus.connect().await;
         host_connection
             .object_server()
-            .at(porter_dbus::SHEET_PATH, host)
+            .at(porter_dbus::accounts::SHEET_PATH, host)
             .await
             .expect("host object");
         porter_dbus::serve_ready(&host_connection)
             .await
             .expect("the host takes calls");
         host_connection
-            .request_name(porter_dbus::SHEET_BUS)
+            .request_name(porter_dbus::accounts::SHEET_BUS)
             .await
             .expect("host name");
         callers.introduce_as(
@@ -298,7 +306,7 @@ async fn sign_in_again(world: &World, id: &AccountId) {
         .expect("the action is accepted");
     world
         .person(async {
-            let deadline = porter_fake::Deadline::generous();
+            let deadline = test_kit::Deadline::generous();
             while !deadline.passed() {
                 if world.account().state == AccountState::Ok {
                     return;
@@ -315,8 +323,11 @@ async fn reauth_reason_of(world: &World, id: &AccountId) -> String {
     let shell = world
         .connection_as("org.example.OtherShell", CallerRole::SheetHost)
         .await;
-    porter_dbus::AccountProxy::builder(&shell)
-        .path(zbus::zvariant::ObjectPath::try_from(porter_dbus::account_path(id)).expect("path"))
+    porter_dbus::accounts::AccountProxy::builder(&shell)
+        .path(
+            zbus::zvariant::ObjectPath::try_from(porter_dbus::accounts::account_path(id))
+                .expect("path"),
+        )
         .expect("path")
         .build()
         .await

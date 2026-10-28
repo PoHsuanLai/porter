@@ -10,13 +10,25 @@ publish.workspace = true
 
 [dependencies]
 porter-core = { workspace = true }
+porter-match = { workspace = true }
+porter-capability = { workspace = true }
+porter-sheet = { workspace = true }
+porter-wire = { workspace = true }
+porter-ids = { workspace = true }
 porter-daemon = { workspace = true, features = ["watch"] }
 porter-fs = { workspace = true }
-porter-dbus = { workspace = true, features = ["callers-file"] }
+porter-callers = { workspace = true, features = ["file"] }
+porter-dbus = { workspace = true }
 porter-families = { workspace = true, features = ["set"] }
+porter-family-oauth = { workspace = true }
 porter-provider = { workspace = true }
 porter-secrets = { workspace = true, features = ["oo7"] }
 porter-service = { workspace = true }
+porter-service-accounts = { workspace = true }
+porter-service-core = { workspace = true }
+porter-identities = { workspace = true }
+porter-spaces = { workspace = true }
+porter-settings = { workspace = true }
 porter-sheets = { workspace = true }
 porter-store = { workspace = true }
 porter-tailscale = { workspace = true, features = ["io"] }
@@ -24,16 +36,19 @@ ds-settings = { workspace = true }
 clap = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 toml = { workspace = true }
 zbus = { workspace = true }
 
 [dev-dependencies]
+test-kit = { workspace = true }
 ds-settings = { workspace = true, features = ["testing"] }
 porter-fake = { workspace = true }
 porter-fake-servers = { workspace = true }
-porter-http = { workspace = true, features = ["hyper"] }
+porter-http = { workspace = true }
+porter-http-reqwest = { workspace = true }
 porter-oauth = { workspace = true }
 rustix = { workspace = true }
 tokio = { workspace = true }
@@ -48,7 +63,7 @@ workspace = true
 # the system caller table, because a jail cannot write /etc/porter. A release build ignores both
 # variables. A test in tests/dist.rs fails if this feature is ever default, and
 # check-boundary.sh checks it too.
-test-proc-root = ["porter-dbus/test-proc-root"]
+test-proc-root = ["porter-callers/test-proc-root"]
 # Test builds only, never default and never in dist: `ACCOUNTD_KEYS=file:<absolute path>` keeps
 # credentials in one 0600 plain-text JSON file (porter-secrets' `FileSecrets`) instead of the
 # Secret Service, for private-bus and scratch runs with no keyring. A release build ignores the

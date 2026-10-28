@@ -1,7 +1,7 @@
 //! Rows to values and back: the one place SQL text lives.
 
 use super::{JournalError, Op};
-use porter_core::{Bytes, UnixSeconds};
+use porter_ids::{Bytes, UnixSeconds};
 use porter_sync::{
     Acknowledgement, Anchor, BaseVersion, Conflict, ContentHash, ItemPath, ItemState, JournalItem,
     LocalId, RemoteId, RemoteSide, RemoteVersion, StoredAnchor, StoredConflict, StoredTombstone,

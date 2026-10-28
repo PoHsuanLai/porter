@@ -1,7 +1,8 @@
-//! The person's AI keys, as an app asks for them (`org.quire.Inference1.Keys` on inferd). An AI
-//! key is inferd's: whoever uses a credential holds it, and an app never sees one. What an app
-//! gets is the person's yes to use their keys, a permit ([`KeyPermitId`]), after inferd shows the
-//! consent sheet; and it can send the person to add a key through the same kind of sheet.
+//! The person's AI keys, as an app asks for them (`org.quire.Accounts1.Keys` on accountd). An AI
+//! key is accountd's, and inferd is the one that sends it to an AI company: an app never sees
+//! one. What an app gets is the person's yes to use their keys, a permit ([`GrantId`]), after
+//! accountd shows the consent sheet; an app that holds a permit already is answered with it and
+//! no sheet is drawn.
 //!
 //! ```ignore
 //! let keys = AiKeys::connect(&connection).await?;
@@ -9,80 +10,66 @@
 //!     Ok(permit) => { /* ask inferd for a session as usual; the permit is what lets it */ }
 //!     Err(AiKeysError::Refused(Refusal::Dismissed)) => { /* the person closed the sheet */ }
 //!     Err(AiKeysError::Refused(Refusal::NoFittingAccount)) => {
-//!         keys.add_account(ProviderHint::Any, &window).await?; // then ask again
+//!         // no key is added: send the person to add one (`Accounts::add_account`), then ask again
 //!     }
 //!     Err(other) => show(other.to_string()),
 //! }
 //! ```
 //!
-//! Settings lists and revokes permits through inferd's settings rows, not here. The agent
+//! Adding a key is `Accounts::add_account`, the same sheet as for any account. Settings lists
+//! and revokes permits through accountd's settings rows, not here. The agent, the agent
 //! launcher, the computer-use daemon, the terminal and the compositor are refused.
 
 use crate::abandon::Abandon;
+use crate::call_failure::{CallFailure, bus_failure_from};
+use porter_core::GrantId;
 use porter_core::consent::Usage;
-use porter_core::wire::{ParentWindow, ProviderHint, Refusal};
-use porter_core::{AccountId, AccountsReply, CoreError, DataClass, KeyPermitId};
-use porter_dbus::{
-    BusConnection, BusError, BusFailure, KeysProxy, ServiceRoot, Sheet, SheetError, SheetKind,
-    classify, is_invalid_args, refusal_of, reply_of,
-};
+use porter_core::{CoreError, DataClass};
+use porter_dbus::accounts::KeysProxy;
+use porter_dbus::accounts::refusal_of;
+use porter_dbus::accounts::sheet::{SheetKind, reply_of};
+use porter_dbus::accounts::{ServiceRoot, Sheet, SheetError};
+use porter_dbus::{BusConnection, BusError};
+use porter_ids::IdError;
+use porter_wire::AccountsReply;
+use porter_wire::{ParentWindow, Refusal};
 
-/// Why a call to inferd's Keys failed. More reasons may be added: match with a wildcard.
+/// Why a call to accountd's Keys failed. More reasons may be added: match with a wildcard.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum AiKeysError {
-    /// inferd refused for a reason the person or the machine gave: the person closed the sheet
+    /// accountd refused for a reason the person or the machine gave: the person closed the sheet
     /// (`Dismissed`) or refused (`Denied`), no key fits (`NoFittingAccount`), a key must be signed
     /// in again (`NeedsReauth`), or the service cannot do it now (`Unavailable`).
     #[error("refused: {0:?}")]
     Refused(Refusal),
-    /// `add_account` for a key the person already has: nothing was added.
-    #[error("that account is already added")]
-    AlreadyAdded(AccountId),
-    /// inferd does not know this caller, or this caller may not ask.
-    #[error("refused by inferd: {0}")]
-    Denied(String),
-    /// inferd refused an argument.
-    #[error("invalid argument: {0}")]
-    Invalid(String),
-    /// inferd is not there.
-    #[error("no inference service reachable")]
-    Unreachable,
-    /// inferd sent something that is not porter's protocol.
-    #[error("malformed: {0}")]
-    Malformed(String),
+    /// The call itself failed: the service is not there, refused the caller or an argument, or
+    /// sent something that is not porter's protocol.
+    #[error(transparent)]
+    Bus(CallFailure),
 }
 
 impl From<BusError> for AiKeysError {
     fn from(error: BusError) -> Self {
-        if let Some(refusal) = refusal_of(&error) {
-            return AiKeysError::Refused(refusal);
-        }
-        if is_invalid_args(&error) {
-            return AiKeysError::Invalid(error.to_string());
-        }
-        match classify(&error) {
-            BusFailure::NoDaemon => AiKeysError::Unreachable,
-            BusFailure::Denied(why) => AiKeysError::Denied(why),
-            BusFailure::Other(why) => AiKeysError::Malformed(why),
+        match refusal_of(&error) {
+            Some(refusal) => AiKeysError::Refused(refusal),
+            None => AiKeysError::Bus(error.into()),
         }
     }
 }
 
-impl From<CoreError> for AiKeysError {
-    fn from(error: CoreError) -> Self {
-        AiKeysError::Malformed(error.to_string())
-    }
-}
+bus_failure_from!(AiKeysError: CallFailure, CoreError, IdError);
 
 impl From<SheetError> for AiKeysError {
     fn from(error: SheetError) -> Self {
         match error {
             SheetError::Bus(error) => error.into(),
-            SheetError::Gone => AiKeysError::Unreachable,
+            SheetError::Gone => CallFailure::Unreachable.into(),
             SheetError::Unreadable => {
-                AiKeysError::Malformed("a Response that is not (u, a{sv})".into())
+                CallFailure::Malformed("a Response that is not (u, a{sv})".into()).into()
             }
+            // a failure a later porter-dbus adds
+            _ => CallFailure::Malformed("a sheet failure this client does not know".into()).into(),
         }
     }
 }
@@ -91,7 +78,7 @@ impl From<SheetError> for AiKeysError {
 fn slug<T: serde::Serialize>(value: &T) -> Result<String, AiKeysError> {
     match serde_json::to_value(value) {
         Ok(serde_json::Value::String(text)) => Ok(text),
-        _ => Err(AiKeysError::Malformed("not a slug".into())),
+        _ => Err(CallFailure::Malformed("not a slug".into()).into()),
     }
 }
 
@@ -103,7 +90,7 @@ fn wire(window: &ParentWindow) -> String {
     }
 }
 
-/// inferd's Keys interface, as an app uses it.
+/// accountd's Keys interface, as an app uses it.
 #[derive(Debug, Clone)]
 pub struct AiKeys {
     connection: BusConnection,
@@ -111,12 +98,12 @@ pub struct AiKeys {
 }
 
 impl AiKeys {
-    /// The Keys interface over `connection`, which inferd knows as an app.
+    /// The Keys interface over `connection`, which accountd knows as an app.
     pub async fn connect(connection: &BusConnection) -> Result<Self, AiKeysError> {
         Self::connect_at(connection, &crate::Destination::WellKnown).await
     }
 
-    /// The same, sent to `to`: the owner of inferd's name the caller checked.
+    /// The same, sent to `to`: the owner of accountd's name the caller checked.
     pub async fn connect_at(
         connection: &BusConnection,
         to: &crate::Destination,
@@ -127,7 +114,7 @@ impl AiKeys {
         })
     }
 
-    /// Shows the person inferd's consent sheet for this app's use of one of their AI keys, for
+    /// Shows the person accountd's consent sheet for this app's use of one of their AI keys, for
     /// data of `class` used as `usage` says, over `window`. The permit it answers is the person's
     /// yes, within the scope they chose.
     pub async fn request_key(
@@ -135,7 +122,7 @@ impl AiKeys {
         class: DataClass,
         usage: Usage,
         window: &ParentWindow,
-    ) -> Result<KeyPermitId, AiKeysError> {
+    ) -> Result<GrantId, AiKeysError> {
         let (class, usage, window) = (slug(&class)?, slug(&usage)?, wire(window));
         let reply = self
             .sheet(SheetKind::Choose, |options| async move {
@@ -146,43 +133,15 @@ impl AiKeys {
             .await?;
         match reply {
             // The answer is the chosen key; its `grant` is the permit's id.
-            AccountsReply::Chosen(candidate) => Ok(candidate.grant.into()),
+            AccountsReply::Chosen(candidate) => Ok(candidate.grant),
             AccountsReply::Refused(refusal) => Err(AiKeysError::Refused(refusal)),
-            other => Err(AiKeysError::Malformed(format!(
-                "a key request answered with {other:?}"
-            ))),
+            other => {
+                Err(CallFailure::Malformed(format!("a key request answered with {other:?}")).into())
+            }
         }
     }
 
-    /// Shows the sheet that adds an AI key or an agent's account, for `hint` (or the whole list,
-    /// [`ProviderHint::Any`]); the account added. A key the person already has is
-    /// [`AiKeysError::AlreadyAdded`].
-    pub async fn add_account(
-        &self,
-        hint: ProviderHint,
-        window: &ParentWindow,
-    ) -> Result<AccountId, AiKeysError> {
-        let hint = match hint {
-            ProviderHint::Provider(id) => id.as_str().to_owned(),
-            _ => String::new(),
-        };
-        let window = wire(window);
-        let reply = self
-            .sheet(SheetKind::AddAccount, |options| async move {
-                self.proxy.add_account(&hint, &window, &options).await
-            })
-            .await?;
-        match reply {
-            AccountsReply::Added(account) => Ok(account),
-            AccountsReply::AlreadyAdded(account) => Err(AiKeysError::AlreadyAdded(account)),
-            AccountsReply::Refused(refusal) => Err(AiKeysError::Refused(refusal)),
-            other => Err(AiKeysError::Malformed(format!(
-                "adding an account answered with {other:?}"
-            ))),
-        }
-    }
-
-    /// One sheet method on inferd: listen, call (naming the Request object through
+    /// One sheet method on accountd: listen, call (naming the Request object through
     /// `handle_token`), then wait for the `Response` of the object the call returned. The call
     /// that waits closes the sheet if it is dropped.
     async fn sheet<F, Fut>(&self, kind: SheetKind, call: F) -> Result<AccountsReply, AiKeysError>
@@ -190,7 +149,7 @@ impl AiKeys {
         F: FnOnce(porter_dbus::Details) -> Fut,
         Fut: std::future::Future<Output = Result<porter_dbus::zvariant::OwnedObjectPath, BusError>>,
     {
-        let mut listener = Sheet::subscribe_on(&self.connection, ServiceRoot::Inference).await?;
+        let mut listener = Sheet::subscribe_on(&self.connection, ServiceRoot::Accounts).await?;
         // Armed before the call: a dropped call may already have made the sheet.
         let mut abandon = Abandon(listener.closer(None));
         let path = match call(listener.options()).await {

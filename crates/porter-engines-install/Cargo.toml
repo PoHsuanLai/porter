@@ -14,8 +14,9 @@ path = "src/bin/porter-engine-helper.rs"
 
 [dependencies]
 porter-engines = { workspace = true }
-porter-core = { workspace = true }
-porter-http = { workspace = true, features = ["hyper"] }
+porter-ids = { workspace = true }
+porter-http = { workspace = true }
+porter-http-reqwest = { workspace = true }
 # The archives are unpacked in process (`extract`), never by the system's `tar`.
 flate2 = { workspace = true }
 tar = { workspace = true }
@@ -25,7 +26,7 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 
 [dev-dependencies]
-porter-fake = { workspace = true }
+test-kit = { workspace = true }
 porter-fake-servers = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 

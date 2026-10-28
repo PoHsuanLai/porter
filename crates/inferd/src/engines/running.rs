@@ -6,7 +6,7 @@
 use super::*;
 use engine_supervisor::EngineFailure;
 use model_catalog::{EngineKind, MiB};
-use porter_dbus::{RunState, RunningModel};
+use porter_dbus::inference::{RunState, RunningModel};
 use zbus::fdo;
 
 /// Why a model could not be started or stopped.
@@ -81,6 +81,8 @@ pub fn start_words(cause: &Cause) -> String {
         Cause::Attached(_) => "the engine runs where you set it up, not here".to_owned(),
         Cause::Unknown => "the engine is not known here".to_owned(),
         Cause::Released => "the model was stopped".to_owned(),
+        // a cause a newer porter adds
+        _ => "the engine could not be started".to_owned(),
     }
 }
 
@@ -91,12 +93,12 @@ fn cause_of(failure: EngineFailure) -> Cause {
         EngineFailure::NoRoom { need, free } => Cause::NoRoom { need, free },
         EngineFailure::Exited { code } => Cause::Exited {
             code,
-            tail: crate::startup::Tail::default(),
+            tail: porter_router::startup::Tail::default(),
         },
         EngineFailure::BadProfile => Cause::BadProfile,
         // never ready, or a failure a later supervisor adds
         _ => Cause::NeverReady {
-            tail: crate::startup::Tail::default(),
+            tail: porter_router::startup::Tail::default(),
         },
     }
 }
@@ -108,6 +110,7 @@ fn engine_word(kind: EngineKind) -> &'static str {
         EngineKind::LlamaServer => "llama-server",
         EngineKind::SpeechHost => "speech-host",
         EngineKind::KokoroFastApi => "kokoro",
+        EngineKind::Strata => "strata",
     }
 }
 
@@ -179,8 +182,8 @@ impl Engines {
                     engine_word(model.profile.kind),
                     memory.0,
                 );
-                if let Some(since) = began {
-                    row = row.since(self.supervised.wall_clock(since));
+                if let Some(date) = began.and_then(|since| self.supervised.wall_clock(since)) {
+                    row = row.since(date);
                 }
                 if run == RunState::Ready
                     && let Some(window) = self.supervised.window_of(id)
@@ -207,7 +210,7 @@ mod tests {
 
     #[test]
     fn a_failure_is_told_in_plain_words() {
-        let none = crate::startup::Tail::default;
+        let none = porter_router::startup::Tail::default;
         for (cause, words) in [
             (
                 Cause::NoRoom {

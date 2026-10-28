@@ -2,16 +2,23 @@
 //! identities it continues as ([`Directory`]) and the sheets it draws ([`SyncSheets`]).
 
 use super::classes::sync_app;
+use porter_capability::CapabilityKind;
 use porter_client::{Identities, IdentitiesError};
-use porter_core::consent::{ConsentAnswer, ConsentAsk, GrantScope};
-use porter_core::wire::{ParentWindow, ProviderHint, Refusal};
-use porter_core::{
-    Account, AccountId, AccountsReply, AccountsRequest, CapabilityKind, IdentityAddress,
-    IdentityId, ProviderId,
-};
+use porter_core::ProviderHint;
+use porter_core::consent::{ConsentAnswer, ConsentAsk, Grant, GrantScope};
+use porter_core::store::RegistryStore;
+use porter_core::{Account, IdentityAddress, IdentityId};
+use porter_core::{AccountId, GrantId, ProviderId};
+use porter_ids::clock::Clock;
 use porter_provider::Provider;
 use porter_secrets::{Secrets, SecretsError};
-use porter_service::{AccountService, AuditSink, Clock, Registry, RegistryStore, Sheets, SignInAs};
+use porter_service::AccountService;
+use porter_service_accounts::SignInAs;
+use porter_service_core::audit::AuditSink;
+use porter_service_core::registry::Registry;
+use porter_service_core::sheets::Sheets;
+use porter_wire::{AccountsReply, AccountsRequest};
+use porter_wire::{ParentWindow, Refusal};
 use std::future::Future;
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -21,9 +28,15 @@ pub trait Hosted: Send + Sync + 'static {
     /// A copy of the registry: the accounts syncd signed in and its own grants.
     fn registry(&self) -> Registry;
 
-    /// One request from syncd itself (`org.quire.Sync`): its own grants are listed, revoked and
-    /// asked for through this.
+    /// One request from syncd itself (`org.quire.Sync`): its own grants are asked for through
+    /// this.
     fn answer(&self, request: AccountsRequest) -> impl Future<Output = AccountsReply> + Send;
+
+    /// The grants syncd holds.
+    fn grants(&self) -> Vec<Grant>;
+
+    /// Takes back one of syncd's own grants.
+    fn revoke(&self, grant: &GrantId) -> impl Future<Output = Result<(), Refusal>> + Send;
 
     /// Signs the person's identity in for syncd, through the sheet, opening the provider's page
     /// on the address.
@@ -76,6 +89,14 @@ where
 
     async fn answer(&self, request: AccountsRequest) -> AccountsReply {
         self.handle(&sync_app(), request).await
+    }
+
+    fn grants(&self) -> Vec<Grant> {
+        AccountService::grants(self, &sync_app())
+    }
+
+    async fn revoke(&self, grant: &GrantId) -> Result<(), Refusal> {
+        AccountService::revoke(self, &sync_app(), grant).await
     }
 
     async fn sign_in_as(&self, request: SignInAs, window: ParentWindow) -> AccountsReply {
@@ -212,8 +233,9 @@ impl<S: Sheets> Sheets for SyncSheets<S> {
 
     fn conversation(
         &self,
-        open: porter_service::SheetOpen,
-    ) -> impl Future<Output = Result<Self::Link, porter_service::SheetFault>> + Send {
+        open: porter_service_core::sheets::SheetOpen,
+    ) -> impl Future<Output = Result<Self::Link, porter_service_core::sheets::SheetFault>> + Send
+    {
         self.inner.conversation(open)
     }
 }

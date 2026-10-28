@@ -22,6 +22,7 @@
 //! passes in (TCP, and the TLS check against system roots). TLS and certificate checks live in
 //! the connector, never in the app. Nothing here reads the clock or the environment.
 
+mod auth;
 mod connect;
 mod fault;
 mod http1;
@@ -39,7 +40,7 @@ mod tls;
 #[cfg(feature = "io")]
 mod tokio_stream;
 
-pub use connect::{Connect, ConnectFault};
+pub use connect::Connect;
 pub use fault::RelayFault;
 pub use http1::{ChunkParser, Chunked, HttpPhase, HttpRelay, rewrite_head};
 pub use imap::{ImapAuth, ImapPhase, ImapRelay, app_capabilities, preauth_greeting};

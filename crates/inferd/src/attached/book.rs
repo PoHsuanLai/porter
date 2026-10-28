@@ -4,11 +4,12 @@
 //! ([`AttachedBook::reprobe_all`]) and when a model is wanted ([`AttachedBook::reprobe`]), and at
 //! no other time.
 
-use super::check::{NotReady, probe};
-use crate::local::LocalModel;
-use crate::startup::{Cause, Log};
+use super::check::probe;
 use model_catalog::ModelEntry;
 use porter_infer::{ComputerName, ModelRef, Readiness};
+use porter_router::attached::NotReady;
+use porter_router::local::LocalModel;
+use porter_router::startup::{Cause, Log};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, PoisonError, RwLock};

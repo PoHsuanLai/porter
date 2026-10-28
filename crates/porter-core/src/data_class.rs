@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 /// class.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum DataClass {
     /// Data the app itself made (its own library, its own settings).
     AppOwn,

@@ -1,13 +1,14 @@
 use super::*;
-use crate::catalog::parse_entry_text;
 use crate::entries;
-use crate::local::{EngineConfig, build};
-use crate::pipeline::VecAudio;
 use crate::speech_host::{FakeSpeechHost, Words};
-use crate::testkit::{Scratch, models};
+use crate::testkit::models;
 use porter_core::consent::Usage;
 use porter_infer::{AudioFrame, AudioRate, Base64Bytes, InferEvent};
+use porter_router::catalog::parse_entry_text;
+use porter_router::local::{EngineConfig, build};
+use porter_turns::pipeline::VecAudio;
 use std::path::PathBuf;
+use test_kit::Scratch;
 
 fn ears(scratch: &Scratch) -> LocalModel {
     let entry = parse_entry_text(&entries::speech_in()).expect("entry");
@@ -26,8 +27,8 @@ fn ears(scratch: &Scratch) -> LocalModel {
 fn served() -> ServedBy {
     ServedBy {
         account: porter_core::AccountId::parse("local").expect("id"),
-        model: porter_core::ModelId::parse("tiny-ears").expect("id"),
-        locality: porter_core::Locality::OnDevice,
+        model: porter_capability::ModelId::parse("tiny-ears").expect("id"),
+        locality: porter_capability::Locality::OnDevice,
     }
 }
 

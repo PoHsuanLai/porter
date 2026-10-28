@@ -7,7 +7,7 @@ use crate::structured::{self, Checked, Limits, Shaping};
 use model_openai_compat::OpenAiCodec;
 use model_provider as sp;
 use model_provider::Embedder;
-use porter_core::Tier;
+use porter_capability::Tier;
 use porter_infer::{
     ChatReply, ChatRequest, ChatSink, EmbedReply, EmbedRequest, Flow, InferEvent, InferRefusal,
     Model, ModelCard, ServedBy, StopReason, TaskRequest, TokenUsage, TurnError,
@@ -163,9 +163,10 @@ impl<U: EngineUse> Model for LocalTurn<'_, U> {
         Ok(EmbedReply::new(
             vectors,
             TokenUsage {
-                input: porter_core::Tokens(input.0),
-                output: porter_core::Tokens(0),
-                cached: porter_core::Tokens(0),
+                input: porter_ids::Tokens(input.0),
+                output: porter_ids::Tokens(0),
+                cached: porter_ids::Tokens(0),
+                charge: None,
             },
             self.served.clone(),
         ))

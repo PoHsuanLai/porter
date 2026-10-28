@@ -9,20 +9,24 @@ use crate::common;
 use common::bus::PrivateBus;
 use common::caller as caller_of;
 use common::hosted::{Link, NoDirectory, Service, host, keep};
-use porter_client::Accounts;
-use porter_core::capability::StorageScope;
-use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
+use porter_callers::{Caller, CallerRole};
+use porter_capability::StorageScope;
+use porter_capability::{CapabilityKind, Claim, Offer, Provenance, Subject};
 use porter_core::{
-    Account, AccountId, AccountLabel, AccountState, AuthKind, CapabilityKind, Claim, Credential,
-    DataClass, EndpointUrl, Family, GrantId, LoginName, Offer, Provenance, ProviderId, Restriction,
-    SecretKey, SecretPurpose, SecretText, ServiceEndpoint, SpaceScope, Subject, Tls, UnixSeconds,
+    Account, AccountLabel, AccountState, AuthKind, Credential, DataClass, EndpointUrl, Family,
+    LoginName, Restriction, SecretKey, SecretPurpose, SecretText, ServiceEndpoint, SpaceScope, Tls,
 };
-use porter_dbus::{Caller, CallerRole};
+use porter_core::{AccountId, GrantId, ProviderId};
+use porter_core::{
+    GrantKey,
+    consent::{Decision, Grant, GrantScope, Usage},
+};
 use porter_fake::FakeProvider;
 use porter_fake_servers::{FakeNextcloud, NextcloudHandle, Running};
+use porter_ids::UnixSeconds;
 use porter_provider::Provider;
 use porter_secrets::{MemorySecrets, Secrets};
-use porter_service::Registry;
+use porter_service_core::registry::Registry;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -69,7 +73,7 @@ fn card(uid: &str, name: &str) -> String {
 }
 
 /// Polls every 20 ms; the limit is idle time (`common::eventually_alive`): the wait ends only when
-/// the rig has not begun a cycle or served a request for [`porter_fake::GENEROUS`] (a poll cycle
+/// the rig has not begun a cycle or served a request for [`test_kit::GENEROUS`] (a poll cycle
 /// is a second here), so a loaded machine that mirrors slowly is never cut short.
 async fn eventually(rig: &Rig, what: &str, check: impl FnMut() -> bool) {
     common::eventually_alive(what, || rig.pulse(), check).await;
@@ -78,9 +82,9 @@ async fn eventually(rig: &Rig, what: &str, check: impl FnMut() -> bool) {
 /// Polls every 20 ms until `done` items of `total` are finished. The wait is idle time, not
 /// wall-clock time: a round of twenty large items takes minutes on a loaded machine, and a
 /// daemon that keeps mirroring is working, so the wait fails only when the count has not grown
-/// for [`porter_fake::GENEROUS`].
+/// for [`test_kit::GENEROUS`].
 async fn eventually_progressing(what: &str, mut done: impl FnMut() -> usize, total: usize) {
-    let mut deadline = porter_fake::Deadline::idle(porter_fake::GENEROUS);
+    let mut deadline = test_kit::Deadline::idle(test_kit::GENEROUS);
     let mut best = 0;
     loop {
         let now = done();
@@ -139,7 +143,7 @@ struct Rig {
     nextcloud: Running<NextcloudHandle>,
     hub: Hub,
     mirrors: PathBuf,
-    accounts: Arc<Accounts<Link>>,
+    service: Arc<Service>,
     /// syncd's accounts, whose `remove` is what the Settings row runs.
     own: Keep<Service, NoDirectory>,
     accountd_up: Arc<AtomicBool>,
@@ -283,6 +287,7 @@ async fn rig(with_grants: bool) -> Rig {
         secrets,
     );
     let accounts = Arc::clone(&hosted.accounts);
+    let service = Arc::clone(&hosted.service);
 
     let root = bus.scratch().join("syncd");
     let paths = Paths {
@@ -304,6 +309,9 @@ async fn rig(with_grants: bool) -> Rig {
         settings: Settings::quick(),
         network,
         owners: Access::default(),
+        clock: porter_sync::Clock::new(porter_ids::clock::SystemClock),
+        nonce: "t1".to_owned(),
+        millis: Arc::new(syncd::datasets::photos::ManualMillis::at(1_700_000_000_000)),
     };
     let accountd_up = Arc::new(AtomicBool::new(true));
     let asked = Arc::new(AtomicUsize::new(0));
@@ -324,7 +332,7 @@ async fn rig(with_grants: bool) -> Rig {
         nextcloud,
         hub,
         mirrors: paths.mirrors,
-        accounts,
+        service,
         own,
         accountd_up,
         asked,
@@ -686,7 +694,10 @@ async fn a_revoked_grant_stops_and_removes_the_mirror_but_an_unanswering_grant_l
 
     // The person withdraws the Contacts grant: that mirror goes, the calendars stay.
     rig.accountd_up.store(true, Ordering::Relaxed);
-    rig.accounts.revoke(&rig.grants[1]).await.expect("revoke");
+    rig.service
+        .revoke(&syncd_app(), &rig.grants[1])
+        .await
+        .expect("revoke");
     eventually(&rig, "the address book is gone", || !contacts.exists()).await;
     assert!(rig.calendar("personal").exists());
     assert!(
@@ -725,7 +736,10 @@ async fn a_calendar_and_an_address_book_of_one_name_keep_apart_and_retiring_one_
     assert!(items_in(&book, PimKind::Calendar).is_empty());
 
     // The Contacts grant is withdrawn: the address book goes, the calendar of that name stays.
-    rig.accounts.revoke(&rig.grants[1]).await.expect("revoke");
+    rig.service
+        .revoke(&syncd_app(), &rig.grants[1])
+        .await
+        .expect("revoke");
     eventually(&rig, "the address book is gone", || !book.exists()).await;
     assert_eq!(items_in(&calendar, PimKind::Calendar), ["s1.ics"]);
     assert_eq!(read(&calendar.join(DISPLAYNAME)).as_deref(), Some("Shared"));

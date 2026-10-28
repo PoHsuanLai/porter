@@ -16,7 +16,7 @@ fn chat() -> InferRequest {
             role: Role::User,
             parts: vec![porter_infer::MessagePart::Text("Please do this:".into())],
         }],
-        porter_core::Tier::Balanced,
+        porter_capability::Tier::Balanced,
         DataClass::Voice,
         Usage::Interactive,
     ))

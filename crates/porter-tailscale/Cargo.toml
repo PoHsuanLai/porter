@@ -9,7 +9,7 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
-porter-core = { workspace = true }
+porter-ids = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -19,9 +19,9 @@ http-body-util = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true, features = ["rt", "net", "time", "io-util"] }
 
 [dev-dependencies]
+test-kit = { workspace = true }
 # The integration tests use the client, which the `io` feature builds.
 porter-tailscale = { workspace = true, features = ["io"] }
-porter-fake = { workspace = true }
 porter-fake-servers = { workspace = true }
 tokio ={ workspace = true, features = ["rt", "macros", "net", "time", "io-util", "sync"] }
 

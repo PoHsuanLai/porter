@@ -2,7 +2,8 @@
 //! R14). Its values come from settings (`ai.local_only`, `ai.floor.<class>`); `proposed` holds
 //! the design's defaults for them.
 
-use porter_core::{DataClass, Locality};
+use porter_capability::Locality;
+use porter_core::DataClass;
 use serde::{Deserialize, Serialize};
 
 /// Whether cloud accounts exist at all for routing.

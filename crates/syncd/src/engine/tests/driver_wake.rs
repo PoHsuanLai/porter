@@ -6,9 +6,9 @@ use super::rig::*;
 use crate::driver::{Driver, step};
 use crate::scheduler::{MeteredPolicy, Network, Pausing, Settings};
 use crate::service::{Access, DatasetName, Hub};
-use porter_core::capability::{Delta, StorageCap};
+use porter_callers::{Caller, CallerRole};
+use porter_capability::{Delta, StorageCap};
 use porter_core::{AppId, AppName, Isolation};
-use porter_dbus::{Caller, CallerRole};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{Notify, watch};
@@ -76,7 +76,7 @@ async fn a_clock_that_jumped_while_the_computer_slept_runs_the_next_cycle_within
     let running = tokio::spawn(driver.run());
 
     let has = |path: &str| world.dataset.snapshot().contains_key(path);
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         if has("a.txt") {
             break;
@@ -90,7 +90,7 @@ async fn a_clock_that_jumped_while_the_computer_slept_runs_the_next_cycle_within
     // must notice within a step.
     world.remote_put("b.txt", b"second").await;
     world.clock.set(5_000 + 7_200);
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         if has("b.txt") {
             break;
@@ -158,7 +158,7 @@ fn far_polls() -> Settings {
 }
 
 async fn cycles_ended(hub: &Hub, name: &DatasetName, want: u64) {
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         if hub.cycles(name).is_some_and(|cycles| cycles.ended >= want) {
             return;

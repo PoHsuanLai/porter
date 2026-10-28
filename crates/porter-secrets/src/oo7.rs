@@ -5,8 +5,9 @@
 use crate::attributes::attributes_in;
 use crate::error::SecretsError;
 use crate::namespace::Namespace;
-use crate::secrets::{PutOutcome, Secrets};
-use porter_core::{AccountId, Credential, SecretKey};
+use crate::secrets::Secrets;
+use porter_core::AccountId;
+use porter_core::{Credential, SecretKey};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use zeroize::Zeroizing;
@@ -222,7 +223,7 @@ impl Secrets for Oo7KeyringSecrets {
         &self,
         key: &SecretKey,
         value: &Credential,
-    ) -> Result<PutOutcome, SecretsError> {
+    ) -> Result<bool, SecretsError> {
         let encoded = encoded(value)?;
         let label = format!("{} {}", self.namespace, key.account);
         let at = search(&self.namespace, key);
@@ -236,11 +237,11 @@ impl Secrets for Oo7KeyringSecrets {
                     return Err(SecretsError::Locked);
                 };
                 match file.lookup_item(&at).await.map_err(|e| refused(e.into()))? {
-                    Some(_) => Ok(PutOutcome::AlreadyThere),
+                    Some(_) => Ok(false),
                     None => file
                         .create_item(&label, &at, oo7::Secret::blob(encoded.as_slice()), false)
                         .await
-                        .map(|_| PutOutcome::Stored)
+                        .map(|_| true)
                         .map_err(|e| refused(e.into())),
                 }
             }
@@ -248,12 +249,12 @@ impl Secrets for Oo7KeyringSecrets {
             oo7::Keyring::DBus(_) => {
                 let found = self.keyring.search_items(&at).await.map_err(refused)?;
                 match found.is_empty() {
-                    false => Ok(PutOutcome::AlreadyThere),
+                    false => Ok(false),
                     true => self
                         .keyring
                         .create_item(&label, &at, oo7::Secret::blob(encoded.as_slice()), false)
                         .await
-                        .map(|()| PutOutcome::Stored)
+                        .map(|()| true)
                         .map_err(refused),
                 }
             }
@@ -304,7 +305,7 @@ impl Secrets for Oo7Secrets {
         &self,
         key: &SecretKey,
         value: &Credential,
-    ) -> Result<PutOutcome, SecretsError> {
+    ) -> Result<bool, SecretsError> {
         ambient(&Namespace::PORTER, |s| async move {
             s.put_if_absent(key, value).await
         })
@@ -336,7 +337,7 @@ impl Secrets for Oo7NamedSecrets {
         &self,
         key: &SecretKey,
         value: &Credential,
-    ) -> Result<PutOutcome, SecretsError> {
+    ) -> Result<bool, SecretsError> {
         ambient(&self.namespace, |s| async move {
             s.put_if_absent(key, value).await
         })
@@ -358,7 +359,8 @@ impl Secrets for Oo7NamedSecrets {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_core::{SecretText, UnixSeconds};
+    use porter_core::SecretText;
+    use porter_ids::UnixSeconds;
     use std::sync::atomic::{AtomicU32, Ordering};
 
     /// A daemon that answers only the keyrings opened since it started: the `n`th open is

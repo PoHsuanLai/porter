@@ -4,10 +4,13 @@
 //! service is refused by the fake as Google refuses it.
 
 use super::rig::*;
-use porter_core::sheet::SignInInput;
-use porter_core::{AccountId, Credential, SecretText, UnixSeconds};
-use porter_http::{Http, HttpRequest, Method};
+use porter_core::AccountId;
+use porter_core::{Credential, SecretText};
+use porter_http::Http;
+use porter_http::http::Method;
+use porter_ids::UnixSeconds;
 use porter_provider::{Presented, Provider, ProviderSession, SignIn, SignInStep};
+use porter_sheet::SignInInput;
 
 fn account() -> AccountId {
     AccountId::parse("22222222-2222-4222-8222-222222222222").expect("account id")
@@ -70,18 +73,19 @@ async fn call(
     extra: &[(&str, &str)],
 ) -> u16 {
     let url = format!("{}{path}", rig.google.api.base_url());
-    let mut request = HttpRequest::new(method, porter_core::WebUrl::parse(&url).expect("url"))
-        .with_header("Authorization", format!("Bearer {token}"))
-        .with_body(body.as_bytes().to_vec());
+    let url = porter_ids::WebUrl::parse(&url).expect("url");
+    let mut request =
+        porter_http::request(method, &url).header("Authorization", format!("Bearer {token}"));
     for (name, value) in extra {
-        request = request.with_header(name, *value);
+        request = request.header(*name, *value);
     }
+    let request = request.body(body.as_bytes().to_vec()).expect("request");
     Wire::default()
         .send(request)
         .await
         .expect("answer")
-        .status
-        .0
+        .status()
+        .as_u16()
 }
 
 #[tokio::test]
@@ -102,38 +106,38 @@ async fn the_scopes_asked_cover_every_drive_call_the_replica_makes() {
     let calls = [
         call_of(
             "about",
-            Method::Get,
+            Method::GET,
             "/drive/v3/about?fields=storageQuota",
             "",
         ),
         call_of(
             "start token",
-            Method::Get,
+            Method::GET,
             "/drive/v3/changes/startPageToken",
             "",
         ),
         call_of(
             "app root",
-            Method::Get,
+            Method::GET,
             "/drive/v3/files/appDataFolder?fields=id",
             "",
         ),
         call_of(
             "listing",
-            Method::Get,
+            Method::GET,
             "/drive/v3/files?spaces=appDataFolder&q=trashed%20%3D%20false",
             "",
         ),
-        call_of("make a folder", Method::Post, "/drive/v3/files", root),
+        call_of("make a folder", Method::POST, "/drive/v3/files", root),
         call_of(
             "changes",
-            Method::Get,
+            Method::GET,
             "/drive/v3/changes?pageToken=0&spaces=appDataFolder",
             "",
         ),
         call_of(
             "resumable start",
-            Method::Post,
+            Method::POST,
             "/upload/drive/v3/files?uploadType=resumable",
             r#"{"name":"a","parents":["appDataFolder"]}"#,
         ),
@@ -156,7 +160,7 @@ async fn the_scopes_asked_cover_every_drive_call_the_replica_makes() {
     assert_eq!(
         call(
             &rig,
-            Method::Get,
+            Method::GET,
             "/drive/v3/about?fields=storageQuota",
             &calendar_only,
             "",
@@ -179,13 +183,13 @@ async fn the_scopes_asked_cover_the_photos_upload_and_the_picker_and_each_alone_
     ];
     let json = [("Content-Type", "application/json")];
     assert_eq!(
-        call(&rig, Method::Post, "/v1/uploads", &upload, "bytes", &raw).await,
+        call(&rig, Method::POST, "/v1/uploads", &upload, "bytes", &raw).await,
         200
     );
     assert_eq!(
         call(
             &rig,
-            Method::Post,
+            Method::POST,
             "/v1/albums",
             &upload,
             r#"{"album":{"title":"Quire"}}"#,
@@ -197,7 +201,7 @@ async fn the_scopes_asked_cover_the_photos_upload_and_the_picker_and_each_alone_
     assert_eq!(
         call(
             &rig,
-            Method::Post,
+            Method::POST,
             "/v1/mediaItems:batchCreate",
             &upload,
             r#"{"newMediaItems":[]}"#,
@@ -207,13 +211,13 @@ async fn the_scopes_asked_cover_the_photos_upload_and_the_picker_and_each_alone_
         200
     );
     assert_eq!(
-        call(&rig, Method::Post, "/v1/sessions", &picker, "{}", &json).await,
+        call(&rig, Method::POST, "/v1/sessions", &picker, "{}", &json).await,
         200
     );
     assert_eq!(
         call(
             &rig,
-            Method::Get,
+            Method::GET,
             "/v1/mediaItems?sessionId=none",
             &picker,
             "",
@@ -234,7 +238,7 @@ async fn the_scopes_asked_cover_the_photos_upload_and_the_picker_and_each_alone_
     assert_eq!(
         call(
             &rig,
-            Method::Post,
+            Method::POST,
             "/v1/sessions",
             &only_upload,
             "{}",
@@ -252,7 +256,7 @@ async fn the_scopes_asked_cover_the_photos_upload_and_the_picker_and_each_alone_
     assert_eq!(
         call(
             &rig,
-            Method::Post,
+            Method::POST,
             "/v1/uploads",
             &only_picker,
             "bytes",
@@ -264,7 +268,7 @@ async fn the_scopes_asked_cover_the_photos_upload_and_the_picker_and_each_alone_
     assert_eq!(
         call(
             &rig,
-            Method::Post,
+            Method::POST,
             "/v1/sessions",
             &only_picker,
             "{}",

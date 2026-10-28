@@ -3,7 +3,8 @@
 
 use super::*;
 use crate::config::InferdConfig;
-use porter_core::{DataClass, Locality};
+use porter_capability::Locality;
+use porter_core::DataClass;
 use porter_infer::{Floor, LocalOnly};
 
 fn settings(text: &str) -> (Settings, Vec<String>) {

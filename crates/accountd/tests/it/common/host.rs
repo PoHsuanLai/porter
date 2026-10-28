@@ -1,7 +1,7 @@
 //! A sheet host written by hand: the `org.quire.AccountsSheet1` interface on the private bus,
 //! recording what accountd opened, updated and closed, and answering from a script.
 
-use porter_core::sheet::SheetInput;
+use porter_sheet::SheetInput;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 use zbus::Connection;
@@ -73,7 +73,8 @@ impl SheetHost {
 
 /// Sends an `Input` signal from `connection` as the host would.
 pub async fn send_input(connection: &Connection, handle: &str, input: &SheetInput) {
-    let emitter = SignalEmitter::new(connection, porter_dbus::SHEET_PATH).expect("emitter");
+    let emitter =
+        SignalEmitter::new(connection, porter_dbus::accounts::SHEET_PATH).expect("emitter");
     let json = serde_json::to_string(input).expect("json");
     emitter
         .emit(

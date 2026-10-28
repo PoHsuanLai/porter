@@ -1,4 +1,4 @@
-//! The session `Inference1.Open` returns: a Unix socket whose frames are `porter_core::wire`
+//! The session `Inference1.Open` returns: a Unix socket whose frames are `porter_wire`
 //! envelopes (a 4-byte length, then JSON). The client writes `ClientFrame`s and reads
 //! `InferEvent`s; a memfd rides on the frame that names it as SCM_RIGHTS.
 
@@ -9,7 +9,7 @@ use std::os::fd::OwnedFd;
 
 pub use super::framed::MAX_ATTACHMENTS;
 
-/// The fd `Inference1.Open` returned, framed with `porter_core::wire`'s envelope.
+/// The fd `Inference1.Open` returned, framed with `porter_wire`'s envelope.
 #[derive(Debug)]
 pub struct DbusSession(FramedSession);
 

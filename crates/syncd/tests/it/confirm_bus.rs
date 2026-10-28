@@ -7,11 +7,13 @@ use crate::common;
 
 use common::bus::PrivateBus;
 use common::{Known, NO_FITTING, client, error_name};
-use porter_core::capability::{
-    Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope,
-};
-use porter_core::{AppName, UnixSeconds};
-use porter_dbus::{CallerRole, Details, SYNC_ERROR_NOTHING_HELD, SyncProxy};
+use porter_callers::CallerRole;
+use porter_capability::{Access, Delta, HashKind, StorageCap, StorageScope};
+use porter_core::AppName;
+use porter_dbus::Details;
+use porter_dbus::sync::SYNC_ERROR_NOTHING_HELD;
+use porter_dbus::sync::SyncProxy;
+use porter_ids::UnixSeconds;
 use porter_sync::{
     BaseVersion, Blob, ByteRange, ChangePage, ConflictRule, Cursor, ItemPath, MemoryReplica,
     PutItem, PutRefused, PutTarget, Quota, RemoteId, RemoteVersion, Replica, ReplicaError,
@@ -90,11 +92,11 @@ fn storage() -> StorageCap {
     StorageCap {
         access: Access::ReadWrite,
         delta: Delta::Poll,
-        quota: QuotaReport::Reported,
+        quota: true,
         scope: StorageScope::AppFolder,
         hashes: HashKind::Sha256,
-        ranges: Offered::Present,
-        chunked_upload: Offered::Absent,
+        ranges: true,
+        chunked_upload: false,
     }
 }
 
@@ -470,7 +472,7 @@ where
 }
 
 /// Polls `check` every 20 ms; the limit is idle time (`common::until_alive`): it ends only when the
-/// rig's daemon has done nothing (no cycle begun or ended) for [`porter_fake::GENEROUS`].
+/// rig's daemon has done nothing (no cycle begun or ended) for [`test_kit::GENEROUS`].
 async fn until<F: Future<Output = bool>>(rig: &Rig, what: &str, check: impl FnMut() -> F) {
     common::until_alive(what, || common::pulse(&rig.hub, 0), check).await;
 }

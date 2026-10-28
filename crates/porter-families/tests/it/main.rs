@@ -8,17 +8,15 @@ mod agent_login;
 mod api_key;
 mod common;
 mod generic;
-#[cfg(feature = "google")]
+#[cfg(feature = "oauth")]
 mod google;
-#[cfg(feature = "microsoft")]
+#[cfg(feature = "oauth")]
 mod microsoft;
 mod nextcloud;
-#[cfg(feature = "openrouter")]
-mod skeleton;
 
 #[test]
 fn every_module_is_declared() {
-    porter_fake::guard::every_module_is_declared(
+    test_kit::guard::every_module_is_declared(
         env!("CARGO_MANIFEST_DIR"),
         "tests/it",
         include_str!("main.rs"),

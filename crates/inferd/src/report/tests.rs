@@ -1,6 +1,6 @@
 use super::*;
 use crate::probe::testing::chat;
-use porter_core::capability::LlmFeature;
+use porter_capability::LlmFeature;
 
 #[tokio::test]
 async fn with_no_key_store_every_report_is_unreachable() {

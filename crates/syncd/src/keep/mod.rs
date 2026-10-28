@@ -36,15 +36,16 @@ use crate::datasets::drive::{DriveSet, Kept};
 use crate::paths::{AccountDir, Paths};
 use crate::removal;
 use crate::service::Hub;
+use porter_capability::{CapabilityKind, Toggle};
 use porter_client::IdentitiesError;
-use porter_core::consent::GrantKey;
+use porter_core::AccountId;
+use porter_core::GrantKey;
 use porter_core::consent::Usage;
-use porter_core::wire::{ParentWindow, Refusal};
-use porter_core::{
-    Account, AccountId, AccountsReply, AccountsRequest, CapabilityKind, DataClass, Toggle,
-};
+use porter_core::{Account, DataClass};
 use porter_provider::{ConsentHistory, LoginHint};
-use porter_service::SignInAs;
+use porter_service_accounts::SignInAs;
+use porter_wire::{AccountsReply, AccountsRequest};
+use porter_wire::{ParentWindow, Refusal};
 
 /// Why "Continue as" did not end in an account.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -122,7 +123,7 @@ impl Continued {
 
 /// The folder an account's journals, cache and drive are kept under, and its drive's id.
 fn drive_dir(account: &AccountId) -> Option<AccountDir> {
-    AccountDir::parse(&porter_core::object_segment(account))
+    AccountDir::parse(&porter_ids::object_segment(account.as_str()))
 }
 
 /// syncd's accounts over the service it hosts and the directory of identities.
@@ -169,7 +170,7 @@ impl<H: Hosted, D: Directory> Keep<H, D> {
     }
 
     /// The registry: the accounts syncd signed in and its own grants.
-    pub fn registry(&self) -> porter_service::Registry {
+    pub fn registry(&self) -> porter_service_core::registry::Registry {
         self.hosted.registry()
     }
 
@@ -384,18 +385,9 @@ impl<H: Hosted, D: Directory> Keep<H, D> {
 
     /// Takes back every grant of syncd's under one of `wanted`.
     async fn revoke(&self, wanted: &[GrantKey]) -> Result<(), SwitchError> {
-        let AccountsReply::Grants(grants) = self.hosted.answer(AccountsRequest::ListGrants).await
-        else {
-            return Err(SwitchError::Unsaved);
-        };
+        let grants = self.hosted.grants();
         for grant in grants.iter().filter(|g| wanted.contains(&g.key)) {
-            let reply = self
-                .hosted
-                .answer(AccountsRequest::Revoke {
-                    grant: grant.id.clone(),
-                })
-                .await;
-            if reply != AccountsReply::Revoked {
+            if self.hosted.revoke(&grant.id).await.is_err() {
                 return Err(SwitchError::Unsaved);
             }
         }

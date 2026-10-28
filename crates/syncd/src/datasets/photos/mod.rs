@@ -37,7 +37,7 @@ mod run;
 mod tests;
 
 pub use cas::ContentId;
-pub use hlc::{DeviceId, Hlc, HlcClock, ManualMillis, Millis, SystemMillis};
+pub use hlc::{DeviceId, Hlc, HlcClock, ManualMillis, Millis};
 pub use library::{Imported, PhotoLibrary, PhotosError, Stored};
 pub use manifest::{Edit, Manifest, Mark, Photo, PhotoMeta, Stamped};
 pub use metadata::PhotoMetadata;

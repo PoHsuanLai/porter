@@ -6,7 +6,8 @@
 //! Secret Service's attributes):
 //!
 //! ```
-//! use porter_core::{AccountId, SecretKey, SecretPurpose};
+//! use porter_core::{SecretKey, SecretPurpose};
+//! use porter_core::AccountId;
 //! use porter_secrets::{Namespace, SERVICE, attributes, attributes_in};
 //!
 //! let key = SecretKey {
@@ -60,4 +61,4 @@ pub use namespace::{Namespace, NamespaceError};
 pub use oo7::{Oo7KeyringSecrets, Oo7NamedSecrets, Oo7Secrets};
 #[cfg(any(target_os = "linux", target_os = "android"))]
 pub use sealed::sealed_key;
-pub use secrets::{PutOutcome, Secrets};
+pub use secrets::Secrets;

@@ -1,7 +1,8 @@
 //! The rows of the route, the wait for the engine and the first request of an idle session.
 
 use super::helpers::*;
-use porter_core::{DataClass, Permille};
+use porter_core::DataClass;
+use porter_ids::Permille;
 use porter_infer::{
     ClientFrame, Declined, DeclinedBecause, InferEvent, InferRefusal, InferReply, ModelError,
     ModelRef, PickRefusal, Readiness, RequestKind, ShowReason, Why,
@@ -10,7 +11,7 @@ use porter_infer::{
 fn old() -> ModelRef {
     ModelRef {
         account: porter_core::AccountId::parse("local").expect("id"),
-        model: porter_core::ModelId::parse("old").expect("id"),
+        model: porter_capability::ModelId::parse("old").expect("id"),
     }
 }
 

@@ -7,9 +7,10 @@
 use crate::CalendarStore;
 use crate::error::CalendarError;
 use crate::event::{CalendarRef, Event, Stored, When};
-use crate::json::{bare, body, encode, exchange, removed, request, text, url};
-use porter_core::WebUrl;
-use porter_http::{Http, Method};
+use crate::json::{bare, body, encode, exchange, if_match, removed, request, text, url};
+use porter_http::Http;
+use porter_http::http::Method;
+use porter_ids::WebUrl;
 use serde_json::{Value, json};
 
 /// The Calendar API's endpoint.
@@ -89,7 +90,8 @@ fn stored(calendar: &str, uid: &str, event: &Value) -> Result<Stored, CalendarEr
 impl<H: Http> CalendarStore for Google<H> {
     async fn calendars(&self) -> Result<Vec<CalendarRef>, CalendarError> {
         let at = self.url("/users/me/calendarList")?;
-        let response = exchange(&self.http, bare(Method::Get, at), "the list of calendars").await?;
+        let response =
+            exchange(&self.http, bare(Method::GET, &at)?, "the list of calendars").await?;
         let listed = body(&response)?;
         Ok(listed
             .get("items")
@@ -115,13 +117,13 @@ impl<H: Http> CalendarStore for Google<H> {
 
     async fn find(&self, calendar: &str, uid: &str) -> Result<Option<Stored>, CalendarError> {
         let at = self.events(calendar, &format!("?iCalUID={}", encode(uid)))?;
-        let response = self.http.send(bare(Method::Get, at)).await?;
-        if response.status.0 == 404 {
+        let response = self.http.send(bare(Method::GET, &at)?).await?;
+        if response.status().as_u16() == 404 {
             return Ok(None);
         }
-        if !response.status.is_success() {
+        if !response.status().is_success() {
             return Err(CalendarError::of_status(
-                response.status.0,
+                response.status().as_u16(),
                 "a search of events",
             ));
         }
@@ -142,12 +144,12 @@ impl<H: Http> CalendarStore for Google<H> {
         let response = match self.find(calendar, &event.uid).await? {
             Some(held) => {
                 let mut asked = request(
-                    Method::Put,
-                    self.events(calendar, &format!("/{}", encode(&held.id)))?,
+                    Method::PUT,
+                    &self.events(calendar, &format!("/{}", encode(&held.id)))?,
                     &written,
-                );
+                )?;
                 if let Some(etag) = &held.version {
-                    asked = asked.with_header("If-Match", etag.clone());
+                    asked = if_match(asked, etag)?;
                 }
                 exchange(&self.http, asked, "the update of an event").await?
             }
@@ -155,7 +157,7 @@ impl<H: Http> CalendarStore for Google<H> {
                 let at = self.events(calendar, "/import")?;
                 exchange(
                     &self.http,
-                    request(Method::Post, at, &written),
+                    request(Method::POST, &at, &written)?,
                     "the import of an event",
                 )
                 .await?
@@ -169,7 +171,7 @@ impl<H: Http> CalendarStore for Google<H> {
             return Ok(false);
         };
         let at = self.events(calendar, &format!("/{}", encode(&held.id)))?;
-        let response = self.http.send(bare(Method::Delete, at)).await?;
+        let response = self.http.send(bare(Method::DELETE, &at)?).await?;
         removed(&response, "the deletion of an event")
     }
 }

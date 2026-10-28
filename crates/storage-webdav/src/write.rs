@@ -5,11 +5,15 @@
 
 use crate::entry::{Kind, entries};
 use crate::path::parents_of;
-use crate::refuse::{write_error, write_unreached};
-use crate::replica::{DELETED, WebDavReplica};
+use crate::refuse::write_error;
+use crate::replica::WebDavReplica;
 use crate::requests;
 use dav_proto::parse_multistatus;
-use porter_http::{Http, HttpRequest, HttpResponse, Method};
+use porter_http::http::header::CONTENT_TYPE;
+use porter_http::http::{Method, Request, Response};
+use porter_http::{HeaderText, Http, request, webdav};
+use porter_sync::DELETED;
+use porter_sync::status::write_unreached;
 use porter_sync::{
     BaseVersion, Conflict, PutItem, PutRefused, PutTarget, RemoteId, RemoteSide, RemoteVersion,
     RetryAfter,
@@ -33,22 +37,24 @@ impl<H: Http> WebDavReplica<H> {
             (BaseVersion::Absent, false) => return Err(self.conflict(&id, &base).await),
         };
         let url = self.root.url_of(&id).ok_or(PutRefused::Forbidden)?;
-        let request = guard.into_iter().fold(
-            HttpRequest::new(Method::Put, url)
-                .with_header("Content-Type", "application/octet-stream")
-                .with_body(item.content.0),
-            |request, (name, value)| request.with_header(name, value),
-        );
-        let mut response = self.write_send(request.clone()).await?;
-        if response.status.0 == 409 && creating {
+        let put = guard
+            .into_iter()
+            .fold(
+                request(Method::PUT, &url).header(CONTENT_TYPE, "application/octet-stream"),
+                |put, (name, value)| put.header(name, value),
+            )
+            .body(item.content.0)
+            .map_err(|e| write_unreached(e.into()))?;
+        let mut response = self.write_send(put.clone()).await?;
+        if response.status().as_u16() == 409 && creating {
             // A folder on the way is missing: make them, then once more.
             self.make_parents(&id).await?;
-            response = self.write_send(request).await?;
+            response = self.write_send(put).await?;
         }
-        match response.status.0 {
+        match response.status().as_u16() {
             200 | 201 | 204 => Ok((id.clone(), self.version_after(&id, &response).await)),
             404 | 412 => Err(self.conflict(&id, &base).await),
-            _ => Err(write_error(&response)),
+            _ => Err(write_error(&response, self.clock.now())),
         }
     }
 
@@ -61,16 +67,19 @@ impl<H: Http> WebDavReplica<H> {
             return Err(self.conflict(item, &base).await);
         };
         let url = self.root.url_of(item).ok_or(PutRefused::Forbidden)?;
-        let request = HttpRequest::new(Method::Delete, url).with_header("If-Match", seen.0.clone());
-        let response = self.write_send(request).await?;
-        match response.status.0 {
+        let delete = request(Method::DELETE, &url)
+            .header("If-Match", seen.0.as_str())
+            .body(Vec::new())
+            .map_err(|e| write_unreached(e.into()))?;
+        let response = self.write_send(delete).await?;
+        match response.status().as_u16() {
             200 | 204 => Ok(RemoteVersion(DELETED.to_owned())),
             404 | 412 => Err(self.conflict(item, &base).await),
-            _ => Err(write_error(&response)),
+            _ => Err(write_error(&response, self.clock.now())),
         }
     }
 
-    async fn write_send(&self, request: HttpRequest) -> Result<HttpResponse, PutRefused> {
+    async fn write_send(&self, request: Request<Vec<u8>>) -> Result<Response<Vec<u8>>, PutRefused> {
         self.http.send(request).await.map_err(write_unreached)
     }
 
@@ -84,14 +93,15 @@ impl<H: Http> WebDavReplica<H> {
                 .root
                 .collection_url(&folder)
                 .ok_or(PutRefused::Forbidden)?;
-            let response = self
-                .write_send(HttpRequest::new(Method::Mkcol, url))
-                .await?;
-            match response.status.0 {
+            let mkcol = request(webdav::mkcol(), &url)
+                .body(Vec::new())
+                .map_err(|e| write_unreached(e.into()))?;
+            let response = self.write_send(mkcol).await?;
+            match response.status().as_u16() {
                 200 | 201 | 405 => {
                     self.state().folders.insert(folder);
                 }
-                _ => return Err(write_error(&response)),
+                _ => return Err(write_error(&response, self.clock.now())),
             }
         }
         Ok(())
@@ -99,7 +109,7 @@ impl<H: Http> WebDavReplica<H> {
 
     /// The version a successful PUT made: the `ETag` it answered with, else what the server
     /// says the item is now, else nothing the next read cannot settle.
-    async fn version_after(&self, id: &RemoteId, response: &HttpResponse) -> RemoteVersion {
+    async fn version_after(&self, id: &RemoteId, response: &Response<Vec<u8>>) -> RemoteVersion {
         if let Some(tag) = response.header("etag") {
             return RemoteVersion(tag.to_owned());
         }
@@ -112,10 +122,11 @@ impl<H: Http> WebDavReplica<H> {
     /// The version of the file at `id` now, or `None` when there is none.
     async fn current(&self, id: &RemoteId) -> Result<Option<RemoteVersion>, PutRefused> {
         let url = self.root.url_of(id).ok_or(PutRefused::Forbidden)?;
-        let response = self.write_send(requests::stat(url)).await?;
-        match response.status.0 {
+        let stat = requests::stat(url).map_err(write_unreached)?;
+        let response = self.write_send(stat).await?;
+        match response.status().as_u16() {
             207 => {
-                let text = String::from_utf8_lossy(&response.body);
+                let text = String::from_utf8_lossy(response.body());
                 let status =
                     parse_multistatus(&text).map_err(|_| PutRefused::Transient(RetryAfter(30)))?;
                 Ok(entries(&self.root, &status)
@@ -124,7 +135,7 @@ impl<H: Http> WebDavReplica<H> {
                     .map(|e| e.version))
             }
             404 => Ok(None),
-            _ => Err(write_error(&response)),
+            _ => Err(write_error(&response, self.clock.now())),
         }
     }
 

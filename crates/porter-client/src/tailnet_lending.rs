@@ -12,7 +12,8 @@
 //!
 //! ```ignore
 //! // The real case: the files of the person's own session, and their session bus.
-//! let config = LendingConfig::from_env().ok_or("no home folder")?;
+//! let config = LendingConfig::from_lookup(|name| std::env::var_os(name))
+//!     .ok_or("no home folder")?;
 //! let lending = TailnetLending::new(config, SessionUnits::new(connection));
 //! match lending.state() {
 //!     LendingState::NotInstalled | LendingState::Differs => { /* the switch shows "off" */ }
@@ -34,7 +35,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 /// The service whose sandbox the file opens.
-pub const INFERD_UNIT: UnitName = UnitName("inferd.service");
+pub const INFERD_UNIT: &str = "inferd.service";
 
 /// The directory beside the unit that holds its drop-ins, and the drop-in's name in it.
 const DROP_IN_DIR: &str = "inferd.service.d";
@@ -42,17 +43,6 @@ const DROP_IN_FILE: &str = "tailnet.conf";
 
 /// The name porter's shipped file has under `share/porter`.
 pub const SHIPPED_NAME: &str = "inferd-tailnet.conf";
-
-/// A systemd unit's name, such as `inferd.service`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct UnitName(&'static str);
-
-impl UnitName {
-    /// The name as systemd spells it.
-    pub fn as_str(&self) -> &'static str {
-        self.0
-    }
-}
 
 /// Why the manager did not do what it was asked: a sentence for a log, not for the person.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -64,8 +54,8 @@ pub struct UnitFailure(pub String);
 pub trait UnitManager: Send + Sync {
     /// Reads the unit files again (`daemon-reload`).
     fn reload(&self) -> impl Future<Output = Result<(), UnitFailure>> + Send;
-    /// Restarts `unit` and returns when the job has finished.
-    fn restart(&self, unit: UnitName) -> impl Future<Output = Result<(), UnitFailure>> + Send;
+    /// Restarts `unit` (a systemd unit's name, such as [`INFERD_UNIT`]) and returns when the job has finished.
+    fn restart(&self, unit: &'static str) -> impl Future<Output = Result<(), UnitFailure>> + Send;
 }
 
 /// Where the shipped file is and where the person's systemd user files are.
@@ -93,13 +83,9 @@ impl LendingConfig {
         )
     }
 
-    /// The answers of the process environment (`XDG_CONFIG_HOME`, `HOME`, `XDG_DATA_HOME` and
-    /// `XDG_DATA_DIRS`), or `None` when there is no home folder to put the file in.
-    pub fn from_env() -> Option<Self> {
-        Self::from_lookup(|name| std::env::var_os(name))
-    }
-
-    /// As [`LendingConfig::from_env`], over `var` instead of the environment.
+    /// The answers `var` gives for `XDG_CONFIG_HOME`, `HOME`, `XDG_DATA_HOME` and
+    /// `XDG_DATA_DIRS` (a host passes `|name| std::env::var_os(name)`; the library reads no
+    /// environment), or `None` when there is no home folder to put the file in.
     pub fn from_lookup(var: impl Fn(&str) -> Option<OsString>) -> Option<Self> {
         let absolute = |name: &str| {
             var(name)
@@ -152,34 +138,22 @@ pub enum LendingState {
     Differs,
 }
 
-/// Why turning the sharing on or off did not work. Each sentence is plain words that Settings
-/// can show as they are. More may be added: match with a wildcard.
+/// Why turning the sharing on or off did not work. Each text says what failed; the words a person
+/// reads are the app's, written from the variant. More may be added: match with a wildcard.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum LendingError {
     /// The file porter ships is not on this computer.
-    #[error(
-        "This computer is missing a file it needs to share its models, so nothing was changed. \
-         Installing the software again puts it back."
-    )]
+    #[error("the shipped drop-in file is not on this computer")]
     ShippedFileMissing,
     /// The setting could not be saved in the person's folder.
-    #[error(
-        "Your setting for sharing this computer's models could not be saved. \
-         Check that your home folder can be written to."
-    )]
+    #[error("the drop-in file could not be written")]
     CouldNotWrite(#[source] io::Error),
     /// The file is saved, but the computer would not read its files again.
-    #[error(
-        "Your setting was saved, but the computer did not take it up yet. \
-         Signing out and back in will apply it."
-    )]
+    #[error("the drop-in was written but the manager did not read the unit files again")]
     ReloadFailed(#[source] UnitFailure),
     /// The file is saved and read, but the models service did not restart.
-    #[error(
-        "Your setting was saved, but the models service did not restart. \
-         Try again, or sign out and back in."
-    )]
+    #[error("the drop-in was written but the unit did not restart")]
     RestartFailed(#[source] UnitFailure),
 }
 
@@ -271,8 +245,9 @@ pub use session::SessionUnits;
 
 #[cfg(feature = "dbus")]
 mod session {
-    use super::{UnitFailure, UnitManager, UnitName};
-    use porter_dbus::{BusConnection, BusStream, SYSTEMD, SYSTEMD_MANAGER, SYSTEMD_PATH};
+    use super::{UnitFailure, UnitManager};
+    use porter_callers::{SYSTEMD, SYSTEMD_MANAGER, SYSTEMD_PATH};
+    use porter_dbus::{BusConnection, BusStream};
     use std::pin::Pin;
     use std::time::Duration;
     use zbus::zvariant::OwnedObjectPath;
@@ -339,14 +314,11 @@ mod session {
             self.proxy().await?.reload().await.map_err(failure)
         }
 
-        async fn restart(&self, unit: UnitName) -> Result<(), UnitFailure> {
+        async fn restart(&self, unit: &'static str) -> Result<(), UnitFailure> {
             let proxy = self.proxy().await?;
             // Subscribe first, so a job that finishes at once is not missed.
             let mut removed = proxy.receive_job_removed().await.map_err(failure)?;
-            let job = proxy
-                .restart_unit(unit.as_str(), "replace")
-                .await
-                .map_err(failure)?;
+            let job = proxy.restart_unit(unit, "replace").await.map_err(failure)?;
             let wait = async {
                 loop {
                     let signal =
@@ -359,7 +331,7 @@ mod session {
                             "done" => Ok(()),
                             other => Err(UnitFailure(format!(
                                 "the restart of {} ended as '{other}'",
-                                unit.as_str()
+                                unit
                             ))),
                         };
                     }

@@ -1,0 +1,281 @@
+# What each OAuth issuer publishes: where its pages and APIs are, and the scopes a sign-in asks.
+# Endpoints and scopes only; a client id is deployment configuration (clients.toml), never here.
+#
+# Microsoft's endpoints are the `common` tenant (work, school and personal accounts); a client
+# registration that wants `organizations` or `consumers` carries its own `endpoints`. Google's are
+# public facts. Dropbox, Box and Fastmail have no RFC 7009 revoke (Dropbox's wants a bearer
+# header, Box's the client secret), so theirs is absent; Microsoft has none at all, so its row
+# names the page where a person ends an app's access instead (`manual_revoke`).
+#
+# A `[[<issuer>.scope]]` row is one thing a sign-in can ask, in the order it is asked:
+#   scopes     what is asked;
+#   kind       the capability it serves (a row with none is asked every time);
+#   family     the API it is for, when a kind reaches more than one (a token for a grant of the
+#              kind is refreshed with the rows of its family alone);
+#   ask        `on_use` for access asked only by a sign-in for it alone;
+#   byo_only   asked only of a client that is the person's own (Gmail's restricted scope);
+#   identity   asked in a sign-in for one more access too, to show who answered;
+#   reads_who  the scope whose token shows who the account is.
+# `all_scope` names every permission already consented to, for the token porter itself uses.
+# A `[[<issuer>.api]]` row is where an API is when the provider file names no server for it.
+
+[google]
+authorize = "https://accounts.google.com/o/oauth2/v2/auth"
+token = "https://oauth2.googleapis.com/token"
+revoke = "https://oauth2.googleapis.com/revoke"
+userinfo = "https://openidconnect.googleapis.com/v1/userinfo"
+
+# The scope names and classes are from Google's "OAuth 2.0 Scopes for Google APIs" page and its
+# sensitive and restricted scope lists, written down without network access: they are unverified
+# (FINDINGS), and docs/google.md, which tells the owner what to put on the consent screen, is
+# checked against this table by a test.
+[[google.scope]]
+scopes = [
+  "openid",
+  "https://www.googleapis.com/auth/userinfo.email",
+  "https://www.googleapis.com/auth/userinfo.profile",
+]
+identity = true
+
+# Gmail over IMAP and SMTP (XOAUTH2). Restricted.
+[[google.scope]]
+kind = "mail"
+byo_only = true
+scopes = ["https://mail.google.com/"]
+
+[[google.scope]]
+kind = "calendar"
+scopes = ["https://www.googleapis.com/auth/calendar"]
+
+[[google.scope]]
+kind = "contacts"
+scopes = ["https://www.googleapis.com/auth/contacts"]
+
+[[google.scope]]
+kind = "tasks"
+scopes = ["https://www.googleapis.com/auth/tasks"]
+
+[[google.scope]]
+kind = "storage"
+scopes = ["https://www.googleapis.com/auth/drive.appdata"]
+
+[[google.scope]]
+kind = "photos"
+family = "google_photos_upload"
+scopes = ["https://www.googleapis.com/auth/photoslibrary.appendonly"]
+
+[[google.scope]]
+kind = "photos"
+family = "google_photos_picker"
+scopes = ["https://www.googleapis.com/auth/photospicker.mediaitems.readonly"]
+
+# The whole of the person's Drive. Restricted, like Mail's: asked only on use.
+[[google.scope]]
+kind = "storage"
+ask = "on_use"
+scopes = ["https://www.googleapis.com/auth/drive"]
+
+[[google.api]]
+family = "google_calendar"
+url = "https://www.googleapis.com/calendar/v3"
+
+[[google.api]]
+family = "google_people"
+url = "https://people.googleapis.com/v1"
+
+[[google.api]]
+family = "google_tasks"
+url = "https://tasks.googleapis.com/tasks/v1"
+
+[[google.api]]
+family = "google_drive"
+url = "https://www.googleapis.com/drive/v3"
+
+[[google.api]]
+family = "google_photos_upload"
+url = "https://photoslibrary.googleapis.com/v1"
+
+[[google.api]]
+family = "google_photos_picker"
+url = "https://photospicker.googleapis.com/v1"
+
+[[google.api]]
+family = "imap"
+url = "imaps://imap.gmail.com:993"
+
+# Gmail's SMTP submission server, which the provider file has no row for.
+[[google.api]]
+family = "smtp"
+url = "smtp://smtp.gmail.com:587"
+
+# A `[[<issuer>.probe]]` row is the read that shows an account has a service: the path, with its
+# query, under the API of `family`. A kind with no row has no cheap read (Mail is IMAP, Photos'
+# is the person's whole library), so the grant alone shows it.
+[[google.probe]]
+kind = "calendar"
+family = "google_calendar"
+path = "/users/me/calendarList?maxResults=1"
+
+[[google.probe]]
+kind = "contacts"
+family = "google_people"
+path = "/contactGroups?pageSize=1"
+
+[[google.probe]]
+kind = "tasks"
+family = "google_tasks"
+path = "/users/@me/lists?maxResults=1"
+
+[[google.probe]]
+kind = "storage"
+family = "google_drive"
+path = "/files?spaces=appDataFolder&pageSize=1&fields=files(id)"
+
+# Restricted (Gmail, the whole of Drive) is every scope this table does not name: a scope it has
+# never heard of is taken as the most demanding.
+[google.class]
+non_sensitive = [
+  "openid",
+  "https://www.googleapis.com/auth/userinfo.email",
+  "https://www.googleapis.com/auth/userinfo.profile",
+  "https://www.googleapis.com/auth/drive.appdata",
+]
+sensitive = [
+  "https://www.googleapis.com/auth/calendar",
+  "https://www.googleapis.com/auth/contacts",
+  "https://www.googleapis.com/auth/tasks",
+  "https://www.googleapis.com/auth/photoslibrary.appendonly",
+  "https://www.googleapis.com/auth/photospicker.mediaitems.readonly",
+]
+
+[microsoft]
+authorize = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
+token = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
+manual_revoke = "https://account.microsoft.com/privacy/app-access"
+all_scope = "https://graph.microsoft.com/.default"
+
+# Exchange Online's IMAP scope (a delegated permission, not the application-only family) and its
+# SMTP submission scope, without which an account syncs and cannot send. Mail's come first so a
+# code is redeemed for Exchange. They are ported from mailo's presets.
+[[microsoft.scope]]
+kind = "mail"
+family = "imap"
+scopes = ["https://outlook.office.com/IMAP.AccessAsUser.All"]
+
+[[microsoft.scope]]
+kind = "mail"
+family = "smtp"
+scopes = ["https://outlook.office.com/SMTP.Send"]
+
+# Reading the signed-in person's profile (their address), asked at every sign-in.
+[[microsoft.scope]]
+identity = true
+reads_who = true
+scopes = ["https://graph.microsoft.com/User.Read"]
+
+# The Graph permission each kind is signed in with, and the only one a token for a grant of that
+# kind carries.
+[[microsoft.scope]]
+kind = "calendar"
+family = "graph"
+scopes = ["https://graph.microsoft.com/Calendars.ReadWrite"]
+
+[[microsoft.scope]]
+kind = "contacts"
+family = "graph"
+scopes = ["https://graph.microsoft.com/Contacts.ReadWrite"]
+
+[[microsoft.scope]]
+kind = "tasks"
+family = "graph"
+scopes = ["https://graph.microsoft.com/Tasks.ReadWrite"]
+
+[[microsoft.scope]]
+kind = "notes"
+family = "graph"
+scopes = ["https://graph.microsoft.com/Notes.ReadWrite"]
+
+[[microsoft.scope]]
+kind = "storage"
+family = "graph"
+scopes = ["https://graph.microsoft.com/Files.ReadWrite.AppFolder"]
+
+# `offline_access` is what returns a refresh token.
+[[microsoft.scope]]
+identity = true
+scopes = ["offline_access", "openid"]
+
+# The whole OneDrive, asked only by a sign-in for it alone.
+[[microsoft.scope]]
+kind = "storage"
+family = "graph"
+ask = "on_use"
+scopes = ["https://graph.microsoft.com/Files.ReadWrite"]
+
+[[microsoft.api]]
+family = "graph"
+url = "https://graph.microsoft.com"
+
+[[microsoft.api]]
+family = "imap"
+url = "imaps://outlook.office365.com:993"
+
+# Exchange Online's SMTP submission server, which the provider file has no row for.
+[[microsoft.api]]
+family = "smtp"
+url = "smtp://smtp.office365.com:587"
+
+[[microsoft.probe]]
+kind = "calendar"
+family = "graph"
+path = "/v1.0/me/calendars"
+
+[[microsoft.probe]]
+kind = "contacts"
+family = "graph"
+path = "/v1.0/me/contacts"
+
+[[microsoft.probe]]
+kind = "tasks"
+family = "graph"
+path = "/v1.0/me/todo/lists"
+
+[[microsoft.probe]]
+kind = "notes"
+family = "graph"
+path = "/v1.0/me/onenote/notebooks"
+
+[[microsoft.probe]]
+kind = "storage"
+family = "graph"
+path = "/v1.0/me/drive"
+
+# Yahoo: endpoints and userinfo only. Its scopes are not here: they have not been confirmed
+# against a registered Yahoo client, and a wrong one fails at Yahoo's consent screen.
+[yahoo]
+authorize = "https://api.login.yahoo.com/oauth2/request_auth"
+token = "https://api.login.yahoo.com/oauth2/get_token"
+userinfo = "https://api.login.yahoo.com/openid/v1/userinfo"
+
+# Dropbox, Box and Fastmail sign in through no family yet; their rows keep the endpoints a
+# clients.toml row for them resolves to.
+[dropbox]
+authorize = "https://www.dropbox.com/oauth2/authorize"
+token = "https://api.dropboxapi.com/oauth2/token"
+
+[box]
+authorize = "https://account.box.com/api/oauth2/authorize"
+token = "https://api.box.com/oauth2/token"
+
+[fastmail]
+authorize = "https://api.fastmail.com/oauth/authorize"
+token = "https://api.fastmail.com/oauth/refresh"
+
+# The key mint: the page the person approves on, and the call that turns the code into a key.
+[openrouter]
+authorize = "https://openrouter.ai/auth"
+token = "https://openrouter.ai/api/v1/auth/keys"
+
+[openai]
+authorize = "https://auth.openai.com/oauth/authorize"
+token = "https://auth.openai.com/oauth/token"

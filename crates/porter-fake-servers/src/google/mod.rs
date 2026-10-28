@@ -23,13 +23,11 @@
 mod drive;
 mod drive_routes;
 mod levers;
-mod md5;
 mod media;
 mod photos;
 
-pub use drive::{ALIAS, CHUNK_UNIT, FOLDER, MY_DRIVE, SHORTCUT};
+pub use drive::{ALIAS, CHUNK_UNIT, FOLDER, MY_DRIVE, SHORTCUT, md5_hex};
 pub use drive_routes::DriveKnobs;
-pub use md5::md5_hex;
 pub use media::MediaOrigin;
 pub use photos::{Album, MediaItem, Pick, Session};
 
@@ -38,7 +36,7 @@ use crate::net::{Bind, Listener};
 use crate::oauth::{FakeIssuer, IssuerHandle, Style};
 use crate::seen::{Running, Seen, lock};
 use porter_core::Family;
-use porter_fake::{FakeAddress, FakeProtocol, FakeServer};
+use porter_fake::{FakeAddress, FakeServer};
 use porter_provider::{Endpoint, ProviderSpec};
 use serde_json::json;
 use std::collections::HashMap;
@@ -139,7 +137,7 @@ pub struct FakeGoogle {
 impl FakeGoogle {
     /// Binds APIs that accept every access token `issuer` has minted and not revoked.
     pub async fn bind(issuer: &IssuerHandle) -> io::Result<Self> {
-        let listener = Listener::bind(&Bind::Loopback, "google").await?;
+        let listener = Listener::bind(&Bind::Port(0), "google").await?;
         let port = crate::net::port_of(listener.address());
         let state = State {
             address: DEFAULT_ADDRESS.to_owned(),
@@ -161,7 +159,7 @@ impl FakeGoogle {
     /// with [`GoogleHandle::accept_bearer`]): what accountd's relay adds in a bus test. There is
     /// no issuer, so no scope is checked.
     pub async fn bind_fixed(token: &str) -> io::Result<Self> {
-        let listener = Listener::bind(&Bind::Loopback, "google").await?;
+        let listener = Listener::bind(&Bind::Port(0), "google").await?;
         let port = crate::net::port_of(listener.address());
         let state = State {
             address: DEFAULT_ADDRESS.to_owned(),
@@ -208,7 +206,7 @@ impl GoogleHandle {
         &self.shared.base
     }
 
-    /// Where userinfo is read: `GoogleEnv::with_userinfo` takes it.
+    /// Where userinfo is read: `OAuthEnv::with_userinfo` takes it.
     pub fn userinfo_url(&self) -> String {
         format!("{}/v1/userinfo", self.shared.base)
     }
@@ -344,10 +342,6 @@ fn answer(shared: &Shared, request: &Request) -> Response {
 }
 
 impl FakeServer for FakeGoogle {
-    fn protocol(&self) -> FakeProtocol {
-        FakeProtocol::Google
-    }
-
     fn address(&self) -> &FakeAddress {
         self.listener.address()
     }

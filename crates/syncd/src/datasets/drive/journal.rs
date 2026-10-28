@@ -5,7 +5,7 @@
 //! one more row written.
 
 use crate::journal::{JournalError, migrate};
-use porter_core::{Bytes, UnixSeconds};
+use porter_ids::{Bytes, UnixSeconds};
 use porter_sync::{
     Anchor, Change, ChangePage, ContentHash, Cursor, Folders, ItemKind, ItemPath, More, RemoteId,
     RemoteItem, RemoteVersion,

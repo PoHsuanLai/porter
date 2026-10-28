@@ -8,7 +8,7 @@ mod memory;
 #[cfg(any(test, feature = "testing"))]
 pub use memory::MemoryDataset;
 
-use porter_core::capability::HashKind;
+use porter_capability::HashKind;
 use porter_sync::{Blob, ConflictRule, ContentHash, ItemPath, LocalId, Scanned};
 use sha2::{Digest, Sha256};
 use std::future::Future;
@@ -131,7 +131,7 @@ impl<T: Dataset + ?Sized> Dataset for std::sync::Arc<T> {
 /// engine sends and compares for a replica that reports `HashKind::Sha256`.
 pub fn fingerprint(bytes: &[u8]) -> ContentHash {
     let digest = Sha256::digest(bytes);
-    ContentHash(digest.iter().map(|b| format!("{b:02x}")).collect())
+    ContentHash(hex::encode(digest))
 }
 
 /// The hash of `bytes` in the form a replica reports, when this build can compute it (SHA-256
@@ -144,6 +144,8 @@ pub fn replica_hash(kind: HashKind, bytes: &[u8]) -> Option<ContentHash> {
         | HashKind::Sha1
         | HashKind::QuickXor
         | HashKind::Dropbox => None,
+        // A hash this build does not know is one it cannot compute.
+        _ => None,
     }
 }
 

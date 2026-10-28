@@ -5,9 +5,10 @@
 
 pub mod sieve;
 
+use porter_capability::CapabilityKind;
 use porter_core::{
-    CapabilityKind, EndpointUrl, Family, LoginName, RelayAuth, RelayPlan, SecretText,
-    ServiceEndpoint, Tls,
+    EndpointUrl, Family, LoginName, PathReach, Reach, ReachMethods, RelayAuth, RelayPlan,
+    SecretText, ServiceEndpoint, Tls,
 };
 use porter_fake::FakeAddress;
 use porter_fake_servers::tls;
@@ -22,7 +23,7 @@ pub const PASSWORD: &str = "hunter2";
 pub const TOKEN: &str = "fake-access-9";
 /// How long a read or the end of a relay is waited for: as long as a starved machine needs. A
 /// passing read returns at once.
-const WAIT: Duration = porter_fake::GENEROUS;
+const WAIT: Duration = test_kit::GENEROUS;
 
 pub fn port(address: &FakeAddress) -> u16 {
     match address {
@@ -41,7 +42,17 @@ pub fn plan(family: Family, url: &str, tls: Tls, auth: RelayAuth) -> RelayPlan {
         },
         CapabilityKind::Mail,
         auth,
+        Reach::origin(),
     )
+}
+
+/// `plan` confined to the paths under `prefix`, as the service plans a grant for one kind.
+pub fn confined_to(mut plan: RelayPlan, prefix: &str) -> RelayPlan {
+    plan.reach = Reach::under(vec![PathReach::new(
+        prefix.as_bytes().to_vec(),
+        ReachMethods::Any,
+    )]);
+    plan
 }
 
 pub fn password() -> RelayAuth {

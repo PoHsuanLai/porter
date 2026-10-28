@@ -9,6 +9,7 @@ mod confirm_bus;
 mod daemon;
 mod dist;
 mod drive_listing;
+mod fake_words;
 mod gdrive_bus;
 mod google_pim_bus;
 mod googlerig;
@@ -31,7 +32,7 @@ mod webdav_bus;
 
 #[test]
 fn every_module_is_declared() {
-    porter_fake::guard::every_module_is_declared(
+    test_kit::guard::every_module_is_declared(
         env!("CARGO_MANIFEST_DIR"),
         "tests/it",
         include_str!("main.rs"),

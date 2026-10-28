@@ -1,51 +1,51 @@
-//! porter's HTTP seam (design/31 D12): request and response values, and the [`Http`] trait every
-//! family, discovery step and OAuth exchange sends through. A family never names a client; the
-//! daemon hands it [`HyperHttp`] (feature `hyper`), a test hands it a fake server's. Bodies are
-//! whole byte vectors: what porter sends and reads over HTTP (sign-in exchanges, PROPFIND
-//! replies, model lists) is small, and a transfer of file content belongs to the replica that
-//! streams it.
+//! porter's HTTP seam (design/31 D12): the [`Http`] trait every family, discovery step and OAuth
+//! exchange sends through, over the [`http`] crate's request and response. A family never names a
+//! client; the daemon hands it `porter_http_reqwest::ReqwestHttp`, a test hands it a fake server's.
+//! Bodies are whole byte vectors (`Request<Vec<u8>>`, `Response<Vec<u8>>`): what porter sends and reads
+//! over HTTP (sign-in exchanges, PROPFIND replies, model lists) is small, and a transfer of file
+//! content belongs to the replica that streams it. The `http` crate is re-exported, so a caller
+//! names the same version porter does.
 //!
-//! Feature `stream` adds [`stream`]: HTTP/1.1 framed over a byte stream a host dials (an
-//! authenticated relay's descriptor, say), for a replica that streams file content.
+//! A request's URL is a porter [`WebUrl`](porter_ids::WebUrl) (`https`, or `http` to this
+//! computer); [`request`] turns it into the request's URI.
 //!
-//! Requests and responses are plain values (no feature needed):
+//! The clients are other crates: `porter-http-reqwest` for a direct connection and
+//! `porter-http-relay` over an accountd relay.
+//!
+//! Requests and responses are plain values:
 //!
 //! ```
-//! use porter_core::WebUrl;
-//! use porter_http::{Header, HttpRequest, HttpResponse, Method, Status};
+//! use porter_ids::{UnixSeconds, WebUrl};
+//! use porter_http::http::{Response, StatusCode};
+//! use porter_http::{HeaderText, request};
 //!
 //! let url = WebUrl::parse("https://cloud.example.org/remote.php/dav/").expect("a web url");
-//! let request = HttpRequest::new(Method::Propfind, url)
-//!     .with_header("Depth", "1")
-//!     .with_body("<propfind/>");
-//! assert_eq!(request.method.token(), "PROPFIND");
-//! assert_eq!(request.headers.len(), 1);
+//! let sent = request(porter_http::webdav::propfind(), &url)
+//!     .header("Depth", "1")
+//!     .body(b"<propfind/>".to_vec())
+//!     .expect("a request");
+//! assert_eq!(sent.method().as_str(), "PROPFIND");
+//! assert_eq!(sent.headers().len(), 1);
 //!
-//! let response = HttpResponse {
-//!     status: Status(429),
-//!     headers: vec![Header::new("Retry-After", "30")],
-//!     body: Vec::new(),
-//! };
-//! assert!(!response.status.is_success());
-//! assert_eq!(response.retry_after_seconds(), Some(30));
+//! let answer: Response<Vec<u8>> = Response::builder()
+//!     .status(StatusCode::TOO_MANY_REQUESTS)
+//!     .header("Retry-After", "30")
+//!     .body(Vec::new())
+//!     .expect("a response");
+//! assert!(!answer.status().is_success());
+//! assert_eq!(answer.retry_after_seconds(UnixSeconds(0)), Some(30));
 //! ```
 
 mod error;
-mod headers;
-mod http;
-#[cfg(feature = "hyper")]
-mod hyper_client;
 mod message;
+mod seam;
 mod shared;
 mod sleep;
-#[cfg(feature = "stream")]
-pub mod stream;
+pub mod webdav;
 
 pub use error::HttpError;
-pub use headers::{Header, HeaderName, HeaderValue};
-pub use http::Http;
-#[cfg(feature = "hyper")]
-pub use hyper_client::{BodySink, Flow, HyperHttp, Limits, TokioSleep};
-pub use message::{HttpRequest, HttpResponse, Method, Status, web_url};
+pub use http;
+pub use message::{HeaderText, SensitiveHeader, request, request_to, uri, web_url};
+pub use seam::Http;
 pub use shared::SharedHttp;
 pub use sleep::{NoSleep, SharedSleep, Sleep};

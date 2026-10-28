@@ -16,7 +16,7 @@
 //! the two `Permille` types meet in one place, and checks the result once more.
 
 use model_provider::{self as sp, FirstTokenLogprobs};
-use porter_core::Permille;
+use porter_ids::Permille;
 use porter_infer as pi;
 
 /// The widest top-k an engine is asked for (the OpenAI-compatible APIs stop at 20).

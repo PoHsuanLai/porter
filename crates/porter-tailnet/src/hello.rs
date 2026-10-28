@@ -3,6 +3,7 @@
 //! offers, and whether the asking computer still has to be allowed; it says nothing else about
 //! the computer.
 
+use crate::lending::Approval;
 use serde::{Deserialize, Serialize};
 
 /// The path a hello is asked for.
@@ -34,11 +35,6 @@ pub struct Hello {
     models: Vec<LentModel>,
     needs_approval: bool,
 }
-
-/// Where the asking computer stands with the person on the lending one. It lives in
-/// `porter_core::lending` (a client of the bus reads it without this crate's files); the old
-/// path stays.
-pub use porter_core::lending::Approval;
 
 impl Hello {
     /// A hello offering `models` to a computer with this `approval`.

@@ -9,10 +9,9 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
-dav-proto = { workspace = true }
-porter-core = { workspace = true }
-porter-dav = { workspace = true }
+dav-proto = { workspace = true, features = ["discover"] }
 porter-http = { workspace = true }
+porter-ids = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 zbus = { workspace = true, optional = true }
@@ -24,9 +23,9 @@ eds = ["dep:zbus"]
 
 [dev-dependencies]
 base64 = { workspace = true }
-porter-fake = { workspace = true }
 porter-fake-servers = { workspace = true }
-porter-http = { workspace = true, features = ["stream"] }
+porter-http-relay = { workspace = true }
+test-kit = { workspace = true }
 tokio = { workspace = true }
 
 [lints]

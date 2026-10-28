@@ -1,9 +1,9 @@
 use super::*;
-use porter_core::capability::{
-    Access, Capability, CapabilityKind, Delta, HashKind, Offered, QuotaReport, StorageCap,
-    StorageScope,
+use porter_capability::{AbsentReason, Provenance, Subject};
+use porter_capability::{
+    Access, Capability, CapabilityKind, Delta, HashKind, StorageCap, StorageScope,
 };
-use porter_core::{AbsentReason, Limit, LimitReason, Provenance, SecretText, Subject};
+use porter_core::{Limit, LimitReason, SecretText};
 
 fn storage_claim() -> Claim {
     Claim {
@@ -11,11 +11,11 @@ fn storage_claim() -> Claim {
         offer: Offer::Present(Capability::Storage(StorageCap {
             access: Access::ReadWrite,
             delta: Delta::Poll,
-            quota: QuotaReport::Reported,
+            quota: true,
             scope: StorageScope::AppFolder,
             hashes: HashKind::None,
-            ranges: Offered::Present,
-            chunked_upload: Offered::Absent,
+            ranges: true,
+            chunked_upload: false,
         })),
         provenance: Provenance::Discovered,
     }

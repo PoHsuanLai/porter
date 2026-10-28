@@ -1,7 +1,7 @@
-//! `AiKeys` against a hand-written inferd (`common::fake_inferd`): `RequestKey` and `AddAccount`
-//! return a Request object, and the answer is its `Response` signal (code 0 the answer, 1 closed,
+//! `AiKeys` against a hand-written accountd (`common::fake_accountd`): `RequestKey`
+//! returns a Request object, and the answer is its `Response` signal (code 0 the answer, 1 closed,
 //! 2 another refusal). The answer may beat the method's reply, and one from a connection that
-//! does not own inferd's name is not heard. A client that gives up closes the sheet; one whose
+//! does not own accountd's name is not heard. A client that gives up closes the sheet; one whose
 //! daemon leaves is told nobody is there.
 #![cfg(feature = "dbus")]
 
@@ -9,25 +9,25 @@ use crate::common;
 
 use common::bus::PrivateBus;
 use common::eventually;
-use common::fake_inferd::{FakeInferd, Sheets};
-use porter_client::{AiKeys, AiKeysError};
+use common::fake_accountd::{FakeAccountd, Sheets};
+use porter_client::{AiKeys, AiKeysError, CallFailure};
+use porter_core::DataClass;
 use porter_core::consent::Usage;
-use porter_core::wire::{ParentWindow, ProviderHint, Refusal};
-use porter_core::{AccountId, DataClass, ProviderId};
+use porter_wire::{ParentWindow, Refusal};
 use std::sync::Arc;
 
 /// A private bus with the fake on it, and a client connection.
 struct Rig {
     bus: PrivateBus,
     daemon: zbus::Connection,
-    fake: FakeInferd,
+    fake: FakeAccountd,
     keys: AiKeys,
 }
 
 async fn rig(sheets: Sheets, forged: bool) -> Rig {
     let bus = PrivateBus::start();
     let daemon = bus.connect().await;
-    let mut fake = FakeInferd::new(bus.scratch().to_path_buf(), sheets);
+    let mut fake = FakeAccountd::new(sheets);
     if forged {
         fake = fake.forged_by(bus.connect().await);
     }
@@ -89,7 +89,7 @@ async fn every_way_a_sheet_can_end_is_a_typed_error() {
             "{name}"
         );
     }
-    // With no inferd on the bus there is nobody to ask.
+    // With no accountd on the bus there is nobody to ask.
     let bus = PrivateBus::start();
     let keys = AiKeys::connect(&bus.connect().await).await.expect("keys");
     assert_eq!(
@@ -99,36 +99,7 @@ async fn every_way_a_sheet_can_end_is_a_typed_error() {
             &ParentWindow::Unparented
         )
         .await,
-        Err(AiKeysError::Unreachable)
-    );
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn adding_an_account_answers_the_account_and_says_when_it_was_there_already() {
-    let rig = rig(Sheets::Added("anthropic"), false).await;
-    let hint = ProviderHint::Provider(ProviderId::parse("anthropic").expect("provider"));
-    assert_eq!(
-        rig.keys.add_account(hint, &ParentWindow::Unparented).await,
-        Ok(AccountId::parse("anthropic").expect("id"))
-    );
-    assert_eq!(
-        rig.fake.seen(|seen| seen.add_requests.clone()),
-        ["anthropic".to_owned()]
-    );
-
-    let rig = self::rig(Sheets::AlreadyAdded("anthropic"), false).await;
-    assert_eq!(
-        rig.keys
-            .add_account(ProviderHint::Any, &ParentWindow::Unparented)
-            .await,
-        Err(AiKeysError::AlreadyAdded(
-            AccountId::parse("anthropic").expect("id")
-        ))
-    );
-    assert_eq!(
-        rig.fake.seen(|seen| seen.add_requests.clone()),
-        [String::new()],
-        "no hint is the empty string"
+        Err(AiKeysError::Bus(CallFailure::Unreachable))
     );
 }
 
@@ -181,10 +152,10 @@ async fn a_daemon_that_leaves_mid_sheet_ends_the_wait() {
 
     rig.daemon.close().await.expect("the daemon leaves");
 
-    let ended = tokio::time::timeout(porter_fake::GENEROUS, waiting)
+    let ended = tokio::time::timeout(test_kit::GENEROUS, waiting)
         .await
         .expect("the wait ends")
         .expect("task");
-    assert_eq!(ended, Err(AiKeysError::Unreachable));
+    assert_eq!(ended, Err(AiKeysError::Bus(CallFailure::Unreachable)));
     drop(rig.bus);
 }

@@ -1,7 +1,6 @@
 use super::*;
-use porter_core::{
-    CapabilityKind, EndpointUrl, Family, LoginName, SecretText, ServiceEndpoint, Tls,
-};
+use porter_capability::CapabilityKind;
+use porter_core::{EndpointUrl, Family, LoginName, SecretText, ServiceEndpoint, Tls};
 
 fn caps(text: &str) -> Vec<String> {
     text.split(' ').map(str::to_owned).collect()
@@ -86,6 +85,7 @@ fn a_new_relay_waits_for_the_servers_greeting_and_never_shows_its_credential() {
         },
         CapabilityKind::Mail,
         password(),
+        porter_core::Reach::origin(),
     );
     let relay = ImapRelay::new(plan);
     assert_eq!(relay.phase, ImapPhase::Greeting);
@@ -107,6 +107,7 @@ mod scripted {
             },
             CapabilityKind::Mail,
             auth,
+            porter_core::Reach::origin(),
         ))
     }
 

@@ -1,50 +1,44 @@
-//! Why a computer that asked to use this computer's models was not let in, in the words the
-//! person reads. The refusal travels back to the asking computer, so each sentence is written
-//! from its side: "that computer" is the one that lends, "this computer" the one that asked.
+//! Why a computer that asked to use this computer's models was not let in. The refusal travels
+//! back to the asking computer as a code (its [`Refusal::slug`]); the words a person reads are
+//! written by the program that shows it (inferd's `tailnet::words`), from the variant.
 
-/// Why a request was refused. `Display` is the plain sentence; no program name, no network
-/// term, and every sentence ends with a full stop.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+/// Why a request was refused. `Display` says what was refused, in terms of the program; the
+/// words for a person are not here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum Refusal {
     /// The request came from the lending computer itself.
-    #[error("That computer won't answer a request that came from itself.")]
+    #[error("the request came from the lending computer itself")]
     ThisComputer,
     /// Tailscale does not know who sent it.
-    #[error("That computer could not tell which of your computers is asking.")]
+    #[error("Tailscale does not know the sender")]
     Unknown,
     /// Tailscale could not be asked.
-    #[error("That computer could not check who is asking.")]
+    #[error("Tailscale could not be asked who the sender is")]
     CouldNotCheck,
     /// The asking computer is a tagged server.
-    #[error("That computer won't lend its models to this one, which is set up as a server.")]
+    #[error("the sender is a tagged server")]
     Tagged,
     /// The asking computer is another person's.
-    #[error(
-        "That computer won't lend its models to this one, which belongs to someone else, unless it is allowed in Settings there."
-    )]
+    #[error("the sender belongs to another user and is not allowed")]
     Shared,
     /// The person said no to it.
-    #[error(
-        "That computer was told not to let this one use its models. This can be changed in Settings there."
-    )]
+    #[error("the sender was denied")]
     Denied,
     /// The person has not answered yet.
-    #[error(
-        "That computer is asking its owner whether to let this one use its models. Say yes there, then try again."
-    )]
+    #[error("the sender is waiting for an answer")]
     Waiting,
     /// Too many computers are waiting for an answer.
-    #[error("That computer is already asking about several computers. Answer those first.")]
+    #[error("too many computers are waiting for an answer")]
     TooManyAsking,
     /// The answer could not be kept.
-    #[error("That computer could not keep the answer. Try again.")]
+    #[error("the answer could not be saved")]
     NotKept,
     /// The asking computer is already using as much as it may.
-    #[error("That computer is busy with this one's other requests. Try again in a moment.")]
+    #[error("the sender is using as much as it may")]
     Busy,
     /// Lending is off.
-    #[error("That computer isn't lending its models.")]
+    #[error("lending is off")]
     Off,
 }
 
@@ -56,6 +50,28 @@ impl Refusal {
             Refusal::Off | Refusal::CouldNotCheck | Refusal::NotKept => 503,
             _ => 403,
         }
+    }
+
+    /// The code the refusal travels as (`error.code` of the answer's body).
+    pub fn slug(&self) -> &'static str {
+        match self {
+            Refusal::ThisComputer => "this_computer",
+            Refusal::Unknown => "unknown",
+            Refusal::CouldNotCheck => "could_not_check",
+            Refusal::Tagged => "tagged",
+            Refusal::Shared => "shared",
+            Refusal::Denied => "denied",
+            Refusal::Waiting => "waiting",
+            Refusal::TooManyAsking => "too_many_asking",
+            Refusal::NotKept => "not_kept",
+            Refusal::Busy => "busy",
+            Refusal::Off => "off",
+        }
+    }
+
+    /// The refusal a code stands for, if this build knows it.
+    pub fn from_slug(slug: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|r| r.slug() == slug)
     }
 
     /// Every refusal, for tables.
@@ -78,22 +94,12 @@ impl Refusal {
 mod tests {
     use super::*;
 
-    /// Words a person reads never include a program name or a term of the network's plumbing.
-    const JARGON: [&str; 16] = [
-        "porter", "inferd", "accountd", "socket", "port ", "node", "tailnet", "address",
-        "localapi", "daemon", "whois", "http", "tcp", "listener", "tagged", "api",
-    ];
-
     #[test]
-    fn every_refusal_reads_as_plain_words() {
+    fn a_refusal_is_read_back_from_its_code() {
         for refusal in Refusal::ALL {
-            let text = refusal.to_string();
-            assert!(text.ends_with('.'), "{text}");
-            let lower = text.to_lowercase();
-            for word in JARGON {
-                assert!(!lower.contains(word), "{text:?} says {word:?}");
-            }
+            assert_eq!(Refusal::from_slug(refusal.slug()), Some(refusal));
         }
+        assert_eq!(Refusal::from_slug("refused"), None);
     }
 
     #[test]

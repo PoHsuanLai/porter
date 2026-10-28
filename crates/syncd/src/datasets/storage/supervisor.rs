@@ -37,7 +37,7 @@ use crate::datasets::photos::google::{
     GooglePicker, PhotosApi, PhotosPicker, SLUG as UPLOAD_SLUG, UploadReplica, library_http,
     picker_http,
 };
-use crate::datasets::photos::{DeviceId, PhotoLibrary, PhotosRun, PhotosWiring, SystemMillis};
+use crate::datasets::photos::{DeviceId, PhotoLibrary, PhotosRun, PhotosWiring};
 use crate::datasets::pim::Wiring;
 use crate::driver::Driver;
 use crate::engine::Engine;
@@ -48,16 +48,16 @@ use crate::paths::AccountDir;
 use crate::scheduler::next_look;
 use crate::service::{Access, DatasetName};
 use porter_client::Transport;
-use porter_core::{AppName, Candidate, EndpointUrl, WebUrl};
-use porter_dbus::DriveState;
+use porter_core::{AppName, Candidate, EndpointUrl};
+use porter_dbus::sync::DriveState;
 use porter_drive::{CacheLimit, Drive, DriveConfig, FreeSpace, ReplicaSource};
-use porter_drive_fuse::{DriveFs, Mounter};
+use porter_drive_fuse::{DriveFs, Mounter, Now};
+use porter_ids::WebUrl;
 use porter_sync::{DriveWrite, Replica};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::time::Duration;
-use storage_graph::Clock;
 use tokio::sync::{Notify, watch};
 use tokio::task::JoinHandle;
 
@@ -179,14 +179,12 @@ pub struct StorageSupervisor<T: Transport, G> {
     limit: CacheKnob,
 }
 
-/// A device name for this machine's Photos library, made once (the library keeps it).
-fn new_device(account: &AccountDir) -> DeviceId {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_nanos());
-    let digest = Sha256::digest(format!("{account}/{nanos}/{}", std::process::id()));
-    let hex: String = digest.iter().take(6).map(|b| format!("{b:02x}")).collect();
-    DeviceId::parse(&format!("d{hex}")).expect("a device name")
+/// A device name for this machine's Photos library, made once (the library keeps it): the
+/// account and the run's `nonce`, which differs between runs, so a library made by another run
+/// (or a reinstall) is another device.
+fn new_device(account: &AccountDir, nonce: &str) -> DeviceId {
+    let digest = Sha256::digest(format!("{account}/{nonce}"));
+    DeviceId::parse(&format!("d{}", hex::encode(&digest[..6]))).expect("a device name")
 }
 
 fn seed_of(text: &str) -> u64 {
@@ -290,7 +288,7 @@ where
             let folders = drive_folders(&candidates);
             for candidate in &candidates {
                 let Some(account) =
-                    AccountDir::parse(&porter_core::object_segment(&candidate.account))
+                    AccountDir::parse(&porter_ids::object_segment(candidate.account.as_str()))
                 else {
                     continue;
                 };
@@ -314,7 +312,7 @@ where
                 if self.running.contains_key(&key) {
                     continue;
                 }
-                match self.start(kind, &account, candidate, &folder) {
+                match self.start(kind, &account, candidate, &folder).await {
                     Ok(running) => {
                         self.running.insert(key, running);
                     }
@@ -353,7 +351,7 @@ where
         whole
     }
 
-    fn start(
+    async fn start(
         &self,
         kind: StorageKind,
         account: &AccountDir,
@@ -370,7 +368,7 @@ where
                         grant(),
                         e.url.clone(),
                         "",
-                        Clock::system(),
+                        wiring.clock.clone(),
                     )
                     .map(Either::Left),
                     AppFolderStore::Drive(e) => gdrive_replica(
@@ -378,7 +376,7 @@ where
                         grant(),
                         e.url.clone(),
                         "",
-                        storage_gdrive::Clock::system(),
+                        wiring.clock.clone(),
                     )
                     .map(Either::Right),
                 };
@@ -394,14 +392,14 @@ where
                 self.start_photos(account, candidate, &endpoint.url)
             }
             StorageKind::GooglePhotos => self.start_google_photos(account, candidate),
-            StorageKind::Drive => self.start_drive(account, candidate, folder),
+            StorageKind::Drive => self.start_drive(account, candidate, folder).await,
         }
     }
 
     /// The whole drive of `account`, over OneDrive's root or My Drive by the endpoint: its
     /// listing from the tree its journal kept, its files on demand over the journal and a
     /// replica of its own for fetching, and its folder `~/Cloud/<folder>`.
-    fn start_drive(
+    async fn start_drive(
         &self,
         account: &AccountDir,
         candidate: &Candidate,
@@ -417,7 +415,7 @@ where
                         candidate.grant.clone(),
                         e.url.clone(),
                         "",
-                        Clock::system(),
+                        wiring.clock.clone(),
                     )
                     .map(|r| r.with_root(storage_graph::Root::Drive))
                     .map_err(|e| e.to_string())
@@ -430,6 +428,7 @@ where
                     replica()?,
                     replica()?,
                 )
+                .await
             }
             AppFolderStore::Drive(e) => {
                 let replica = || {
@@ -438,7 +437,7 @@ where
                         candidate.grant.clone(),
                         e.url.clone(),
                         "",
-                        storage_gdrive::Clock::system(),
+                        wiring.clock.clone(),
                     )
                     .map(|r| r.with_root(storage_gdrive::Root::Drive))
                     .map_err(|e| e.to_string())
@@ -451,11 +450,12 @@ where
                     replica()?,
                     replica()?,
                 )
+                .await
             }
         }
     }
 
-    fn run_drive<L, F>(
+    async fn run_drive<L, F>(
         &self,
         account: &AccountDir,
         candidate: &Candidate,
@@ -477,9 +477,11 @@ where
         let fetch = Arc::new(fetch);
         // What is changed in the folder is kept in the cache first, then sent through the same
         // replica the bytes come from.
+        // Read before the open's await: the watch's guard is not held across it.
+        let limit = *self.limit.borrow();
         let files = Drive::open_writable(
             DriveConfig {
-                limit: *self.limit.borrow(),
+                limit,
                 free_space: self.config.free_space,
                 ..DriveConfig::new(wiring.paths.drive_cache_dir(account))
             },
@@ -487,6 +489,7 @@ where
             Arc::new(ReplicaSource(Arc::clone(&fetch))),
             Arc::new(ReplicaSource(Arc::clone(&fetch))) as Arc<dyn porter_drive::Sink>,
         )
+        .await
         .map_err(|e| e.to_string())?;
         let path = wiring.paths.cloud.join(folder);
         // Where what was not uploaded is kept if the account is removed while it is not shown.
@@ -495,7 +498,7 @@ where
         }
         let live = Arc::new(LiveDrive::new(
             account.as_str().to_owned(),
-            porter_dbus::account_path(&candidate.account),
+            porter_dbus::accounts::account_path(&candidate.account),
             candidate.label.0.clone(),
             provider,
             path.clone(),
@@ -515,7 +518,10 @@ where
         let mounting = match &self.config.mount {
             DriveMount::Off => None,
             DriveMount::Fuse(mounter) => {
-                let fs = DriveFs::new(files.clone(), tokio::runtime::Handle::current());
+                let fs = DriveFs::new(files.clone(), tokio::runtime::Handle::current(), {
+                    let millis = Arc::clone(&self.wiring.millis);
+                    Now::new(move || std::time::UNIX_EPOCH + Duration::from_millis(millis.now_ms()))
+                });
                 let (mounter, path, live, set) = (
                     mounter.clone(),
                     path.clone(),
@@ -528,7 +534,7 @@ where
                         Ok(mounted) => Some(mounted),
                         Err(why) => {
                             eprintln!("syncd: {account} is not shown at {}: {why}", path.display());
-                            live.set_unshown(why.words());
+                            live.set_unshown(crate::words::unshown(&why));
                             set.tell_drives();
                             None
                         }
@@ -681,6 +687,7 @@ where
                 upload.url.clone(),
             ),
             &base(&upload.url)?,
+            wiring.clock.clone(),
         );
         let replica = UploadReplica::open(
             api,
@@ -731,14 +738,14 @@ where
                 candidate.grant.clone(),
                 url.clone(),
                 folder,
-                Clock::system(),
+                wiring.clock.clone(),
             )
             .map_err(|e| e.to_string())
         };
         let library = PhotoLibrary::open(
             wiring.paths.photos_dir(account),
-            new_device(account),
-            Arc::new(SystemMillis),
+            new_device(account, &wiring.nonce),
+            Arc::clone(&wiring.millis),
         )
         .map_err(|e| e.to_string())?;
         let photos = PhotosWiring {
@@ -943,7 +950,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_drive_held_while_its_account_is_removed_is_not_started() {
-        let root = crate::testing::scratch("held-drive");
+        let _root_guard = crate::testing::scratch("held-drive");
+        let root = _root_guard.path().to_owned();
         let paths = crate::paths::Paths {
             journals: root.join("state/porter/sync"),
             mirrors: root.join("data/porter/vdir"),

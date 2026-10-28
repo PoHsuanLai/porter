@@ -1,7 +1,7 @@
-use porter_fake::Scratch;
 use porter_fake_servers::{Daemon, FakeLocalApi, FakePeer, Network};
 use porter_tailscale::LocalApi;
 use std::ops::Deref;
+use test_kit::Scratch;
 
 /// A new empty directory for one test, under the test's temporary directory.
 pub fn scratch(name: &str) -> Scratch {

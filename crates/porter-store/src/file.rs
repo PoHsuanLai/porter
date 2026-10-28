@@ -1,6 +1,6 @@
 //! The registry file (porter PLAN §2.3): `registry.json` in the directory the host names, the
-//! serde form of [`Persisted`]. The directory is a [`StoreLocation`] argument, never read from
-//! the environment here; accountd's binary resolves `$XDG_STATE_HOME/porter` once, and an app
+//! serde form of [`Persisted`]. The directory is an argument, never read from the environment
+//! here; accountd's binary resolves `$XDG_STATE_HOME/porter` once, and an app
 //! names its own.
 //!
 //! A save is atomic: the document goes to a temporary file in the same directory (a name of its
@@ -12,12 +12,11 @@
 //!
 //! Only blocking file calls live here; the seam is async, so each runs on tokio's blocking pool.
 
-use crate::location::StoreLocation;
 use porter_core::store::{Persisted, StoreFault};
+use porter_core::store::{RegistryStore, StoreError};
 use porter_fs::atomic::AtomicFile;
-use porter_service::{RegistryStore, StoreError};
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// The registry file's name inside the store's directory.
 const FILE: &str = "registry.json";
@@ -25,27 +24,53 @@ const FILE: &str = "registry.json";
 /// The registry kept as one JSON file, mode 0600 where the platform has modes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileStore {
-    location: StoreLocation,
+    dir: PathBuf,
     file: AtomicFile,
 }
 
-impl FileStore {
-    /// A store in `dir` (created on the first save).
-    pub fn new(dir: PathBuf) -> Self {
-        Self::at(StoreLocation::new(dir))
+/// Why the registry file was refused at start: which file, the copy from before its last
+/// change when there is one, and what was wrong with it. The words for a person are the
+/// host's.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("registry file {} refused: {cause}", file.display())]
+#[non_exhaustive]
+pub struct RegistryRefusal {
+    file: PathBuf,
+    backup: Option<PathBuf>,
+    cause: String,
+}
+
+impl RegistryRefusal {
+    /// The registry file.
+    pub fn file(&self) -> &std::path::Path {
+        &self.file
     }
 
-    /// A store in `location` (created on the first save).
-    pub fn at(location: StoreLocation) -> Self {
+    /// The copy from before its last change, when one is there.
+    pub fn backup(&self) -> Option<&std::path::Path> {
+        self.backup.as_deref()
+    }
+
+    /// What was wrong with the file.
+    pub fn cause(&self) -> &str {
+        &self.cause
+    }
+}
+
+impl FileStore {
+    /// A store in `dir` (created on the first save). The host names the directory: accountd's
+    /// `Config::from_env` resolves `$XDG_STATE_HOME/porter`, and an app names its own.
+    pub fn new(dir: impl Into<PathBuf>) -> Self {
+        let dir = dir.into();
         Self {
-            file: AtomicFile::new(location.dir().to_path_buf(), FILE),
-            location,
+            file: AtomicFile::new(dir.clone(), FILE),
+            dir,
         }
     }
 
     /// The directory the store keeps its files in.
-    pub fn location(&self) -> &StoreLocation {
-        &self.location
+    pub fn dir(&self) -> &Path {
+        &self.dir
     }
 
     /// The registry file.
@@ -58,24 +83,16 @@ impl FileStore {
         self.file.backup_path()
     }
 
-    /// What to tell the person when the registry file is refused at start: both files by name,
-    /// and that nothing was changed. The host stops (it never starts empty over a file it could
-    /// not read) and nothing is restored on its own.
-    pub fn refusal(&self, why: &impl std::fmt::Display) -> String {
-        let (file, backup) = (self.path(), self.backup_path());
-        let spare = match backup.exists() {
-            true => format!(
-                "The copy from before the last change is {}. To go back to it, stop the accounts \
-                 service, put that copy in place of the first file, and start it again.",
-                backup.display()
-            ),
-            false => "There is no earlier copy.".to_string(),
-        };
-        format!(
-            "the accounts file {} cannot be read ({why}). Nothing was changed and the accounts \
-             service did not start, so no account is lost. {spare}",
-            file.display()
-        )
+    /// The refusal of the registry file at start, for the host to word: both files and why.
+    /// The host stops (it never starts empty over a file it could not read) and nothing is
+    /// restored on its own.
+    pub fn refusal(&self, why: &impl std::fmt::Display) -> RegistryRefusal {
+        let backup = self.backup_path();
+        RegistryRefusal {
+            file: self.path(),
+            backup: backup.exists().then_some(backup),
+            cause: why.to_string(),
+        }
     }
 
     /// A staging name no other save, in this process or another, is using.

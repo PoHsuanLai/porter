@@ -6,11 +6,15 @@
 //! first that answers decides; a port that refuses or answers nothing readable is skipped.
 //! Everything is `127.0.0.1`, plain HTTP: the only plain endpoint porter allows is loopback.
 
-use porter_core::capability::{
+use porter_capability::ModelId;
+use porter_capability::{
     Capability, EmbedCap, EmbedPrompts, LlmCap, LlmFeature, LlmWire, Modality, PrefixText,
 };
-use porter_core::{Claim, Count, Dims, ModelId, Offer, Provenance, Subject, Tokens, WebUrl};
-use porter_http::{Http, HttpRequest, Method};
+use porter_capability::{Claim, Offer, Provenance, Subject};
+use porter_http::http::Method;
+use porter_http::http::header::CONTENT_TYPE;
+use porter_http::{Http, request};
+use porter_ids::{Count, Dims, Tokens, WebUrl};
 use porter_provider::Port;
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
@@ -65,23 +69,24 @@ struct Ask<'a, H> {
 
 impl<H: Http> Ask<'_, H> {
     async fn get(&self, path: &str) -> Option<Value> {
-        self.call(Method::Get, path, Vec::new()).await
+        self.call(Method::GET, path, Vec::new()).await
     }
 
     async fn post(&self, path: &str, body: &Value) -> Option<Value> {
-        self.call(Method::Post, path, body.to_string().into_bytes())
+        self.call(Method::POST, path, body.to_string().into_bytes())
             .await
     }
 
     /// The JSON a successful answer carries; `None` for a refusal, an error or other text.
     async fn call(&self, method: Method, path: &str, body: Vec<u8>) -> Option<Value> {
         let url = WebUrl::parse(&format!("http://127.0.0.1:{}{path}", self.port.0)).ok()?;
-        let request = HttpRequest::new(method, url)
-            .with_header("Content-Type", "application/json")
-            .with_body(body);
-        let response = self.http.send(request).await.ok()?;
-        match response.status.is_success() {
-            true => serde_json::from_slice(&response.body).ok(),
+        let asked = request(method, &url)
+            .header(CONTENT_TYPE, "application/json")
+            .body(body)
+            .ok()?;
+        let response = self.http.send(asked).await.ok()?;
+        match response.status().is_success() {
+            true => serde_json::from_slice(response.body()).ok(),
             false => None,
         }
     }

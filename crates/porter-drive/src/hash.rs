@@ -3,7 +3,7 @@
 //! reports that. Other kinds are not computed here; a fetch of such a drive is checked by its
 //! version instead.
 
-use porter_core::capability::HashKind;
+use porter_capability::HashKind;
 use quickxorhash::QuickXorHash;
 use sha2::Digest;
 use std::io::Read;
@@ -40,11 +40,10 @@ impl Hasher {
     }
 
     fn hex(self) -> String {
-        let hex = |bytes: &[u8]| bytes.iter().map(|b| format!("{b:02x}")).collect();
         match self {
-            Hasher::Md5(h) => hex(&h.finalize()),
-            Hasher::Sha256(h) => hex(&h.finalize()),
-            Hasher::QuickXor(h) => hex(&h.finalize()),
+            Hasher::Md5(h) => hex::encode(h.finalize()),
+            Hasher::Sha256(h) => hex::encode(h.finalize()),
+            Hasher::QuickXor(h) => hex::encode(h.finalize()),
         }
     }
 }
@@ -93,7 +92,7 @@ mod tests {
         );
         assert_eq!(of_bytes(HashKind::None, b"x"), None);
         assert!(!computes(HashKind::Dropbox));
-        let dir = porter_fake::Scratch::new("hash");
+        let dir = test_kit::Scratch::new("hash");
         let path = dir.join("f");
         std::fs::write(&path, vec![7u8; 200_000]).expect("write");
         assert_eq!(

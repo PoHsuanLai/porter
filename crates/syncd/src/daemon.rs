@@ -7,28 +7,32 @@
 //! a `watch::Receiver<Network>`: NetworkManager is not read yet, so the binary hands in a
 //! receiver that says "unmetered and up" for good.
 
+use crate::datasets::photos::Millis;
 use crate::datasets::pim::{ClientGrants, PimConfig, PimSupervisor, Wiring};
 use crate::datasets::storage::DriveMount;
 use crate::datasets::storage::{ClientStorageGrants, StorageConfig, StorageSupervisor};
 use crate::keep::{FileAudit, Intent, Keep, SyncSheets, sync_app};
-use crate::paths::{BUILD, KeepPaths, PROC_GATE, Paths, rescan};
+use crate::paths::{BUILD, HONOURS_PROC_ROOT, KeepPaths, Paths, rescan};
 use crate::scheduler::{Network, Settings};
 use crate::service;
 use crate::service::{Access, Hub};
 use crate::settings::{SyncSettings, read_cache_limit, serve_settings};
+use porter_callers::choose_proc_root;
+use porter_callers::{CallerFileError, ProcCallers};
 use porter_client::{Accounts, Identities, IdentitiesError, InProcess, PorterRelays};
-use porter_core::clock::SystemClock;
-use porter_core::sheet::ProviderGroup;
-use porter_daemon::ProcRoot;
+use porter_core::store::RegistryStore;
 use porter_daemon::xdg::PathError;
-use porter_dbus::{BusTarget, CallerFileError, ProcCallers};
+use porter_dbus::BusTarget;
 use porter_drive_fuse::Mounter;
-use porter_families::FamilyProvider;
+use porter_families::DynProvider;
 use porter_families::set::{FamilyIo, ProviderNames, load_specs, served};
+use porter_ids::clock::SystemClock;
 use porter_provider::ProviderSet;
 use porter_secrets::Namespace;
 use porter_secrets::keysel::{AnyKeys, Chosen, KeysRefusal, Selection, select};
-use porter_service::{AccountService, Registry, RegistryStore};
+use porter_service::AccountService;
+use porter_service_core::registry::Registry;
+use porter_sheet::ProviderGroup;
 use porter_sheets::BusSheets;
 use porter_store::FileStore;
 use std::future::Future;
@@ -37,6 +41,27 @@ use std::sync::Arc;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use zbus::Connection;
+
+/// The wall clock in milliseconds, for Photos' hybrid clocks: the daemon is where it is read.
+#[derive(Debug, Clone, Copy)]
+struct SystemMillis;
+
+impl Millis for SystemMillis {
+    fn now_ms(&self) -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
+    }
+}
+
+/// A value that differs between two runs of the daemon: the time it started, in nanoseconds,
+/// and its process id, in hex.
+fn fresh_nonce() -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    format!("{nanos:x}{:x}", std::process::id())
+}
 
 /// The variable that names a directory to read callers from in place of `/proc` (a test build
 /// only).
@@ -53,7 +78,7 @@ pub const KEYRING_NAMESPACE: &str = "porter.syncd";
 
 /// The service syncd hosts for its own accounts, over its own store, keys and sheets.
 pub type OwnService = AccountService<
-    FamilyProvider,
+    Box<dyn DynProvider>,
     AnyKeys,
     SyncSheets<BusSheets<ProcCallers>>,
     SystemClock,
@@ -140,7 +165,8 @@ impl Config {
     pub fn from_env() -> Result<Self, StartError> {
         let mut paths = Paths::resolve(|name| std::env::var(name).ok())?;
         // A test build may read another system caller table (a jail cannot write /etc).
-        let system = porter_daemon::SystemCallers::choose(PROC_GATE, |name| std::env::var_os(name));
+        let system =
+            porter_callers::SystemCallers::choose(HONOURS_PROC_ROOT, |name| std::env::var_os(name));
         if let Some(line) = system.notice("syncd") {
             eprintln!("{line}");
         }
@@ -148,8 +174,10 @@ impl Config {
         let keep = KeepPaths::resolve(|name| std::env::var(name).ok())?;
         let keys_var = std::env::var(KEYS_VAR).ok();
         let keys = select(keys_var.as_deref())?;
-        let proc = ProcRoot::choose(PROC_GATE, PROC_ROOT_VAR, |name| std::env::var_os(name))
-            .into_fixture();
+        let proc = choose_proc_root(HONOURS_PROC_ROOT, PROC_ROOT_VAR, |name| {
+            std::env::var_os(name)
+        })
+        .into_honoured();
         // `SYNCD_RESCAN_S` shortens how often grants are read again, in a test build only.
         let rescan_var = std::env::var(RESCAN_VAR).ok();
         let pim = PimConfig::default();
@@ -166,7 +194,7 @@ impl Config {
         let mounter = Mounter {
             mountd: std::env::var_os("XDG_RUNTIME_DIR")
                 .map(|runtime| porter_drive_fuse::mountd::wire::socket_in(Path::new(&runtime))),
-            ..Mounter::default()
+            ..Mounter::new("fusermount3")
         };
         let storage = StorageConfig {
             rescan: rescan(BUILD, rescan_var, storage.rescan),
@@ -198,10 +226,10 @@ pub enum StartError {
     /// A caller table cannot be read.
     #[error("{0}")]
     Callers(#[from] CallerFileError),
-    /// syncd's own registry file was refused. The text says so in plain words: both files,
-    /// nothing changed.
-    #[error("{0}")]
-    RegistryRefused(String),
+    /// syncd's own registry file was refused. The words name both files and say
+    /// nothing was changed.
+    #[error("{}", porter_daemon::registry_words(.0.file(), .0.backup(), .0.cause(), "sync service"))]
+    RegistryRefused(porter_store::RegistryRefusal),
     /// The bus cannot be reached.
     #[error("no session bus: {0}")]
     Bus(#[source] zbus::Error),
@@ -216,7 +244,7 @@ pub enum StartError {
     #[error("cannot serve org.quire.Photos1.Picker: {0}")]
     Picker(#[source] zbus::Error),
     /// The bus objects or the name could not be served.
-    #[error("cannot serve {bus}: {0}", bus = porter_dbus::SYNC_BUS)]
+    #[error("cannot serve {bus}: {0}", bus = porter_dbus::sync::SYNC_BUS)]
     Serve(#[source] zbus::Error),
 }
 
@@ -253,7 +281,7 @@ impl Daemon {
         let namespace = Namespace::parse(KEYRING_NAMESPACE).expect("a literal namespace");
         let chosen = Chosen::open(keys, namespace, "syncd")?;
         eprintln!("{}", chosen.said);
-        let table = porter_dbus::load_callers(&paths.callers_system, &paths.callers_user)?;
+        let table = porter_callers::load_callers(&paths.callers_system, &paths.callers_user)?;
         let connection = bus.connect().await.map_err(StartError::Bus)?;
         let callers = Arc::new(match proc_root {
             #[cfg(feature = "test-proc-root")]
@@ -283,6 +311,7 @@ impl Daemon {
         let io = FamilyIo::system(
             ProviderSet::layered(specs.clone(), Vec::new()),
             keep.client_files(),
+            Arc::new(SystemClock),
         );
         let (families, _unserved) = served(specs, &io);
         let store = FileStore::new(keep.registry_dir.clone());
@@ -303,6 +332,8 @@ impl Daemon {
         let link: OwnLink =
             InProcess::new(Arc::clone(&service), sync_app()).with_relays(PorterRelays::new());
         let accounts = Arc::new(Accounts::over(link));
+        // What tells this run from every other: its anchors, its new Photos devices.
+        let nonce = fresh_nonce();
         let wiring = |network| Wiring {
             accounts: Arc::clone(&accounts),
             hub: hub.clone(),
@@ -310,6 +341,9 @@ impl Daemon {
             settings: Settings::default(),
             network,
             owners: Access::default(),
+            clock: porter_sync::Clock::new(SystemClock),
+            nonce: nonce.clone(),
+            millis: Arc::new(SystemMillis),
         };
         let pim = PimSupervisor::new(
             wiring(network.clone()),

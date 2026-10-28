@@ -8,8 +8,9 @@
 use crate::ids::{JsonSchemaText, JsonText, ToolName};
 use crate::reply::ChatReply;
 use crate::request::{ChatMessage, ChatRequest, MessagePart, Role, ToolDecl};
+use porter_capability::Tier;
+use porter_core::DataClass;
 use porter_core::consent::Usage;
-use porter_core::{DataClass, Tier};
 use serde::{Deserialize, Serialize};
 
 /// The one tool the check offers.

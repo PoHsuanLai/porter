@@ -2,7 +2,10 @@ use super::*;
 use crate::policy::{ClassFloor, Floor, LocalOnly};
 use crate::route::Permit;
 use crate::spend::SpendVerdict;
-use porter_core::{AccountId, Billing, DataClass, Locality, MicroUsd, ModelId, PriceTable};
+use porter_capability::ModelId;
+use porter_capability::{Billing, Locality};
+use porter_core::AccountId;
+use porter_core::DataClass;
 
 pub(super) fn mref(name: &str) -> ModelRef {
     ModelRef {
@@ -79,10 +82,7 @@ fn evicting(name: &str, index: u32, victim: &str, load: EngineLoad) -> PickCandi
 fn cloud(name: &str, index: u32) -> PickCandidate {
     let mut c = cand(name, index, Readiness::Ready, SwapCost::Resident);
     c.route.locality = Locality::Cloud { region: None };
-    c.route.billing = Billing::Metered(PriceTable {
-        input_per_mtok: MicroUsd(3),
-        output_per_mtok: MicroUsd(3),
-    });
+    c.route.billing = Billing::Metered;
     c
 }
 

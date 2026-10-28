@@ -9,14 +9,16 @@
 //! run's progress (a step before a begin is refused) and the one request that may queue behind
 //! a running turn.
 
-use porter_core::capability::SpeechMode;
+use porter_capability::SpeechMode;
+use porter_capability::Tier;
+use porter_core::DataClass;
 use porter_core::consent::Usage;
-use porter_core::{DataClass, Need, Tier};
 use porter_infer::{
     AudioFrame, ClientFrame, InferEvent, InferReply, InferRequest, ModelLabel, ModelRef,
     PickRefusal, Readiness, RequestKind, ServedBy, ShowReason, StageNote, StageRole,
     TranscribeBegin, Why,
 };
+use porter_match::Need;
 
 /// What the session was opened for: fixed for its life, so the route is chosen once.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -301,9 +303,9 @@ mod step_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_core::Tokens;
-    use porter_core::capability::CuaEnv;
-    use porter_core::need::{CuaNeed, DimsNeed, EmbedNeed, LlmNeed, SpeechNeed};
+    use porter_capability::CuaEnv;
+    use porter_ids::Tokens;
+    use porter_match::{CuaNeed, DimsNeed, EmbedNeed, LlmNeed, SpeechNeed};
 
     fn llm() -> Need {
         Need::Llm(LlmNeed::new(Default::default(), Tokens(1)))

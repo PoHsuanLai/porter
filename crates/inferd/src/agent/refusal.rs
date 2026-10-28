@@ -3,7 +3,7 @@
 //! under its real name. Written by hand, as accountd's refusals are, so a client tells a cause
 //! from any other failure by name.
 
-use porter_dbus::AGENT_ERROR_PREFIX;
+use porter_dbus::inference::AGENT_ERROR_PREFIX;
 use zbus::DBusError;
 use zbus::fdo;
 use zbus::message::{Header, Message};

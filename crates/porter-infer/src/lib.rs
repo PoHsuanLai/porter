@@ -7,7 +7,8 @@
 //!
 //! ```
 //! use porter_core::consent::Usage;
-//! use porter_core::{DataClass, Tier};
+//! use porter_core::DataClass;
+//! use porter_capability::Tier;
 //! use porter_infer::{ChatControl, ChatMessage, ChatRequest, MessagePart, Role, ToolChoice};
 //!
 //! let request = ChatRequest::new(
@@ -76,7 +77,7 @@ pub use ids::{
     ToolCallId, ToolName, Traceparent,
 };
 pub use model::{ChatSink, Model, ModelCard, TurnError, answer};
-pub use open::{LinkHello, OpenFrame, OpenOptions};
+pub use open::OpenOptions;
 pub use pick::{
     AutoEvict, AutoMode, AutoPolicy, Declined, DeclinedBecause, Door, EngineLoad, Pick,
     PickCandidate, PickPolicy, PickRefusal, Picked, Sharing, ShowReason, SwapCost, Why, pick,
@@ -108,6 +109,6 @@ pub use speech::{
     AudioFrame, AudioFrameOut, AudioRate, HeardDelta, LangPick, SpeakRequest, TranscribeBegin,
     TranscribeMode, VoiceName,
 };
-pub use spend::{Period, SpendCap, SpendScope, SpendVerdict, cost, spend_verdict};
+pub use spend::{ChargeTotal, Period, SpendCap, SpendScope, SpendVerdict, spend_verdict};
 pub use takes::{NO_MODEL_SEES_SCREEN, Sight, Takes, cannot_see_screen};
 pub use tool_proof::{PROBE_TOOL, ToolProof, judge, probe_request};

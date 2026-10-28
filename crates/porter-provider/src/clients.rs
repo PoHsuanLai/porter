@@ -45,7 +45,7 @@ pub struct ClientEntry {
     /// The application secret an issuer requires of every installed client (Google's desktop
     /// clients); not the user's credential, and identical for every user of the build. Absent
     /// for public clients (Microsoft).
-    #[serde(default)]
+    #[serde(default, serialize_with = "porter_core::write_secret_option")]
     pub client_secret: Option<SecretText>,
     /// Endpoints other than the ones the issuer publishes.
     #[serde(default)]
@@ -77,17 +77,12 @@ impl ClientEntry {
     /// (scheme, host, port) is none of the origins the issuer publishes. A path may differ
     /// (Microsoft's `organizations` or `consumers` tenant). A row with no endpoints stays.
     pub fn leaves_the_issuer(&self) -> bool {
-        let origins = |e: &IssuerEndpoints| -> Vec<porter_core::Origin> {
-            [
-                Some(&e.authorize),
-                Some(&e.token),
-                e.revoke.as_ref(),
-                e.device.as_ref(),
-            ]
-            .into_iter()
-            .flatten()
-            .map(porter_core::EndpointUrl::origin)
-            .collect()
+        let origins = |e: &IssuerEndpoints| -> Vec<porter_ids::Origin> {
+            [Some(&e.authorize), Some(&e.token), e.revoke.as_ref()]
+                .into_iter()
+                .flatten()
+                .map(porter_core::EndpointUrl::origin)
+                .collect()
         };
         let published = origins(&self.issuer.endpoints());
         self.endpoints

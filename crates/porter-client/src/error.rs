@@ -1,9 +1,9 @@
 //! porter-client's errors.
 
 use porter_core::AccountId;
-use porter_core::wire::Refusal;
 #[cfg(feature = "infer")]
 use porter_infer::{InferRefusal, NoPlaceReason, PlaceKind, SessionError};
+use porter_wire::Refusal;
 
 /// What inferd refuses with, in a build with no `infer` feature: it has no values, because such a
 /// build never talks to inferd. It stands where porter-infer's `InferRefusal` stands with the
@@ -42,22 +42,22 @@ pub enum TransportError {
     #[error("malformed reply: {0}")]
     Malformed(String),
     /// This link does not carry that call: the computers and the guests are inferd's, over the
-    /// session bus, and a link with no inferd (the socket, the app hosting the core itself) has
+    /// session bus, and a link with no inferd (the app hosting the core itself) has
     /// neither.
     #[error("this link does not carry that call")]
     Unsupported,
-    /// inferd refused a call about computers or guests, with the plain sentence it wrote for the
-    /// person.
-    #[error("{words}")]
+    /// inferd refused a call about computers or guests. An app words the refusal from `reason`;
+    /// `words` is the text inferd sent with it, for an app that has none of its own.
+    #[error("inferd refused a call about computers or guests: {reason}")]
     Computer {
         /// Why, as a word an app can act on.
         reason: ComputerReason,
-        /// The sentence to show.
+        /// The text inferd sent with the refusal.
         words: String,
     },
-    /// inferd would not start or stop a model, with the plain sentence it wrote for the person:
-    /// the model is not one it runs, or its engine did not come up.
-    #[error("{0}")]
+    /// inferd would not start or stop a model: the model is not one it runs, or its engine did
+    /// not come up. The payload is the text inferd sent with the refusal.
+    #[error("inferd would not start or stop the model: {0}")]
     NotRun(String),
     /// The call named the places it may run (`OpenOptions::places`) and none of them can serve
     /// it: the reason, and the kind of place outside the set that could have (feature `infer`).
@@ -170,7 +170,7 @@ pub enum ClientError {
     #[error(transparent)]
     Transport(#[from] TransportError),
     /// accountd refused.
-    #[error("refused: {}", why(*.0))]
+    #[error("refused: {0:?}")]
     Refused(Refusal),
     /// `add_account`: the person signed in to an account that was already here, so nothing was
     /// added. It is that account; ask for a grant of it (`find`, then `request_grant`).
@@ -198,25 +198,6 @@ impl ClientError {
             }
             _ => None,
         }
-    }
-}
-
-/// What a refusal says in words (the enum has no `Display` of its own; the match names every
-/// refusal, so a new one cannot go unsaid).
-fn why(refusal: Refusal) -> &'static str {
-    match refusal {
-        Refusal::Dismissed => "the person closed the window",
-        Refusal::Denied => "the person said no",
-        Refusal::NoFittingAccount => "no account fits",
-        Refusal::UnknownGrant => "that permission is not this app's, or is gone",
-        Refusal::AudienceNotGranted => "the permission does not cover that address",
-        Refusal::NeedsReauth => "the account must be signed in again",
-        Refusal::Unavailable => "the account or the saved secrets cannot be reached",
-        Refusal::EndpointNotGranted => "that address is not one of the account's",
-        Refusal::NoLauncher => "nothing is there to sign the agent in",
-        Refusal::NeedsConsent => "the account has not been given that access yet",
-        // a variant a newer porter adds: a generic sentence
-        _ => "the request was refused",
     }
 }
 

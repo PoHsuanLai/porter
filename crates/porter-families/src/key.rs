@@ -9,17 +9,20 @@
 //! ([`own_server`]) and the key, which such a server may not need, is kept as an empty key when
 //! there is none, so the account always has its one secret. An empty key is presented as no key.
 
-use porter_core::Capability;
-use porter_core::capability::CapabilityKind;
-use porter_core::sheet::SignInFault;
+use porter_capability::Capability;
+use porter_capability::CapabilityKind;
+use porter_capability::{Claim, Offer, Provenance, Subject};
+use porter_core::AccountId;
 use porter_core::{
-    AccountId, AccountLabel, Audience, Claim, Credential, EndpointUrl, Family, IssuedToken, Offer,
-    Provenance, Restriction, SecretPurpose, SecretText, ServiceEndpoint, Subject,
+    AccountLabel, Audience, Credential, EndpointUrl, Family, IssuedToken, Restriction,
+    SecretPurpose, SecretText, ServiceEndpoint,
 };
-use porter_http::{Http, HttpRequest, Method};
-use porter_provider::{
-    Presented, ProviderError, ProviderSession, ProviderSpec, SignInStep, Signed,
-};
+use porter_http::http::Method;
+use porter_http::http::header::{ACCEPT, AUTHORIZATION, HeaderName};
+use porter_http::http::request::Builder;
+use porter_http::{Http, SensitiveHeader, request_to};
+use porter_provider::{Presented, ProviderError, ProviderSession, ProviderSpec, Signed};
+use porter_sheet::SignInFault;
 
 /// The key a presented credential holds, or `Unauthorized` when the account has none.
 pub(crate) fn key_of(presented: &Presented) -> Result<&SecretText, ProviderError> {
@@ -81,16 +84,18 @@ const ANTHROPIC_VERSION: &str = "2023-06-01";
 /// for Anthropic's Messages API, `x-goog-api-key` for Gemini, a bearer token for the
 /// OpenAI-compatible rest (OpenAI, Moonshot). An empty key is no key: the request goes without
 /// (a server of the person's own may need none).
-pub(crate) fn present_key(request: HttpRequest, family: Family, key: &SecretText) -> HttpRequest {
+pub(crate) fn present_key(request: Builder, family: Family, key: &SecretText) -> Builder {
     if key.expose().is_empty() {
         return request;
     }
     match family {
         Family::Messages => request
-            .with_header("x-api-key", key.expose())
-            .with_header("anthropic-version", ANTHROPIC_VERSION),
-        Family::GenerateContent => request.with_header("x-goog-api-key", key.expose()),
-        _ => request.with_header("Authorization", format!("Bearer {}", key.expose())),
+            .sensitive_header(HeaderName::from_static("x-api-key"), key.expose())
+            .header("anthropic-version", ANTHROPIC_VERSION),
+        Family::GenerateContent => {
+            request.sensitive_header(HeaderName::from_static("x-goog-api-key"), key.expose())
+        }
+        _ => request.sensitive_header(AUTHORIZATION, &format!("Bearer {}", key.expose())),
     }
 }
 
@@ -128,15 +133,20 @@ async fn check_at<H: Http>(
     family: Family,
     key: &SecretText,
 ) -> Result<(), ProviderError> {
-    let request = HttpRequest::to(Method::Get, url)
+    let request = request_to(Method::GET, url)
         .map_err(|_| ProviderError::Unreachable)?
-        .with_header("Accept", "application/json");
+        .header(ACCEPT, "application/json");
+    // A key that cannot be a header's value is never sent; the request fails as an unreachable
+    // server would, as it did when the client refused it.
+    let request = present_key(request, family, key)
+        .body(Vec::new())
+        .map_err(|_| ProviderError::Unreachable)?;
     let response = http
-        .send(present_key(request, family, key))
+        .send(request)
         .await
         .map_err(|_| ProviderError::Unreachable)?;
-    match response.status.0 {
-        200..=299 => match is_listing(&response.body) {
+    match response.status().as_u16() {
+        200..=299 => match is_listing(response.body()) {
             true => Ok(()),
             false => Err(ProviderError::Unreadable),
         },
@@ -216,16 +226,6 @@ pub(crate) fn signed_server(
     )
 }
 
-/// The review of `signed`.
-pub(crate) fn review_of(signed: &Signed) -> SignInStep {
-    SignInStep::Review {
-        claims: signed.claims.clone(),
-        endpoints: signed.endpoints.clone(),
-        restriction: signed.restriction.clone(),
-        label: signed.label.clone(),
-    }
-}
-
 /// What a failed call says to the person.
 pub(crate) fn fault_of(error: ProviderError) -> SignInFault {
     match error {
@@ -287,13 +287,18 @@ mod tests {
 
     #[test]
     fn each_company_gets_its_documented_header() {
-        let url = porter_core::WebUrl::parse("https://api.example.org/v1/models").expect("url");
+        let url = porter_ids::WebUrl::parse("https://api.example.org/v1/models").expect("url");
         let key = SecretText::new("KEY");
         let headers = |family| {
-            present_key(HttpRequest::new(Method::Get, url.clone()), family, &key)
-                .headers
+            present_key(porter_http::request(Method::GET, &url), family, &key)
+                .body(Vec::<u8>::new())
+                .expect("request")
+                .headers()
                 .iter()
-                .map(|h| (h.name.as_str().to_ascii_lowercase(), h.value.0.clone()))
+                .map(|(name, value)| {
+                    let value = value.to_str().expect("text").to_owned();
+                    (name.as_str().to_owned(), value)
+                })
                 .collect::<Vec<_>>()
         };
         let pair = |a: &str, b: &str| (a.to_owned(), b.to_owned());

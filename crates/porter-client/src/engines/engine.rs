@@ -2,7 +2,9 @@
 //! key goes with every request.
 
 use model_openai_compat::Flavor;
-use porter_core::{AccountId, ModelId, Tokens};
+use porter_capability::ModelId;
+use porter_core::AccountId;
+use porter_ids::Tokens;
 use std::fmt;
 
 /// What the app calls an engine in its routing table: the id grammar (`[a-z0-9]` then
@@ -13,7 +15,7 @@ pub struct EngineId(String);
 impl EngineId {
     /// The id named `text`.
     pub fn parse(text: &str) -> Result<Self, EngineError> {
-        match porter_core::is_id(text) {
+        match porter_ids::is_id(text) {
             true => Ok(Self(text.to_owned())),
             false => Err(EngineError::Id(text.to_owned())),
         }
@@ -34,6 +36,7 @@ impl fmt::Display for EngineId {
 /// Why an engine, or the table over engines, is not usable. Said when the host is built, never
 /// when a session is opened.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum EngineError {
     /// Not an engine id.
     #[error("{0:?} is not an engine id")]
@@ -169,7 +172,7 @@ pub struct Engine {
     /// The name in the request's `model` field, as the server knows it (`llama3.2:3b`).
     pub served_name: String,
     /// Where the model runs. Decides which data classes may go to it (the policy's floors).
-    pub locality: porter_core::Locality,
+    pub locality: porter_capability::Locality,
     /// Where the server is.
     pub url: EngineUrl,
     /// How it is spoken to.
@@ -189,7 +192,7 @@ impl Engine {
         account: AccountId,
         served_name: &str,
         url: EngineUrl,
-        locality: porter_core::Locality,
+        locality: porter_capability::Locality,
         dialect: Dialect,
         max_output: Tokens,
     ) -> Result<Self, EngineError> {

@@ -2,23 +2,28 @@
 //! capability, is asked for consent, and gets a token; a refusal sticks; a once-grant is spent.
 #![cfg(feature = "in-process")]
 
+use porter_capability::{Access, Delta, StorageScope};
 use porter_client::{Accounts, ClientError, ConsentOffer, Found, InProcess, NoAccount};
-use porter_core::capability::{Access, Delta, QuotaReport, StorageScope};
+use porter_core::AccountId;
 use porter_core::consent::{GrantScope, Usage};
-use porter_core::need::StorageNeed;
-use porter_core::wire::{ParentWindow, Refusal};
-use porter_core::{AccountId, AppId, AppName, Audience, DataClass, Isolation, Need};
+use porter_core::{AppId, AppName, DataClass, Isolation, RelayAuth};
 use porter_fake::{FakeService, Scripted, ScriptedSheets, fake_service};
+use porter_match::Need;
+use porter_match::StorageNeed;
+use porter_wire::{ParentWindow, Refusal};
 use std::sync::Arc;
 
 type App = Accounts<InProcess<FakeService>>;
 
-fn app(service: &Arc<FakeService>, name: &str) -> App {
-    let id = AppId {
+fn app_id(name: &str) -> AppId {
+    AppId {
         name: AppName::parse(name).expect("app name"),
         isolation: Isolation::Flatpak,
-    };
-    Accounts::over(InProcess::new(Arc::clone(service), id))
+    }
+}
+
+fn app(service: &Arc<FakeService>, name: &str) -> App {
+    Accounts::over(InProcess::new(Arc::clone(service), app_id(name)))
 }
 
 fn storage(delta: Delta) -> Need {
@@ -26,7 +31,7 @@ fn storage(delta: Delta) -> Need {
         Access::ReadWrite,
         delta,
         StorageScope::AppFolder,
-        QuotaReport::Unreported,
+        false,
     ))
 }
 
@@ -77,11 +82,19 @@ async fn a_storage_need_finds_the_fake_cloud_after_consent() {
         Found::One(candidate) => assert_eq!(candidate, chosen),
         other => panic!("expected One, got {other:?}"),
     }
-    let token = photos
-        .token(&chosen, &Audience("webdav".into()))
+    let plan = service
+        .open_authenticated(
+            &app_id("org.quire.Photos"),
+            &chosen.grant,
+            &chosen.endpoints[0].url,
+        )
         .await
-        .expect("token");
-    assert_eq!(token.value.expose(), "fake:fake-storage:webdav");
+        .expect("a relay is planned");
+    assert!(
+        matches!(&plan.auth, RelayAuth::Password(password) if password.expose() == "app-pw"),
+        "{:?}",
+        plan.auth
+    );
 
     let files = app(&service, "org.quire.Files");
     let other = files
@@ -128,7 +141,7 @@ async fn a_need_no_provider_meets_is_unsupported() {
 }
 
 #[tokio::test]
-async fn a_once_grant_is_spent_by_its_token() {
+async fn a_once_grant_is_spent_by_its_first_relay() {
     let service = Arc::new(
         fake_service(ScriptedSheets::answering([Scripted::AllowFirst(
             GrantScope::Once,
@@ -147,12 +160,11 @@ async fn a_once_grant_is_spent_by_its_token() {
         .request_grant(&offer, &ParentWindow::Unparented)
         .await
         .expect("granted");
-    photos
-        .token(&chosen, &Audience("webdav".into()))
-        .await
-        .expect("first token");
-    let again = photos.token(&chosen, &Audience("webdav".into())).await;
-    assert_eq!(again, Err(ClientError::Refused(Refusal::UnknownGrant)));
+    let me = app_id("org.quire.Photos");
+    let relay = |grant| service.open_authenticated(&me, grant, &chosen.endpoints[0].url);
+    relay(&chosen.grant).await.expect("first relay");
+    let again = relay(&chosen.grant).await.map(|_| ());
+    assert_eq!(again, Err(Refusal::UnknownGrant));
     let after = photos
         .find(&need, DataClass::Files, Usage::Interactive)
         .await
@@ -180,9 +192,10 @@ async fn revoking_a_grant_ends_it() {
         .request_grant(&offer, &ParentWindow::Unparented)
         .await
         .expect("granted");
-    assert_eq!(photos.grants().await.expect("grants").len(), 1);
-    photos.revoke(&chosen.grant).await.expect("revoke");
-    assert_eq!(photos.grants().await.expect("grants"), vec![]);
+    let me = app_id("org.quire.Photos");
+    assert_eq!(service.grants(&me).len(), 1);
+    service.revoke(&me, &chosen.grant).await.expect("revoke");
+    assert_eq!(service.grants(&me), vec![]);
 }
 
 /// A DAV account added through a real family (the generic one, over a fake DAV server) from the
@@ -190,24 +203,31 @@ async fn revoking_a_grant_ends_it() {
 /// `Reauthenticate` over the in-process carrier.
 #[tokio::test]
 async fn an_app_adds_an_account_through_a_family_is_granted_it_and_signs_it_in_again() {
-    use porter_core::capability::{Access, Delta};
-    use porter_core::need::PimNeed;
-    use porter_core::sheet::{FieldAnswer, FieldKind, FieldValue, ServiceChoice, SheetInput};
-    use porter_core::{ProviderId, SecretText, Toggle};
-    use porter_fake::{FixedClock, NOW};
+    use porter_capability::KindToggle;
+    use porter_capability::Toggle;
+    use porter_capability::{Access, Delta};
+    use porter_core::ProviderId;
+    use porter_core::SecretText;
+    use porter_fake::NOW;
     use porter_fake_servers::{FakeDav, FakeDns};
-    use porter_families::{FamilyProvider, GenericProvider};
-    use porter_http::{HyperHttp, SharedHttp};
+    use porter_families::DynProvider;
+    use porter_family_generic::{DavLookup, GenericProvider};
+    use porter_http::SharedHttp;
+    use porter_http_reqwest::ReqwestHttp;
+    use porter_ids::clock::FixedClock;
+    use porter_match::PimNeed;
     use porter_provider::parse_provider;
     use porter_secrets::MemorySecrets;
-    use porter_service::{AccountService, Registry};
+    use porter_service::AccountService;
+    use porter_service_core::registry::Registry;
+    use porter_sheet::{FieldAnswer, FieldKind, FieldValue, SheetInput};
 
     let dav = FakeDav::start("bob", "hunter2").await.expect("dav");
     let spec =
         parse_provider(include_str!("../../../../providers/generic-dav.toml")).expect("file");
-    let provider = FamilyProvider::Generic(GenericProvider::new(
+    let provider = DynProvider::boxed(GenericProvider::<DavLookup>::new(
         spec,
-        SharedHttp::new(HyperHttp::new()),
+        SharedHttp::new(ReqwestHttp::new()),
         FakeDns::new(),
     ));
     let form = |password: &str| {
@@ -227,12 +247,12 @@ async fn an_app_adds_an_account_through_a_family_is_granted_it_and_signs_it_in_a
         ])
     };
     let review = SheetInput::Confirm(vec![
-        ServiceChoice {
-            kind: porter_core::CapabilityKind::Calendar,
+        KindToggle {
+            kind: porter_capability::CapabilityKind::Calendar,
             toggle: Toggle::On,
         },
-        ServiceChoice {
-            kind: porter_core::CapabilityKind::Contacts,
+        KindToggle {
+            kind: porter_capability::CapabilityKind::Contacts,
             toggle: Toggle::Off,
         },
     ]);
@@ -259,10 +279,7 @@ async fn an_app_adds_an_account_through_a_family_is_granted_it_and_signs_it_in_a
     let calendar = app_over(&service, "org.quire.Calendar");
 
     let added = calendar
-        .add_account(
-            porter_core::wire::ProviderHint::Any,
-            &ParentWindow::Unparented,
-        )
+        .add_account(porter_core::ProviderHint::Any, &ParentWindow::Unparented)
         .await
         .expect("added");
     assert_eq!(added.as_str(), "generic-dav-bob-127.0.0.1");
@@ -311,22 +328,29 @@ async fn an_app_adds_an_account_through_a_family_is_granted_it_and_signs_it_in_a
 /// account it is, so it can go on to ask for a grant of it.
 #[tokio::test]
 async fn adding_an_account_that_is_already_here_tells_the_app_which_one_it_is() {
-    use porter_core::sheet::{FieldAnswer, FieldKind, FieldValue, ServiceChoice, SheetInput};
-    use porter_core::{ProviderId, SecretText, Toggle};
-    use porter_fake::{FixedClock, NOW};
+    use porter_capability::KindToggle;
+    use porter_capability::Toggle;
+    use porter_core::ProviderId;
+    use porter_core::SecretText;
+    use porter_fake::NOW;
     use porter_fake_servers::{FakeDav, FakeDns};
-    use porter_families::{FamilyProvider, GenericProvider};
-    use porter_http::{HyperHttp, SharedHttp};
+    use porter_families::DynProvider;
+    use porter_family_generic::{DavLookup, GenericProvider};
+    use porter_http::SharedHttp;
+    use porter_http_reqwest::ReqwestHttp;
+    use porter_ids::clock::FixedClock;
     use porter_provider::parse_provider;
     use porter_secrets::MemorySecrets;
-    use porter_service::{AccountService, Registry};
+    use porter_service::AccountService;
+    use porter_service_core::registry::Registry;
+    use porter_sheet::{FieldAnswer, FieldKind, FieldValue, SheetInput};
 
     let dav = FakeDav::start("bob", "hunter2").await.expect("dav");
     let spec =
         parse_provider(include_str!("../../../../providers/generic-dav.toml")).expect("file");
-    let provider = FamilyProvider::Generic(GenericProvider::new(
+    let provider = DynProvider::boxed(GenericProvider::<DavLookup>::new(
         spec,
-        SharedHttp::new(HyperHttp::new()),
+        SharedHttp::new(ReqwestHttp::new()),
         FakeDns::new(),
     ));
     let pick = SheetInput::Pick(ProviderId::parse("generic-dav").expect("id"));
@@ -344,8 +368,8 @@ async fn adding_an_account_that_is_already_here_tells_the_app_which_one_it_is() 
             value: FieldValue::Secret(SecretText::new("hunter2")),
         },
     ]);
-    let review = SheetInput::Confirm(vec![ServiceChoice {
-        kind: porter_core::CapabilityKind::Calendar,
+    let review = SheetInput::Confirm(vec![KindToggle {
+        kind: porter_capability::CapabilityKind::Calendar,
         toggle: Toggle::On,
     }]);
     let sheets = ScriptedSheets::answering([]).conversing([
@@ -363,20 +387,14 @@ async fn adding_an_account_that_is_already_here_tells_the_app_which_one_it_is() 
     ));
     let calendar = app_over(&service, "org.quire.Calendar");
     let added = calendar
-        .add_account(
-            porter_core::wire::ProviderHint::Any,
-            &ParentWindow::Unparented,
-        )
+        .add_account(porter_core::ProviderHint::Any, &ParentWindow::Unparented)
         .await
         .expect("added");
     let held = service.registry().accounts.clone();
 
     assert_eq!(
         calendar
-            .add_account(
-                porter_core::wire::ProviderHint::Any,
-                &ParentWindow::Unparented,
-            )
+            .add_account(porter_core::ProviderHint::Any, &ParentWindow::Unparented,)
             .await,
         Err(ClientError::AlreadyAdded(added))
     );
@@ -390,13 +408,11 @@ struct NothingPublished;
 impl porter_http::Http for NothingPublished {
     async fn send(
         &self,
-        _request: porter_http::HttpRequest,
-    ) -> Result<porter_http::HttpResponse, porter_http::HttpError> {
-        Ok(porter_http::HttpResponse {
-            status: porter_http::Status(404),
-            headers: vec![],
-            body: Vec::new(),
-        })
+        _request: porter_http::http::Request<Vec<u8>>,
+    ) -> Result<porter_http::http::Response<Vec<u8>>, porter_http::HttpError> {
+        let mut response = porter_http::http::Response::new(Vec::new());
+        *response.status_mut() = porter_http::http::StatusCode::NOT_FOUND;
+        Ok(response)
     }
 }
 
@@ -405,22 +421,27 @@ impl porter_http::Http for NothingPublished {
 /// endpoints and a login name that is not the address.
 #[tokio::test]
 async fn a_typed_pop3_server_is_added_through_the_sheet_and_found_by_a_mail_need() {
-    use porter_core::capability::Offered;
-    use porter_core::need::MailNeed;
-    use porter_core::sheet::{FieldAnswer, FieldKind, FieldValue, ServiceChoice, SheetInput};
-    use porter_core::{Family, ProviderId, SecretText, Toggle};
-    use porter_fake::{FixedClock, NOW};
+    use porter_capability::KindToggle;
+    use porter_capability::Toggle;
+    use porter_core::ProviderId;
+    use porter_core::{Family, SecretText};
+    use porter_fake::NOW;
     use porter_fake_servers::net::{Bind, port_of};
     use porter_fake_servers::{Accounts as MailAccounts, FakeDns, FakePop3, mailbox};
-    use porter_families::{FamilyProvider, GenericProvider};
+    use porter_families::DynProvider;
+    use porter_family_generic::{GenericProvider, MailLookup};
     use porter_http::SharedHttp;
+    use porter_ids::clock::FixedClock;
+    use porter_match::MailNeed;
     use porter_provider::parse_provider;
     use porter_secrets::MemorySecrets;
-    use porter_service::{AccountService, Registry};
+    use porter_service::AccountService;
+    use porter_service_core::registry::Registry;
+    use porter_sheet::{FieldAnswer, FieldKind, FieldValue, SheetInput};
 
     // The password is tried at the POP3 server before the review, so one is running.
     let pop3 = FakePop3::start(
-        &Bind::Loopback,
+        &Bind::Port(0),
         porter_core::Tls::Plain,
         MailAccounts::password("ada.login", "s3cret"),
         mailbox(1),
@@ -434,7 +455,7 @@ async fn a_typed_pop3_server_is_added_through_the_sheet_and_found_by_a_mail_need
     };
     let spec =
         parse_provider(include_str!("../../../../providers/generic-imap.toml")).expect("file");
-    let provider = FamilyProvider::Generic(GenericProvider::new(
+    let provider = DynProvider::boxed(GenericProvider::<MailLookup>::new(
         spec,
         SharedHttp::new(NothingPublished),
         FakeDns::new(),
@@ -456,8 +477,8 @@ async fn a_typed_pop3_server_is_added_through_the_sheet_and_found_by_a_mail_need
         plain(FieldKind::OutgoingPort, "2525"),
         plain(FieldKind::Username, "ada.login"),
     ]);
-    let review = SheetInput::Confirm(vec![ServiceChoice {
-        kind: porter_core::CapabilityKind::Mail,
+    let review = SheetInput::Confirm(vec![KindToggle {
+        kind: porter_capability::CapabilityKind::Mail,
         toggle: Toggle::On,
     }]);
     let sheets =
@@ -476,14 +497,11 @@ async fn a_typed_pop3_server_is_added_through_the_sheet_and_found_by_a_mail_need
     ));
     let mail = app_over(&service, "org.quire.Mail");
     let added = mail
-        .add_account(
-            porter_core::wire::ProviderHint::Any,
-            &ParentWindow::Unparented,
-        )
+        .add_account(porter_core::ProviderHint::Any, &ParentWindow::Unparented)
         .await
         .expect("added");
 
-    let need = Need::Mail(MailNeed::new(Access::Read, Offered::Present, Delta::Poll));
+    let need = Need::Mail(MailNeed::new(Access::Read, true, Delta::Poll));
     let offer = needs_consent(
         mail.find(&need, DataClass::Mail, Usage::Interactive)
             .await
@@ -517,10 +535,10 @@ async fn a_typed_pop3_server_is_added_through_the_sheet_and_found_by_a_mail_need
 }
 
 type FamilyService = porter_service::AccountService<
-    porter_families::FamilyProvider,
+    Box<dyn porter_families::DynProvider>,
     porter_secrets::MemorySecrets,
     ScriptedSheets,
-    porter_fake::FixedClock,
+    porter_ids::clock::FixedClock,
 >;
 
 type FamilyApp = Accounts<InProcess<FamilyService>>;

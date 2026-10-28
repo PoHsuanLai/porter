@@ -5,7 +5,7 @@
 use crate::error::ModelError;
 use crate::request::ImageSource;
 use cua_action::{CuaAction, DeviceSize, PixelFormat, Point, Scale120, Size, WindowSpace};
-use porter_core::capability::CuaEnv;
+use porter_capability::CuaEnv;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -294,6 +294,7 @@ pub struct DroppedAction {
 /// Why a proposed action was dropped.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum DropReason {
     /// The verb is not on the allow-list.
     UnsupportedVerb,

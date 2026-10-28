@@ -14,13 +14,15 @@ use crate::dataset::fingerprint;
 use crate::datasets::pim::PimKind;
 use crate::datasets::pim::discover::{DiscoverError, Found};
 use porter_client::{Accounts, Transport};
-use porter_core::{Bytes, EndpointUrl, GrantId, WebUrl};
+use porter_core::EndpointUrl;
+use porter_core::GrantId;
+use porter_ids::{Bytes, WebUrl};
+use porter_sync::{Clock, DELETED};
 use porter_sync::{
     ItemKind, More, RemoteId, RemoteItem, RemoteVersion, ReplicaError, RetryAfter, Tombstone,
 };
 use serde::Deserialize;
 use std::sync::Arc;
-use storage_webdav::{Clock, DELETED};
 
 /// How many events a page asks for.
 const PAGE: &str = "250";
@@ -53,6 +55,7 @@ struct EventsPage {
 #[derive(Debug)]
 pub struct GoogleCalendarSource<T: Transport> {
     api: Arc<Api<T>>,
+    clock: Clock,
 }
 
 impl<T: Transport> GoogleCalendarSource<T> {
@@ -61,9 +64,11 @@ impl<T: Transport> GoogleCalendarSource<T> {
         accounts: Arc<Accounts<T>>,
         grant: GrantId,
         endpoint: EndpointUrl,
+        clock: Clock,
     ) -> Result<Self, DiscoverError> {
         Ok(Self {
             api: Arc::new(Api::new(accounts, grant, endpoint)?),
+            clock,
         })
     }
 }
@@ -114,7 +119,7 @@ impl<T: Transport + 'static> PimSource for GoogleCalendarSource<T> {
         GoogleCalendarFeed {
             api: Arc::clone(&self.api),
             calendar: id_in(&found.url),
-            clock: Clock::system(),
+            clock: self.clock.clone(),
         }
     }
 }
@@ -179,13 +184,13 @@ impl<T: Transport + 'static> Feed for GoogleCalendarFeed<T> {
             .api
             .read(&self.api.url(&self.events_path(""), &query))
             .await?;
-        match (response.status.0, resuming) {
+        match (response.status().as_u16(), resuming) {
             (200, _) => {}
             // `fullSyncRequired`: the token (or the page it began with) is no longer honoured.
             (410, true) => return Err(ReplicaError::AnchorExpired),
-            _ => return Err(read_error(&response)),
+            _ => return Err(read_error(&response, self.clock.now())),
         }
-        let listing: EventsPage = serde_json::from_slice(&response.body)
+        let listing: EventsPage = serde_json::from_slice(response.body())
             .map_err(|_| ReplicaError::Transient(RetryAfter(30)))?;
         let (next, more) = match (listing.next_page, listing.next_sync) {
             (Some(page), _) if !page.is_empty() => (SyncCursor::Paging { page, sync }, More::More),
@@ -217,10 +222,10 @@ impl<T: Transport + 'static> Feed for GoogleCalendarFeed<T> {
             .api
             .read(&self.api.url(&self.events_path(&tail), &[]))
             .await?;
-        if response.status.0 != 200 {
-            return Err(read_error(&response));
+        if response.status().as_u16() != 200 {
+            return Err(read_error(&response, self.clock.now()));
         }
-        let event: Event = serde_json::from_slice(&response.body)
+        let event: Event = serde_json::from_slice(response.body())
             .map_err(|_| ReplicaError::Transient(RetryAfter(30)))?;
         match event.is_cancelled() {
             true => Err(ReplicaError::Gone),

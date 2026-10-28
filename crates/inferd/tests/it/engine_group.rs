@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
-use porter_fake::Scratch;
+use test_kit::Scratch;
 
 /// The stand-in for inferd. Run as a test it does nothing; run by the tests below, with
 /// `FAKE_INFERD` set, it starts the forking engine, says it is ready, and then either waits to be
@@ -87,7 +87,7 @@ fn pid_in(file: &Path) -> i32 {
 }
 
 fn wait_for(file: &Path) {
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         if file.exists() {
             return;
@@ -109,7 +109,7 @@ fn gone(pid: i32) -> bool {
 }
 
 fn gone_soon(pid: i32) -> bool {
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         if gone(pid) {
             return true;

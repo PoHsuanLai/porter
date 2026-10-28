@@ -7,13 +7,17 @@
 //! connection that outlasts the retries leaves the part for the next try.
 
 use crate::progress::{CancelToken, Meter};
-use porter_core::{UrlScheme, WebUrl};
 use porter_engines::{Artifact, file_digest, hex};
-use porter_http::{BodySink, Flow, Header, HttpError, HttpRequest, HyperHttp, Method, Status};
+use porter_http::http::header::RANGE;
+use porter_http::http::{HeaderMap, Method, StatusCode};
+use porter_http::{HeaderText, HttpError, request};
+use porter_http_reqwest::{BodySink, ReqwestHttp};
+use porter_ids::{UrlScheme, WebUrl};
 use sha2::{Digest, Sha256};
 use std::ffi::OsString;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
+use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -22,6 +26,7 @@ const MAX_REDIRECTS: usize = 5;
 
 /// Why a download did not produce its file.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum FetchError {
     /// The connection failed or broke off, and the retries ran out.
     #[error("the download could not be finished: {0}")]
@@ -46,7 +51,7 @@ pub enum FetchError {
 /// Downloads pinned files.
 #[derive(Debug, Clone)]
 pub struct Fetcher {
-    http: HyperHttp,
+    http: ReqwestHttp,
     idle: Duration,
     retries: u32,
     pause: Duration,
@@ -55,12 +60,12 @@ pub struct Fetcher {
 impl Fetcher {
     /// A fetcher that trusts the system's certificate authorities, with the usual waits.
     pub fn system() -> Self {
-        Self::new(HyperHttp::new())
+        Self::new(ReqwestHttp::new())
     }
 
     /// A fetcher over `http`: 30 seconds of silence is a lost connection, and a lost connection
     /// is retried three times, two seconds apart.
-    pub fn new(http: HyperHttp) -> Self {
+    pub fn new(http: ReqwestHttp) -> Self {
         Self {
             http,
             idle: Duration::from_secs(30),
@@ -133,19 +138,22 @@ impl Fetcher {
             if web.origin().scheme != UrlScheme::Https {
                 return Err(FetchError::BadAddress);
             }
-            let mut request = HttpRequest::new(Method::Get, web.clone());
+            let mut asked = request(Method::GET, &web);
             if sink.have > 0 {
-                request = request.with_header("Range", format!("bytes={}-", sink.have));
+                asked = asked.header(RANGE, format!("bytes={}-", sink.have));
             }
+            let asked = asked
+                .body(Vec::new())
+                .map_err(|e| FetchError::Network(HttpError::from(e)))?;
             let sent = tokio::select! {
                 () = cancel.cancelled() => None,
-                sent = self.http.stream(request, self.idle, &mut sink) => Some(sent),
+                sent = self.http.stream(asked, self.idle, &mut sink) => Some(sent),
             };
             let Some(sent) = sent else {
                 return Err(FetchError::Cancelled);
             };
             let status = sent.map_err(FetchError::Network)?;
-            match (status.0, sink.redirect.take()) {
+            match (status.as_u16(), sink.redirect.take()) {
                 (301 | 302 | 303 | 307 | 308, Some(location)) => {
                     url = resolve(&web, &location)?;
                 }
@@ -280,63 +288,57 @@ impl Sink {
     }
 }
 
-fn header<'a>(headers: &'a [Header], name: &str) -> Option<&'a str> {
-    headers
-        .iter()
-        .find(|header| header.name.as_str() == name)
-        .map(|header| header.value.0.as_str())
-}
-
 impl BodySink for Sink {
-    fn head(&mut self, status: Status, headers: &[Header]) -> Flow {
-        match status.0 {
+    fn head(&mut self, status: StatusCode, headers: &HeaderMap) -> ControlFlow<()> {
+        match status.as_u16() {
             301 | 302 | 303 | 307 | 308 => {
-                self.redirect = header(headers, "location").map(str::to_owned);
-                Flow::Stop
+                self.redirect = headers.header("location").map(str::to_owned);
+                ControlFlow::Break(())
             }
             200 => {
                 // The server sent the whole file whatever was asked: begin again.
                 if self.have > 0 && self.start_over().is_err() {
                     self.failed = Some(std::io::ErrorKind::Other);
-                    return Flow::Stop;
+                    return ControlFlow::Break(());
                 }
                 self.writing = true;
-                Flow::Continue
+                ControlFlow::Continue(())
             }
             206 => {
                 let wanted = format!("bytes {}-", self.have);
-                self.misplaced = !header(headers, "content-range")
+                self.misplaced = !headers
+                    .header("content-range")
                     .is_some_and(|range| range.starts_with(&wanted));
                 self.writing = !self.misplaced;
                 if self.writing {
-                    Flow::Continue
+                    ControlFlow::Continue(())
                 } else {
-                    Flow::Stop
+                    ControlFlow::Break(())
                 }
             }
-            _ => Flow::Stop,
+            _ => ControlFlow::Break(()),
         }
     }
 
-    fn chunk(&mut self, bytes: &[u8]) -> Flow {
+    fn chunk(&mut self, bytes: &[u8]) -> ControlFlow<()> {
         if !self.writing {
-            return Flow::Stop;
+            return ControlFlow::Break(());
         }
         if self.cancel.is_cancelled() {
             self.stopped = true;
-            return Flow::Stop;
+            return ControlFlow::Break(());
         }
         if let Err(error) = self.file.write_all(bytes) {
             self.failed = Some(error.kind());
-            return Flow::Stop;
+            return ControlFlow::Break(());
         }
         self.hasher.update(bytes);
         self.have += bytes.len() as u64;
         self.meter.add(bytes.len() as u64);
         if self.have > self.expect {
             self.overrun = true;
-            return Flow::Stop;
+            return ControlFlow::Break(());
         }
-        Flow::Continue
+        ControlFlow::Continue(())
     }
 }

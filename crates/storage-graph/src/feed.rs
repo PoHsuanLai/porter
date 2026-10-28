@@ -10,15 +10,17 @@
 
 use crate::addr::{Root, item_path};
 use crate::json::{DeltaPage, DriveItem, Kind};
-use crate::refuse::read_error;
 use crate::replica::GraphReplica;
-use porter_core::{Bytes, UnixSeconds, WebUrl};
-use porter_http::{Http, HttpRequest, Method};
+use porter_http::http::Method;
+use porter_http::http::header::CONTENT_TYPE;
+use porter_http::{Http, request};
+use porter_ids::{Bytes, UnixSeconds, WebUrl};
+use porter_sync::DELETED;
+use porter_sync::status::{read_error, unreached};
 use porter_sync::{
     Anchor, Change, ChangePage, Cursor, Folder, ItemKind, ItemPath, More, RemoteId, RemoteItem,
     RemoteVersion, ReplicaError, RetryAfter, Tombstone,
 };
-use storage_webdav::DELETED;
 
 /// How many folders a path may have above a file before the walk gives up.
 const DEPTH: usize = 64;
@@ -41,16 +43,18 @@ impl<H: Http> GraphReplica<H> {
             },
         };
         // Page size is a preference of the request, not of the link: a delta link carries none.
-        let request = HttpRequest::new(Method::Get, url)
-            .with_header("Prefer", format!("odata.maxpagesize={}", self.page));
-        let response = self.send(request).await?;
-        match (response.status.0, resuming) {
+        let get = request(Method::GET, &url)
+            .header("Prefer", format!("odata.maxpagesize={}", self.page))
+            .body(Vec::new())
+            .map_err(|e| unreached(e.into()))?;
+        let response = self.send(get).await?;
+        match (response.status().as_u16(), resuming) {
             (200, _) => {}
             // `resyncRequired` and its kin: the server dropped what the link stands for.
             (410, true) => return Err(ReplicaError::AnchorExpired),
-            _ => return Err(read_error(&response)),
+            _ => return Err(read_error(&response, self.clock.now())),
         }
-        let page: DeltaPage = serde_json::from_slice(&response.body).map_err(|_| busy())?;
+        let page: DeltaPage = serde_json::from_slice(response.body()).map_err(|_| busy())?;
         let (next, more) = match (page.next, page.delta) {
             (Some(next), _) => (next, More::More),
             (None, Some(delta)) => (delta, More::Done),
@@ -92,13 +96,14 @@ impl<H: Http> GraphReplica<H> {
                 r#"{{"name":{},"folder":{{}},"@microsoft.graph.conflictBehavior":"fail"}}"#,
                 json_string(name)
             );
-            let request = HttpRequest::new(Method::Post, url.ok_or(ReplicaError::Gone)?)
-                .with_header("Content-Type", "application/json")
-                .with_body(body);
-            let response = self.send(request).await?;
+            let make = request(Method::POST, &url.ok_or(ReplicaError::Gone)?)
+                .header(CONTENT_TYPE, "application/json")
+                .body(body.into_bytes())
+                .map_err(|e| unreached(e.into()))?;
+            let response = self.send(make).await?;
             // 409: the level is already there.
-            if !matches!(response.status.0, 200 | 201 | 409) {
-                return Err(read_error(&response));
+            if !matches!(response.status().as_u16(), 200 | 201 | 409) {
+                return Err(read_error(&response, self.clock.now()));
             }
         }
         Ok(())

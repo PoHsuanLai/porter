@@ -1,16 +1,20 @@
 use super::*;
-use crate::serve::Router;
 use crate::supervise::Ports;
-use crate::testkit::{Recorder, Scratch, models};
+use crate::testkit::{Recorder, models};
 use engine_supervisor::{
     EngineFailure, EngineId, ExitCode, FakeGpu, FakeReadyProbe, GpuMemory, MonoMs, Probe,
     SupervisorConfig,
 };
 use model_catalog::MiB;
-use porter_core::capability::{Capability, CuaEnv, LlmCap, LlmFeature, LlmWire, SpeechMode};
-use porter_core::need::{CuaNeed, LlmNeed, SpeechNeed};
-use porter_core::{AccountId, Billing, Locality, ModelId, Tokens};
+use porter_capability::ModelId;
+use porter_capability::{Billing, Locality};
+use porter_capability::{Capability, CuaEnv, LlmCap, LlmFeature, LlmWire, SpeechMode};
+use porter_core::AccountId;
+use porter_ids::Tokens;
 use porter_infer::{LocalOnly, Slot};
+use porter_match::{CuaNeed, LlmNeed, SpeechNeed};
+use porter_router::seams::Router;
+use test_kit::Scratch;
 
 fn llm() -> Need {
     Need::Llm(LlmNeed::new([LlmFeature::Chat].into(), Tokens(1000)))

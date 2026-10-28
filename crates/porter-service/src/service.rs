@@ -1,114 +1,92 @@
-//! The service: one request in, one reply out, for a caller the transport has identified.
+//! The service: one request in, one reply out, for a caller the transport has identified. The
+//! facade a host holds; what it does is the domains', over the shared [`Ctx`].
 
-use crate::agent_login::Roster;
-use crate::audience::covers;
-use crate::audit::{AuditEntry, AuditEvent};
-use crate::audit::{AuditSink, NoAudit};
-use crate::choose::{ask_for, settle};
-use crate::clock::Clock;
-use crate::flight::Flights;
-use crate::gate::Gate;
-use crate::own_machines::OwnMachines;
-use crate::registry::{Asker, Registry};
-use crate::sheets::Sheets;
-use crate::store::{NoStore, RegistryStore};
-use crate::token::{provider_refusal, secret_purpose};
-use porter_core::consent::{ConsentAnswer, GrantScope, Usage, Verdict, availability};
-use porter_core::wire::{ParentWindow, Refusal};
+use porter_capability::{CapabilityKind, Claim, Toggle};
+use porter_core::ProviderHint;
+use porter_core::consent::{Availability, Grant, Usage};
+use porter_core::store::{NoStore, RegistryStore};
+use porter_core::{AccountId, GrantId, ProviderId};
 use porter_core::{
-    AccountId, AccountState, AccountsReply, AccountsRequest, AppId, Audience, AuthKind, DataClass,
-    EndpointUrl, GrantId, LauncherSession, Need, ProviderId, RelayPlan,
+    AccountState, AgentState, AppId, Candidate, DataClass, EndpointUrl, LlmVerdict, OwnServerRow,
+    RelayPlan, SecretText, SessionToken,
 };
-use porter_provider::{Provider, ProviderError, ProviderSet, ProviderSpec};
+use porter_ids::clock::Clock;
+use porter_match::Need;
+use porter_provider::{Provider, ProviderSpec, RevokeOutcome};
 use porter_secrets::{Secrets, SecretsError};
-use std::collections::HashSet;
-use std::sync::{Mutex, MutexGuard, OnceLock};
+use porter_service_accounts::{
+    Accounts, AccountsApi, AccountsState, AgentFault, AllowFor, Launchers, LocalFault, OwnMachines,
+    Roster, SignInAs,
+};
+use porter_service_core::audit::{AuditEvent, AuditSink, NoAudit};
+use porter_service_core::registry::Registry;
+use porter_service_core::sheets::Sheets;
+use porter_service_core::{Ctx, Parts};
+use porter_service_grants::{Grants, GrantsApi};
+use porter_wire::{AccountsReply, AccountsRequest};
+use porter_wire::{ParentWindow, Refusal};
 
 /// accountd's core over its seams. The store and the audit sink default to none: the registry
 /// then lives for the process, and nothing is logged.
-#[derive(Debug)]
-pub struct AccountService<P, S, U, K, R = NoStore, A = NoAudit> {
-    pub(crate) providers: Vec<P>,
-    pub(crate) catalog: ProviderSet,
-    pub(crate) secrets: S,
-    pub(crate) sheets: U,
-    pub(crate) clock: K,
-    pub(crate) store: R,
-    pub(crate) audit: A,
-    pub(crate) registry: Mutex<Registry>,
-    /// Held across a save's snapshot and write, so saves do not overlap.
-    pub(crate) persist_gate: Gate,
-    /// Each account's turn at its issuer: one refresh at a time, and the token it issued.
-    pub(crate) flights: Flights,
-    /// Account ids an add has chosen and is still filing secrets for: not in the registry yet
-    /// (the row is added only once its secrets are stored), and taken all the same.
-    pub(crate) reserved: Mutex<HashSet<AccountId>>,
-    /// Which agent programs have a launcher, once the host says (accountd, when it serves).
-    pub(crate) roster: OnceLock<Roster>,
-    /// The person's computers on their tailnet, once the host says (inferd, which has a view of
-    /// the tailnet): an AI server's address may be plain `http` to one of them.
-    pub(crate) own_machines: OnceLock<OwnMachines>,
+pub struct AccountService<P, S, U, K, R = NoStore, A = NoAudit>
+where
+    P: Provider,
+    S: Secrets,
+    U: Sheets,
+    K: Clock,
+    R: RegistryStore,
+    A: AuditSink,
+{
+    ctx: Ctx<Parts<P, S, U, K, R, A>>,
+    accounts: AccountsState,
+}
+
+impl<P, S, U, K, R, A> std::fmt::Debug for AccountService<P, S, U, K, R, A>
+where
+    P: Provider,
+    S: Secrets,
+    U: Sheets,
+    K: Clock,
+    R: RegistryStore,
+    A: AuditSink,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AccountService").finish_non_exhaustive()
+    }
 }
 
 impl<P: Provider, S: Secrets, U: Sheets, K: Clock> AccountService<P, S, U, K> {
     /// A service over these providers, starting from `registry` (loaded by the host).
     pub fn new(providers: Vec<P>, registry: Registry, secrets: S, sheets: U, clock: K) -> Self {
-        let specs = providers.iter().map(|p| p.spec().clone()).collect();
-        let catalog = ProviderSet::layered(specs, Vec::new());
         Self {
-            providers,
-            catalog,
-            secrets,
-            sheets,
-            clock,
-            store: NoStore,
-            audit: NoAudit,
-            registry: Mutex::new(registry),
-            persist_gate: Gate::default(),
-            flights: Flights::default(),
-            reserved: Mutex::new(HashSet::new()),
-            roster: OnceLock::new(),
-            own_machines: OnceLock::new(),
+            ctx: Ctx::new(providers, registry, secrets, sheets, clock),
+            accounts: AccountsState::default(),
         }
     }
 }
 
-impl<P, S, U, K, R, A> AccountService<P, S, U, K, R, A> {
+impl<P, S, U, K, R, A> AccountService<P, S, U, K, R, A>
+where
+    P: Provider,
+    S: Secrets,
+    U: Sheets,
+    K: Clock,
+    R: RegistryStore,
+    A: AuditSink,
+{
     /// The same service saving its registry to `store` after every change.
     pub fn with_store<N: RegistryStore>(self, store: N) -> AccountService<P, S, U, K, N, A> {
         AccountService {
-            providers: self.providers,
-            catalog: self.catalog,
-            secrets: self.secrets,
-            sheets: self.sheets,
-            clock: self.clock,
-            store,
-            audit: self.audit,
-            registry: self.registry,
-            persist_gate: self.persist_gate,
-            flights: self.flights,
-            reserved: self.reserved,
-            roster: self.roster,
-            own_machines: self.own_machines,
+            ctx: self.ctx.with_store(store),
+            accounts: self.accounts,
         }
     }
 
     /// The same service recording its decisions to `audit`.
     pub fn with_audit<N: AuditSink>(self, audit: N) -> AccountService<P, S, U, K, R, N> {
         AccountService {
-            providers: self.providers,
-            catalog: self.catalog,
-            secrets: self.secrets,
-            sheets: self.sheets,
-            clock: self.clock,
-            store: self.store,
-            audit,
-            registry: self.registry,
-            persist_gate: self.persist_gate,
-            flights: self.flights,
-            reserved: self.reserved,
-            roster: self.roster,
-            own_machines: self.own_machines,
+            ctx: self.ctx.with_audit(audit),
+            accounts: self.accounts,
         }
     }
 
@@ -116,7 +94,7 @@ impl<P, S, U, K, R, A> AccountService<P, S, U, K, R, A> {
     /// AI server's address in an add sheet may be plain `http` to one of them. Set once; a
     /// service that is never told accepts plain `http` for this computer only.
     pub fn set_own_machines(&self, machines: OwnMachines) {
-        let _ = self.own_machines.set(machines);
+        self.accounts.set_own_machines(machines);
     }
 
     /// Tells the service which agent programs have a launcher, so that adding an agent account
@@ -124,7 +102,7 @@ impl<P, S, U, K, R, A> AccountService<P, S, U, K, R, A> {
     /// service that is never told (no launcher bus: an app hosting porter in process) adds
     /// agent accounts as it always did.
     pub fn set_launcher_roster(&self, roster: Roster) {
-        let _ = self.roster.set(roster);
+        self.accounts.set_launcher_roster(roster);
     }
 
     /// The same service knowing the local runtimes (`AuthKind::LocalRuntime`) among `specs`:
@@ -132,55 +110,30 @@ impl<P, S, U, K, R, A> AccountService<P, S, U, K, R, A> {
     /// the catalogue lists them. Any other spec is ignored (a provider needs its family).
     #[must_use]
     pub fn with_local_runtimes(mut self, specs: Vec<ProviderSpec>) -> Self {
-        let mut all = self.catalog.specs().to_vec();
-        let known = |all: &[ProviderSpec], id: &ProviderId| all.iter().any(|s| s.id == *id);
-        for spec in specs {
-            if spec.auth.kind == AuthKind::LocalRuntime && !known(&all, &spec.id) {
-                all.push(spec);
-            }
-        }
-        self.catalog = ProviderSet::layered(all, Vec::new());
+        self.ctx.add_local_runtimes(specs);
         self
     }
 
-    pub(crate) fn lock(&self) -> MutexGuard<'_, Registry> {
-        // Every critical section is a plain data update that cannot panic midway.
-        self.registry
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    fn accounts(&self) -> Accounts<'_, Parts<P, S, U, K, R, A>> {
+        Accounts::over(&self.ctx, &self.accounts)
     }
-}
 
-impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSink>
-    AccountService<P, S, U, K, R, A>
-{
+    fn grants_domain(&self) -> Grants<'_, Parts<P, S, U, K, R, A>> {
+        Grants::over(&self.ctx, self.accounts())
+    }
+
     /// A copy of the registry, for the host to persist and for the Settings module.
     pub fn registry(&self) -> Registry {
-        self.lock().clone()
+        self.ctx.lock().clone()
     }
 
-    /// Answers `request` from `caller`. `OpenAuthenticated` carries a descriptor the transport
-    /// makes, so it is answered by [`AccountService::open_authenticated`] and is `Unavailable`
-    /// here.
+    /// Answers `request` from `caller`: a sheet (a chooser, the add-account sheet, a sign-in
+    /// again). What an app reads of its grants is [`AccountService::candidates`],
+    /// [`AccountService::availability`] and [`AccountService::grants`]; a relay carries a
+    /// descriptor the transport makes, so it is [`AccountService::open_authenticated`] and
+    /// [`AccountService::open_linked`].
     pub async fn handle(&self, caller: &AppId, request: AccountsRequest) -> AccountsReply {
         match request {
-            AccountsRequest::Query { need, class, usage } => {
-                let asker = Asker {
-                    app: caller,
-                    class,
-                    usage,
-                };
-                AccountsReply::Candidates(self.lock().candidates(&need, asker))
-            }
-            AccountsRequest::Availability { need, class, usage } => {
-                let asker = Asker {
-                    app: caller,
-                    class,
-                    usage,
-                };
-                let verdicts = self.lock().verdicts(&need, asker);
-                AccountsReply::Availability(availability(&verdicts, self.catalog.catalog(&need)))
-            }
             AccountsRequest::Choose {
                 need,
                 class,
@@ -191,31 +144,319 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                     .await
             }
             AccountsRequest::AddAccount { hint, window } => {
-                self.add_account(caller, hint, window).await
+                self.accounts().add_account(caller, hint, window).await
             }
             AccountsRequest::Reauthenticate { account, window } => {
-                self.reauthenticate(caller, &account, window).await
-            }
-            AccountsRequest::ListGrants => {
-                let grants = self
-                    .lock()
-                    .grants
-                    .iter()
-                    .filter(|g| g.key.app == *caller)
-                    .cloned()
-                    .collect();
-                AccountsReply::Grants(grants)
-            }
-            AccountsRequest::Revoke { grant } => self.revoke(caller, &grant).await,
-            AccountsRequest::IssueToken { grant, audience } => {
-                self.issue_token(caller, &grant, &audience).await
-            }
-            AccountsRequest::OpenAuthenticated { .. } | AccountsRequest::OpenLinked { .. } => {
-                AccountsReply::Refused(Refusal::Unavailable)
+                self.accounts()
+                    .reauthenticate(caller, &account, window)
+                    .await
             }
             // a variant a newer porter adds: refused as unavailable
             _ => AccountsReply::Refused(Refusal::Unavailable),
         }
+    }
+
+    /// The accounts that fit `need` for `caller` and that `caller` holds a grant for, best first.
+    pub fn candidates(
+        &self,
+        caller: &AppId,
+        need: &Need,
+        class: DataClass,
+        usage: Usage,
+    ) -> Vec<Candidate> {
+        self.grants_domain().candidates(caller, need, class, usage)
+    }
+
+    /// Whether `need` can be met for `caller`, revealing no identity: an account fits and
+    /// `caller` holds a grant, an account fits and the person is yet to be asked, or none fits.
+    pub fn availability(
+        &self,
+        caller: &AppId,
+        need: &Need,
+        class: DataClass,
+        usage: Usage,
+    ) -> Availability {
+        self.grants_domain()
+            .availability(caller, need, class, usage)
+    }
+
+    /// The grants `caller` holds.
+    pub fn grants(&self, caller: &AppId) -> Vec<Grant> {
+        self.grants_domain().grants(caller)
+    }
+
+    /// Withdraws one of `caller`'s own grants; `UnknownGrant` when `caller` holds none of that
+    /// id.
+    pub async fn revoke(&self, caller: &AppId, grant: &GrantId) -> Result<(), Refusal> {
+        self.grants_domain().revoke(caller, grant).await
+    }
+
+    /// Shows the chooser and consent sheet for `need` and records the grant the person gives.
+    /// `session` is the open session the request was made in (the agent launcher's, for an agent
+    /// program's key: `caller` is then the app `org.quire.Agent.<program>`), which lets the
+    /// sheet offer "This session only". With a session "Add Account…" is not offered a second
+    /// route: it ends the request dismissed, since the account it would add and allow gets an
+    /// `Always` grant, not the session one.
+    pub async fn choose(
+        &self,
+        caller: &AppId,
+        need: Need,
+        class_usage: (DataClass, Usage),
+        window: &ParentWindow,
+        session: Option<&SessionToken>,
+    ) -> AccountsReply {
+        self.grants_domain()
+            .choose(caller, need, class_usage, window, session)
+            .await
+    }
+
+    /// The API key filed for `account`: the in-process read for a host that runs the agent
+    /// launcher (inferd). It never crosses a process. A key that is missing or unreadable (or
+    /// filed as another kind of credential) means signing in again (`NeedsReauth`); a store that
+    /// is locked or unreachable is `Unavailable`.
+    pub async fn api_key(&self, account: &AccountId) -> Result<SecretText, Refusal> {
+        self.accounts().api_key(account).await
+    }
+
+    /// The accounts that are servers of the person's own, with their chat addresses.
+    pub fn own_servers(&self) -> Vec<OwnServerRow> {
+        self.accounts().own_servers()
+    }
+
+    /// The key of the own server `account`, which needs no permit.
+    pub async fn own_server_key(&self, account: &AccountId) -> Result<SecretText, Refusal> {
+        self.accounts().own_server_key(account).await
+    }
+
+    /// What each account that serves language models says for `app`.
+    pub fn llm_verdicts(
+        &self,
+        app: &AppId,
+        class: DataClass,
+        usage: Usage,
+        provider_label: &dyn Fn(&ProviderId) -> Option<String>,
+    ) -> Vec<LlmVerdict> {
+        self.grants_domain()
+            .llm_verdicts(app, class, usage, provider_label)
+    }
+
+    /// The key behind an allow grant of kind `Llm`, read once; an allow-once grant is spent.
+    pub async fn release_key(&self, grant: &GrantId) -> Result<SecretText, Refusal> {
+        self.grants_domain().release_key(grant).await
+    }
+
+    /// The permit `app` already holds for `need`, the newest.
+    pub fn existing_permit(
+        &self,
+        app: &AppId,
+        need: &Need,
+        class: DataClass,
+        usage: Usage,
+    ) -> Option<Candidate> {
+        self.grants_domain()
+            .existing_permit(app, need, class, usage)
+    }
+
+    /// Opens the add-account sheet for an identity the host already knows ("Continue as"): the
+    /// provider's page opens on `identity.hint`, and a sign-in that skipped the consent screen
+    /// and came back with nothing to keep is started once more as a first sign-in. The sheet
+    /// opens on `identity.provider` with no provider list; no grant is recorded.
+    pub async fn sign_in_as(
+        &self,
+        caller: &AppId,
+        identity: SignInAs,
+        window: ParentWindow,
+    ) -> AccountsReply {
+        self.accounts().sign_in_as(caller, identity, window).await
+    }
+
+    /// Runs the sign-in again for any account, with no grant: for the sheet host and Settings.
+    pub async fn reauthenticate_any(
+        &self,
+        caller: &AppId,
+        account: &AccountId,
+        window: ParentWindow,
+    ) -> AccountsReply {
+        self.accounts()
+            .reauthenticate_any(caller, account, window)
+            .await
+    }
+
+    /// Asks the person, in a sign-in of its own, for the access `account`'s provider asks only
+    /// when it is first used (`ask = "on_use"`) for `kinds`: the whole of a drive, when the
+    /// person turns on "Show in Files". The sheet opens on the account, the provider's page asks
+    /// for that access alone, and the review names it in plain words; on Allow the new
+    /// credential replaces the old under the same id, and the account claims the access given
+    /// (the provider's on-use rows of `kinds`), so a need of it fits the account from then on:
+    /// an account fits such a need only once the person agreed. An answer from anyone but the account's
+    /// own login stores nothing. For the host itself (syncd, for its own accounts): no grant is
+    /// asked of `caller`, who is named in the audit.
+    ///
+    /// # Errors
+    /// `UnknownGrant` for an account the registry does not hold; `Unavailable` when its provider
+    /// asks none of `kinds` on use, or when what came back could not be kept (another person
+    /// included); otherwise the sheet's own ending (`Dismissed`, `Denied` when the person
+    /// refused the access).
+    pub async fn extend_access(
+        &self,
+        caller: &AppId,
+        account: &AccountId,
+        kinds: Vec<CapabilityKind>,
+        window: ParentWindow,
+    ) -> Result<(), Refusal> {
+        self.accounts()
+            .extend_access(caller, account, kinds, window)
+            .await
+    }
+
+    /// Whether `provider` asks some access of `kind` only when it is first used (`ask =
+    /// "on_use"`): what [`AccountService::extend_access`] can ask an account of it for, and so
+    /// whether a host offers the switch that asks it ("Show in Files").
+    pub fn asks_on_use(&self, provider: &ProviderId, kind: CapabilityKind) -> bool {
+        self.accounts().asks_on_use(provider, kind)
+    }
+
+    /// Opens the add-account sheet as `AddAccount` does and, when it ends in an account that
+    /// meets `ask`, records one grant of it for `caller` in the same step: the sheet's last
+    /// button reads "Add, and allow". This is what a `Choose` that found no account opens.
+    pub async fn add_and_allow(
+        &self,
+        caller: &AppId,
+        hint: ProviderHint,
+        window: ParentWindow,
+        ask: AllowFor,
+    ) -> AccountsReply {
+        self.accounts()
+            .add_and_allow(caller, hint, window, ask)
+            .await
+    }
+
+    /// Records what the agent says of its own sign-in. Returns whether the account's state
+    /// changed (a repeat of the same word changes nothing and writes nothing).
+    pub async fn set_agent_state(
+        &self,
+        account: &AccountId,
+        state: AgentState,
+    ) -> Result<bool, AgentFault> {
+        self.accounts().set_agent_state(account, state).await
+    }
+
+    /// Asks for an agent account's login for an app that holds a grant for it.
+    pub async fn login_agent(
+        &self,
+        caller: &AppId,
+        account: &AccountId,
+        window: ParentWindow,
+        launchers: &impl Launchers,
+    ) -> AccountsReply {
+        self.accounts()
+            .login_agent(caller, account, window, launchers)
+            .await
+    }
+
+    /// Asks for any agent account's login, with no grant: for the sheet host and Settings.
+    pub async fn login_agent_any(
+        &self,
+        caller: &AppId,
+        account: &AccountId,
+        window: ParentWindow,
+        launchers: &impl Launchers,
+    ) -> AccountsReply {
+        self.accounts()
+            .login_agent_any(caller, account, window, launchers)
+            .await
+    }
+
+    /// Takes what a probe found: the account of `provider` (its id is the provider's, one per
+    /// runtime) is made if it is not there, holds `models` as its claims, and is in `state`.
+    ///
+    /// An `offline` report with no models keeps the models the account had, so a stopped runtime
+    /// still lists what it ran and comes back as it was. An `ok` report replaces them.
+    pub async fn report_local(
+        &self,
+        provider: &ProviderId,
+        models: Vec<Claim>,
+        state: AccountState,
+    ) -> Result<AccountId, LocalFault> {
+        self.accounts().report_local(provider, models, state).await
+    }
+
+    /// Removes an account (PLAN §2.9): asks its provider to stop honouring the credential, best
+    /// effort, then wipes its secrets, grants, toggles and row, and audits `Removed`. The
+    /// provider's answer never stops the wipe. It answers what the provider said, or `None` when
+    /// the provider could not be asked (no credential, unreachable, refused).
+    pub async fn remove_with_revoke(
+        &self,
+        id: &AccountId,
+    ) -> Result<Option<RevokeOutcome>, SecretsError> {
+        self.accounts().remove_with_revoke(id).await
+    }
+
+    /// Asks the provider what the account can do now and records it (the claims, with the
+    /// account's toggles applied). A refresh token the provider rotated while it looked is read
+    /// back from a session opened afterwards (`renewed`) and stored, so the next sign-in
+    /// check does not present a token the issuer has since replaced.
+    pub async fn rediscover(&self, id: &AccountId) -> Result<Vec<Claim>, Refusal> {
+        self.accounts().rediscover(id).await
+    }
+
+    /// Switches one kind of one account on or off: the toggle row is kept, and the account's
+    /// effective capabilities follow (a kind turned off reads `Absent { TurnedOff }`; turned on
+    /// again it reads as its provider file declares it until the next discovery refreshes it).
+    /// A switch that changes the kind is audited (`ServiceToggled`).
+    pub async fn set_toggle(
+        &self,
+        id: &AccountId,
+        kind: CapabilityKind,
+        toggle: Toggle,
+    ) -> Result<(), Refusal> {
+        self.accounts().set_toggle(id, kind, toggle).await
+    }
+
+    /// Records `event`, which the host did on the person's behalf (Settings' client id row),
+    /// in the service's audit sink.
+    pub fn audit_settings(&self, event: AuditEvent) {
+        self.ctx.note(None, None, event);
+    }
+
+    /// Records `event`, which `app` caused and which concerns no account (a desktop-wide Space
+    /// made, renamed or removed), in the service's audit sink.
+    pub fn audit_app(&self, app: AppId, event: AuditEvent) {
+        self.ctx.note(Some(app), None, event);
+    }
+
+    /// Withdraws any grant, whoever holds it (Settings' "Revoke"). `UnknownGrant` when none has
+    /// that id.
+    pub async fn revoke_grant(&self, grant: &GrantId) -> Result<(), Refusal> {
+        self.grants_domain().revoke_grant(grant).await
+    }
+
+    /// Sets an account's state (`NeedsReauth` when its credential was refused, `Ok` again once
+    /// it is signed in). Whether it changed.
+    pub async fn set_state(&self, id: &AccountId, state: AccountState) -> bool {
+        self.ctx.set_state(id, state).await
+    }
+
+    /// Spends `caller`'s grant when it is a `Once` one: the first use of any kind (a relay
+    /// opened, a key read by the host that holds the secret) drops it, so a second use asks
+    /// again. A host that reads a key itself, as inferd does, calls this once the read has
+    /// succeeded.
+    pub async fn spend_once(&self, caller: &AppId, grant: &GrantId) -> Result<(), Refusal> {
+        self.grants_domain().spend_once(caller, grant).await
+    }
+
+    /// Removes the grants scoped to `session`, or every session grant when none is named (a
+    /// starting accountd has no open session, so a session grant a file holds is one nobody can
+    /// end). Audits each as `SessionGrantEnded`, saves, and returns the grants removed.
+    pub async fn end_session_grants(&self, session: Option<&SessionToken>) -> Vec<GrantId> {
+        self.grants_domain().end_session_grants(session).await
+    }
+
+    /// Removes an account and everything filed for it: its provider is asked to stop honouring
+    /// the credential first (best effort, `remove_with_revoke` says what it answered), then the
+    /// secrets, grants, toggles and the registry row go.
+    pub async fn remove_account(&self, id: &AccountId) -> Result<(), SecretsError> {
+        self.accounts().remove_with_revoke(id).await.map(|_| ())
     }
 
     /// What the relay for `OpenAuthenticated` is told: checks that `caller` holds the grant and
@@ -227,36 +468,9 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         grant: &GrantId,
         endpoint: &EndpointUrl,
     ) -> Result<RelayPlan, Refusal> {
-        let (account, endpoint, kind) = {
-            let registry = self.lock();
-            match registry.relay_target(caller, grant, endpoint) {
-                Ok(target) => (
-                    target.account.clone(),
-                    target.endpoint.clone(),
-                    (target.kind, target.reach),
-                ),
-                // Not one of the account's endpoints: perhaps an origin its provider file names
-                // as one that wants the bearer (picked photos' bytes).
-                Err(Refusal::EndpointNotGranted) => {
-                    self.auth_origin_target(&registry, caller, grant, endpoint)?
-                }
-                Err(other) => return Err(other),
-            }
-        };
-        if account.state == AccountState::NeedsReauth {
-            return Err(Refusal::NeedsReauth);
-        }
-        let plan = self.relay_plan(&account, &endpoint, kind).await?;
-        self.spend_once(caller, grant).await?;
-        self.note(
-            Some(caller.clone()),
-            Some(account.id.clone()),
-            AuditEvent::ProxyOpened {
-                grant: grant.clone(),
-                endpoint: endpoint.url.clone(),
-            },
-        );
-        Ok(plan)
+        self.grants_domain()
+            .open_authenticated(caller, grant, endpoint)
+            .await
     }
 
     /// What the relay for `OpenLinked` is told: checks that `caller` holds the grant and that
@@ -269,338 +483,8 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         grant: &GrantId,
         origin: &EndpointUrl,
     ) -> Result<RelayPlan, Refusal> {
-        let (plan, account) = self.plan_linked(caller, grant, origin)?;
-        self.spend_once(caller, grant).await?;
-        self.note(
-            Some(caller.clone()),
-            Some(account.id.clone()),
-            AuditEvent::ProxyOpened {
-                grant: grant.clone(),
-                endpoint: plan.endpoint.url.clone(),
-            },
-        );
-        Ok(plan)
-    }
-
-    /// Removes an account and everything filed for it: its provider is asked to stop honouring
-    /// the credential first (best effort, `remove_with_revoke` says what it answered), then the
-    /// secrets, grants, toggles and the registry row go.
-    pub async fn remove_account(&self, id: &AccountId) -> Result<(), SecretsError> {
-        self.remove_with_revoke(id).await.map(|_| ())
-    }
-
-    /// The wipe of `remove_account`: secrets, grants, toggles, the registry row, one audit line.
-    pub(crate) async fn wipe_account(&self, id: &AccountId) -> Result<(), SecretsError> {
-        // The rows go first, in one step with no await, and come back if the secrets cannot be
-        // deleted. A wipe dropped while it awaits the secrets therefore leaves no account
-        // without its credentials; at worst credentials with no account, which nothing reads.
-        let (accounts, grants, toggles) = {
-            let mut registry = self.lock();
-            let (gone, kept) = std::mem::take(&mut registry.accounts)
-                .into_iter()
-                .partition(|a| a.id == *id);
-            registry.accounts = kept;
-            let (dropped, kept) = std::mem::take(&mut registry.grants)
-                .into_iter()
-                .partition(|g| g.key.account == *id);
-            registry.grants = kept;
-            let (off, kept) = std::mem::take(&mut registry.toggles)
-                .into_iter()
-                .partition(|t| t.account == *id);
-            registry.toggles = kept;
-            (gone, dropped, off)
-        };
-        if let Err(why) = self.secrets.delete_account(id).await {
-            let mut registry = self.lock();
-            registry.accounts.extend(accounts);
-            registry.grants.extend(grants);
-            registry.toggles.extend(toggles);
-            return Err(why);
-        }
-        self.note(None, Some(id.clone()), AuditEvent::Removed);
-        // The in-memory registry is already without the account; a store that cannot be
-        // written keeps the old row until the next save, and the host sees it on its own save.
-        let _ = self.persist().await;
-        Ok(())
-    }
-
-    /// Saves the registry; `Unavailable` when the store cannot be written. The change stays in
-    /// memory, and the next save writes it.
-    ///
-    /// One save runs at a time, and its snapshot is taken only once it holds the gate: a save
-    /// that waited writes the registry as it is then, so the last save to finish always carries
-    /// the last state (a snapshot taken before the wait could land after a newer one).
-    pub(crate) async fn persist(&self) -> Result<(), Refusal> {
-        let _one_at_a_time = self.persist_gate.lock().await;
-        let snapshot = self.lock().persisted();
-        self.store
-            .save(&snapshot)
+        self.grants_domain()
+            .open_linked(caller, grant, origin)
             .await
-            .map_err(|_| Refusal::Unavailable)
-    }
-
-    /// Records one audited event, dated now.
-    pub(crate) fn note(&self, app: Option<AppId>, account: Option<AccountId>, event: AuditEvent) {
-        self.audit
-            .record(AuditEntry::new(self.clock.now(), app, account, event));
-    }
-
-    /// The consent sheet for an agent program's key (`Peer.RequestAgentGrant`): `agent` is the
-    /// app `org.quire.Agent.<program>`, the grant is recorded under it, and `session`, which the
-    /// caller has checked is open and the launcher's, lets the sheet offer "This session only".
-    /// With a session "Add Account…" is not offered a second route: it ends the request
-    /// dismissed, since the account it would add and allow gets an `Always` grant, not the
-    /// session one.
-    pub async fn choose_for_agent(
-        &self,
-        agent: &AppId,
-        need: Need,
-        (class, usage): (DataClass, Usage),
-        window: &ParentWindow,
-        session: Option<&LauncherSession>,
-    ) -> AccountsReply {
-        self.choose(agent, need, (class, usage), window, session)
-            .await
-    }
-
-    /// Removes the grants scoped to `session`, or every session grant when none is named (a
-    /// starting accountd has no open session, so a session grant a file holds is one nobody can
-    /// end). Audits each as `SessionGrantEnded`, saves, and returns the grants removed.
-    pub async fn end_session_grants(&self, session: Option<&LauncherSession>) -> Vec<GrantId> {
-        let ended: Vec<(GrantId, AppId, AccountId, LauncherSession)> = {
-            let mut registry = self.lock();
-            let ended = registry
-                .grants
-                .iter()
-                .filter_map(|g| match &g.scope {
-                    GrantScope::Session(own) if session.is_none_or(|only| only == own) => Some((
-                        g.id.clone(),
-                        g.key.app.clone(),
-                        g.key.account.clone(),
-                        own.clone(),
-                    )),
-                    _ => None,
-                })
-                .collect::<Vec<_>>();
-            registry
-                .grants
-                .retain(|g| !ended.iter().any(|(id, ..)| *id == g.id));
-            ended
-        };
-        for (grant, app, account, session) in &ended {
-            self.note(
-                Some(app.clone()),
-                Some(account.clone()),
-                AuditEvent::SessionGrantEnded {
-                    grant: grant.clone(),
-                    session: session.clone(),
-                },
-            );
-        }
-        if !ended.is_empty() {
-            // The grants are gone from memory whether or not the file could be written; the
-            // next save writes them out.
-            let _ = self.persist().await;
-        }
-        ended.into_iter().map(|(grant, ..)| grant).collect()
-    }
-
-    async fn choose(
-        &self,
-        caller: &AppId,
-        need: Need,
-        (class, usage): (DataClass, Usage),
-        window: &ParentWindow,
-        session: Option<&LauncherSession>,
-    ) -> AccountsReply {
-        let asker = Asker {
-            app: caller,
-            class,
-            usage,
-        };
-        let ask = {
-            let registry = self.lock();
-            // Choose draws the sheet each time, except when the person has already said Don't
-            // Allow for every account that fits: asking again would badger them, and undoing a
-            // Don't Allow is theirs to do, in Settings. This holds for a launcher's session ask
-            // too, which is held under the agent's app.
-            let verdicts = registry.verdicts(&need, asker);
-            if !verdicts.is_empty() && verdicts.iter().all(|v| *v == Verdict::Denied) {
-                return AccountsReply::Refused(Refusal::Denied);
-            }
-            ask_for(&registry, &need, asker, session)
-        };
-        let Some(ask) = ask else {
-            return AccountsReply::Refused(Refusal::NoFittingAccount);
-        };
-        let answer = self.sheets.consent(ask, window).await;
-        if answer == ConsentAnswer::AddAccount {
-            return match session {
-                None => self.add_and_allow_for(caller, need, asker, window).await,
-                Some(_) => AccountsReply::Refused(Refusal::Dismissed),
-            };
-        }
-        let reply = settle(
-            &mut self.lock(),
-            &need,
-            asker,
-            session,
-            answer,
-            self.clock.now(),
-        );
-        match &reply {
-            AccountsReply::Chosen(candidate) => self.note(
-                Some(caller.clone()),
-                Some(candidate.account.clone()),
-                AuditEvent::Granted {
-                    grant: candidate.grant.clone(),
-                    kind: need.kind(),
-                },
-            ),
-            AccountsReply::Refused(Refusal::Denied) => self.note(
-                Some(caller.clone()),
-                None,
-                AuditEvent::Denied { kind: need.kind() },
-            ),
-            _ => return reply,
-        }
-        match self.persist().await {
-            Ok(()) => reply,
-            Err(refusal) => AccountsReply::Refused(refusal),
-        }
-    }
-
-    async fn revoke(&self, caller: &AppId, grant: &GrantId) -> AccountsReply {
-        let account = {
-            let mut registry = self.lock();
-            let Some(held) = registry.grant_of(caller, grant) else {
-                return AccountsReply::Refused(Refusal::UnknownGrant);
-            };
-            let account = held.key.account.clone();
-            registry.grants.retain(|g| g.id != *grant);
-            account
-        };
-        self.note(
-            Some(caller.clone()),
-            Some(account),
-            AuditEvent::Revoked {
-                grant: grant.clone(),
-            },
-        );
-        match self.persist().await {
-            Ok(()) => AccountsReply::Revoked,
-            Err(refusal) => AccountsReply::Refused(refusal),
-        }
-    }
-
-    /// Spends `caller`'s grant when it is a `Once` one: the first use of any kind (a token
-    /// issued, a relay opened, a key read by the host that holds the secret) drops it, so a
-    /// second use asks again. A host that reads a key itself, as inferd does, calls this once
-    /// the read has succeeded.
-    pub async fn spend_once(&self, caller: &AppId, grant: &GrantId) -> Result<(), Refusal> {
-        let spent = {
-            let mut registry = self.lock();
-            let once = registry
-                .grant_of(caller, grant)
-                .is_some_and(|g| g.scope == GrantScope::Once);
-            if once {
-                registry.grants.retain(|g| g.id != *grant);
-            }
-            once
-        };
-        if spent {
-            self.persist().await?;
-        }
-        Ok(())
-    }
-
-    /// A refresh the provider refused (`Unauthorized`) leaves the account `NeedsReauth`, which
-    /// the host announces; every other error is only the app's refusal.
-    pub(crate) async fn refused_refresh(
-        &self,
-        account: &AccountId,
-        error: ProviderError,
-    ) -> Refusal {
-        let refusal = provider_refusal(error);
-        if refusal == Refusal::NeedsReauth {
-            self.set_state(account, AccountState::NeedsReauth).await;
-        }
-        refusal
-    }
-
-    async fn issue_token(
-        &self,
-        caller: &AppId,
-        grant: &GrantId,
-        audience: &Audience,
-    ) -> AccountsReply {
-        let found = {
-            let registry = self.lock();
-            registry.grant_of(caller, grant).and_then(|g| {
-                let account = registry.accounts.iter().find(|a| a.id == g.key.account)?;
-                Some((
-                    account.clone(),
-                    g.scope.clone(),
-                    g.decision,
-                    (g.key.kind, g.key.reach),
-                    g.key.space_is_open(),
-                ))
-            })
-        };
-        let Some((account, scope, porter_core::consent::Decision::Allow, (kind, reach), open)) =
-            found
-        else {
-            return AccountsReply::Refused(Refusal::UnknownGrant);
-        };
-        // A grant over another app's own Space is never used, whatever the store holds.
-        if !open {
-            return AccountsReply::Refused(Refusal::Denied);
-        }
-        if account.state == AccountState::NeedsReauth {
-            return AccountsReply::Refused(Refusal::NeedsReauth);
-        }
-        let Some(spec) = self.catalog.get(&account.provider) else {
-            return AccountsReply::Refused(Refusal::Unavailable);
-        };
-        if !covers(spec, kind, audience) {
-            return AccountsReply::Refused(Refusal::AudienceNotGranted);
-        }
-        let Some(provider) = self
-            .providers
-            .iter()
-            .find(|p| p.spec().id == account.provider)
-        else {
-            return AccountsReply::Refused(Refusal::Unavailable);
-        };
-        // The grant's kind and reach, so the token reaches that kind's service alone, as far as
-        // the grant does. One refresh at a time per account; a rotated credential is stored
-        // before the token is returned.
-        let token = match self
-            .issue_for(
-                &account,
-                provider,
-                secret_purpose(account.auth),
-                audience,
-                (kind, reach),
-            )
-            .await
-        {
-            Ok(token) => token,
-            Err(refusal) => return AccountsReply::Refused(refusal),
-        };
-        if scope == GrantScope::Once
-            && let Err(refusal) = self.spend_once(caller, grant).await
-        {
-            return AccountsReply::Refused(refusal);
-        }
-        self.note(
-            Some(caller.clone()),
-            Some(account.id.clone()),
-            AuditEvent::TokenIssued {
-                grant: grant.clone(),
-                audience: audience.clone(),
-            },
-        );
-        AccountsReply::Token(token)
     }
 }

@@ -14,11 +14,13 @@
 //!   to take it down).
 
 use crate::app_names::AppNames;
+use porter_callers::{CallerRole, Callers};
 use porter_core::consent::{ConsentAnswer, ConsentAsk};
-use porter_core::sheet::{ReviewView, SheetInput, SheetView};
-use porter_core::wire::ParentWindow;
-use porter_dbus::{AccountsSheetProxy, CallerRole, Callers, SHEET_BUS};
-use porter_service::{SheetFault, SheetLink, SheetOpen, Sheets};
+use porter_dbus::accounts::AccountsSheetProxy;
+use porter_dbus::accounts::SHEET_BUS;
+use porter_service_core::sheets::{SheetFault, SheetLink, SheetOpen, Sheets};
+use porter_sheet::{ReviewView, SheetInput, SheetView};
+use porter_wire::ParentWindow;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -102,6 +104,8 @@ impl<C: Callers> BusSheets<C> {
         let window = match &open.window {
             ParentWindow::Unparented => "",
             ParentWindow::Handle(handle) => handle.as_str(),
+            // A parent this build does not know is no parent.
+            _ => "",
         };
         let view = json(&labelled(open.view, &self.names))?;
         // Taken down if this is dropped from here on, `Open`'s answer come or not: the host shows
@@ -252,11 +256,11 @@ impl<C: Callers> Sheets for BusSheets<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use porter_callers::{AppTitle, CallerRow, CallerTable};
+    use porter_capability::CapabilityKind;
+    use porter_core::ProviderId;
     use porter_core::consent::{AccountChoice, Usage};
-    use porter_core::{
-        AccountLabel, AppId, AppLabel, AppName, CapabilityKind, DataClass, Isolation, ProviderId,
-    };
-    use porter_dbus::{AppTitle, CallerRow, CallerTable};
+    use porter_core::{AccountLabel, AppId, AppLabel, AppName, DataClass, Isolation};
 
     fn app(name: &str) -> AppId {
         AppId {
@@ -327,7 +331,7 @@ mod tests {
         let review = |allow: Option<AppId>| ReviewView {
             provider: ProviderId::parse("anthropic").expect("id"),
             row: None,
-            review: porter_core::sheet::Review {
+            review: porter_sheet::Review {
                 label: AccountLabel("x".into()),
                 services: Vec::new(),
                 endpoints: Vec::new(),

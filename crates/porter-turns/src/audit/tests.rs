@@ -1,8 +1,12 @@
 use super::*;
-use porter_core::clock::FixedClock;
-use porter_core::{AccountId, AppName, Count, Isolation, Locality, ModelId, UnixSeconds};
+use porter_capability::Locality;
+use porter_capability::ModelId;
+use porter_core::AccountId;
+use porter_core::{AppName, Isolation};
+use porter_ids::clock::FixedClock;
+use porter_ids::{Count, UnixSeconds};
 use porter_infer::{ChatReply, EmbedReply, InferRefusal, ModelError, StopReason, Why};
-use porter_router::testkit::Scratch;
+use test_kit::Scratch;
 
 fn app() -> AppId {
     AppId {
@@ -24,6 +28,7 @@ fn usage(input: u32, output: u32) -> TokenUsage {
         input: Tokens(input),
         output: Tokens(output),
         cached: Tokens(1),
+        charge: None,
     }
 }
 
@@ -45,12 +50,9 @@ fn nothing() -> Carried {
 
 fn spec() -> SessionSpec {
     SessionSpec {
-        need: porter_core::Need::Llm(porter_core::need::LlmNeed::new(
-            Default::default(),
-            Tokens(1),
-        )),
+        need: porter_match::Need::Llm(porter_match::LlmNeed::new(Default::default(), Tokens(1))),
         class: porter_core::DataClass::Notes,
-        tier: porter_core::Tier::Fast,
+        tier: porter_capability::Tier::Fast,
         usage: porter_core::consent::Usage::Interactive,
     }
 }

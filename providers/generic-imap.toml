@@ -15,4 +15,8 @@ kind = "autoconfig"
 [[capability]]
 family = "imap"
 kind = "mail"
-v = { access = "read_write", send = "present", delta = "poll", transport = "imap", labels = "folders" }
+access = "read_write"
+send = "present"
+delta = "poll"
+transport = "imap"
+labels = "folders"

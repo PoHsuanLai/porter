@@ -1,50 +1,31 @@
-//! A request and its response as values.
+//! Building a request from porter's URLs, and reading headers. The request and response are the
+//! `http` crate's (`Request<Vec<u8>>`, `Response<Vec<u8>>`); the URL a request goes to is a porter
+//! `WebUrl`, and [`request`] is the one place it becomes the request's `Uri`.
 
 use crate::error::HttpError;
-use crate::headers::{Header, HeaderName};
-use porter_core::{EndpointUrl, UrlScheme, WebUrl};
+use http::header::{HeaderMap, HeaderName, HeaderValue};
+use http::request::Builder;
+use http::{Method, Request, Response, Uri};
+use porter_core::EndpointUrl;
+use porter_ids::{UnixSeconds, UrlScheme, WebUrl};
 
-/// The methods porter sends: HTTP's, and WebDAV's.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Method {
-    /// `GET`.
-    Get,
-    /// `HEAD`.
-    Head,
-    /// `POST`.
-    Post,
-    /// `PUT`.
-    Put,
-    /// `DELETE`.
-    Delete,
-    /// `PATCH`.
-    Patch,
-    /// `OPTIONS`.
-    Options,
-    /// WebDAV `PROPFIND`.
-    Propfind,
-    /// WebDAV `REPORT` (CalDAV, CardDAV, sync-collection).
-    Report,
-    /// WebDAV `MKCOL`.
-    Mkcol,
+/// A request to `url`: the builder with its method and URI set, to which the caller adds headers
+/// and a body. The URI is the URL's text; a URL the `http` crate does not take as a URI fails
+/// when the body is set.
+pub fn request(method: Method, url: &WebUrl) -> Builder {
+    Request::builder().method(method).uri(url.as_str())
 }
 
-impl Method {
-    /// The method's token on the wire.
-    pub fn token(self) -> &'static str {
-        match self {
-            Method::Get => "GET",
-            Method::Head => "HEAD",
-            Method::Post => "POST",
-            Method::Put => "PUT",
-            Method::Delete => "DELETE",
-            Method::Patch => "PATCH",
-            Method::Options => "OPTIONS",
-            Method::Propfind => "PROPFIND",
-            Method::Report => "REPORT",
-            Method::Mkcol => "MKCOL",
-        }
-    }
+/// A web URL as the `http` crate's URI, for a builder that takes one. `Malformed` when the URL
+/// is not one the `http` crate takes as a URI.
+pub fn uri(url: &WebUrl) -> Result<Uri, HttpError> {
+    url.as_str().parse().map_err(|_| HttpError::Malformed)
+}
+
+/// A request to an endpoint's URL. A scheme that is not HTTP is `Malformed`, and plain `http`
+/// to another computer is `Tls`: no credential is sent in the clear.
+pub fn request_to(method: Method, url: &EndpointUrl) -> Result<Builder, HttpError> {
+    web_url(url).map(|web| request(method, &web))
 }
 
 /// An endpoint's URL as a web URL. A scheme that is not HTTP is `Malformed`, and plain `http`
@@ -56,149 +37,135 @@ pub fn web_url(url: &EndpointUrl) -> Result<WebUrl, HttpError> {
     })
 }
 
-/// One request. Its `Debug` shows the URL's origin only: a path or query can be a credential
-/// of its own (an upload session's address takes bytes with no sign-in).
-#[derive(Clone, PartialEq, Eq)]
-pub struct HttpRequest {
-    /// The method.
-    pub method: Method,
-    /// Where to: `https`, or `http` to this computer, with a path and a query.
-    pub url: WebUrl,
-    /// The headers, in order.
-    pub headers: Vec<Header>,
-    /// The body.
-    pub body: Vec<u8>,
+/// A header whose value is a credential: marked sensitive, so the request's `Debug` shows
+/// `Sensitive` in its place.
+pub trait SensitiveHeader {
+    /// The same builder with the header `name: value`, its value marked sensitive. A value that
+    /// cannot be a header's fails when the body is set, as any other header does.
+    #[must_use]
+    fn sensitive_header(self, name: HeaderName, value: &str) -> Self;
 }
 
-impl std::fmt::Debug for HttpRequest {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("HttpRequest")
-            .field("method", &self.method)
-            .field("origin", &self.url.origin())
-            .field("headers", &self.headers)
-            .field("body", &self.body.len())
-            .finish()
-    }
-}
-
-impl HttpRequest {
-    /// A request with no headers and no body.
-    pub fn new(method: Method, url: WebUrl) -> Self {
-        Self {
-            method,
-            url,
-            headers: Vec::new(),
-            body: Vec::new(),
-        }
-    }
-
-    /// A request to an endpoint's URL. A scheme that is not HTTP is `Malformed`, and plain
-    /// `http` to another computer is `Tls`: no credential is sent in the clear.
-    pub fn to(method: Method, url: &EndpointUrl) -> Result<Self, HttpError> {
-        web_url(url).map(|web| Self::new(method, web))
-    }
-
-    /// The same request with one more header.
-    pub fn with_header(mut self, name: &str, value: impl Into<String>) -> Self {
-        self.headers.push(Header::new(name, value));
-        self
-    }
-
-    /// The same request with this body.
-    pub fn with_body(self, body: impl Into<Vec<u8>>) -> Self {
-        Self {
-            body: body.into(),
-            ..self
+impl SensitiveHeader for Builder {
+    fn sensitive_header(self, name: HeaderName, value: &str) -> Self {
+        match HeaderValue::from_str(value) {
+            Ok(mut value) => {
+                value.set_sensitive(true);
+                self.header(name, value)
+            }
+            Err(_) => self.header(name, value),
         }
     }
 }
 
-/// An HTTP status code.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct Status(pub u16);
+/// A header read as text, on a request, a response or a header map.
+pub trait HeaderText {
+    /// The first header named `name` (compared without case), when its value is visible ASCII.
+    fn header(&self, name: &str) -> Option<&str>;
 
-impl Status {
-    /// Whether the status is 2xx.
-    pub fn is_success(self) -> bool {
-        (200..300).contains(&self.0)
+    /// The wait a `Retry-After` header asks for, in seconds: its whole seconds, or the time from
+    /// the message's own `Date` header (else from `now`, the caller's clock) to its HTTP date
+    /// (none past: `0`). `None` when there is no such header or it is neither. The one parser
+    /// the storage replicas and syncd's sources share; it reads no clock itself.
+    fn retry_after_seconds(&self, now: UnixSeconds) -> Option<u32> {
+        retry_wait(self.header("retry-after")?, self.header("date"), now)
     }
 }
 
-/// One response.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HttpResponse {
-    /// The status.
-    pub status: Status,
-    /// The headers, in order.
-    pub headers: Vec<Header>,
-    /// The body.
-    pub body: Vec<u8>,
+/// The wait a `Retry-After` value asks for: whole seconds, or an HTTP date (RFC 9110 section
+/// 5.6.7, read by `httpdate`) less `date`, the sender's own `Date`, or less `now` where there is
+/// none or it is not a date; `0` when the date has passed.
+fn retry_wait(value: &str, date: Option<&str>, now: UnixSeconds) -> Option<u32> {
+    let value = value.trim();
+    if let Ok(seconds) = value.parse() {
+        return Some(seconds);
+    }
+    let at = httpdate::parse_http_date(value).ok()?;
+    let from = date
+        .and_then(|date| httpdate::parse_http_date(date.trim()).ok())
+        .unwrap_or_else(|| {
+            std::time::UNIX_EPOCH
+                + std::time::Duration::from_secs(u64::try_from(now.0).unwrap_or(0))
+        });
+    let wait = at.duration_since(from).map_or(0, |wait| wait.as_secs());
+    u32::try_from(wait).ok()
 }
 
-impl HttpResponse {
-    /// The first header named `name` (compared without case).
-    pub fn header(&self, name: &str) -> Option<&str> {
-        let wanted = HeaderName::new(name);
-        self.headers
-            .iter()
-            .find(|h| h.name == wanted)
-            .map(|h| h.value.0.as_str())
+impl HeaderText for HeaderMap {
+    fn header(&self, name: &str) -> Option<&str> {
+        self.get(name)?.to_str().ok()
     }
+}
 
-    /// The wait a `Retry-After` header of whole seconds asks for; `None` when there is no such
-    /// header or it is not a number of seconds (an HTTP date is not read). The one parser the
-    /// storage replicas and syncd's Graph source share.
-    pub fn retry_after_seconds(&self) -> Option<u32> {
-        self.header("retry-after")?.trim().parse().ok()
+impl<B> HeaderText for Request<B> {
+    fn header(&self, name: &str) -> Option<&str> {
+        self.headers().header(name)
+    }
+}
+
+impl<B> HeaderText for Response<B> {
+    fn header(&self, name: &str) -> Option<&str> {
+        self.headers().header(name)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use http::StatusCode;
+    use http::header::AUTHORIZATION;
+
+    fn answer(status: u16, headers: &[(&str, &str)]) -> Response<Vec<u8>> {
+        headers
+            .iter()
+            .fold(Response::builder().status(status), |b, (name, value)| {
+                b.header(*name, *value)
+            })
+            .body(Vec::new())
+            .expect("response")
+    }
 
     #[test]
-    fn retry_after_is_whole_seconds_or_nothing() {
-        let with = |value: Option<&str>| HttpResponse {
-            status: Status(429),
-            headers: value
-                .map(|v| Header::new("Retry-After", v))
-                .into_iter()
-                .collect(),
-            body: Vec::new(),
-        };
+    fn retry_after_is_whole_seconds_a_date_or_nothing() {
         let cases = [
             (Some("120"), Some(120)),
             (Some(" 7 "), Some(7)),
             (Some("0"), Some(0)),
-            (Some("Wed, 21 Oct 2026 07:28:00 GMT"), None),
+            (Some("Wed, 21 Oct 2026 07:28:00 GMT"), Some(0)),
+            (Some("not a date"), None),
             (Some("-3"), None),
             (Some("4294967296"), None),
             (Some(""), None),
             (None, None),
         ];
         for (header, want) in cases {
-            assert_eq!(with(header).retry_after_seconds(), want, "{header:?}");
+            let headers: Vec<(&str, &str)> =
+                header.map(|v| ("Retry-After", v)).into_iter().collect();
+            assert_eq!(
+                answer(429, &headers).retry_after_seconds(UnixSeconds(2_000_000_000)),
+                want,
+                "{header:?}"
+            );
         }
     }
 
     #[test]
     fn a_request_is_built_up_and_a_response_is_read_without_case() {
         let url = WebUrl::parse("https://cloud.example.org/remote.php/dav/?a=b").expect("url");
-        let request = HttpRequest::new(Method::Propfind, url)
-            .with_header("Depth", "1")
-            .with_body("<propfind/>");
-        assert_eq!(request.method.token(), "PROPFIND");
-        assert_eq!(request.body, b"<propfind/>");
-        let response = HttpResponse {
-            status: Status(207),
-            headers: vec![Header::new("Content-Type", "application/xml")],
-            body: vec![],
-        };
-        assert_eq!(response.header("content-type"), Some("application/xml"));
-        assert_eq!(response.header("etag"), None);
-        assert!(response.status.is_success());
-        assert!(!Status(401).is_success());
+        let propfind = Method::from_bytes(b"PROPFIND").expect("method");
+        let sent = request(propfind, &url)
+            .header("Depth", "1")
+            .body(b"<propfind/>".to_vec())
+            .expect("request");
+        assert_eq!(sent.method().as_str(), "PROPFIND");
+        assert_eq!(sent.uri().to_string(), url.as_str());
+        assert_eq!(sent.header("depth"), Some("1"));
+        assert_eq!(sent.body(), b"<propfind/>");
+        let got = answer(207, &[("Content-Type", "application/xml")]);
+        assert_eq!(got.header("content-type"), Some("application/xml"));
+        assert_eq!(got.header("etag"), None);
+        assert!(got.status().is_success());
+        assert!(!StatusCode::UNAUTHORIZED.is_success());
     }
 
     #[test]
@@ -211,11 +178,68 @@ mod tests {
         ];
         for (text, want) in cases {
             let url = EndpointUrl::parse(text).expect(text);
-            let got = HttpRequest::to(Method::Get, &url).map(|r| r.url.to_string());
-            assert_eq!(got.map(|_| ()), want, "{text}");
+            let got = request_to(Method::GET, &url).map(|_| ());
+            assert_eq!(got, want, "{text}");
         }
         let url = EndpointUrl::parse("https://cloud.example.org/dav/").expect("url");
-        let request = HttpRequest::to(Method::Get, &url).expect("request");
-        assert_eq!(request.url.as_str(), url.as_str());
+        let sent = request_to(Method::GET, &url)
+            .expect("builder")
+            .body(Vec::<u8>::new())
+            .expect("request");
+        assert_eq!(sent.uri().to_string(), url.as_str());
+    }
+
+    #[test]
+    fn a_credential_never_shows_in_debug_and_a_bad_one_fails_the_build() {
+        let url = WebUrl::parse("https://cloud.example.org/").expect("url");
+        let sent = request(Method::GET, &url)
+            .sensitive_header(AUTHORIZATION, "Bearer abc123")
+            .header("Content-Type", "text/xml")
+            .body(Vec::<u8>::new())
+            .expect("request");
+        let text = format!("{sent:?}");
+        assert!(!text.contains("abc123"), "{text}");
+        assert!(text.contains("text/xml"), "{text}");
+        assert_eq!(sent.header("authorization"), Some("Bearer abc123"));
+        let bad = request(Method::GET, &url)
+            .sensitive_header(AUTHORIZATION, "Bearer abc\r\nX: y")
+            .body(Vec::<u8>::new());
+        assert!(bad.is_err());
+    }
+
+    #[test]
+    fn a_retry_after_date_is_counted_from_the_messages_date_else_from_now() {
+        // 784111777 is Sun, 06 Nov 1994 08:49:37 GMT.
+        let at = 784_111_777;
+        let date = Some("Sun, 06 Nov 1994 08:48:07 GMT");
+        let now = UnixSeconds(at - 30);
+        let cases = [
+            ("Sun, 06 Nov 1994 08:49:37 GMT", Some(90)),
+            ("Sunday, 06-Nov-94 08:49:37 GMT", Some(90)),
+            ("Sun Nov  6 08:49:37 1994", Some(90)),
+            ("Sun, 06 Nov 1994 08:48:07 GMT", Some(0)),
+            ("Sun, 06 Nov 1994 08:40:00 GMT", Some(0)),
+            ("Fri, 31 Dec 9999 23:59:59 GMT", None),
+            ("120", Some(120)),
+            ("soon", None),
+        ];
+        // With a `Date`, the caller's clock is not asked.
+        for (value, want) in cases {
+            assert_eq!(retry_wait(value, date, now), want, "{value}");
+        }
+        // Without one, or with one that is no date, it is.
+        assert_eq!(
+            retry_wait("Sun, 06 Nov 1994 08:49:37 GMT", None, now),
+            Some(30)
+        );
+        assert_eq!(
+            retry_wait("Sun, 06 Nov 1994 08:49:37 GMT", Some("yesterday"), now),
+            Some(30)
+        );
+        let sent = Response::builder()
+            .header("Retry-After", "Sun, 06 Nov 1994 08:49:37 GMT")
+            .body(Vec::<u8>::new())
+            .expect("response");
+        assert_eq!(sent.retry_after_seconds(now), Some(30));
     }
 }

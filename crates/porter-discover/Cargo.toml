@@ -1,6 +1,6 @@
 [package]
 name = "porter-discover"
-description = "Discovery for porter's families: autoconfig, SRV and MX leads, well-known URLs, Nextcloud OCS capabilities and port probes, as pure parsers plus the DNS and HTTP seams."
+description = "Discovery for porter's families: autoconfig, SRV and MX leads, well-known URLs and port probes, as pure parsers plus the DNS and HTTP seams."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,6 +10,8 @@ publish.workspace = true
 
 [dependencies]
 porter-core = { workspace = true }
+porter-capability = { workspace = true }
+porter-ids = { workspace = true }
 porter-http = { workspace = true }
 porter-provider = { workspace = true }
 roxmltree = { workspace = true }

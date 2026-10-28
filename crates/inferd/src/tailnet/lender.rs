@@ -24,12 +24,13 @@ use crate::agent::route::{Models, Route, Target};
 use crate::agent::session::Ctx;
 use crate::agent::token::Token;
 use crate::agent::{local, openai};
-use crate::audit::AuditOut;
-use crate::clock::Clock;
 use crate::engines::Engines;
-use porter_core::capability::AgentProgram;
-use porter_core::{AppId, AppName, DataClass, Isolation, NodeId};
+use porter_capability::AgentProgram;
+use porter_core::{AppId, AppName, DataClass, Isolation};
+use porter_ids::clock::Clock;
 use porter_tailnet::{Approval, Guests, Hello, LentModel, Refusal, State, Visit, Visits};
+use porter_tailscale::NodeId;
+use porter_turns::audit::AuditOut;
 use serde_json::json;
 use std::future::Future;
 use std::pin::Pin;
@@ -94,7 +95,7 @@ fn guest_app(node: &NodeId) -> AppId {
 
 async fn refuse<S: AsyncWrite + Unpin>(stream: &mut S, refusal: &Refusal) {
     let body = json!({
-        "error": {"message": refusal.to_string(), "type": "refused", "code": "refused"}
+        "error": {"message": super::words::refusal(refusal), "type": "refused", "code": refusal.slug()}
     })
     .to_string();
     let _ = http::write_json(stream, refusal.status(), &[], &body).await;

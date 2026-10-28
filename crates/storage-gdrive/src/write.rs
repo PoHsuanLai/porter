@@ -7,14 +7,17 @@
 
 use crate::addr::{FILE_FIELDS, names_of};
 use crate::json::File;
-use crate::refuse::{refused, write_error, write_unreached};
+use crate::refuse::write_error;
 use crate::replica::GdriveReplica;
-use porter_http::{Http, HttpRequest, HttpResponse, Method};
+use porter_http::http::header::{ACCEPT, CONTENT_TYPE, HeaderValue};
+use porter_http::http::{Method, Request, Response};
+use porter_http::{Http, request};
+use porter_sync::DELETED;
+use porter_sync::status::{refused, write_unreached};
 use porter_sync::{
     BaseVersion, Conflict, PutItem, PutRefused, PutTarget, RemoteId, RemoteSide, RemoteVersion,
     RetryAfter,
 };
-use storage_webdav::DELETED;
 
 /// Where a write goes.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -123,27 +126,28 @@ impl<H: Http> GdriveReplica<H> {
             _ => return Err(Self::conflict(&target, &base, now.as_ref())),
         }
         let url = self.addr.file(&item.0, &[]).ok_or(PutRefused::Forbidden)?;
-        let response = self
-            .write_send(HttpRequest::new(Method::Delete, url))
-            .await?;
-        match response.status.0 {
+        let delete = request(Method::DELETE, &url)
+            .body(Vec::new())
+            .map_err(|e| write_unreached(e.into()))?;
+        let response = self.write_send(delete).await?;
+        match response.status().as_u16() {
             200 | 204 => {
                 self.state().folders.remove_file(item);
                 Ok(RemoteVersion(DELETED.to_owned()))
             }
             404 => Err(Self::conflict(&target, &base, None)),
-            _ => Err(write_error(&response)),
+            _ => Err(write_error(&response, self.clock.now())),
         }
     }
 
     pub(crate) async fn write_send(
         &self,
-        request: HttpRequest,
-    ) -> Result<HttpResponse, PutRefused> {
-        self.http
-            .send(request.with_header("Accept", "application/json"))
-            .await
-            .map_err(write_unreached)
+        mut request: Request<Vec<u8>>,
+    ) -> Result<Response<Vec<u8>>, PutRefused> {
+        request
+            .headers_mut()
+            .append(ACCEPT, HeaderValue::from_static("application/json"));
+        self.http.send(request).await.map_err(write_unreached)
     }
 
     /// A new file, metadata and content in one request.
@@ -151,7 +155,7 @@ impl<H: Http> GdriveReplica<H> {
         &self,
         meta: &str,
         bytes: Vec<u8>,
-    ) -> Result<HttpResponse, PutRefused> {
+    ) -> Result<Response<Vec<u8>>, PutRefused> {
         let url = self
             .addr
             .upload(
@@ -160,13 +164,14 @@ impl<H: Http> GdriveReplica<H> {
             )
             .ok_or(PutRefused::Forbidden)?;
         let (boundary, body) = multipart(meta, &bytes);
-        let request = HttpRequest::new(Method::Post, url)
-            .with_header(
-                "Content-Type",
+        let create = request(Method::POST, &url)
+            .header(
+                CONTENT_TYPE,
                 format!("multipart/related; boundary={boundary}"),
             )
-            .with_body(body);
-        self.write_send(request).await
+            .body(body)
+            .map_err(|e| write_unreached(e.into()))?;
+        self.write_send(create).await
     }
 
     /// New content for a file, in one request. Google's APIs take a POST with
@@ -175,29 +180,30 @@ impl<H: Http> GdriveReplica<H> {
         &self,
         id: &str,
         bytes: Vec<u8>,
-    ) -> Result<HttpResponse, PutRefused> {
-        let path = format!("files/{}", crate::addr::encode(id));
+    ) -> Result<Response<Vec<u8>>, PutRefused> {
+        let path = format!("files/{}", porter_ids::percent::encode_unreserved(id));
         let url = self
             .addr
             .upload(&path, &[("uploadType", "media"), ("fields", FILE_FIELDS)])
             .ok_or(PutRefused::Forbidden)?;
-        let request = HttpRequest::new(Method::Post, url)
-            .with_header("X-HTTP-Method-Override", "PATCH")
-            .with_header("Content-Type", "application/octet-stream")
-            .with_body(bytes);
-        self.write_send(request).await
+        let update = request(Method::POST, &url)
+            .header("X-HTTP-Method-Override", "PATCH")
+            .header(CONTENT_TYPE, "application/octet-stream")
+            .body(bytes)
+            .map_err(|e| write_unreached(e.into()))?;
+        self.write_send(update).await
     }
 
     /// What a finished write's answer comes to.
     pub(crate) async fn settle(
         &self,
-        response: HttpResponse,
+        response: Response<Vec<u8>>,
         target: &Target,
         base: &BaseVersion,
     ) -> Written {
-        match response.status.0 {
+        match response.status().as_u16() {
             200 | 201 => {
-                let file: File = serde_json::from_slice(&response.body)
+                let file: File = serde_json::from_slice(response.body())
                     .map_err(|_| PutRefused::Transient(RetryAfter(30)))?;
                 if let Some(parent) = file.parent_id() {
                     self.state()
@@ -220,7 +226,7 @@ impl<H: Http> GdriveReplica<H> {
                     Err(PutRefused::Transient(RetryAfter(1)))
                 }
             },
-            _ => Err(write_error(&response)),
+            _ => Err(write_error(&response, self.clock.now())),
         }
     }
 

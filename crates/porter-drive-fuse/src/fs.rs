@@ -99,11 +99,30 @@ fn held<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// What time it is, for a `touch` that names none: the host's clock, since the file system
+/// reads none.
+#[derive(Clone)]
+pub struct Now(std::sync::Arc<dyn Fn() -> SystemTime + Send + Sync>);
+
+impl Now {
+    /// The time as `read` says it.
+    pub fn new(read: impl Fn() -> SystemTime + Send + Sync + 'static) -> Self {
+        Self(std::sync::Arc::new(read))
+    }
+}
+
+impl std::fmt::Debug for Now {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Now")
+    }
+}
+
 /// One drive as a file system: read-only over a drive opened so, else writable.
 #[derive(Debug)]
 pub struct DriveFs {
     drive: Drive,
     runtime: tokio::runtime::Handle,
+    now: Now,
     uid: u32,
     gid: u32,
     handles: Mutex<HashMap<u64, Handle>>,
@@ -112,11 +131,12 @@ pub struct DriveFs {
 
 impl DriveFs {
     /// The file system over `drive`, its waiting reads on `runtime`, its files owned by this
-    /// process's user.
-    pub fn new(drive: Drive, runtime: tokio::runtime::Handle) -> Self {
+    /// process's user, a `touch` with no time taking it from `now`.
+    pub fn new(drive: Drive, runtime: tokio::runtime::Handle, now: Now) -> Self {
         Self {
             drive,
             runtime,
+            now,
             uid: rustix::process::getuid().as_raw(),
             gid: rustix::process::getgid().as_raw(),
             handles: Mutex::default(),
@@ -652,7 +672,7 @@ impl Filesystem for Mounted {
     ) {
         let modified = mtime.map(|at| match at {
             TimeOrNow::SpecificTime(at) => at,
-            TimeOrNow::Now => SystemTime::now(),
+            TimeOrNow::Now => (self.0.now.0)(),
         });
         let fs = std::sync::Arc::clone(&self.0);
         self.0.runtime.spawn(async move {
@@ -806,10 +826,10 @@ impl Filesystem for Mounted {
 mod tests {
     use super::*;
     use porter_drive::testing::{MemoryListing, MemorySink, MemorySource, Took};
-    use porter_drive::{DriveConfig, words};
+    use porter_drive::{DriveConfig, Reason};
     use std::sync::Arc;
 
-    fn fs(dir: &porter_fake::Scratch) -> (Arc<MemoryListing>, Arc<MemorySource>, DriveFs) {
+    async fn fs(dir: &test_kit::Scratch) -> (Arc<MemoryListing>, Arc<MemorySource>, DriveFs) {
         let listing = Arc::new(MemoryListing::default());
         let source = Arc::new(MemorySource::default());
         let drive = Drive::open(
@@ -820,15 +840,20 @@ mod tests {
             listing.clone(),
             source.clone(),
         )
+        .await
         .expect("drive");
-        let fs = DriveFs::new(drive, tokio::runtime::Handle::current());
+        let fs = DriveFs::new(
+            drive,
+            tokio::runtime::Handle::current(),
+            Now::new(|| UNIX_EPOCH),
+        );
         (listing, source, fs)
     }
 
     #[tokio::test]
     async fn the_tree_reads_by_shown_names_with_stable_inodes_and_the_drives_sizes() {
-        let dir = porter_fake::Scratch::new("drive-fuse");
-        let (listing, source, fs) = fs(&dir);
+        let dir = test_kit::Scratch::new("drive-fuse");
+        let (listing, source, fs) = fs(&dir).await;
         listing.folder("f", None, "Work");
         listing.file("a", Some("f"), "a/b.txt", 10, "1");
         listing.online(
@@ -880,8 +905,8 @@ mod tests {
 
     #[tokio::test]
     async fn offline_a_read_is_enetdown_and_the_item_says_why() {
-        let dir = porter_fake::Scratch::new("drive-fuse");
-        let (listing, source, fs) = fs(&dir);
+        let dir = test_kit::Scratch::new("drive-fuse");
+        let (listing, source, fs) = fs(&dir).await;
         listing.file("a", None, "a.txt", 10, "1");
         source.set_offline(true);
         let file = fs.lookup(ROOT_INO, OsStr::new("a.txt")).expect("file");
@@ -890,10 +915,7 @@ mod tests {
         let status = fs
             .drive
             .status(&NodeId::Remote(porter_drive::RemoteId("a".into())));
-        assert_eq!(
-            status.and_then(|s| s.words).as_deref(),
-            Some(words::OFFLINE)
-        );
+        assert_eq!(status.and_then(|s| s.reason), Some(Reason::Offline));
         assert_eq!(fs.read(999, 0, 1).await, Err(Errno::EBADF));
     }
 
@@ -904,7 +926,7 @@ mod tests {
         fs: DriveFs,
     }
 
-    fn writable(dir: &porter_fake::Scratch) -> Writable {
+    async fn writable(dir: &test_kit::Scratch) -> Writable {
         let listing = Arc::new(MemoryListing::default());
         let source = Arc::new(MemorySource::default());
         let sink = Arc::new(MemorySink::new(listing.clone(), source.clone(), 4));
@@ -918,8 +940,13 @@ mod tests {
             source.clone(),
             sink.clone(),
         )
+        .await
         .expect("drive");
-        let fs = DriveFs::new(drive, tokio::runtime::Handle::current());
+        let fs = DriveFs::new(
+            drive,
+            tokio::runtime::Handle::current(),
+            Now::new(|| UNIX_EPOCH),
+        );
         Writable {
             listing,
             source,
@@ -929,7 +956,7 @@ mod tests {
     }
 
     async fn sent(sink: &MemorySink, n: usize) -> Vec<Took> {
-        let deadline = porter_fake::Deadline::generous();
+        let deadline = test_kit::Deadline::generous();
         while sink.took().len() < n {
             if deadline.passed() {
                 deadline.fail(&format!("{n} changes sent"));
@@ -941,8 +968,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_file_made_written_and_closed_is_sent_through_the_core() {
-        let dir = porter_fake::Scratch::new("drive-fuse-write");
-        let w = writable(&dir);
+        let dir = test_kit::Scratch::new("drive-fuse-write");
+        let w = writable(&dir).await;
         let fs = &w.fs;
         let (attr, fh) = fs
             .create(ROOT_INO, OsStr::new("notes.txt"), REGULAR | 0o644)
@@ -966,8 +993,8 @@ mod tests {
 
     #[tokio::test]
     async fn what_a_drive_cannot_hold_is_refused_with_its_errno() {
-        let dir = porter_fake::Scratch::new("drive-fuse-refuse");
-        let w = writable(&dir);
+        let dir = test_kit::Scratch::new("drive-fuse-refuse");
+        let w = writable(&dir).await;
         let fs = &w.fs;
         w.sink.names(|name| !name.contains(':'));
         w.listing.online(
@@ -1007,8 +1034,8 @@ mod tests {
 
     #[tokio::test]
     async fn saving_by_rename_truncating_and_removing_go_through_the_core() {
-        let dir = porter_fake::Scratch::new("drive-fuse-save");
-        let w = writable(&dir);
+        let dir = test_kit::Scratch::new("drive-fuse-save");
+        let w = writable(&dir).await;
         let fs = &w.fs;
         w.listing.folder("f", None, "Work");
         w.listing.file("r", Some("f"), "report.txt", 3, "v1");

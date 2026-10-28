@@ -9,7 +9,8 @@ use super::rig::{AgentsPlan, Hosted, Plan, Trust, World};
 use inferd::peers::Role;
 use inferd::settings::AgentEndpoint;
 use porter_core::{AppId, AppName, Isolation};
-use porter_dbus::{AgentsProxy, Details, EndpointArg};
+use porter_dbus::Details;
+use porter_dbus::inference::{AgentsProxy, EndpointArg};
 use porter_infer::{LocalOnly, Period, Policy, SpendScope};
 use serde_json::{Value, json};
 use std::path::Path;
@@ -412,7 +413,7 @@ pub fn files_holding(dir: &Path, needle: &str) -> Vec<std::path::PathBuf> {
 }
 
 pub async fn refused_to_connect(port: u16) -> bool {
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         if TcpStream::connect(("127.0.0.1", port)).await.is_err() {
             return true;

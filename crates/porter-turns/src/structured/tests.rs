@@ -3,8 +3,10 @@ use model_provider::{
     ModelName, OutputShape, Part, ProviderError, Role, Script, ScriptedProvider, StopReason,
     TurnEnd, TurnEvent, TurnUsage,
 };
-use porter_core::{DataClass, Tier, consent::Usage};
-use porter_router::testkit::{Scratch, models};
+use porter_capability::Tier;
+use porter_core::{DataClass, consent::Usage};
+use porter_router::testkit::models;
+use test_kit::Scratch;
 
 const SCORE: &str = r#"{"type":"object","additionalProperties":false,
     "properties":{"score":{"type":"integer","minimum":0,"maximum":10}},

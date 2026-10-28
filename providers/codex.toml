@@ -21,4 +21,7 @@ kind = "fixed"
 [[capability]]
 family = "acp_agent"
 kind = "agent"
-v = { program = "codex", key_env = "OPENAI_API_KEY", base_url_env = "OPENAI_BASE_URL", protocols = ["openai_compatible"] }
+program = "codex"
+key_env = "OPENAI_API_KEY"
+base_url_env = "OPENAI_BASE_URL"
+protocols = ["openai_compatible"]

@@ -6,13 +6,11 @@ use crate::common;
 
 use common::bus::PrivateBus;
 use common::{ACCESS_DENIED, INVALID_ARGS, Known, NO_FITTING, client, error_name, eventually};
-use porter_core::capability::{
-    Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope,
-};
-use porter_core::{Bytes, UnixSeconds};
-use porter_dbus::{
-    CallerRole, STATUS_KEY_QUOTA, SYNC_BUS, SYNC_ERROR_PAUSED, SYNC_PATH, SyncProxy,
-};
+use porter_callers::CallerRole;
+use porter_capability::{Access, Delta, HashKind, StorageCap, StorageScope};
+use porter_dbus::sync::SyncProxy;
+use porter_dbus::sync::{STATUS_KEY_QUOTA, SYNC_BUS, SYNC_ERROR_PAUSED, SYNC_PATH};
+use porter_ids::{Bytes, UnixSeconds};
 use porter_sync::{
     BaseVersion, Conflict, ConflictRule, LocalId, MemoryReplica, Quota, RemoteId, RemoteSide,
     RemoteVersion, StoredConflict,
@@ -260,7 +258,7 @@ async fn a_caller_sees_what_it_owns_settings_sees_all_and_status_carries_quota_a
 
 async fn next<S: Stream + Unpin>(stream: &mut S) -> S::Item {
     tokio::time::timeout(
-        porter_fake::GENEROUS,
+        test_kit::GENEROUS,
         std::future::poll_fn(|cx| Pin::new(&mut *stream).poll_next(cx)),
     )
     .await
@@ -331,11 +329,11 @@ fn storage() -> StorageCap {
     StorageCap {
         access: Access::ReadWrite,
         delta: Delta::Poll,
-        quota: QuotaReport::Reported,
+        quota: true,
         scope: StorageScope::AppFolder,
         hashes: HashKind::Sha256,
-        ranges: Offered::Present,
-        chunked_upload: Offered::Absent,
+        ranges: true,
+        chunked_upload: false,
     }
 }
 
@@ -358,7 +356,7 @@ async fn used(sync: &SyncProxy<'_>, dataset: &str) -> Option<u64> {
 /// syncs to disk on every write, and a loaded machine is slow); the last reading.
 async fn used_reaches(sync: &SyncProxy<'_>, dataset: &str, want: u64) -> Option<u64> {
     let mut seen = None;
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         seen = used(sync, dataset).await;
         if seen == Some(want) {

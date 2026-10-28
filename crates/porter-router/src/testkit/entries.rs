@@ -82,21 +82,13 @@ weights = {{ kind = "hf_snapshot" }}
     )
 }
 
-/// A hosted entry: `reaches` are (provider, the model's id there, wire, input and output price
-/// per million tokens in micro-dollars). It takes text and images, calls tools natively and
+/// A hosted entry: `reaches` are (provider, the model's id there, wire). It takes text and images, calls tools natively and
 /// writes no sampling, as the shipped hosted entries do.
-pub fn hosted(
-    id: &str,
-    label: &str,
-    family: &str,
-    reaches: &[(&str, &str, &str, u64, u64)],
-) -> String {
+pub fn hosted(id: &str, label: &str, family: &str, reaches: &[(&str, &str, &str)]) -> String {
     let reach = reaches
         .iter()
-        .map(|(provider, model, wire, input, output)| {
-            format!(
-                "  {{ provider = \"{provider}\", model = \"{model}\", price = {{ input_per_mtok = {input}, output_per_mtok = {output} }}, wire = \"{wire}\" }},\n"
-            )
+        .map(|(provider, model, wire)| {
+            format!("  {{ provider = \"{provider}\", model = \"{model}\", wire = \"{wire}\" }},\n")
         })
         .collect::<String>();
     format!(
@@ -124,20 +116,8 @@ pub fn claude() -> String {
         "Claude Opus 5.5",
         "claude",
         &[
-            (
-                "anthropic",
-                "claude-opus-5-5",
-                "anthropic_messages",
-                4_000_000,
-                20_000_000,
-            ),
-            (
-                "openrouter",
-                "anthropic/claude-opus-5.5",
-                "open_ai_compat",
-                4_000_000,
-                20_000_000,
-            ),
+            ("anthropic", "claude-opus-5-5", "anthropic_messages"),
+            ("openrouter", "anthropic/claude-opus-5.5", "open_ai_compat"),
         ],
     )
 }
@@ -149,14 +129,8 @@ pub fn luna() -> String {
         "GPT-6 Luna",
         "gpt",
         &[
-            ("openai", "gpt-6-luna", "open_ai_compat", 100_000, 500_000),
-            (
-                "openrouter",
-                "openai/gpt-6-luna",
-                "open_ai_compat",
-                100_000,
-                500_000,
-            ),
+            ("openai", "gpt-6-luna", "open_ai_compat"),
+            ("openrouter", "openai/gpt-6-luna", "open_ai_compat"),
         ],
     )
 }
@@ -168,14 +142,8 @@ pub fn kimi() -> String {
         "Kimi K3",
         "kimi",
         &[
-            ("moonshot", "kimi-k3", "open_ai_compat", 600_000, 2_500_000),
-            (
-                "openrouter",
-                "moonshotai/kimi-k3",
-                "open_ai_compat",
-                600_000,
-                2_500_000,
-            ),
+            ("moonshot", "kimi-k3", "open_ai_compat"),
+            ("openrouter", "moonshotai/kimi-k3", "open_ai_compat"),
         ],
     )
 }

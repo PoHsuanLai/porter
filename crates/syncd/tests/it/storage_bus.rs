@@ -10,21 +10,27 @@ use crate::common;
 use common::bus::PrivateBus;
 use common::hosted::{Link, host};
 use common::{Known, PhotosGrant, client};
-use porter_core::capability::StorageScope;
-use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
+use porter_callers::CallerRole;
+use porter_capability::StorageScope;
+use porter_capability::{CapabilityKind, Claim, Offer, Provenance, Subject};
 use porter_core::{
-    Account, AccountId, AccountLabel, AccountState, AuthKind, Candidate, CapabilityKind, Claim,
-    Credential, DataClass, EndpointUrl, Family, GrantId, LoginName, Offer, Provenance, Restriction,
-    SecretKey, SecretPurpose, SecretText, ServiceEndpoint, SpaceScope, Subject, Tls, UnixSeconds,
+    Account, AccountLabel, AccountState, AuthKind, Candidate, Credential, DataClass, EndpointUrl,
+    Family, LoginName, Restriction, SecretKey, SecretPurpose, SecretText, ServiceEndpoint,
+    SpaceScope, Tls,
 };
-use porter_dbus::{
-    CONFLICT_KEY_NUMBER, CallerRole, RESOLVE_KEEP_REMOTE, SYNC_ERROR_NO_SUCH_CONFLICT, SyncProxy,
+use porter_core::{AccountId, GrantId};
+use porter_core::{
+    GrantKey,
+    consent::{Decision, Grant, GrantScope, Usage},
 };
+use porter_dbus::sync::SyncProxy;
+use porter_dbus::sync::{CONFLICT_KEY_NUMBER, RESOLVE_KEEP_REMOTE, SYNC_ERROR_NO_SUCH_CONFLICT};
 use porter_fake::FakeProvider;
 use porter_fake_servers::{FakeGraph, GraphHandle, Running};
+use porter_ids::UnixSeconds;
 use porter_provider::Provider;
 use porter_secrets::{MemorySecrets, Secrets};
-use porter_service::Registry;
+use porter_service_core::registry::Registry;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -205,6 +211,9 @@ async fn rig(photos: PhotosGrant) -> Rig {
         settings: quick(),
         network,
         owners: Access::default(),
+        clock: porter_sync::Clock::new(porter_ids::clock::SystemClock),
+        nonce: "t1".to_owned(),
+        millis: Arc::new(syncd::datasets::photos::ManualMillis::at(1_700_000_000_000)),
     };
     let supervisor = StorageSupervisor::new(
         wiring,
@@ -229,7 +238,7 @@ async fn rig(photos: PhotosGrant) -> Rig {
 }
 
 /// Polls every 20 ms; the limit is idle time (`common::eventually_alive`): the wait ends only when
-/// the rig has not begun a cycle or served a request for [`porter_fake::GENEROUS`], so a loaded
+/// the rig has not begun a cycle or served a request for [`test_kit::GENEROUS`], so a loaded
 /// machine that runs a cycle slowly is never cut short.
 async fn eventually(rig: &Rig, what: &str, check: impl FnMut() -> bool) {
     common::eventually_alive(what, || rig.pulse(), check).await;
@@ -320,7 +329,7 @@ async fn a_two_sided_edit_is_a_conflict_signal_with_a_number_and_keep_remote_set
     sync.resume(DATASET).await.expect("resume");
 
     let signal = tokio::time::timeout(
-        porter_fake::GENEROUS,
+        test_kit::GENEROUS,
         std::future::poll_fn(|cx| Pin::new(&mut conflicts).poll_next(cx)),
     )
     .await

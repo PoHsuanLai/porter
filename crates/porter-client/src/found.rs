@@ -1,7 +1,8 @@
 //! What `find` answers: a closed set the app renders arm by arm.
 
 use porter_core::consent::{Availability, Usage};
-use porter_core::{Candidate, DataClass, Need};
+use porter_core::{Candidate, DataClass};
+use porter_match::Need;
 
 /// The answer to "is there an account that can do this for me?".
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,16 +61,18 @@ pub fn found(candidates: Vec<Candidate>, availability: Availability, offer: Cons
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_core::capability::{Access, Delta, QuotaReport, StorageScope};
-    use porter_core::need::StorageNeed;
-    use porter_core::{AccountLabel, Capability, GrantId, ProviderId, Restriction, Subject};
+    use porter_capability::{Access, Delta, StorageScope};
+    use porter_capability::{Capability, Subject};
+    use porter_core::{AccountLabel, Restriction};
+    use porter_core::{GrantId, ProviderId};
+    use porter_match::StorageNeed;
 
     fn offer() -> ConsentOffer {
         let need = Need::Storage(StorageNeed::new(
             Access::Read,
             Delta::None,
             StorageScope::AppFolder,
-            QuotaReport::Unreported,
+            false,
         ));
         ConsentOffer {
             need,
@@ -84,8 +87,8 @@ mod tests {
             AccountLabel("Cloud".into()),
             ProviderId::parse("nextcloud").expect("id"),
             Subject::Account,
-            Capability::Push(porter_core::capability::PushCap {
-                channel: porter_core::capability::PushChannel::LongPoll,
+            Capability::Push(porter_capability::PushCap {
+                channel: porter_capability::PushChannel::LongPoll,
             }),
             Restriction::none(),
             GrantId::parse(grant).expect("id"),

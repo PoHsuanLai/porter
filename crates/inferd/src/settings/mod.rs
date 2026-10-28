@@ -25,7 +25,6 @@ mod programs;
 mod resolve;
 
 pub use file::{ConfigFile, FileError, Reload, ReloadFailed, Reloaded};
-pub use keys::slots_of;
 pub use keys::{CLASSES, SLOTS, TIERS, from_slug, model_path, slug_of};
 pub use local_engines::LocalEngines;
 pub(crate) use missing::Engine;
@@ -33,11 +32,15 @@ pub use module::{InferdSettings, serve_settings};
 pub use pool::HelperPools;
 pub use resolve::{Resolved, floor_value, model_text, parse_model, resolve, slot_value};
 
-use crate::local::Lengths;
-use porter_core::{AccountId, AppId, MicroUsd, Permille};
+use model_provider::Money;
+use porter_core::AccountId;
+use porter_core::AppId;
+use porter_ids::Permille;
 use porter_infer::{
     AutoPolicy, ClassFloor, DescribeImages, Floor, Period, Policy, SpendCap, SpendScope, TierMap,
 };
+use porter_router::local::Lengths;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::watch;
@@ -170,8 +173,6 @@ pub const SPEND_APP_DAILY: &str = "ai.spend.app_daily_cents";
 pub const SPEND_APP_MONTHLY: &str = "ai.spend.app_monthly_cents";
 /// The values the cap rows accept: up to a hundred thousand dollars.
 pub const SPEND_CAP_RANGE: std::ops::RangeInclusive<u32> = 0..=10_000_000;
-/// Micro-dollars in a cent.
-const MICRO_USD_PER_CENT: u64 = 10_000;
 
 /// The `[ai.spend]` table, as written. Signed, so a negative number reaches the range check.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -205,9 +206,9 @@ pub struct PipelineConfig {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ScopeLimits {
     /// Per calendar day.
-    pub daily: Option<MicroUsd>,
+    pub daily: Option<Money>,
     /// Per calendar month.
-    pub monthly: Option<MicroUsd>,
+    pub monthly: Option<Money>,
 }
 
 /// The caps the person set: on each account, and on each app.
@@ -237,15 +238,15 @@ impl Default for SpendLine {
     }
 }
 
-/// A cap row's value in micro-dollars; `None` for no cap (`0`).
-pub fn cents_to_limit(cents: u32) -> Option<MicroUsd> {
-    (cents > 0).then(|| MicroUsd(u64::from(cents) * MICRO_USD_PER_CENT))
+/// A cap row's value as an amount of US dollars; `None` for no cap (`0`).
+pub fn cents_to_limit(cents: u32) -> Option<Money> {
+    (cents > 0).then(|| Money::usd(Decimal::new(i64::from(cents), 2)))
 }
 
 impl SpendLine {
     /// A cap on `scope` over `period` with this line as its warning: the one place inferd makes a
     /// [`SpendCap`], so `SpendCap.warn_at` is always the row's value.
-    pub fn cap(self, scope: SpendScope, period: Period, limit: MicroUsd) -> SpendCap {
+    pub fn cap(self, scope: SpendScope, period: Period, limit: Money) -> SpendCap {
         SpendCap {
             scope,
             period,

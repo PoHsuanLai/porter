@@ -4,9 +4,11 @@
 
 use super::refusal::Refusal;
 use crate::settings::Settings;
-use porter_core::capability::AgentProgram;
-use porter_core::{AccountId, AppId, AppName, DataClass, Isolation, Locality};
-use porter_dbus::{MODELS_ANY, MODELS_LISTED, ROUTE_ACCOUNT, ROUTE_MODEL, RouteArg};
+use porter_capability::AgentProgram;
+use porter_capability::Locality;
+use porter_core::AccountId;
+use porter_core::{AppId, AppName, DataClass, Isolation};
+use porter_dbus::inference::{MODELS_ANY, MODELS_LISTED, ROUTE_ACCOUNT, ROUTE_MODEL, RouteArg};
 use porter_infer::LocalOnly;
 
 /// What the route is.
@@ -94,7 +96,7 @@ impl Route {
 }
 
 /// The app a program's grants and spend are held under: `org.quire.Agent.<program>`. The person
-/// grants an account to the program with `inferd add <provider> --allow
+/// grants an account to the program with `accountd add <provider> --allow
 /// org.quire.Agent.claude-code`; the launcher is the one that may ask inferd to act for it.
 pub fn agent_app(program: &AgentProgram) -> AppId {
     // A program is a lowercase letter then lowercase letters, digits and `-`: always one element.

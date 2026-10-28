@@ -1,4 +1,4 @@
-//! `org.quire.Accounts1.Account`: one object per account, at `porter_dbus::account_path`.
+//! `org.quire.Accounts1.Account`: one object per account, at `porter_dbus::accounts::account_path`.
 //! `Reauthenticate` and the properties (`Id`, `Provider`, `Label`, `State`, `ReauthReason`,
 //! `Capabilities`) are served; every one answers only the shell (`SheetHost`) and Settings, the two
 //! roles that read an account. No app holds a grant for an account any more: an app learns of an
@@ -8,12 +8,18 @@
 //! enumeration (design/31 §4.4).
 
 use crate::callers::Callers;
-use crate::core::{Core, Host, Standing, window};
 use crate::errors::RefusedError;
-use porter_core::{Account, AccountState, AccountsRequest, object_segment};
-use porter_dbus::{
-    ACCOUNTS_PATH, Caller, CallerRole, Details, SheetKind, account_path, to_vardict,
-};
+use crate::host::Host;
+use crate::state::{Core, Standing, window};
+use porter_callers::{Caller, CallerRole};
+use porter_core::{Account, AccountState};
+use porter_dbus::accounts::sheet::SheetKind;
+use porter_dbus::accounts::{ACCOUNTS_PATH, account_path};
+use porter_dbus::accounts::{AccountServed, AccountServer};
+use porter_dbus::{Call, Details, to_vardict};
+use porter_ids::object_segment;
+use porter_ids::word::word as word_of;
+use porter_wire::AccountsRequest;
 use std::sync::Arc;
 use zbus::ObjectServer;
 use zbus::fdo;
@@ -30,24 +36,13 @@ impl<H, C> AccountObject<H, C> {
     }
 }
 
-/// The state's slug.
-pub(crate) fn state_slug(state: AccountState) -> &'static str {
-    match state {
-        AccountState::Ok => "ok",
-        AccountState::NeedsReauth => "needs_reauth",
-        AccountState::Offline => "offline",
-        AccountState::Limited => "limited",
-        AccountState::NeedsLogin => "needs_login",
-    }
-}
-
 /// The closed word for why `account` needs signing in again, or empty.
-pub(crate) fn reauth_reason_word(account: &Account, now: porter_core::UnixSeconds) -> &'static str {
+pub(crate) fn reauth_reason_word(account: &Account, now: porter_ids::UnixSeconds) -> &'static str {
     match account.state {
         AccountState::NeedsReauth => account
             .restriction
             .reauth_reason(now)
-            .map_or("", porter_core::ReauthReason::slug),
+            .map_or("", |reason| word_of(&reason)),
         _ => "",
     }
 }
@@ -75,7 +70,7 @@ fn account_at<'a>(accounts: &'a [Account], path: &str) -> Option<&'a Account> {
     let segment = path.strip_prefix(&format!("{ACCOUNTS_PATH}/account/"))?;
     accounts
         .iter()
-        .find(|account| object_segment(&account.id) == segment)
+        .find(|account| object_segment(account.id.as_str()) == segment)
 }
 
 /// Whether `caller` may see accounts: only the shell, which tells the person when an account
@@ -84,48 +79,40 @@ fn sees(caller: &Caller) -> bool {
     matches!(caller.role, CallerRole::SheetHost | CallerRole::Settings)
 }
 
-#[zbus::interface(name = "org.quire.Accounts1.Account")]
-impl<H: Host, C: Callers> AccountObject<H, C> {
-    #[zbus(property)]
-    async fn id(&self, #[zbus(header)] header: Option<Header<'_>>) -> fdo::Result<String> {
+impl<H: Host, C: Callers> AccountServer for AccountObject<H, C> {
+    type Error = RefusedError;
+
+    async fn id(&self, header: Option<Header<'_>>) -> fdo::Result<String> {
         Ok(visible(&self.0, header.as_ref()).await?.id.to_string())
     }
 
-    #[zbus(property)]
-    async fn provider(&self, #[zbus(header)] header: Option<Header<'_>>) -> fdo::Result<String> {
+    async fn provider(&self, header: Option<Header<'_>>) -> fdo::Result<String> {
         Ok(visible(&self.0, header.as_ref())
             .await?
             .provider
             .to_string())
     }
 
-    #[zbus(property)]
-    async fn label(&self, #[zbus(header)] header: Option<Header<'_>>) -> fdo::Result<String> {
+    async fn label(&self, header: Option<Header<'_>>) -> fdo::Result<String> {
         Ok(visible(&self.0, header.as_ref()).await?.label.0)
     }
 
-    #[zbus(property)]
-    async fn state(&self, #[zbus(header)] header: Option<Header<'_>>) -> fdo::Result<String> {
-        Ok(state_slug(visible(&self.0, header.as_ref()).await?.state).to_owned())
+    async fn state(&self, header: Option<Header<'_>>) -> fdo::Result<String> {
+        Ok(porter_ids::word::word(&visible(&self.0, header.as_ref()).await?.state).to_owned())
     }
 
     /// Why the account has to be signed in again, when porter knows: a word of
     /// `ReauthReason`, else empty.
-    #[zbus(property)]
-    async fn reauth_reason(
-        &self,
-        #[zbus(header)] header: Option<Header<'_>>,
-    ) -> fdo::Result<String> {
+    async fn reauth_reason(&self, header: Option<Header<'_>>) -> fdo::Result<String> {
         let account = visible(&self.0, header.as_ref()).await?;
         let now = self.0.clock.now();
         Ok(reauth_reason_word(&account, now).to_owned())
     }
 
     /// The account's effective capabilities: each kind's slug and the claim's fields by name.
-    #[zbus(property)]
     async fn capabilities(
         &self,
-        #[zbus(header)] header: Option<Header<'_>>,
+        header: Option<Header<'_>>,
     ) -> fdo::Result<Vec<(String, Details)>> {
         let account = visible(&self.0, header.as_ref()).await?;
         Ok(account
@@ -144,7 +131,7 @@ impl<H: Host, C: Callers> AccountObject<H, C> {
 
     async fn reauthenticate(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         parent_window: String,
         options: Details,
     ) -> Result<OwnedObjectPath, RefusedError> {
@@ -172,7 +159,10 @@ pub(crate) async fn publish_accounts<H: Host, C: Callers>(
 ) -> zbus::Result<()> {
     for account in core.host.registry().accounts {
         server
-            .at(account_path(&account.id), AccountObject(Arc::clone(core)))
+            .at(
+                account_path(&account.id),
+                AccountServed(AccountObject(Arc::clone(core))),
+            )
             .await?;
     }
     Ok(())

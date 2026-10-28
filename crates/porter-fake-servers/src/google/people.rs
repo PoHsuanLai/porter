@@ -3,7 +3,7 @@
 //! `metadata.deleted`), `EXPIRED_SYNC_TOKEN` for a token the server dropped, and `people/{id}`.
 
 use super::pim::{error, numbers};
-use crate::http::{Request, Response, percent_decode};
+use crate::http::{Request, Response};
 use serde_json::{Value, json};
 
 #[derive(Debug, Clone)]
@@ -162,7 +162,7 @@ impl People {
         let response = match parts.as_slice() {
             ["people", "me", "connections"] => self.connections(request),
             ["people", id] => {
-                let resource = format!("people/{}", percent_decode(id));
+                let resource = format!("people/{}", porter_ids::percent::decode(id));
                 self.rows
                     .iter()
                     .find(|r| r.resource == resource)

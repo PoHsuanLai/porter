@@ -6,7 +6,7 @@
 use super::rig::*;
 use crate::engine::SyncError;
 use crate::journal::JournalError;
-use porter_core::capability::StorageCap;
+use porter_capability::StorageCap;
 use porter_sync::ItemState;
 use std::collections::BTreeMap;
 

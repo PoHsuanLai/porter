@@ -7,7 +7,8 @@ use super::open::OpenRequest;
 use super::refusal::{Cause, Refusal};
 use super::session::Agents;
 use crate::peers::{Peers, Role};
-use porter_dbus::{Details, EndpointArg, RouteArg};
+use porter_dbus::inference::{AgentsServer, EndpointArg, RouteArg};
+use porter_dbus::{Call, Details};
 use std::sync::Arc;
 use zbus::message::Header;
 
@@ -75,14 +76,14 @@ async fn watch(connection: &zbus::Connection, agents: Agents, owner: String) {
     });
 }
 
-#[zbus::interface(name = "org.quire.Inference1.Agents")]
-impl<P: Peers> AgentsService<P> {
-    // The bus's arguments are the interface's: five of its own, the header and the connection.
-    #[allow(clippy::too_many_arguments)]
+impl<P: Peers> AgentsServer for AgentsService<P> {
+    type Error = Refusal;
+
     async fn open_endpoint(
         &self,
-        #[zbus(header)] header: Header<'_>,
-        #[zbus(connection)] connection: &zbus::Connection,
+        Call {
+            header, connection, ..
+        }: Call<'_>,
         program: String,
         route: RouteArg,
         class: String,
@@ -108,7 +109,7 @@ impl<P: Peers> AgentsService<P> {
 
     async fn close_endpoint(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         session: String,
     ) -> Result<(), Refusal> {
         let owner = self.launcher(&header).await?;

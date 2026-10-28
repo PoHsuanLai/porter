@@ -1,15 +1,19 @@
-//! What a request cost and who is told: the tokens read from the provider's own usage figures,
-//! the price at the reach, the hold taken against the account's and the program's caps settled
-//! with them, and one audit line. The line holds the program (as its app), the route, the tokens, the cost and the class;
-//! never a prompt, a reply, a key or the token.
+//! What a request cost and who is told: the tokens and the charge read from the provider's own
+//! usage figures (a charge only from a provider that reports one), counted against the account's
+//! and the program's caps, and one audit line. The line holds the program (as its app), the
+//! route, the tokens, the charge when the provider reported one and the class; never a prompt, a
+//! reply, a key or the token.
 
 use super::fail::Shape;
 use super::session::Ctx;
-use crate::audit::AuditOut;
-use crate::cloud::spend::SpendGuard;
+use crate::cloud::Cloud;
 use model_http::SseDecoder;
-use porter_core::{Bytes, Count, Locality, MicroUsd, PriceTable, Tokens};
-use porter_infer::{AuditEntry, ServedBy, TokenUsage, Why, cost};
+use model_openai_compat::read_charge;
+use model_provider::{Charges, Money};
+use porter_capability::Locality;
+use porter_ids::{Bytes, Count, Tokens};
+use porter_infer::{AuditEntry, ServedBy, TokenUsage, Why};
+use porter_turns::audit::AuditOut;
 use serde_json::Value;
 
 /// A provider's usage figures as they arrive.
@@ -18,15 +22,18 @@ pub struct Seen {
     input: Option<u32>,
     output: Option<u32>,
     cached: Option<u32>,
+    charge: Option<Money>,
 }
 
 impl Seen {
     /// The figures, when the provider gave any.
     pub fn usage(self) -> Option<TokenUsage> {
-        (self.input.is_some() || self.output.is_some()).then(|| TokenUsage {
+        let given = self.input.is_some() || self.output.is_some() || self.charge.is_some();
+        given.then(|| TokenUsage {
             input: Tokens(self.input.unwrap_or(0)),
             output: Tokens(self.output.unwrap_or(0)),
             cached: Tokens(self.cached.unwrap_or(0)),
+            charge: self.charge,
         })
     }
 
@@ -90,24 +97,28 @@ impl Seen {
 #[derive(Debug)]
 pub struct Reading {
     shape: Shape,
+    /// Whether the provider says what each reply cost; only then is a charge looked for.
+    charges: Charges,
     seen: Seen,
     events: Option<SseDecoder>,
 }
 
 impl Reading {
-    /// A reader of a stream of server-sent events.
-    pub fn of_stream(shape: Shape) -> Self {
+    /// A reader of a stream of server-sent events from a provider that reports `charges`.
+    pub fn of_stream(shape: Shape, charges: Charges) -> Self {
         Self {
             shape,
+            charges,
             seen: Seen::default(),
             events: Some(SseDecoder::new()),
         }
     }
 
     /// A reader of one JSON body, which `finish_body` is given whole.
-    pub fn of_body(shape: Shape) -> Self {
+    pub fn of_body(shape: Shape, charges: Charges) -> Self {
         Self {
             shape,
+            charges,
             seen: Seen::default(),
             events: None,
         }
@@ -122,16 +133,25 @@ impl Reading {
             return;
         };
         for event in events {
-            if let Ok(value) = serde_json::from_str::<Value>(&event.data) {
-                self.seen.take(self.shape, &value);
-            }
+            self.take(&event.data);
         }
     }
 
     /// Reads the whole body of a non-streaming reply.
     pub fn finish_body(&mut self, body: &[u8]) {
-        if let Ok(value) = serde_json::from_slice::<Value>(body) {
+        if let Ok(text) = std::str::from_utf8(body) {
+            self.take(text);
+        }
+    }
+
+    /// Takes one JSON document (an event's data, or a whole body).
+    fn take(&mut self, text: &str) {
+        if let Ok(value) = serde_json::from_str::<Value>(text) {
             self.seen.take(self.shape, &value);
+        }
+        let wants_charge = self.shape == Shape::OpenAi && self.charges == Charges::PerReply;
+        if let Some(charge) = read_charge(text).filter(|_| wants_charge) {
+            self.seen.charge = Some(charge);
         }
     }
 
@@ -154,20 +174,23 @@ pub enum End {
     Unknown,
 }
 
-/// What to charge a request: the provider's own count when the reply came whole with one,
-/// nothing when no model ran, and the hold (`None`) when the model may have run and no count
-/// came, so a missing figure is never free.
-pub fn charge_of(end: End, seen: Seen) -> Option<TokenUsage> {
+/// What to count for a request: what the provider reported when the reply came whole with figures
+/// or came part way (a turn without a charge is unpriced, never worked out from a price), a turn
+/// of no tokens when the model may have run and no figure came, and nothing (`None`) when no model
+/// ran.
+pub fn counted(end: End, seen: Seen) -> Option<TokenUsage> {
     match end {
-        End::Answered => seen.usage(),
-        End::NotRun => Some(TokenUsage {
-            input: Tokens(0),
-            output: Tokens(0),
-            cached: Tokens(0),
-        }),
-        End::Unknown => None,
+        End::Answered | End::Unknown => Some(seen.usage().unwrap_or(NO_TOKENS)),
+        End::NotRun => None,
     }
 }
+
+const NO_TOKENS: TokenUsage = TokenUsage {
+    input: Tokens(0),
+    output: Tokens(0),
+    cached: Tokens(0),
+    charge: None,
+};
 
 /// One audit line for a request.
 #[derive(Debug)]
@@ -176,10 +199,8 @@ pub struct Line<'a> {
     pub ctx: &'a Ctx,
     /// The account, the model and where it ran.
     pub served: ServedBy,
-    /// The tokens.
+    /// The tokens, and the charge when the provider reported one.
     pub usage: TokenUsage,
-    /// The cost, when the request was metered.
-    pub cost: Option<MicroUsd>,
     /// Bytes that left this computer (the request body, for a cloud route).
     pub sent: u64,
 }
@@ -203,29 +224,22 @@ impl Line<'_> {
             images: Count(0),
             audio_ms: Count(0),
             why: Some(Why::Named),
-            cost: self.cost,
         });
     }
 }
 
-/// Settles a request's hold with its charge (the hold stays when the charge is `None`), and
-/// writes its audit line with what was counted: the charge, or the hold.
-pub fn settle(
-    ctx: &Ctx,
-    guard: SpendGuard<'_>,
-    served: ServedBy,
-    price: &PriceTable,
-    worst: TokenUsage,
-    charge: Option<TokenUsage>,
-    sent: u64,
-) {
-    guard.settle(charge);
-    let usage = charge.unwrap_or(worst);
+/// Counts a request in the ledger (`counted`, from [`counted`]: nothing when no model ran) against
+/// the program and the account, and writes its audit line with what was counted.
+pub fn settle(ctx: &Ctx, cloud: &Cloud, served: ServedBy, counted: Option<TokenUsage>, sent: u64) {
+    if let Some(usage) = counted {
+        cloud
+            .ledger()
+            .record(&ctx.app, &served.account, usage, cloud.now());
+    }
     Line {
         ctx,
         served,
-        usage,
-        cost: Some(cost(usage, price)),
+        usage: counted.unwrap_or(NO_TOKENS),
         sent,
     }
     .write();

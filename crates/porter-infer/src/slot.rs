@@ -5,7 +5,7 @@
 //! `Slot` replaces the old `AiKind`. Old settings files and wire frames name the old kinds (`llm`,
 //! `speech_in`, `speech_out`); they still read, as serde aliases, and map to their slot.
 
-use porter_core::Tier;
+use porter_capability::Tier;
 use serde::{Deserialize, Serialize};
 
 /// The jobs a user maps models to. The slugs are the serde form and the settings-key segment.

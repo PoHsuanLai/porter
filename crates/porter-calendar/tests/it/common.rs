@@ -2,50 +2,30 @@
 //! credential added the way accountd's relay would add it, and a scripted seam for the stores
 //! that take JSON. No network beyond loopback.
 
-use porter_core::WebUrl;
-use porter_core::stream::ByteStream;
 use porter_fake_servers::{DavHandle, FakeDav, Running};
-use porter_http::stream::{Dial, StreamHttp, StreamLimits};
-use porter_http::{Header, Http, HttpError, HttpRequest, HttpResponse, Status};
+use porter_http::http::header::{AUTHORIZATION, HeaderValue};
+use porter_http::http::{Request, Response};
+use porter_http::{HeaderText, Http, HttpError};
+use porter_http_relay::{Dial, RelayHttp, RelayLimits};
+use porter_ids::WebUrl;
 use std::collections::VecDeque;
 use std::future::Future;
-use std::io;
 use std::sync::Mutex;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 pub const USER: &str = "ada";
 pub const PASSWORD: &str = "app-password";
-
-/// A TCP stream as the byte stream a relay's descriptor would be.
-#[derive(Debug)]
-pub struct Tcp(TcpStream);
-
-impl ByteStream for Tcp {
-    async fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.0.read(buf).await
-    }
-
-    async fn write_all(&mut self, bytes: &[u8]) -> io::Result<()> {
-        self.0.write_all(bytes).await
-    }
-
-    async fn shutdown(&mut self) -> io::Result<()> {
-        self.0.shutdown().await
-    }
-}
 
 /// Dials the fake's loopback port.
 #[derive(Debug)]
 pub struct TcpDial(pub u16);
 
 impl Dial for TcpDial {
-    type Stream = Tcp;
+    type Stream = TcpStream;
 
-    async fn dial(&self) -> Result<Tcp, HttpError> {
+    async fn dial(&self) -> Result<TcpStream, HttpError> {
         TcpStream::connect(("127.0.0.1", self.0))
             .await
-            .map(Tcp)
             .map_err(|_| HttpError::Unreachable)
     }
 }
@@ -57,18 +37,17 @@ pub struct Basic<H>(pub H);
 impl<H: Http> Http for Basic<H> {
     fn send(
         &self,
-        mut request: HttpRequest,
-    ) -> impl Future<Output = Result<HttpResponse, HttpError>> + Send {
+        mut request: Request<Vec<u8>>,
+    ) -> impl Future<Output = Result<Response<Vec<u8>>, HttpError>> + Send {
         use base64::Engine;
         let token = base64::engine::general_purpose::STANDARD.encode(format!("{USER}:{PASSWORD}"));
-        request
-            .headers
-            .push(Header::new("Authorization", format!("Basic {token}")));
+        let value = HeaderValue::try_from(format!("Basic {token}")).expect("a header value");
+        request.headers_mut().append(AUTHORIZATION, value);
         self.0.send(request)
     }
 }
 
-pub type Client = Basic<StreamHttp<TcpDial>>;
+pub type Client = Basic<RelayHttp<TcpDial>>;
 
 /// A running fake DAV server and the URLs a test reaches it at.
 pub struct Server {
@@ -101,7 +80,7 @@ impl Server {
     }
 
     pub fn client(&self) -> Client {
-        Basic(StreamHttp::new(TcpDial(self.port), StreamLimits::default()))
+        Basic(RelayHttp::new(TcpDial(self.port), RelayLimits::default()))
     }
 }
 
@@ -109,7 +88,7 @@ impl Server {
 #[derive(Debug, Default)]
 pub struct Script {
     answers: Mutex<VecDeque<(u16, String)>>,
-    pub sent: Mutex<Vec<HttpRequest>>,
+    pub sent: Mutex<Vec<Request<Vec<u8>>>>,
 }
 
 impl Script {
@@ -132,39 +111,36 @@ impl Script {
             .lock()
             .unwrap()
             .iter()
-            .map(|r| format!("{} {}", r.method.token(), r.url.as_str()))
+            .map(|r| format!("{} {}", r.method(), r.uri()))
             .collect()
     }
 
     /// The JSON body of the `at`th request.
     pub fn body(&self, at: usize) -> serde_json::Value {
-        serde_json::from_slice(&self.sent.lock().unwrap()[at].body).expect("a JSON body")
+        serde_json::from_slice(self.sent.lock().unwrap()[at].body()).expect("a JSON body")
     }
 
     /// The `name` header of the `at`th request.
     pub fn header(&self, at: usize, name: &str) -> Option<String> {
         self.sent.lock().unwrap()[at]
-            .headers
-            .iter()
-            .find(|h| h.name.as_str().eq_ignore_ascii_case(name))
-            .map(|h| h.value.0.clone())
+            .header(name)
+            .map(str::to_owned)
     }
 }
 
 impl Http for &Script {
     fn send(
         &self,
-        request: HttpRequest,
-    ) -> impl Future<Output = Result<HttpResponse, HttpError>> + Send {
+        request: Request<Vec<u8>>,
+    ) -> impl Future<Output = Result<Response<Vec<u8>>, HttpError>> + Send {
         self.sent.lock().unwrap().push(request);
         let answer = self.answers.lock().unwrap().pop_front();
         async move {
             let (status, body) = answer.expect("the script has an answer for every request");
-            Ok(HttpResponse {
-                status: Status(status),
-                headers: Vec::new(),
-                body: body.into_bytes(),
-            })
+            Ok(Response::builder()
+                .status(status)
+                .body(body.into_bytes())
+                .expect("a response"))
         }
     }
 }

@@ -1,7 +1,7 @@
 //! SRV records, ported from `srv_records` in mailo's `crates/mail-proto/tests/discover.rs`.
 
 use super::*;
-use crate::found::{Pop3, Pop3Server, Source};
+use crate::found::{Pop3Server, Source};
 use crate::testing::{ADDRESS, Records, name, srv};
 
 fn urls(found: &Found) -> Vec<String> {
@@ -186,7 +186,7 @@ fn pop3_only() -> SrvAnswers {
 
 #[test]
 fn pop3_only_srv_is_a_finding_under_report_with_the_smtp_endpoint_alone() {
-    let found = found_from_srv_with(ADDRESS, &pop3_only(), Pop3::Report).expect("found");
+    let found = found_from_srv_with(ADDRESS, &pop3_only(), true).expect("found");
     assert_eq!(urls(&found), ["smtps://smtp.example.test:465"]);
     assert!(found.claims.is_empty());
     assert_eq!(found.source, Source::Srv);
@@ -202,7 +202,7 @@ fn pop3_only_srv_is_a_finding_under_report_with_the_smtp_endpoint_alone() {
 #[test]
 fn pop3_only_srv_is_no_servers_under_ignore_and_by_default() {
     assert_eq!(
-        found_from_srv_with(ADDRESS, &pop3_only(), Pop3::Ignore),
+        found_from_srv_with(ADDRESS, &pop3_only(), false),
         Err(DiscoverFault::NoServers)
     );
     assert_eq!(
@@ -215,8 +215,8 @@ fn pop3_only_srv_is_no_servers_under_ignore_and_by_default() {
 fn pop3_beside_imap_is_listed_only_under_report_and_the_endpoints_do_not_change() {
     let mut answers = pop3_only();
     answers.imaps = vec![srv(0, 0, 993, "imap.example.test")];
-    let reported = found_from_srv_with(ADDRESS, &answers, Pop3::Report).expect("found");
-    let ignored = found_from_srv_with(ADDRESS, &answers, Pop3::Ignore).expect("found");
+    let reported = found_from_srv_with(ADDRESS, &answers, true).expect("found");
+    let ignored = found_from_srv_with(ADDRESS, &answers, false).expect("found");
     assert_eq!(reported.pop3.len(), 2);
     assert!(ignored.pop3.is_empty());
     assert_eq!(reported.endpoints, ignored.endpoints);
@@ -228,7 +228,7 @@ fn pop3_without_submission_or_with_only_port_zero_is_still_no_servers() {
     let mut answers = pop3_only();
     answers.submissions.clear();
     assert_eq!(
-        found_from_srv_with(ADDRESS, &answers, Pop3::Report),
+        found_from_srv_with(ADDRESS, &answers, true),
         Err(DiscoverFault::NoServers)
     );
     let dead = SrvAnswers {
@@ -237,7 +237,7 @@ fn pop3_without_submission_or_with_only_port_zero_is_still_no_servers() {
         ..SrvAnswers::default()
     };
     assert_eq!(
-        found_from_srv_with(ADDRESS, &dead, Pop3::Report),
+        found_from_srv_with(ADDRESS, &dead, true),
         Err(DiscoverFault::NoServers)
     );
 }

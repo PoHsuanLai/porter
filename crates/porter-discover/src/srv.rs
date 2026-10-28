@@ -8,7 +8,7 @@
 //! address, since SRV says nothing about it.
 
 use crate::dns::{Dns, DnsFault, SrvRecord};
-use crate::found::{DiscoverFault, Found, Pop3, Pop3Server, Source};
+use crate::found::{DiscoverFault, Found, Pop3Server, Source};
 use crate::mail::{imap_claim, imap_endpoint, smtp_endpoint};
 use porter_core::{LoginName, ServiceEndpoint, Tls};
 use porter_provider::DomainName;
@@ -62,28 +62,28 @@ pub async fn lookup_srv<D: Dns>(dns: &D, domain: &DomainName) -> Result<SrvAnswe
 }
 
 /// The servers SRV records give for `address`: one incoming and one outgoing, or
-/// `NoServers`. POP3 is not looked at ([`Pop3::Ignore`]).
+/// `NoServers`. POP3 is not looked at.
 pub fn found_from_srv(address: &str, answers: &SrvAnswers) -> Result<Found, DiscoverFault> {
-    found_from_srv_with(address, answers, Pop3::Ignore)
+    found_from_srv_with(address, answers, false)
 }
 
-/// [`found_from_srv`] under `pop3`. With `Pop3::Report` the `_pop3s` servers are listed on
+/// [`found_from_srv`] under `report_pop3`. When it is on, the `_pop3s` servers are listed on
 /// [`Found::pop3`] (best first), and a domain with POP3 and submission records but no IMAP is a
 /// finding whose `endpoints` hold the submission server alone and whose `claims` are empty, as
-/// for a document. Under `Pop3::Ignore` nothing changes: such a domain is `NoServers`.
+/// for a document. When it is off, nothing changes: such a domain is `NoServers`.
 pub fn found_from_srv_with(
     address: &str,
     answers: &SrvAnswers,
-    pop3: Pop3,
+    report_pop3: bool,
 ) -> Result<Found, DiscoverFault> {
     let login = || LoginName(address.to_owned());
     let incoming = best(&answers.imaps, Tls::Implicit, login(), imap_endpoint)
         .or_else(|| best(&answers.imap, Tls::StartTls, login(), imap_endpoint));
     let outgoing = best(&answers.submissions, Tls::Implicit, login(), smtp_endpoint)
         .or_else(|| best(&answers.submission, Tls::StartTls, login(), smtp_endpoint));
-    let pop3 = match pop3 {
-        Pop3::Ignore => Vec::new(),
-        Pop3::Report => pop3_servers(&answers.pop3s, address),
+    let pop3 = match report_pop3 {
+        false => Vec::new(),
+        true => pop3_servers(&answers.pop3s, address),
     };
     let (endpoints, claims) = match (incoming, outgoing) {
         (Some(imap), Some(smtp)) => (vec![imap, smtp], vec![imap_claim()]),

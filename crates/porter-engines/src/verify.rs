@@ -169,9 +169,9 @@ mod tests {
     use super::*;
     use crate::host::{Arch, Backend};
     use crate::manifest::Artifact;
-    use porter_fake::Scratch;
     use std::os::unix::fs::PermissionsExt;
     use std::path::PathBuf;
+    use test_kit::Scratch;
 
     static EMPTY: [Artifact; 0] = [];
 

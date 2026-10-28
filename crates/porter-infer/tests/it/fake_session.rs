@@ -1,9 +1,10 @@
 //! The scripted session: transcript events arrive as audio passes their index, a request with
 //! no script is refused, Cancel ends the turn.
 
-use porter_core::capability::LanguageTag;
+use porter_capability::LanguageTag;
+use porter_core::DataClass;
 use porter_core::consent::Usage;
-use porter_core::{DataClass, Tokens};
+use porter_ids::Tokens;
 use porter_infer::testing::{FakeInferSession, Script, ScriptStep};
 use porter_infer::{
     AudioFrame, AudioRate, Base64Bytes, ClientFrame, HeardDelta, InferEvent, InferRefusal,
@@ -85,6 +86,7 @@ async fn a_request_without_a_script_is_refused_and_cancel_ends_a_turn() {
             input: Tokens(1),
             output: Tokens(1),
             cached: Tokens(0),
+            charge: None,
         }))],
     };
     let mut session = FakeInferSession::scripted([script]);

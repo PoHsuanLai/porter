@@ -19,21 +19,22 @@
 mod candidates;
 mod lender;
 mod machines;
+pub mod words;
 
 pub use candidates::{Candidate, Candidates};
 pub use lender::Lender;
 pub use machines::{BusMachines, Machines, NoMachines};
 
 use crate::attached::relay_socket;
-use crate::audit::AuditOut;
-use crate::clock::Clock;
 use crate::engines::Engines;
 use crate::settings::TailnetServe;
-use porter_core::NodeId;
+use porter_ids::clock::Clock;
 use porter_tailnet::{
     Config, Dialer, GuestEvent, Guests, Lending, Listening, Observer, OnFault, Relay, Timing, lend,
 };
 use porter_tailscale::LocalApi;
+use porter_tailscale::NodeId;
+use porter_turns::audit::AuditOut;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -184,7 +185,10 @@ impl Tailnet {
         })?;
         let told: OnFault = {
             let node = node.clone();
-            Arc::new(move |fault| eprintln!("inferd: computer {node}: {fault}"))
+            Arc::new(move |fault| {
+                eprintln!("inferd: computer {node}: {fault}");
+                words::fault(fault)
+            })
         };
         let relay = Relay::start(&path, node.clone(), self.0.dialer.clone(), told)?;
         relays.insert(node.clone(), relay);

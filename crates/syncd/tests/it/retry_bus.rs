@@ -7,7 +7,7 @@ use crate::common::hosted::host;
 use porter_core::Candidate;
 use porter_fake::cloud_provider;
 use porter_secrets::MemorySecrets;
-use porter_service::Registry;
+use porter_service_core::registry::Registry;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use syncd::datasets::pim::{
@@ -58,6 +58,9 @@ async fn a_look_that_could_not_ask_for_grants_says_it_was_not_whole_and_the_next
         settings: Settings::quick(),
         network,
         owners: Access::default(),
+        clock: porter_sync::Clock::new(porter_ids::clock::SystemClock),
+        nonce: "t1".to_owned(),
+        millis: Arc::new(syncd::datasets::photos::ManualMillis::at(1_700_000_000_000)),
     };
     let down = Arc::new(AtomicBool::new(true));
     let mut supervisor = PimSupervisor::new(

@@ -57,7 +57,7 @@ mod tests {
     fn zero_is_automatic_and_automatic_is_at_least_a_gibibyte() {
         assert_eq!(CacheLimit::from_setting(0), CacheLimit::Automatic);
         assert_eq!(CacheLimit::from_setting(5).setting(), 5);
-        let dir = porter_fake::Scratch::new("limit");
+        let dir = test_kit::Scratch::new("limit");
         assert!(CacheLimit::Automatic.bytes_for(&dir.join("not/yet")) >= AUTOMATIC_FLOOR);
         assert_eq!(CacheLimit::Bytes(7).bytes_for(dir.path()), 7);
     }

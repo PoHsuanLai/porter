@@ -6,29 +6,26 @@ use crate::dataset::MemoryDataset;
 use crate::engine::{Engine, Report};
 use crate::journal::Journal;
 use crate::testing::scratch;
-use porter_core::capability::{
-    Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope,
-};
-use porter_core::{Bytes, UnixSeconds};
+use porter_capability::{Access, Delta, HashKind, StorageCap, StorageScope};
+use porter_ids::{Bytes, UnixSeconds};
 use porter_sync::{
     BaseVersion, Blob, ByteRange, Change, ChangePage, ConflictRule, Cursor, ItemPath,
     MemoryReplica, PutItem, PutRefused, PutTarget, Quota, RemoteId, RemoteVersion, Replica,
     ReplicaError,
 };
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
-pub fn caps(hashes: HashKind, quota: QuotaReport, delta: Delta) -> StorageCap {
+pub fn caps(hashes: HashKind, quota: bool, delta: Delta) -> StorageCap {
     StorageCap {
         access: Access::ReadWrite,
         delta,
         quota,
         scope: StorageScope::AppFolder,
         hashes,
-        ranges: Offered::Present,
-        chunked_upload: Offered::Absent,
+        ranges: true,
+        chunked_upload: false,
     }
 }
 
@@ -125,7 +122,7 @@ pub struct World {
     pub replica: Arc<Faulty>,
     pub dataset: Arc<MemoryDataset>,
     pub clock: Arc<ManualClock>,
-    pub dir: PathBuf,
+    pub dir: tempfile::TempDir,
 }
 
 impl World {
@@ -155,7 +152,7 @@ impl World {
 
     /// A fresh engine on the journal file: what a restarted process has.
     pub fn engine(&self) -> TestEngine {
-        let journal = Journal::open(&self.dir.join("files.sqlite")).expect("journal");
+        let journal = Journal::open(&self.dir.path().join("files.sqlite")).expect("journal");
         Engine::new(
             Shared(Arc::clone(&self.replica)),
             Arc::clone(&self.dataset),
@@ -252,18 +249,12 @@ impl World {
     }
 }
 
-impl Drop for World {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.dir);
-    }
-}
-
 pub fn sha() -> StorageCap {
-    caps(HashKind::Sha256, QuotaReport::Reported, Delta::Poll)
+    caps(HashKind::Sha256, true, Delta::Poll)
 }
 
 pub fn hashless() -> StorageCap {
-    caps(HashKind::None, QuotaReport::Unreported, Delta::Poll)
+    caps(HashKind::None, false, Delta::Poll)
 }
 
 /// Syncs until a cycle does nothing, at most `limit` cycles; the last report.

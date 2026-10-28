@@ -1,10 +1,12 @@
 use super::*;
-use porter_core::capability::{Capability, LlmCap, LlmFeature, LlmWire};
-use porter_core::need::{DimsNeed, EmbedNeed, LlmNeed};
-use porter_core::{AccountId, Billing, Locality, Tokens};
+use porter_capability::{Billing, Locality};
+use porter_capability::{Capability, LlmCap, LlmFeature, LlmWire};
+use porter_core::AccountId;
+use porter_ids::Tokens;
 use porter_infer::{
     AutoPolicy, LicenceClass, LocalOnly, ModelCard, Permit, PlaceKind, Policy, Readiness, SwapCost,
 };
+use porter_match::{DimsNeed, EmbedNeed, LlmNeed};
 
 fn llm_cap() -> Capability {
     Capability::Llm(LlmCap {
@@ -22,7 +24,7 @@ fn need() -> Need {
 fn embeddings() -> Need {
     Need::Embeddings(EmbedNeed::new(
         DimsNeed::Any,
-        [porter_core::capability::Modality::Text].into(),
+        [porter_capability::Modality::Text].into(),
     ))
 }
 

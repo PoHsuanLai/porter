@@ -14,9 +14,9 @@ use google_rig::{
     DRIVE_BEARER, FILES_DATASET, Rig, SECRET_ACCESS, SECRET_REFRESH, SEGMENT, client_of,
     eventually, local, rig,
 };
-use porter_dbus::{
+use porter_dbus::sync::SyncProxy;
+use porter_dbus::sync::{
     CONFLICT_KEY_NUMBER, RESOLVE_KEEP_LOCAL, RESOLVE_KEEP_REMOTE, SYNC_ERROR_NO_SUCH_CONFLICT,
-    SyncProxy,
 };
 use std::pin::Pin;
 use std::sync::atomic::Ordering;
@@ -161,7 +161,7 @@ async fn a_two_sided_edit_is_a_conflict_signal_and_keep_remote_or_keep_local_set
         sync.resume(FILES_DATASET).await.expect("resume");
 
         let signal = tokio::time::timeout(
-            porter_fake::GENEROUS,
+            test_kit::GENEROUS,
             std::future::poll_fn(|cx| Pin::new(&mut conflicts).poll_next(cx)),
         )
         .await

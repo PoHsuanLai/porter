@@ -10,7 +10,10 @@ use crate::error::{InferRefusal, ModelError};
 use crate::event::{Flow, InferEvent};
 use crate::reply::{ChatReply, EmbedReply, InferReply};
 use crate::request::{ChatRequest, EmbedRequest, InferRequest, TaskRequest};
-use porter_core::{AccountId, Billing, Capability, Locality, ModelId};
+use porter_capability::Capability;
+use porter_capability::ModelId;
+use porter_capability::{Billing, Locality};
+use porter_core::AccountId;
 use std::future::Future;
 
 /// What routing knows about one model.
@@ -36,6 +39,7 @@ pub trait ChatSink: Send {
 
 /// Why a turn on a model gave no reply: it was not run, or it failed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum TurnError {
     /// The request was not run (a cap, a missing grant, a kind of request the model does not take).
     Refused(InferRefusal),

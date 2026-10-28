@@ -42,16 +42,26 @@ pub enum HttpPhase {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HttpRelay {
     /// What it presents and where.
-    pub plan: RelayPlan,
+    pub(crate) plan: RelayPlan,
     /// Where it stands.
-    pub phase: HttpPhase,
+    pub(crate) phase: HttpPhase,
     /// Head bytes read so far, until the blank line.
-    pub head: Vec<u8>,
+    pub(crate) head: Vec<u8>,
     /// Where a chunked body stands.
-    pub chunks: ChunkParser,
+    pub(crate) chunks: ChunkParser,
 }
 
 impl HttpRelay {
+    /// What the relay presents and where.
+    pub fn plan(&self) -> &RelayPlan {
+        &self.plan
+    }
+
+    /// Where the relay stands.
+    pub fn phase(&self) -> &HttpPhase {
+        &self.phase
+    }
+
     /// A relay at the start of a connection.
     pub fn new(plan: RelayPlan) -> Self {
         Self {

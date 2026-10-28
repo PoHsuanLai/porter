@@ -3,28 +3,29 @@
 //! credential of any kind: the agent's own login lives in the agent's own state directory, which
 //! porter never reads (design/31 R7, R8). Adding the account asks nothing; the person reviews the
 //! agent and confirms, and the account is stored in `needs_login` until the launcher reports the
-//! agent's state (`Peer.SetAgentState`).
+//! agent's state (`Launcher.ReportAgentLogin`).
 //!
 //! A session mints no token (there is nothing to mint it from) and revoking has nothing to do at a
 //! provider: forgetting the account is all porter can do.
 
 mod sign_in;
 
-use porter_core::{
-    Account, AccountId, Audience, Claim, Credential, IssuedToken, Offer, Provenance, Subject,
-};
+use porter_capability::{Claim, Offer, Provenance, Subject};
+use porter_core::AccountId;
+use porter_core::{Account, Audience, Credential, IssuedToken};
+use porter_family_kit::Conversation;
 use porter_provider::{
     Presented, Provider, ProviderError, ProviderSession, ProviderSpec, RevokeOutcome, SignInStart,
 };
 
-pub use sign_in::AgentLoginSignIn;
+pub use sign_in::AgentLoginFlow;
 
 /// The claims an agent file declares: one per program, about that program.
 pub(crate) fn claims(spec: &ProviderSpec) -> Vec<Claim> {
     spec.capabilities
         .iter()
         .filter_map(|row| match &row.capability {
-            porter_core::Capability::Agent(agent) => Some(Claim {
+            porter_capability::Capability::Agent(agent) => Some(Claim {
                 subject: Subject::Agent(agent.program.clone()),
                 offer: Offer::Present(row.capability.clone()),
                 provenance: Provenance::Declared,
@@ -53,7 +54,7 @@ pub struct AgentLoginSession;
 
 impl Provider for AgentLoginProvider {
     type Session = AgentLoginSession;
-    type SignIn = AgentLoginSignIn;
+    type SignIn = Conversation<AgentLoginFlow>;
 
     fn spec(&self) -> &ProviderSpec {
         &self.spec
@@ -80,9 +81,9 @@ impl Provider for AgentLoginProvider {
         }
     }
 
-    fn sign_in(&self, _start: SignInStart) -> Result<AgentLoginSignIn, ProviderError> {
+    fn sign_in(&self, _start: SignInStart) -> Result<Self::SignIn, ProviderError> {
         // Adding and signing in again are the same two steps: the agent holds the login either way.
-        Ok(AgentLoginSignIn::new(self.spec.clone()))
+        Ok(Conversation::new(AgentLoginFlow::new(self.spec.clone())))
     }
 
     async fn revoke(
@@ -102,5 +103,14 @@ impl ProviderSession for AgentLoginSession {
 
     fn renewed(&self) -> Option<Credential> {
         None
+    }
+}
+
+/// This family for `spec` when the agent program signs itself in, else the spec back.
+#[cfg(feature = "set")]
+pub(crate) fn build(spec: ProviderSpec, _io: &crate::set::FamilyIo) -> crate::set::Built {
+    match spec.auth.kind {
+        porter_core::AuthKind::AgentLogin => Ok(Box::new(AgentLoginProvider::new(spec))),
+        _ => Err(Box::new(spec)),
     }
 }

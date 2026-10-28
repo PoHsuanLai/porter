@@ -1,49 +1,31 @@
-//! The rig: a fake Google on loopback, reached through `StreamHttp` over a TCP dial with the
+//! The rig: a fake Google on loopback, reached through `RelayHttp` over a TCP dial with the
 //! bearer added the way accountd's relay would add it. No network beyond loopback.
 #![allow(dead_code)]
 
-use porter_core::stream::ByteStream;
-use porter_core::{UnixSeconds, WebUrl};
 use porter_fake_servers::{FakeGoogle, GoogleHandle, Running};
-use porter_http::{Header, Http, HttpError, HttpRequest, HttpResponse};
+use porter_http::http::header::{AUTHORIZATION, HeaderValue};
+use porter_http::http::{Request, Response};
+use porter_http::{Http, HttpError};
+use porter_http_relay::{Dial, RelayHttp, RelayLimits};
+use porter_ids::{UnixSeconds, WebUrl};
+use porter_sync::Clock;
 use std::future::Future;
-use std::io;
-use storage_gdrive::{Clock, Dial, GdriveReplica, Root, StreamHttp, StreamLimits, Uploads};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use storage_gdrive::{GdriveReplica, Root, Uploads};
 use tokio::net::TcpStream;
 
 pub const TOKEN: &str = "ya29.fake-access-token";
 pub const NOW: UnixSeconds = UnixSeconds(1_000);
-
-/// A TCP stream as the byte stream a relay's descriptor would be.
-#[derive(Debug)]
-pub struct Tcp(TcpStream);
-
-impl ByteStream for Tcp {
-    async fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.0.read(buf).await
-    }
-
-    async fn write_all(&mut self, bytes: &[u8]) -> io::Result<()> {
-        self.0.write_all(bytes).await
-    }
-
-    async fn shutdown(&mut self) -> io::Result<()> {
-        self.0.shutdown().await
-    }
-}
 
 /// Dials the fake's loopback port.
 #[derive(Debug)]
 pub struct TcpDial(pub u16);
 
 impl Dial for TcpDial {
-    type Stream = Tcp;
+    type Stream = TcpStream;
 
-    async fn dial(&self) -> Result<Tcp, HttpError> {
+    async fn dial(&self) -> Result<TcpStream, HttpError> {
         TcpStream::connect(("127.0.0.1", self.0))
             .await
-            .map(Tcp)
             .map_err(|_| HttpError::Unreachable)
     }
 }
@@ -55,20 +37,19 @@ pub struct Bearer<H>(pub H);
 impl<H: Http> Http for Bearer<H> {
     fn send(
         &self,
-        mut request: HttpRequest,
-    ) -> impl Future<Output = Result<HttpResponse, HttpError>> + Send {
-        request
-            .headers
-            .push(Header::new("Authorization", format!("Bearer {TOKEN}")));
+        mut request: Request<Vec<u8>>,
+    ) -> impl Future<Output = Result<Response<Vec<u8>>, HttpError>> + Send {
+        let value = HeaderValue::try_from(format!("Bearer {TOKEN}")).expect("a header value");
+        request.headers_mut().append(AUTHORIZATION, value);
         self.0.send(request)
     }
 }
 
-pub type Client = Bearer<StreamHttp<TcpDial>>;
+pub type Client = Bearer<RelayHttp<TcpDial>>;
 pub type Replica = GdriveReplica<Client>;
 
 pub fn client(port: u16) -> Client {
-    Bearer(StreamHttp::new(TcpDial(port), StreamLimits::default()))
+    Bearer(RelayHttp::new(TcpDial(port), RelayLimits::default()))
 }
 
 /// A running fake Google.

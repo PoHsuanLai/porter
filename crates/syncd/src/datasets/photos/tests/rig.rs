@@ -1,59 +1,41 @@
 //! The rig: a fake DAV server, and machines that sync a library against it through
-//! `StreamHttp` over a TCP dial with the credential added the way accountd's relay would.
+//! `RelayHttp` over a TCP dial with the credential added the way accountd's relay would.
 
-use super::super::{
-    DeviceId, ManualMillis, PhotoLibrary, PhotoMetadata, PhotoOriginals, SystemMillis,
-};
-use crate::clock::SystemClock;
+use super::super::{DeviceId, ManualMillis, PhotoLibrary, PhotoMetadata, PhotoOriginals};
 use crate::engine::{Engine, Report};
 use crate::journal::Journal;
 use crate::testing::scratch;
-use porter_core::stream::ByteStream;
-use porter_core::{UnixSeconds, WebUrl};
 use porter_fake_servers::{DavHandle, FakeDav, Running};
-use porter_http::{Header, Http, HttpError, HttpRequest, HttpResponse};
+use porter_http::http::header::{AUTHORIZATION, HeaderValue};
+use porter_http::http::{Request, Response};
+use porter_http::{Http, HttpError};
+use porter_http_relay::{Dial, RelayHttp, RelayLimits};
+use porter_ids::clock::SystemClock;
+use porter_ids::{UnixSeconds, WebUrl};
+use porter_sync::Clock;
 use std::future::Future;
-use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
-use storage_webdav::{Clock, Dial, StreamHttp, StreamLimits, WebDavReplica};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use storage_webdav::WebDavReplica;
 use tokio::net::TcpStream;
 
 const USER: &str = "ada";
 const PASSWORD: &str = "app-password";
 
 #[derive(Debug)]
-pub struct Tcp(TcpStream);
-
-impl ByteStream for Tcp {
-    async fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.0.read(buf).await
-    }
-
-    async fn write_all(&mut self, bytes: &[u8]) -> io::Result<()> {
-        self.0.write_all(bytes).await
-    }
-
-    async fn shutdown(&mut self) -> io::Result<()> {
-        self.0.shutdown().await
-    }
-}
-
-#[derive(Debug)]
 pub struct TcpDial(u16);
 
 impl Dial for TcpDial {
-    type Stream = Tcp;
+    type Stream = TcpStream;
 
-    async fn dial(&self) -> Result<Tcp, HttpError> {
+    async fn dial(&self) -> Result<TcpStream, HttpError> {
         let stream = TcpStream::connect(("127.0.0.1", self.0))
             .await
             .map_err(|_| HttpError::Unreachable)?;
         // A request written in two parts must not wait for the server's delayed
         // acknowledgement: that is 40 ms a request on loopback.
         let _ = stream.set_nodelay(true);
-        Ok(Tcp(stream))
+        Ok(stream)
     }
 }
 
@@ -64,18 +46,19 @@ pub struct Basic<H>(H);
 impl<H: Http> Http for Basic<H> {
     fn send(
         &self,
-        mut request: HttpRequest,
-    ) -> impl Future<Output = Result<HttpResponse, HttpError>> + Send {
+        mut request: Request<Vec<u8>>,
+    ) -> impl Future<Output = Result<Response<Vec<u8>>, HttpError>> + Send {
         use base64::Engine;
         let token = base64::engine::general_purpose::STANDARD.encode(format!("{USER}:{PASSWORD}"));
-        request
-            .headers
-            .push(Header::new("Authorization", format!("Basic {token}")));
+        let mut value =
+            HeaderValue::from_str(&format!("Basic {token}")).expect("base64 is a value");
+        value.set_sensitive(true);
+        request.headers_mut().insert(AUTHORIZATION, value);
         self.0.send(request)
     }
 }
 
-pub type Dav = WebDavReplica<Basic<StreamHttp<TcpDial>>>;
+pub type Dav = WebDavReplica<Basic<RelayHttp<TcpDial>>>;
 
 /// The fake server with the two folders of a Photos account made.
 pub struct Server {
@@ -106,9 +89,10 @@ impl Server {
         ))
         .expect("url");
         WebDavReplica::new(
-            Basic(StreamHttp::new(TcpDial(self.port), StreamLimits::default())),
+            Basic(RelayHttp::new(TcpDial(self.port), RelayLimits::default())),
             &url,
             Clock::fixed(UnixSeconds(1_000)),
+            "n1",
         )
     }
 
@@ -130,7 +114,7 @@ pub struct Synced {
 
 /// One machine: its own scratch directory, library, journals and engines.
 pub struct Machine {
-    pub dir: PathBuf,
+    pub dir: tempfile::TempDir,
     pub library: PhotoLibrary,
     pub millis: Arc<ManualMillis>,
     pub originals: Engine<Dav, PhotoOriginals, SystemClock>,
@@ -143,7 +127,7 @@ impl Machine {
         let dir = scratch(&format!("photos-{name}"));
         let millis = Arc::new(ManualMillis::at(ms));
         let library = PhotoLibrary::open(
-            dir.join("data/photos"),
+            dir.path().join("data/photos"),
             DeviceId::parse(name).expect("device"),
             millis.clone(),
         )
@@ -151,7 +135,8 @@ impl Machine {
         // Not flushed on each commit: a thousand photos make thousands of them, and these tests
         // prove what the engine does, not what the disk does.
         let journal = |slug: &str| {
-            Journal::open_unflushed(&dir.join(format!("state/{slug}.sqlite"))).expect("journal")
+            Journal::open_unflushed(&dir.path().join(format!("state/{slug}.sqlite")))
+                .expect("journal")
         };
         let originals = Engine::new(
             server.replica("originals"),
@@ -185,7 +170,7 @@ impl Machine {
     /// `n` tiny distinct fixture files in this machine's camera folder (never committed:
     /// generated here). `seed` makes a second batch differ from the first.
     pub fn fixtures(&self, seed: &str, n: usize) -> Vec<PathBuf> {
-        let camera = self.dir.join("camera");
+        let camera = self.dir.path().join("camera");
         std::fs::create_dir_all(&camera).expect("camera");
         (0..n)
             .map(|i| {
@@ -199,24 +184,12 @@ impl Machine {
 
     /// One file with chosen bytes.
     pub fn file(&self, name: &str, bytes: &[u8]) -> PathBuf {
-        let camera = self.dir.join("camera");
+        let camera = self.dir.path().join("camera");
         std::fs::create_dir_all(&camera).expect("camera");
         let path = camera.join(name);
         std::fs::write(&path, bytes).expect("file");
         path
     }
-}
-
-impl Drop for Machine {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.dir);
-    }
-}
-
-/// The wall clock the real library uses, for a test of the default.
-#[allow(dead_code)]
-pub fn system_millis() -> SystemMillis {
-    SystemMillis
 }
 
 impl Synced {

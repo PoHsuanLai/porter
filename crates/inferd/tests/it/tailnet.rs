@@ -16,10 +16,12 @@ use hosting::tailnet::{Addresses, Seen, TailnetPlan, addresses, free_port, netwo
 use inferd::attached::{Attached, Place, Reach};
 use inferd::peers::Role;
 use inferd::settings::TailnetServe;
-use porter_core::{AppId, AppName, DataClass, Isolation, ModelId, Tier};
-use porter_dbus::{
-    CANDIDATE_KEY_MODELS, CANDIDATE_KEY_NEEDS_APPROVAL, Details, GUEST_KEY_STATE, InferenceProxy,
-};
+use porter_capability::ModelId;
+use porter_capability::Tier;
+use porter_core::{AppId, AppName, DataClass, Isolation};
+use porter_dbus::Details;
+use porter_dbus::inference::InferenceProxy;
+use porter_dbus::inference::{CANDIDATE_KEY_MODELS, CANDIDATE_KEY_NEEDS_APPROVAL, GUEST_KEY_STATE};
 use porter_infer::{ComputerName, PlaceId, PlaceState};
 use std::net::{IpAddr, SocketAddr};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -71,7 +73,7 @@ fn policy() -> porter_infer::Policy {
 async fn pair(name: &str, seen: Seen, serving: bool) -> Pair {
     let a = addresses();
     let port = free_port();
-    let dir = porter_fake::Scratch::new(&format!("tn-{name}"));
+    let dir = test_kit::Scratch::new(&format!("tn-{name}"));
     let lab = Lab::start_in(dir, "lab", &[entries::SERVED], None).await;
     let pi = World::start(Plan {
         catalog: catalog(),
@@ -144,7 +146,7 @@ fn error_name(error: &zbus::Error) -> String {
 }
 
 fn computer_error(name: &str) -> String {
-    format!("{}{name}", porter_dbus::COMPUTER_ERROR_PREFIX)
+    format!("{}{name}", porter_dbus::inference::COMPUTER_ERROR_PREFIX)
 }
 
 fn text_of(details: &Details, key: &str) -> Option<String> {
@@ -195,15 +197,16 @@ fn place(text: &str) -> PlaceId {
 
 mod chat {
     use super::*;
+    use porter_capability::LlmFeature;
     use porter_client::InferSession;
-    use porter_core::capability::LlmFeature;
     use porter_core::consent::Usage;
-    use porter_core::need::LlmNeed;
-    use porter_core::{Need, Tokens};
+    use porter_ids::Tokens;
     use porter_infer::{
         ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRequest, MessagePart, OpenOptions,
         Role as ChatRole,
     };
+    use porter_match::LlmNeed;
+    use porter_match::Need;
 
     fn llm() -> Need {
         Need::Llm(LlmNeed::new([LlmFeature::Chat].into(), Tokens(1000)))
@@ -408,7 +411,7 @@ async fn a_new_computer_is_asked_about_once_and_after_a_yes_its_models_answer() 
 
     // The person at pi says yes (the shell may answer a question that is waiting).
     pi_proxy
-        .answer_guest("nDESK", porter_dbus::GUEST_ANSWER_ALLOW)
+        .answer_guest("nDESK", porter_dbus::inference::GUEST_ANSWER_ALLOW)
         .await
         .expect("answered");
     let places = p.desk.accounts.places().await.expect("places");
@@ -447,7 +450,7 @@ async fn a_no_keeps_a_computer_out_and_it_is_not_asked_again() {
         .await
         .expect("a signal");
     pi_proxy
-        .answer_guest("nDESK", porter_dbus::GUEST_ANSWER_DENY)
+        .answer_guest("nDESK", porter_dbus::inference::GUEST_ANSWER_DENY)
         .await
         .expect("answered");
     for _ in 0..2 {
@@ -501,7 +504,7 @@ async fn a_yes_can_be_taken_back_and_forgotten_so_the_computer_is_asked_again() 
         .await
         .expect("a signal");
     pi_proxy
-        .answer_guest("nDESK", porter_dbus::GUEST_ANSWER_ALLOW)
+        .answer_guest("nDESK", porter_dbus::inference::GUEST_ANSWER_ALLOW)
         .await
         .expect("yes");
     assert_eq!(ready(&p.desk).await, Some(PlaceState::Ready));
@@ -512,7 +515,7 @@ async fn a_yes_can_be_taken_back_and_forgotten_so_the_computer_is_asked_again() 
             .await;
     let settings = proxy(&settings).await;
     settings
-        .answer_guest("nDESK", porter_dbus::GUEST_ANSWER_DENY)
+        .answer_guest("nDESK", porter_dbus::inference::GUEST_ANSWER_DENY)
         .await
         .expect("no");
     assert_eq!(ready(&p.desk).await, Some(PlaceState::NotReady));
@@ -574,7 +577,7 @@ async fn another_user_a_server_and_a_shared_computer_are_refused_unless_the_pers
                 .await;
         proxy(&pi_settings)
             .await
-            .answer_guest("nDESK", porter_dbus::GUEST_ANSWER_ALLOW)
+            .answer_guest("nDESK", porter_dbus::inference::GUEST_ANSWER_ALLOW)
             .await
             .expect("allowed");
         let hello = http(p.a.desk, at, HELLO).await;
@@ -655,7 +658,7 @@ async fn a_cloud_account_is_never_reached_from_a_peer_even_when_it_is_the_only_e
         .await;
     proxy(&settings)
         .await
-        .answer_guest("nDESK", porter_dbus::GUEST_ANSWER_ALLOW)
+        .answer_guest("nDESK", porter_dbus::inference::GUEST_ANSWER_ALLOW)
         .await
         .expect("yes");
     let hello = http(a.desk, at, HELLO).await;
@@ -686,7 +689,7 @@ async fn a_computer_attached_over_the_network_is_never_lent_onward() {
     // runs on pi itself.
     let a = addresses();
     let port = free_port();
-    let dir = porter_fake::Scratch::new("tn-onward");
+    let dir = test_kit::Scratch::new("tn-onward");
     let lab = Lab::start_in(dir, "lab", &[entries::SERVED], None).await;
     let pi = World::start(Plan {
         catalog: vec![("a-attached.toml", entries::attached())],
@@ -715,7 +718,7 @@ async fn a_computer_attached_over_the_network_is_never_lent_onward() {
         .await;
     proxy(&settings)
         .await
-        .answer_guest("nDESK", porter_dbus::GUEST_ANSWER_ALLOW)
+        .answer_guest("nDESK", porter_dbus::inference::GUEST_ANSWER_ALLOW)
         .await
         .expect("yes");
     let hello = http(a.desk, at, HELLO).await;
@@ -896,7 +899,7 @@ async fn only_settings_may_add_or_look_and_only_settings_and_the_shell_may_answe
         let e = inference.guests().await.expect_err("refused");
         assert_eq!(error_name(&e), denied, "{who}");
         let e = inference
-            .answer_guest("nDESK", porter_dbus::GUEST_ANSWER_ALLOW)
+            .answer_guest("nDESK", porter_dbus::inference::GUEST_ANSWER_ALLOW)
             .await
             .expect_err("refused");
         assert_eq!(error_name(&e), denied, "{who}");
@@ -904,7 +907,7 @@ async fn only_settings_may_add_or_look_and_only_settings_and_the_shell_may_answe
     // The shell may answer only a computer that is asking.
     let shell = proxy(&p.pi.client).await;
     let e = shell
-        .answer_guest("nDESK", porter_dbus::GUEST_ANSWER_ALLOW)
+        .answer_guest("nDESK", porter_dbus::inference::GUEST_ANSWER_ALLOW)
         .await
         .expect_err("nobody asked");
     assert_eq!(error_name(&e), computer_error("NotAsking"));
@@ -916,11 +919,11 @@ async fn only_settings_may_add_or_look_and_only_settings_and_the_shell_may_answe
             .await;
     let settings = proxy(&settings).await;
     settings
-        .answer_guest("nDESK", porter_dbus::GUEST_ANSWER_ALLOW)
+        .answer_guest("nDESK", porter_dbus::inference::GUEST_ANSWER_ALLOW)
         .await
         .expect("allowed");
     let e = settings
-        .answer_guest("nNOBODY", porter_dbus::GUEST_ANSWER_ALLOW)
+        .answer_guest("nNOBODY", porter_dbus::inference::GUEST_ANSWER_ALLOW)
         .await
         .expect_err("not there");
     assert_eq!(error_name(&e), computer_error("NotOnTailscale"));
@@ -937,7 +940,7 @@ async fn only_settings_may_add_or_look_and_only_settings_and_the_shell_may_answe
         );
     }
     settings
-        .answer_guest("nDESK", porter_dbus::GUEST_ANSWER_DENY)
+        .answer_guest("nDESK", porter_dbus::inference::GUEST_ANSWER_DENY)
         .await
         .expect("denied");
     let rows = settings.guests().await.expect("guests");

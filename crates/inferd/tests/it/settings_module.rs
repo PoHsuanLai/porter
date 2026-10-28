@@ -9,19 +9,22 @@ use ds_settings::schema::{
     AgentSetting, ChoicePlace, ChoiceWord, Exposure, KeyKind, KeyPath, Page,
 };
 use hosting::bus::{PrivateBus, within};
-use inferd::audit::Memory;
-use inferd::clock::FixedClock;
 use inferd::engines::Engines;
 use inferd::peers::{Caller, Role, TablePeers};
 use inferd::service::{Inference, serve_with_settings};
 use inferd::settings::{ConfigFile, InferdSettings, Reload};
 use inferd::supervise::Supervised;
-use porter_core::capability::{Capability, LlmCap, LlmFeature, LlmWire};
-use porter_core::{
-    AccountId, AppId, AppName, Billing, Isolation, Locality, ModelId, Tokens, UnixSeconds,
-};
-use porter_dbus::{INFERENCE_BUS, INFERENCE_PATH, INFERENCE_SETTINGS_PATH, InferenceProxy};
+use porter_capability::ModelId;
+use porter_capability::{Billing, Locality};
+use porter_capability::{Capability, LlmCap, LlmFeature, LlmWire};
+use porter_core::AccountId;
+use porter_core::{AppId, AppName, Isolation};
+use porter_dbus::inference::InferenceProxy;
+use porter_dbus::inference::{INFERENCE_BUS, INFERENCE_PATH, INFERENCE_SETTINGS_PATH};
+use porter_ids::clock::FixedClock;
+use porter_ids::{Tokens, UnixSeconds};
 use porter_infer::{Pick, Policy, Slot, TierMap};
+use porter_turns::audit::Memory;
 use std::path::PathBuf;
 use std::sync::Arc;
 use zbus::Connection;
@@ -340,8 +343,9 @@ async fn a_model_of_a_probed_runtime_is_listed_under_this_computer_and_stays_lis
 {
     use inferd::probe::{Found, Probed, Runtime};
     use inferd::probed::Standing;
-    use porter_core::capability::{Capability, LlmCap, LlmFeature, LlmWire};
-    use porter_core::{Claim, Offer, Provenance, Subject, Tokens};
+    use porter_capability::{Capability, LlmCap, LlmFeature, LlmWire};
+    use porter_capability::{Claim, Offer, Provenance, Subject};
+    use porter_ids::Tokens;
     let id = ModelId::parse("llama3.2-3b").expect("id");
     let found = Found {
         runtime: Runtime::Ollama,
@@ -394,7 +398,7 @@ async fn a_set_by_the_settings_role_is_validated_written_and_in_force_for_the_ne
         rig.engines
             .settings()
             .tiers
-            .pick(Slot::Text, porter_core::Tier::Balanced)
+            .pick(Slot::Text, porter_capability::Tier::Balanced)
     };
     assert_eq!(settings.get(&slot).await.expect("get"), text(""));
     assert_eq!(in_force(), None);
@@ -513,7 +517,7 @@ async fn a_coding_agent_is_a_choice_of_the_text_slot_alone_listed_in_its_own_gro
         .await
         .expect("set");
     assert!(matches!(
-        rig.engines.settings().tiers.pick(Slot::Text, porter_core::Tier::Balanced),
+        rig.engines.settings().tiers.pick(Slot::Text, porter_capability::Tier::Balanced),
         Some(Pick::Named(m)) if m.is_agent()
     ));
     let schema = settings.describe().await.expect("describe");
@@ -639,7 +643,7 @@ async fn an_old_kind_row_in_the_file_is_the_slots_row_and_a_set_keeps_the_two_in
         rig.engines
             .settings()
             .tiers
-            .pick(Slot::Text, porter_core::Tier::Balanced),
+            .pick(Slot::Text, porter_capability::Tier::Balanced),
         Some(Pick::Auto { .. })
     ));
 }
@@ -832,7 +836,7 @@ async fn an_engine_program_is_written_read_back_announced_and_cleared_and_a_bad_
     );
 
     // Refused in plain words, and the row keeps what it had.
-    let scratch = porter_fake::Scratch::new("program-row");
+    let scratch = test_kit::Scratch::new("program-row");
     let loose = scratch.join("python");
     std::fs::write(&loose, "").expect("write");
     std::fs::set_permissions(&loose, std::fs::Permissions::from_mode(0o775)).expect("chmod");

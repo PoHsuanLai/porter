@@ -1,0 +1,19 @@
+[package]
+name = "oauth-probe-proto"
+description = "What an OAuth token shows, with no IO: the bearer read of an API and the readings of Google's and Microsoft Graph's answers as claims about the account's services (present, turned off, refused by the tenant, not on the server)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+porter-capability = { workspace = true }
+porter-ids = { workspace = true }
+http = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

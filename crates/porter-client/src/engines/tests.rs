@@ -1,8 +1,10 @@
 use super::engine::Scheme;
 use super::routes::Table;
-use super::wire::{Temperature, shape};
+use super::wire::shape;
 use super::*;
-use porter_core::{AccountId, Locality, Tier, Tokens};
+use porter_capability::{Locality, Tier};
+use porter_core::AccountId;
+use porter_ids::Tokens;
 use porter_infer::Slot;
 
 fn engine(id: &str, url: &str, locality: Locality) -> Engine {
@@ -134,12 +136,11 @@ fn a_table_is_refused_for_what_would_go_wrong_later() {
 #[test]
 fn an_unset_sampling_leaves_the_temperature_to_the_engine() {
     let body = r#"{"model":"m","temperature":1.0,"stream":true}"#;
-    let kept = shape(Temperature::Sent, body);
+    let kept = shape(true, body);
     assert_eq!(kept, body);
-    let shaped: serde_json::Value =
-        serde_json::from_str(&shape(Temperature::EngineDefault, body)).expect("json");
+    let shaped: serde_json::Value = serde_json::from_str(&shape(false, body)).expect("json");
     assert_eq!(shaped, serde_json::json!({"model":"m","stream":true}));
     // Not an object: as it came.
-    assert_eq!(shape(Temperature::EngineDefault, "[1]"), "[1]");
-    assert_eq!(shape(Temperature::EngineDefault, "nope"), "nope");
+    assert_eq!(shape(false, "[1]"), "[1]");
+    assert_eq!(shape(false, "nope"), "nope");
 }

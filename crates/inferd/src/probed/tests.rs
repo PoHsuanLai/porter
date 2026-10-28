@@ -1,14 +1,18 @@
 use super::*;
 use crate::engines::Engines;
 use crate::probe::testing::{chat, found};
-use crate::serve::EngineHost;
-use crate::session::SessionSpec;
-use porter_core::capability::LlmFeature;
-use porter_core::need::LlmNeed;
-use porter_core::{DataClass, Locality, ModelId, Need, Tier, Tokens};
+use porter_capability::LlmFeature;
+use porter_capability::ModelId;
+use porter_capability::{Locality, Tier};
+use porter_core::DataClass;
+use porter_ids::Tokens;
 use porter_infer::{
     AutoMode, AutoRow, InferRefusal, LocalOnly, ModelRef, Policy, Slot, TierMap, TierRow,
 };
+use porter_match::LlmNeed;
+use porter_match::Need;
+use porter_router::seams::EngineHost;
+use porter_router::session::SessionSpec;
 use std::path::Path;
 
 fn llm() -> Need {
@@ -289,7 +293,7 @@ async fn every_look_wakes_whoever_tells_listeners() {
     let book = ProbedBook::default();
     let woken = book.changed();
     book.set(Runtime::Ollama, Standing::Online, None);
-    tokio::time::timeout(porter_fake::GENEROUS, woken.notified())
+    tokio::time::timeout(test_kit::GENEROUS, woken.notified())
         .await
         .expect("woken by the look that was recorded before anyone waited");
 }

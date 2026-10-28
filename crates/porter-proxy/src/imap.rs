@@ -9,6 +9,7 @@
 //! 4. Tell the app `* PREAUTH [CAPABILITY ...] ...`, with the server's capabilities less
 //!    everything about authenticating or upgrading, then relay bytes both ways.
 
+use crate::auth::{Sasl, pick};
 use crate::fault::RelayFault;
 use porter_core::{RelayAuth, RelayPlan};
 
@@ -31,14 +32,14 @@ impl ImapAuth {
     /// a password needs `AUTH=PLAIN` or a `LOGIN` that is not disabled.
     pub fn choose(capabilities: &[String], auth: &RelayAuth) -> Result<Self, RelayFault> {
         let has = |atom: &str| capabilities.iter().any(|c| c.eq_ignore_ascii_case(atom));
-        match auth {
-            RelayAuth::AccessToken(_) if has("AUTH=XOAUTH2") => Ok(ImapAuth::Xoauth2),
-            RelayAuth::AccessToken(_) => Err(RelayFault::Protocol),
-            RelayAuth::Password(_) if has("AUTH=PLAIN") => Ok(ImapAuth::Plain),
-            RelayAuth::Password(_) if !has("LOGINDISABLED") => Ok(ImapAuth::Login),
-            RelayAuth::Password(_) | RelayAuth::Anonymous => Err(RelayFault::Protocol),
-            // a variant a newer porter adds: refused, never sent as anonymous
-            _ => Err(RelayFault::Protocol),
+        match pick(auth, has("AUTH=PLAIN"), has("AUTH=XOAUTH2")) {
+            Ok(Sasl::Plain) => Ok(ImapAuth::Plain),
+            Ok(Sasl::Xoauth2) => Ok(ImapAuth::Xoauth2),
+            // a password goes by `LOGIN` when the server offers no `PLAIN`, unless it disabled it
+            Err(_) if matches!(auth, RelayAuth::Password(_)) && !has("LOGINDISABLED") => {
+                Ok(ImapAuth::Login)
+            }
+            Err(fault) => Err(fault),
         }
     }
 }
@@ -88,18 +89,28 @@ pub enum ImapPhase {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImapRelay {
     /// What it presents and where.
-    pub plan: RelayPlan,
+    pub(crate) plan: RelayPlan,
     /// Where it stands.
-    pub phase: ImapPhase,
+    pub(crate) phase: ImapPhase,
     /// Server bytes read and not yet a whole line, until the relay starts relaying.
-    pub buffer: Vec<u8>,
+    pub(crate) buffer: Vec<u8>,
     /// What the app sent before the relay was ready for it, passed on once it is.
-    pub early: Vec<u8>,
+    pub(crate) early: Vec<u8>,
     /// The server's capabilities as last announced.
-    pub capabilities: Vec<String>,
+    pub(crate) capabilities: Vec<String>,
 }
 
 impl ImapRelay {
+    /// What the relay presents and where.
+    pub fn plan(&self) -> &RelayPlan {
+        &self.plan
+    }
+
+    /// Where the relay stands.
+    pub fn phase(&self) -> &ImapPhase {
+        &self.phase
+    }
+
     /// A relay at the start of a connection.
     pub fn new(plan: RelayPlan) -> Self {
         Self {

@@ -8,7 +8,7 @@ use crate::net::{Bind, Listener};
 use crate::seen::{Running, Seen, lock};
 use crate::shipped::point;
 use porter_core::Family;
-use porter_fake::{FakeAddress, FakeProtocol, FakeServer};
+use porter_fake::{FakeAddress, FakeServer};
 use porter_provider::ProviderSpec;
 use serde_json::json;
 use std::collections::HashSet;
@@ -90,7 +90,7 @@ pub struct FakeLlmApi {
 impl FakeLlmApi {
     /// Binds on loopback a company that wants its key presented as `auth`.
     pub async fn bind(auth: Auth) -> io::Result<Self> {
-        let listener = Listener::bind(&Bind::Loopback, "llm-api").await?;
+        let listener = Listener::bind(&Bind::Port(0), "llm-api").await?;
         let port = crate::net::port_of(listener.address());
         Ok(Self {
             listener,
@@ -151,10 +151,6 @@ impl LlmApiHandle {
 }
 
 impl FakeServer for FakeLlmApi {
-    fn protocol(&self) -> FakeProtocol {
-        FakeProtocol::ModelList
-    }
-
     fn address(&self) -> &FakeAddress {
         self.listener.address()
     }

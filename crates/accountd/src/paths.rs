@@ -2,7 +2,7 @@
 //! place the daemon names a path, so a test can give it scratch directories.
 
 pub use porter_daemon::xdg::PathError;
-use porter_daemon::xdg::{Xdg, absolute};
+use porter_daemon::{xdg::Xdg, xdg::absolute};
 use porter_families::set::Layer;
 use std::path::PathBuf;
 
@@ -13,8 +13,16 @@ pub struct Paths {
     pub registry_dir: PathBuf,
     /// `$XDG_STATE_HOME/quire/accountd/audit.jsonl`.
     pub audit: PathBuf,
+    /// inferd's old key store: its registry directory, `$XDG_STATE_HOME/quire/inferd/keys`. accountd
+    /// reads it once (the unit may read, not write, the person's files outside its own), copies
+    /// it ([`crate::import`]) and leaves removing it to inferd.
+    pub inferd_keys: PathBuf,
+    /// inferd's old key audit file, `$XDG_STATE_HOME/quire/inferd/keys-audit.jsonl`.
+    pub inferd_keys_audit: PathBuf,
+    /// The record of that copy, `$XDG_STATE_HOME/quire/accountd/ai-import.json`.
+    pub ai_import: PathBuf,
     /// The system caller table, `/etc/porter/callers.toml` (another file in a test build:
-    /// [`porter_daemon::SystemCallers`]).
+    /// [`porter_callers::SystemCallers`]).
     pub callers_system: PathBuf,
     /// The user's caller table, `$XDG_CONFIG_HOME/porter/callers.toml`; its rows win.
     pub callers_user: PathBuf,
@@ -33,6 +41,9 @@ pub struct Paths {
     /// `ACCOUNTD_TAILSCALE_SOCKET` (a Tailscale kept elsewhere, and every test of the binary,
     /// which names a scratch path so that none ever reaches the real Tailscale).
     pub tailscale_socket: PathBuf,
+    /// The directories of `PATH`, where Tailscale's program is looked for besides the usual
+    /// ones (to tell "not installed" from "not running"); empty when `PATH` is not set.
+    pub program_path: std::ffi::OsString,
 }
 
 /// The variable that names Tailscale's socket.
@@ -48,6 +59,7 @@ impl Paths {
         // Like the XDG rule: a relative path is invalid and ignored.
         let tailscale_socket = absolute(var(TAILSCALE_SOCKET_VAR))
             .unwrap_or_else(|| PathBuf::from(porter_tailscale::DEFAULT_SOCKET));
+        let program_path = var("PATH").unwrap_or_default().into();
         let xdg = Xdg::new(var);
         let state = xdg.dir("XDG_STATE_HOME", ".local/state")?;
         let config = xdg.dir("XDG_CONFIG_HOME", ".config")?;
@@ -64,13 +76,17 @@ impl Paths {
         Ok(Self {
             registry_dir: state.join("porter"),
             audit: state.join("quire/accountd/audit.jsonl"),
-            callers_system: PathBuf::from(porter_daemon::SYSTEM_CALLERS),
+            inferd_keys: state.join("quire/inferd/keys"),
+            inferd_keys_audit: state.join("quire/inferd/keys-audit.jsonl"),
+            ai_import: state.join("quire/accountd/ai-import.json"),
+            callers_system: PathBuf::from(porter_callers::SYSTEM_CALLERS),
             callers_user: config.join("porter/callers.toml"),
             clients_shipped: xdg.shipped("porter/clients.toml"),
             clients_user: config.join("porter/clients.toml"),
             provider_dirs,
             applications,
             tailscale_socket,
+            program_path,
         })
     }
 
@@ -92,8 +108,8 @@ impl Paths {
     }
 
     /// The clients files the OAuth families read: the shipped one and the one Settings writes.
-    pub fn client_files(&self) -> porter_families::ClientFiles {
-        porter_families::ClientFiles {
+    pub fn client_files(&self) -> porter_family_oauth::ClientFiles {
+        porter_family_oauth::ClientFiles {
             shipped: self.clients_shipped.clone(),
             own: self.clients_user.clone(),
         }
@@ -165,6 +181,14 @@ mod tests {
         assert_eq!(
             paths.audit,
             Path::new("/home/ada/.local/state/quire/accountd/audit.jsonl")
+        );
+        assert_eq!(
+            paths.inferd_keys,
+            Path::new("/home/ada/.local/state/quire/inferd/keys")
+        );
+        assert_eq!(
+            paths.ai_import,
+            Path::new("/home/ada/.local/state/quire/accountd/ai-import.json")
         );
         assert_eq!(
             paths.callers_user,
@@ -263,46 +287,10 @@ mod tests {
     }
 }
 
-/// Which build this is, for the one knob a release must not have.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Build {
-    /// Built with the `test-proc-root` feature.
-    Test,
-    /// Every other build: the shipped one.
-    Release,
-}
-
-/// The build this binary is.
-pub const BUILD: Build = if cfg!(feature = "test-proc-root") {
-    Build::Test
-} else {
-    Build::Release
-};
-
 /// Whether this binary honours `ACCOUNTD_PROC_ROOT`: only with the `test-proc-root` feature (the
 /// jailed and acceptance tests run processes outside service cgroups). A release build ignores
 /// the variable.
-pub const PROC_GATE: porter_daemon::ProcGate = if cfg!(feature = "test-proc-root") {
-    porter_daemon::ProcGate::Honour
-} else {
-    porter_daemon::ProcGate::Ignore
-};
-
-/// The directory callers are read from in place of `/proc` (`ACCOUNTD_PROC_ROOT`), for a test
-/// build only. A release build ignores the variable.
-///
-/// Kept for one batch at its old path; the choice itself is [`porter_daemon::ProcRoot`], which
-/// `Config::from_env` now calls with [`PROC_GATE`].
-pub fn proc_root(build: Build, value: Option<String>) -> Option<PathBuf> {
-    let gate = match build {
-        Build::Test => porter_daemon::ProcGate::Honour,
-        Build::Release => porter_daemon::ProcGate::Ignore,
-    };
-    porter_daemon::ProcRoot::choose(gate, crate::daemon::PROC_ROOT_VAR, |_| {
-        value.as_deref().map(std::ffi::OsString::from)
-    })
-    .into_fixture()
-}
+pub const HONOURS_PROC_ROOT: bool = cfg!(feature = "test-proc-root");
 
 #[cfg(test)]
 mod proc_root_tests {

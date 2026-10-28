@@ -1,17 +1,21 @@
 //! The CalDAV and CardDAV source: today's behaviour behind the seam. Collections come from the
-//! principal and home sets ([`super::super::discover`]), each collection's feed is porter-dav's
+//! principal and home sets ([`super::super::discover`]), each collection's feed is dav-proto's
 //! sync-collection (or the etag walk) through a [`WebDavReplica`] over the account's relay; its
 //! upserts carry no content, so the engine fetches each item, as before.
 
 use super::super::PimKind;
 use super::super::discover::{DiscoverError, Found, discover};
-use super::super::relay::{PimDial, pim_http, pim_replica};
+use super::super::relay::{pim_http, pim_replica};
 use super::{Feed, FeedChange, FeedCursor, Page, PimSource};
 use porter_client::{Accounts, Transport};
-use porter_core::{EndpointUrl, GrantId, WebUrl};
+use porter_core::EndpointUrl;
+use porter_core::GrantId;
+use porter_http_relay::{RelayDial, RelayHttp};
+use porter_ids::WebUrl;
+use porter_sync::Clock;
 use porter_sync::{Anchor, ByteRange, Change, Cursor, RemoteId, Replica, ReplicaError};
 use std::sync::Arc;
-use storage_webdav::{Clock, StreamHttp, WebDavReplica};
+use storage_webdav::WebDavReplica;
 
 /// A WebDAV sync token or etag-walk position: the replica's own anchor text.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,22 +37,33 @@ pub struct DavSource<T> {
     accounts: Arc<Accounts<T>>,
     grant: GrantId,
     endpoint: EndpointUrl,
+    clock: Clock,
+    nonce: String,
 }
 
 impl<T> DavSource<T> {
-    /// The source at `endpoint`, as `grant` allows.
-    pub fn new(accounts: Arc<Accounts<T>>, grant: GrantId, endpoint: EndpointUrl) -> Self {
+    /// The source at `endpoint`, as `grant` allows, dating tombstones with `clock`; `nonce` is
+    /// the run's, which tells its feed anchors from an earlier run's.
+    pub fn new(
+        accounts: Arc<Accounts<T>>,
+        grant: GrantId,
+        endpoint: EndpointUrl,
+        clock: Clock,
+        nonce: String,
+    ) -> Self {
         Self {
             accounts,
             grant,
             endpoint,
+            clock,
+            nonce,
         }
     }
 }
 
 /// One DAV collection's feed.
 #[derive(Debug)]
-pub struct DavFeed<T: Transport>(WebDavReplica<StreamHttp<PimDial<T>>>);
+pub struct DavFeed<T: Transport>(WebDavReplica<RelayHttp<RelayDial<T>>>);
 
 impl<T: Transport + 'static> PimSource for DavSource<T> {
     type Feed = DavFeed<T>;
@@ -69,7 +84,8 @@ impl<T: Transport + 'static> PimSource for DavSource<T> {
             self.grant.clone(),
             self.endpoint.clone(),
             &found.url,
-            Clock::system(),
+            self.clock.clone(),
+            &self.nonce,
         ))
     }
 }
@@ -101,7 +117,7 @@ impl<T: Transport + 'static> Feed for DavFeed<T> {
         Ok(self.0.fetch(id, ByteRange::Whole).await?.0)
     }
 
-    fn features(&self) -> porter_core::capability::StorageCap {
+    fn features(&self) -> porter_capability::StorageCap {
         self.0.features()
     }
 

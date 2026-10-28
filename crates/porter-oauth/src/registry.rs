@@ -16,42 +16,24 @@ use porter_provider::{
 use serde::Deserialize;
 use std::path::Path;
 
-/// Whether a client may be used for mail.
-///
-/// Gmail's IMAP and SMTP need the restricted scope `https://mail.google.com/`, which Google
-/// grants a client only after a security assessment. A person's own client may use it (it is
-/// their own project, in testing mode, for their own addresses), so a row says `byo = true`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum MailRights {
-    /// Not a client of the person's own: mail's restricted scope is not asked.
-    #[default]
-    Withheld,
-    /// The person's own client: mail may be asked.
-    Byo,
-}
-
-/// Whether the client's consent screen is verified.
-///
-/// An app Google has not verified is in *testing*: only its test users may sign in, and Google
-/// ends their sign-ins after seven days (design/31 R5). A row says `testing = true`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum AppReview {
-    /// Verified, or not an issuer that has the notion: sign-ins last until revoked.
-    #[default]
-    Verified,
-    /// In testing: sign-ins last seven days.
-    Testing,
-}
-
 /// What a client row says besides its id, secret and endpoints. [`porter_provider::ClientEntry`]
 /// does not carry these (it is shared with mailo, which builds it field by field), so the
 /// registry reads them from the same files beside it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct ClientTraits {
-    /// Whether mail may be asked.
-    pub mail: MailRights,
-    /// Whether the app is in testing.
-    pub review: AppReview,
+    /// Whether the client is the person's own (`byo = true`), so mail may be asked.
+    ///
+    /// Gmail's IMAP and SMTP need the restricted scope `https://mail.google.com/`, which Google
+    /// grants a client only after a security assessment. A person's own client may use it (it is
+    /// their own project, in testing mode, for their own addresses). Without it that scope is not
+    /// asked.
+    pub byo: bool,
+    /// Whether the client's consent screen is in testing (`testing = true`).
+    ///
+    /// An app Google has not verified is in *testing*: only its test users may sign in, and Google
+    /// ends their sign-ins after seven days (design/31 R5). Otherwise sign-ins last until revoked
+    /// (verified, or not an issuer that has the notion).
+    pub testing: bool,
 }
 
 /// One row's traits, keyed as the row is.
@@ -64,17 +46,6 @@ pub struct ClientRegistry {
     own: Vec<ClientEntry>,
     shipped_traits: Vec<TraitRow>,
     own_traits: Vec<TraitRow>,
-    moved: Vec<MovedEndpoints>,
-}
-
-/// A row of the person's own file whose endpoints left the issuer's servers: its endpoints were
-/// set aside and the issuer's published ones are used ([`ClientRegistry::layered`]).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct MovedEndpoints {
-    /// The issuer the row is for.
-    pub issuer: Issuer,
-    /// Its channel.
-    pub channel: ClientChannel,
 }
 
 impl ClientRegistry {
@@ -87,21 +58,14 @@ impl ClientRegistry {
     /// [`ClientRegistry::moved_endpoints`] for the daemon to log. The shipped file is the
     /// install's, and may point anywhere (a sovereign cloud; a test's fake issuer).
     pub fn layered(shipped: ClientsFile, own: ClientsFile) -> Self {
-        let mut moved = Vec::new();
         let own = own
             .clients
             .into_iter()
             .map(|row| match row.leaves_the_issuer() {
-                true => {
-                    moved.push(MovedEndpoints {
-                        issuer: row.issuer,
-                        channel: row.channel,
-                    });
-                    ClientEntry {
-                        endpoints: None,
-                        ..row
-                    }
-                }
+                true => ClientEntry {
+                    endpoints: None,
+                    ..row
+                },
                 false => row,
             })
             .collect();
@@ -110,13 +74,7 @@ impl ClientRegistry {
             own,
             shipped_traits: Vec::new(),
             own_traits: Vec::new(),
-            moved,
         }
-    }
-
-    /// The person's rows whose endpoints were set aside, because they left the issuer's servers.
-    pub fn moved_endpoints(&self) -> &[MovedEndpoints] {
-        &self.moved
     }
 
     /// The registry from the two files at the paths the caller names. A file that does not exist
@@ -196,6 +154,7 @@ pub fn endpoints_of(client: &ClientEntry) -> IssuerEndpoints {
 
 /// Why a clients file could not be read.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum RegistryError {
     /// The file exists and could not be read.
     #[error("{path}: {reason}")]
@@ -243,16 +202,8 @@ fn traits_of(text: &str) -> Vec<TraitRow> {
                 .into_iter()
                 .map(|row| {
                     let traits = ClientTraits {
-                        mail: if row.byo {
-                            MailRights::Byo
-                        } else {
-                            MailRights::Withheld
-                        },
-                        review: if row.testing {
-                            AppReview::Testing
-                        } else {
-                            AppReview::Verified
-                        },
+                        byo: row.byo,
+                        testing: row.testing,
                     };
                     (row.issuer, row.channel, traits)
                 })
@@ -281,11 +232,6 @@ fn read_clients(path: &Path) -> Result<(ClientsFile, Vec<TraitRow>), RegistryErr
     Ok((file, traits_of(&text)))
 }
 
-/// A clients file as TOML, for the person's own file.
-pub fn clients_toml(file: &ClientsFile) -> Result<String, RegistryError> {
-    toml::to_string(file).map_err(|e| RegistryError::Mailo(e.to_string()))
-}
-
 #[derive(Deserialize)]
 struct MailoFile {
     #[serde(default)]
@@ -310,7 +256,7 @@ struct MailoEndpoints {
 
 /// Reads mailo's `oauth.json` (the `OAuthRegistry` of `signin.rs`) as clients for `channel`
 /// (mailo has no channels, so the caller says which build the ids were registered for). Mailo's
-/// overridden `auth`/`token` become the entry's endpoints, with revoke and device absent: a
+/// overridden `auth`/`token` become the entry's endpoints, with revoke absent: a
 /// sovereign-cloud or proxy override is not known to have either. The result is for the person's
 /// own file.
 pub fn from_mailo(text: &str, channel: ClientChannel) -> Result<ClientsFile, RegistryError> {
@@ -328,7 +274,6 @@ pub fn from_mailo(text: &str, channel: ClientChannel) -> Result<ClientsFile, Reg
                     authorize: endpoint(&e.auth)?,
                     token: endpoint(&e.token)?,
                     revoke: None,
-                    device: None,
                 })
             })
             .transpose()?;
@@ -415,9 +360,6 @@ mod tests {
                 ),
             ]
         );
-        // And it lands in a file the registry reads back identically.
-        let text = clients_toml(&file).expect("toml");
-        assert_eq!(parse_clients(&text), Ok(file));
     }
 
     #[test]
@@ -434,7 +376,7 @@ mod tests {
 
     #[test]
     fn paths_are_read_layered_and_a_missing_file_is_empty() {
-        let dir = porter_fake::Scratch::new("oauth-reg");
+        let dir = test_kit::Scratch::new("oauth-reg");
         let shipped = dir.join("shipped.toml");
         let own = dir.join("own.toml");
         std::fs::write(
@@ -511,13 +453,6 @@ mod tests {
                 Issuer::Microsoft.endpoints(),
                 "{token}"
             );
-            assert_eq!(
-                registry.moved_endpoints(),
-                [MovedEndpoints {
-                    issuer: Issuer::Microsoft,
-                    channel: ClientChannel::Stable,
-                }]
-            );
         }
 
         // Another tenant on the issuer's own servers stays.
@@ -535,7 +470,6 @@ mod tests {
                 .to_string()
                 .contains("/organizations/")
         );
-        assert!(registry.moved_endpoints().is_empty());
 
         // The install's own file may point anywhere (a test's fake issuer).
         let registry = ClientRegistry::layered(
@@ -549,12 +483,11 @@ mod tests {
             endpoints_of(client).token.to_string(),
             "https://127.0.0.1:9/token"
         );
-        assert!(registry.moved_endpoints().is_empty());
     }
 
     #[test]
     fn a_rows_byo_and_testing_are_read_and_the_persons_row_wins() {
-        let dir = porter_fake::Scratch::new("oauth-traits");
+        let dir = test_kit::Scratch::new("oauth-traits");
         let (shipped, own) = (dir.join("shipped.toml"), dir.join("own.toml"));
         std::fs::write(
             &shipped,
@@ -566,8 +499,8 @@ mod tests {
         assert_eq!(
             at(&alone, ClientChannel::Stable),
             ClientTraits {
-                mail: MailRights::Withheld,
-                review: AppReview::Testing
+                byo: false,
+                testing: true,
             }
         );
         std::fs::write(
@@ -580,8 +513,8 @@ mod tests {
         assert_eq!(
             at(&both, ClientChannel::Stable),
             ClientTraits {
-                mail: MailRights::Byo,
-                review: AppReview::Verified
+                byo: true,
+                testing: false,
             }
         );
         // No row, no traits to speak of.
@@ -590,8 +523,8 @@ mod tests {
             Issuer::Google,
             ClientChannel::Stable,
             ClientTraits {
-                mail: MailRights::Byo,
-                review: AppReview::Testing,
+                byo: true,
+                testing: true,
             },
         );
         // A traits entry for a row that does not exist says nothing.
@@ -604,10 +537,10 @@ mod tests {
             Issuer::Google,
             ClientChannel::Stable,
             ClientTraits {
-                mail: MailRights::Byo,
-                review: AppReview::Testing,
+                byo: true,
+                testing: true,
             },
         );
-        assert_eq!(at(&held, ClientChannel::Stable).review, AppReview::Testing);
+        assert!(at(&held, ClientChannel::Stable).testing);
     }
 }

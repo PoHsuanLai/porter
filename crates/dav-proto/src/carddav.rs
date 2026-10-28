@@ -45,14 +45,15 @@ impl Props {
     pub fn of(response: &Response) -> Self {
         let found = |name: &str| response.found(name).map(str::to_owned);
         let hrefs = |name: &str| -> Vec<String> {
-            // The value lists an href's text and any other child by its qualified name; a
+            // The entries list an href's text and any other child by its qualified name; a
             // principal or home set holds only hrefs, or `DAV:unauthenticated`, which is none.
             response
-                .found(name)
-                .map(|v| {
-                    v.split_whitespace()
-                        .filter(|word| !word.starts_with(DAV))
-                        .map(str::to_owned)
+                .found_items(name)
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter(|item| !item.starts_with(DAV))
+                        .cloned()
                         .collect()
                 })
                 .unwrap_or_default()

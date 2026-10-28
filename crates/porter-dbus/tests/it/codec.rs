@@ -1,22 +1,25 @@
 //! A need and a candidate survive their D-Bus shape, and the shape is what the introspection
 //! says: a kind slug and a vardict for a need, a path, a label and a vardict for a candidate.
 
-use porter_core::capability::{
+use porter_capability::ModelId;
+use porter_capability::Subject;
+use porter_capability::{
     Access, AgentCap, AgentProgram, AgentProtocol, Albums, Capability, CapabilityKind, CuaEnv,
-    Delta, HashKind, LibraryRead, LlmCap, LlmFeature, LlmWire, Modality, Offered, QuotaReport,
-    SpeechMode, StorageCap, StorageScope,
+    Delta, HashKind, LibraryRead, LlmCap, LlmFeature, LlmWire, Modality, SpeechMode, StorageCap,
+    StorageScope,
 };
-use porter_core::need::{
+use porter_core::{AccountId, GrantId};
+use porter_core::{
+    Candidate, EndpointUrl, Family, Limit, LimitReason, LoginName, Restriction, ServiceEndpoint,
+    TenantConsent, Tls, TokenLifetime, Verification,
+};
+use porter_dbus::accounts::{account_path, candidate_from_dbus, candidate_to_dbus};
+use porter_dbus::inference::{need_from_dbus, need_to_dbus};
+use porter_ids::{Bytes, Count, Dims, Px, Tokens};
+use porter_match::Need;
+use porter_match::{
     AgentNeed, CuaNeed, DimsNeed, EmbedNeed, IdentityNeed, ImageGenNeed, KeyValueNeed, LlmNeed,
     MailNeed, NotesNeed, PhotosNeed, PimNeed, PushNeed, RerankNeed, SpeechNeed, StorageNeed,
-};
-use porter_core::{
-    AccountId, Bytes, Candidate, Count, Dims, EndpointUrl, Family, GrantId, Limit, LimitReason,
-    LoginName, ModelId, Need, Px, Restriction, ServiceEndpoint, Subject, TenantConsent, Tls,
-    TokenLifetime, Tokens, Verification,
-};
-use porter_dbus::{
-    account_path, candidate_from_dbus, candidate_to_dbus, need_from_dbus, need_to_dbus,
 };
 use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
 
@@ -25,11 +28,11 @@ fn every_need() -> Vec<(&'static str, Need)> {
     vec![
         (
             "identity",
-            Need::Identity(IdentityNeed::new(Offered::Present, Offered::Absent)),
+            Need::Identity(IdentityNeed::new().with_profile()),
         ),
         (
             "mail",
-            Need::Mail(MailNeed::new(Access::Read, Offered::Present, Delta::Push)),
+            Need::Mail(MailNeed::new(Access::Read, true, Delta::Push)),
         ),
         ("calendar", Need::Calendar(pim.clone())),
         ("contacts", Need::Contacts(pim.clone())),
@@ -44,16 +47,16 @@ fn every_need() -> Vec<(&'static str, Need)> {
                 Access::ReadWrite,
                 Delta::Poll,
                 StorageScope::AppFolder,
-                QuotaReport::Unreported,
+                false,
             )),
         ),
         (
             "photos",
             Need::Photos(PhotosNeed::new(
                 LibraryRead::None,
-                Offered::Present,
+                true,
                 Albums::None,
-                Offered::Absent,
+                false,
                 Delta::None,
             )),
         ),
@@ -82,7 +85,7 @@ fn every_need() -> Vec<(&'static str, Need)> {
         (
             "image_gen",
             Need::ImageGen(ImageGenNeed::new(
-                [porter_core::capability::ImageMode::Inpaint].into(),
+                [porter_capability::ImageMode::Inpaint].into(),
                 Px(512),
             )),
         ),
@@ -101,7 +104,7 @@ fn every_need() -> Vec<(&'static str, Need)> {
             Need::Agent(AgentNeed::new(
                 AgentProgram::parse("claude-code").expect("program"),
                 [AgentProtocol::AnthropicMessages].into(),
-                Offered::Present,
+                true,
             )),
         ),
     ]
@@ -138,7 +141,8 @@ fn a_need_survives_the_bus_signature() {
     for (_, need) in every_need() {
         let arg = need_to_dbus(&need);
         let bytes = zbus::zvariant::to_bytes(ctxt, &arg).expect("encodes");
-        let (back, _): (porter_dbus::NeedArg, usize) = bytes.deserialize().expect("decodes");
+        let (back, _): (porter_dbus::inference::NeedArg, usize) =
+            bytes.deserialize().expect("decodes");
         assert_eq!(need_from_dbus(back), Ok(need));
     }
 }
@@ -159,11 +163,11 @@ fn candidates() -> Vec<Candidate> {
     let storage = Capability::Storage(StorageCap {
         access: Access::ReadWrite,
         delta: Delta::Poll,
-        quota: QuotaReport::Reported,
+        quota: true,
         scope: StorageScope::AppFolder,
         hashes: HashKind::QuickXor,
-        ranges: Offered::Present,
-        chunked_upload: Offered::Present,
+        ranges: true,
+        chunked_upload: true,
     });
     let llm = Capability::Llm(LlmCap {
         features: [LlmFeature::Chat, LlmFeature::Tools].into(),
@@ -220,7 +224,7 @@ fn an_agent_candidate_with_no_variable_to_set_round_trips() {
         Subject::Agent(AgentProgram::parse("gemini-cli").expect("program")),
         Capability::Agent(Box::new(AgentCap {
             program: AgentProgram::parse("gemini-cli").expect("program"),
-            key_env: Some(porter_core::capability::EnvName::parse("GEMINI_API_KEY").expect("env")),
+            key_env: Some(porter_capability::EnvName::parse("GEMINI_API_KEY").expect("env")),
             base_url_env: None,
             protocols: [AgentProtocol::GenerateContent].into(),
         })),
@@ -230,7 +234,8 @@ fn an_agent_candidate_with_no_variable_to_set_round_trips() {
     let ctxt = zbus::zvariant::serialized::Context::new_dbus(zbus::zvariant::LE, 0);
     let arg = candidate_to_dbus(&candidate);
     let bytes = zbus::zvariant::to_bytes(ctxt, &arg).expect("encodes");
-    let (back, _): (porter_dbus::CandidateArg, usize) = bytes.deserialize().expect("decodes");
+    let (back, _): (porter_dbus::accounts::CandidateArg, usize) =
+        bytes.deserialize().expect("decodes");
     assert_eq!(candidate_from_dbus(back), Ok(candidate));
 }
 
@@ -269,7 +274,8 @@ fn a_candidate_survives_the_bus_signature() {
     for candidate in candidates() {
         let arg = candidate_to_dbus(&candidate);
         let bytes = zbus::zvariant::to_bytes(ctxt, &arg).expect("encodes");
-        let (back, _): (porter_dbus::CandidateArg, usize) = bytes.deserialize().expect("decodes");
+        let (back, _): (porter_dbus::accounts::CandidateArg, usize) =
+            bytes.deserialize().expect("decodes");
         assert_eq!(candidate_from_dbus(back), Ok(candidate));
     }
 }

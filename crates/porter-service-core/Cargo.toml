@@ -1,0 +1,25 @@
+[package]
+name = "porter-service-core"
+description = "What the service domains share: the registry and its pure answers, the audit trail, the sheets seam, the reach policy, the per-account turns at an issuer, and the context (the seams and the registry) every domain works on."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+porter-core = { workspace = true }
+porter-match = { workspace = true }
+porter-capability = { workspace = true }
+porter-sheet = { workspace = true }
+porter-wire = { workspace = true }
+porter-ids = { workspace = true }
+porter-provider = { workspace = true }
+porter-secrets = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

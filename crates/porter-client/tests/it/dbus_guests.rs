@@ -8,13 +8,14 @@
 use crate::common;
 
 use common::bus::PrivateBus;
-use porter_client::lending::{Approval, CandidateModel, GuestAsk, RowState};
 use porter_client::{
-    Accounts, ClientError, ComputerReason, DbusTransport, GuestAnswer, GuestChange, GuestRow,
-    NodeId, TransportError,
+    Accounts, ClientError, ComputerReason, DbusTransport, GuestChange, TransportError,
 };
-use porter_core::UnixSeconds;
 use porter_dbus::{BusStream, Details};
+use porter_ids::UnixSeconds;
+use porter_tailnet::{Approval, CandidateModel, GuestAsk, RowState};
+use porter_tailnet::{GuestAnswer, GuestRow};
+use porter_tailscale::NodeId;
 use std::sync::{Arc, Mutex};
 use zbus::fdo;
 use zbus::object_server::SignalEmitter;
@@ -205,7 +206,7 @@ impl World {
         daemon
             .object_server()
             .at(
-                porter_dbus::INFERENCE_PATH,
+                porter_dbus::inference::INFERENCE_PATH,
                 FakeInferd {
                     asked: Arc::clone(&asked),
                     script,
@@ -214,7 +215,7 @@ impl World {
             .await
             .expect("serve");
         daemon
-            .request_name(porter_dbus::INFERENCE_BUS)
+            .request_name(porter_dbus::inference::INFERENCE_BUS)
             .await
             .expect("own the name");
         let accounts = Accounts::over(DbusTransport::over(bus.connect().await));
@@ -231,7 +232,7 @@ impl World {
     async fn emitter(&self) -> zbus::object_server::InterfaceRef<FakeInferd> {
         self.daemon
             .object_server()
-            .interface::<_, FakeInferd>(porter_dbus::INFERENCE_PATH)
+            .interface::<_, FakeInferd>(porter_dbus::inference::INFERENCE_PATH)
             .await
             .expect("interface")
     }
@@ -449,8 +450,9 @@ async fn candidates_decode_with_their_models_and_approval() {
 #[cfg(feature = "infer")]
 mod computers {
     use super::*;
+    use porter_capability::ModelId;
     use porter_client::{ComputerName, ComputerReach, NewComputer, NewComputerModel};
-    use porter_core::{ModelId, SecretText};
+    use porter_core::SecretText;
 
     fn place_row(id: &str, kind: &str, name: &str) -> (String, Details) {
         (
@@ -575,7 +577,7 @@ mod computers {
 /// Waits as long as a starved machine needs for a signal that should come.
 async fn next(changes: &mut porter_client::GuestChanges) -> Option<GuestChange> {
     tokio::time::timeout(
-        porter_fake::GENEROUS,
+        test_kit::GENEROUS,
         std::future::poll_fn(|cx| std::pin::Pin::new(&mut *changes).poll_next(cx)),
     )
     .await
@@ -655,14 +657,14 @@ async fn calls_aimed_at_the_checked_owner_never_reach_a_program_that_takes_the_n
     let checked = world.daemon.unique_name().expect("unique name").to_owned();
     world
         .daemon
-        .release_name(porter_dbus::INFERENCE_BUS)
+        .release_name(porter_dbus::inference::INFERENCE_BUS)
         .await
         .expect("let go of the name");
     let squatter = world.bus.connect().await;
     squatter
         .object_server()
         .at(
-            porter_dbus::INFERENCE_PATH,
+            porter_dbus::inference::INFERENCE_PATH,
             FakeInferd {
                 asked: Arc::default(),
                 script: Script {
@@ -674,7 +676,7 @@ async fn calls_aimed_at_the_checked_owner_never_reach_a_program_that_takes_the_n
         .await
         .expect("serve");
     squatter
-        .request_name(porter_dbus::INFERENCE_BUS)
+        .request_name(porter_dbus::inference::INFERENCE_BUS)
         .await
         .expect("take the name");
     let named = |transport: DbusTransport| async move {

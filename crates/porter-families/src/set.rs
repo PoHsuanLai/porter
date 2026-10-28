@@ -8,28 +8,29 @@
 //!
 //! This is what accountd (the identity families), inferd (the AI and agent families) and syncd
 //! (the identity families it signs in for itself) each use to build their own
-//! [`FamilyProvider`]s: a daemon loads every file, keeps the [`ProviderGroup`]s it holds
+//! [`DynProvider`]s: a daemon loads every file, keeps the [`ProviderGroup`]s it holds
 //! (through [`ProviderNames`]) and serves those. The module is built with the `set` feature,
 //! which turns on every family it can map.
 
+mod build;
 mod provider_names;
 
 pub use provider_names::ProviderNames;
 
-use crate::{
-    AgentLoginProvider, ApiKeyProvider, ClientFiles, FamilyProvider, GenericProvider, GoogleEnv,
-    GoogleProvider, MicrosoftEnv, MicrosoftProvider, NextcloudProvider, SharedDns, TailnetProvider,
-};
-use porter_core::clock::SystemClock;
+use crate::dispatch::DynProvider;
+use crate::{agent_login, api_key, tailnet};
 use porter_core::{AuthKind, EndpointUrl};
 use porter_discover::{Dns, DnsFault, HickoryDns, MxRecord, SrvRecord};
-use porter_http::{HyperHttp, SharedHttp, SharedSleep, TokioSleep};
-use porter_provider::{
-    DomainName, Issuer, ProviderFileError, ProviderSet, ProviderSpec, parse_provider,
-};
+use porter_family_generic::SharedDns;
+use porter_family_oauth::ClientFiles;
+use porter_http::SharedHttp;
+use porter_http_reqwest::ReqwestHttp;
+use porter_ids::clock::Clock;
+use porter_provider::{DomainName, ProviderFileError, ProviderSet, ProviderSpec, parse_provider};
 use porter_tailscale::LocalApi;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// What reading the directories found.
 #[derive(Debug, Default)]
@@ -188,7 +189,7 @@ fn read(file: &Path) -> Result<ProviderSpec, SkipReason> {
 
 /// What the families dial and resolve through: one HTTP client and one resolver for all of
 /// them, and the providers that may claim an address before the generic family searches.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct FamilyIo {
     /// The HTTP client.
     pub http: SharedHttp,
@@ -201,23 +202,38 @@ pub struct FamilyIo {
     pub clients: ClientFiles,
     /// Tailscale on this computer: the socket its program serves.
     pub tailscale: LocalApi,
+    /// The time the OAuth families date their sessions by: the host's.
+    pub clock: Arc<dyn Clock>,
+}
+
+impl std::fmt::Debug for FamilyIo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FamilyIo")
+            .field("http", &self.http)
+            .field("dns", &self.dns)
+            .field("providers", &self.providers)
+            .field("clients", &self.clients)
+            .field("tailscale", &self.tailscale)
+            .finish_non_exhaustive()
+    }
 }
 
 impl FamilyIo {
     /// The system's: hyper over the platform's roots and the system resolver, or a resolver that
     /// answers `Unreachable` when the system names none (discovery then falls back to
     /// autoconfig and a server the person types).
-    pub fn system(providers: ProviderSet, clients: ClientFiles) -> Self {
+    pub fn system(providers: ProviderSet, clients: ClientFiles, clock: Arc<dyn Clock>) -> Self {
         let dns = match HickoryDns::system() {
             Ok(dns) => SharedDns::new(dns),
             Err(_) => SharedDns::new(NoResolver),
         };
         Self {
-            http: SharedHttp::new(HyperHttp::new()),
+            http: SharedHttp::new(ReqwestHttp::new()),
             dns,
             providers,
             clients,
             tailscale: LocalApi::system(),
+            clock,
         }
     }
 
@@ -247,45 +263,45 @@ impl Dns for NoResolver {
     }
 }
 
+/// What a family's `build` answers: the provider, or the spec back when it is not that family's.
+pub(crate) type Built = Result<Box<dyn DynProvider>, Box<ProviderSpec>>;
+
+/// A family's builder: it serves `spec` when its sign-in (the `AuthKind`, and the issuer for the
+/// OAuth families) is the family's own, and hands the spec back otherwise.
+type Build = fn(ProviderSpec, &FamilyIo) -> Built;
+
+/// Every family, one line each; the first that accepts a spec serves it. `OAuthMintsKey`
+/// (OpenRouter's browser sign-in) has no family, so a file asking for it lands in `unserved`
+/// with its logged reason.
+static FAMILIES: &[Build] = &[
+    build::nextcloud,
+    build::generic,
+    build::oauth,
+    api_key::build,
+    agent_login::build,
+    tailnet::build,
+];
+
 /// The family that serves `spec` through `io`, or the spec back when none is built for it.
-pub fn family_of(spec: ProviderSpec, io: &FamilyIo) -> Result<FamilyProvider, Box<ProviderSpec>> {
-    match (spec.auth.kind, spec.auth.issuer) {
-        (AuthKind::LoginFlowV2, _) => Ok(FamilyProvider::Nextcloud(NextcloudProvider::new(
-            spec,
-            io.http.clone(),
-            TokioSleep,
-        ))),
-        (AuthKind::Password | AuthKind::AppPassword, _) => Ok(FamilyProvider::Generic(
-            GenericProvider::new(spec, io.http.clone(), io.dns.clone())
-                .with_providers(io.providers.clone()),
-        )),
-        (AuthKind::OAuthPkce, Some(Issuer::Microsoft)) => {
-            Ok(FamilyProvider::Microsoft(MicrosoftProvider::with_env(
-                spec,
-                MicrosoftEnv::with_client_files(io.clients.clone(), SystemClock),
-            )))
+pub fn family_of(
+    spec: ProviderSpec,
+    io: &FamilyIo,
+) -> Result<Box<dyn DynProvider>, Box<ProviderSpec>> {
+    let mut spec = spec;
+    for build in FAMILIES {
+        match build(spec, io) {
+            Ok(family) => return Ok(family),
+            Err(back) => spec = *back,
         }
-        (AuthKind::OAuthPkce, Some(Issuer::Google)) => {
-            Ok(FamilyProvider::Google(GoogleProvider::with_env(
-                spec,
-                GoogleEnv::with_client_files(io.clients.clone(), SystemClock),
-            )))
-        }
-        (AuthKind::ApiKey, _) => Ok(FamilyProvider::ApiKey(ApiKeyProvider::new(spec))),
-        (AuthKind::AgentLogin, _) => Ok(FamilyProvider::AgentLogin(AgentLoginProvider::new(spec))),
-        (AuthKind::OwnProgram, _) => Ok(FamilyProvider::Tailnet(TailnetProvider::new(
-            spec,
-            io.tailscale.clone(),
-            SharedSleep::new(TokioSleep),
-        ))),
-        // `OAuthMintsKey` (OpenRouter's browser sign-in) has a skeleton family but no body, so
-        // it is not mapped: a file asking for it lands in `unserved` with its logged reason.
-        _ => Err(Box::new(spec)),
     }
+    Err(Box::new(spec))
 }
 
 /// The families that serve `specs` through `io`, and the providers none serves.
-pub fn served(specs: Vec<ProviderSpec>, io: &FamilyIo) -> (Vec<FamilyProvider>, Vec<ProviderSpec>) {
+pub fn served(
+    specs: Vec<ProviderSpec>,
+    io: &FamilyIo,
+) -> (Vec<Box<dyn DynProvider>>, Vec<ProviderSpec>) {
     let (mut families, mut unserved) = (Vec::new(), Vec::new());
     for spec in specs {
         match family_of(spec, io) {
@@ -310,8 +326,8 @@ pub fn local_runtimes(unserved: &[ProviderSpec]) -> Vec<ProviderSpec> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_fake::Scratch;
     use porter_provider::Provider;
+    use test_kit::Scratch;
 
     fn scratch(name: &str) -> Scratch {
         Scratch::new(&format!("families-set-{name}"))
@@ -328,9 +344,12 @@ mod tests {
                 shipped: PathBuf::from("/nonexistent/clients.toml"),
                 own: PathBuf::from("/nonexistent/own-clients.toml"),
             },
+            Arc::new(porter_ids::clock::FixedClock::new(porter_ids::UnixSeconds(
+                0,
+            ))),
         )
         .with_clients(
-            SharedHttp::new(HyperHttp::new()),
+            SharedHttp::new(ReqwestHttp::new()),
             SharedDns::new(NoResolver),
         )
         .with_tailscale(LocalApi::new("/nonexistent/tailscaled.sock"))
@@ -347,7 +366,9 @@ mod tests {
         // Google has its family; the local runtimes are hosted by inferd.
         assert!(!ids.contains(&"google".to_owned()), "{ids:?}");
         assert!(
-            families.iter().any(|f| f.spec().id.as_str() == "google"),
+            families
+                .iter()
+                .any(|f| Provider::spec(f).id.as_str() == "google"),
             "google is served"
         );
         assert!(!ids.contains(&"nextcloud".to_owned()), "{ids:?}");
@@ -398,7 +419,7 @@ mod tests {
     }
 
     /// A provider file in the person's own folder that asks for OpenRouter's browser sign-in
-    /// (`oauth_mints_key`), a family that has no body, under a new id.
+    /// (`oauth_mints_key`), a family that does not exist, under a new id.
     #[test]
     fn a_persons_file_asking_for_an_unbuilt_family_is_not_served_and_names_why() {
         let own = scratch("unbuilt");
@@ -423,6 +444,24 @@ mod tests {
             local_runtimes(&unserved).is_empty(),
             "and not a local runtime"
         );
+    }
+
+    /// The generic family finds a password file's servers by its discovery (an address, a
+    /// server's name, or the file's own servers); a file whose discovery is none of those is not
+    /// the generic family's to serve.
+    #[test]
+    fn a_password_file_whose_discovery_no_lookup_uses_is_not_served() {
+        let text = std::fs::read_to_string(shipped().join("generic-imap.toml")).expect("file");
+        let changed = text.replace("kind = \"autoconfig\"", "kind = \"nextcloud_ocs\"");
+        assert_ne!(changed, text, "the line was found");
+        let own = scratch("discovery");
+        std::fs::write(own.join("generic-imap.toml"), changed).expect("write");
+        let loaded = load_specs(&[(Layer::Named, own.to_path_buf())]);
+        assert!(loaded.skipped.is_empty(), "{:?}", loaded.skipped);
+        let io = io_over(&loaded.specs);
+        let (families, unserved) = served(loaded.specs, &io);
+        assert!(families.is_empty(), "not served");
+        assert_eq!(unserved.len(), 1);
     }
 
     fn microsoft() -> String {

@@ -8,8 +8,9 @@
 //! `images` and `audio_ms` come from what the session server counted of the request
 //! (`serve::Carried`); the reply alone could not say.
 
-use porter_core::clock::Clock;
-use porter_core::{AppId, Bytes, Tokens};
+use porter_core::AppId;
+use porter_ids::clock::Clock;
+use porter_ids::{Bytes, Tokens};
 use porter_infer::{AuditEntry, InferReply, ServedBy, TokenUsage, Why};
 use porter_router::carried::Carried;
 use porter_router::seams::AuditSink;
@@ -103,6 +104,7 @@ pub fn usage_of(reply: &InferReply) -> TokenUsage {
             input: Tokens(0),
             output: Tokens(0),
             cached: Tokens(0),
+            charge: None,
         },
     }
 }
@@ -141,7 +143,6 @@ impl<O: AuditOut, C: Clock> SessionAudit<O, C> {
             images: carried.images,
             audio_ms: carried.audio_ms,
             why: why.cloned(),
-            cost: None,
         }
     }
 }

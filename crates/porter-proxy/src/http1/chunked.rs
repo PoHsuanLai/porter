@@ -23,7 +23,7 @@ pub enum Chunked {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ChunkParser {
     /// Where the body stands.
-    pub state: Chunked,
+    pub(crate) state: Chunked,
     line: Vec<u8>,
 }
 

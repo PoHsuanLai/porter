@@ -1,11 +1,17 @@
-# accountd as a systemd user unit: the identities signed in on this computer, Spaces and
-# Tailscale (org.quire.Accounts1 on the session bus). It is found, and started, by D-Bus
-# activation (dbus/org.quire.Accounts1.service) the first time an app asks which identities
-# there are. AI keys are inferd's; sync's sign-ins are syncd's.
+# accountd as a systemd user unit: the identities signed in on this computer, Spaces, Tailscale
+# and the AI keys with the permits that let an app use them (org.quire.Accounts1 on the session
+# bus). It is found, and started, by D-Bus activation (dbus/org.quire.Accounts1.service) the first
+# time an app asks which identities there are. Sync's sign-ins are syncd's.
 #
 # accountd talks to the session bus, the Secret Service on it (items under `porter.accountd`),
-# the sheet host (sill) on it, and the network (provider sign-in and revocation). It reads /proc to know who is calling, so the
-# unit must not hide other processes' cgroups (no ProtectProc, no PrivatePID).
+# the sheet host (sill) on it, and the network (provider sign-in and revocation, and the check of
+# a new AI key). It reads /proc to know who is calling, so the unit must not hide other processes'
+# cgroups (no ProtectProc, no PrivatePID).
+#
+# The keys inferd held before are copied in when accountd starts, read from inferd's state
+# directory under ProtectHome=read-only (sandbox.conf). accountd never writes there: inferd
+# removes its own old files. A key goes to inferd, and to the launcher's processes, on a sealed
+# memfd, so the unit needs no directory to put a key in.
 [Unit]
 Description=quire identities (org.quire.Accounts1)
 

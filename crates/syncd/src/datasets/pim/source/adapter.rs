@@ -130,7 +130,7 @@ impl<F: Feed> Replica for FeedReplica<F> {
         self.feed.quota().await
     }
 
-    fn features(&self) -> porter_core::capability::StorageCap {
+    fn features(&self) -> porter_capability::StorageCap {
         self.feed.features()
     }
 }

@@ -9,15 +9,18 @@ use hosting::engine::{Chat, Script};
 use hosting::entries;
 use hosting::rig::{Plan, World, test_app};
 use inferd::peers::Role;
+use porter_capability::Tier;
+use porter_capability::{CuaEnv, LlmFeature, Modality};
 use porter_client::{Accounts, ClientError, DbusTransport, InferSession, TransportError};
-use porter_core::capability::{CuaEnv, LlmFeature, Modality};
+use porter_core::DataClass;
 use porter_core::consent::Usage;
-use porter_core::need::{CuaNeed, DimsNeed, EmbedNeed, LlmNeed};
-use porter_core::{DataClass, Dims, Need, Tier, Tokens};
+use porter_ids::{Dims, Tokens};
 use porter_infer::{
     ChatMessage, ChatRequest, ClientFrame, EmbedRequest, EmbedRole, InferEvent, InferReply,
     InferRequest, MessagePart, Readiness, ReplyShape, Role as ChatRole, StopReason,
 };
+use porter_match::Need;
+use porter_match::{CuaNeed, DimsNeed, EmbedNeed, LlmNeed};
 use serde_json::Value;
 
 fn llm() -> Need {
@@ -343,8 +346,10 @@ async fn a_caller_the_table_does_not_name_is_denied_with_the_daemons_text() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_prompt_class_request_to_a_cloud_only_route_is_refused_by_the_floor() {
-    use porter_core::capability::{Capability, LlmCap, LlmWire};
-    use porter_core::{AccountId, Billing, Locality, ModelId};
+    use porter_capability::ModelId;
+    use porter_capability::{Billing, Locality};
+    use porter_capability::{Capability, LlmCap, LlmWire};
+    use porter_core::AccountId;
     let cloud = porter_infer::ModelCard {
         account: AccountId::parse("anthropic").expect("id"),
         model: ModelId::parse("sonnet").expect("id"),

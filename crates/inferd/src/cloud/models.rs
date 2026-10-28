@@ -1,5 +1,5 @@
 //! The hosted models an app may be served: stoker's curated remote entries, each through the one
-//! reach (provider, model id there, price) that an account of the app's allows.
+//! reach (provider, model id there) that an account of the app's allows.
 //!
 //! A remote entry is a model; its reaches are the accounts that can run it. Which reach is used
 //! is stoker's `reachable` (a company's own account before a gateway's; only a wire this build
@@ -10,10 +10,11 @@
 
 use super::accountd::AccountVerdict;
 use model_catalog::{Locality, ModelEntry, ProviderId, Reach, Wire, reachable};
+use porter_capability::ModelId;
+use porter_capability::{Billing, Locality as Where};
+use porter_core::AccountState;
 use porter_core::consent::Verdict;
-use porter_core::{
-    AccountId, AccountState, Billing, GrantId, Locality as Where, MicroUsd, ModelId, PriceTable,
-};
+use porter_core::{AccountId, GrantId};
 use porter_infer::{ModelCard, ModelRef, Permit};
 use std::collections::BTreeSet;
 
@@ -24,11 +25,11 @@ pub const WIRES: [Wire; 1] = [Wire::OpenAiCompat];
 /// A hosted model as routing sees it, and the reach behind it.
 #[derive(Debug, Clone)]
 pub struct RemoteModel {
-    /// What routing knows: the account of the reach, the entry's id, the cloud, the reach's price.
+    /// What routing knows: the account of the reach, the entry's id, the cloud.
     pub card: ModelCard,
     /// The entry.
     pub entry: ModelEntry,
-    /// The reach used: the provider, the model's id there, the price, the wire.
+    /// The reach used: the provider, the model's id there, the wire.
     pub reach: Reach,
     /// What the app's grant on the account says.
     pub verdict: Verdict,
@@ -61,19 +62,6 @@ impl RemoteModel {
             Verdict::Ask => Permit::Askable,
             Verdict::Denied => Permit::Denied,
         }
-    }
-
-    /// What a token costs on this reach.
-    pub fn price(&self) -> PriceTable {
-        price_of(&self.reach)
-    }
-}
-
-/// A reach's price in porter's units.
-pub fn price_of(reach: &Reach) -> PriceTable {
-    PriceTable {
-        input_per_mtok: MicroUsd(reach.price.input_per_mtok.0),
-        output_per_mtok: MicroUsd(reach.price.output_per_mtok.0),
     }
 }
 
@@ -145,8 +133,8 @@ fn is_denied(verdict: &Verdict) -> bool {
     matches!(verdict, Verdict::Denied)
 }
 
-pub(super) fn card_of(entry: &ModelEntry, account: &AccountId, reach: &Reach) -> Option<ModelCard> {
-    let capabilities = crate::catalog::capabilities_of(entry);
+pub(super) fn card_of(entry: &ModelEntry, account: &AccountId) -> Option<ModelCard> {
+    let capabilities = porter_router::catalog::capabilities_of(entry);
     if capabilities.is_empty() {
         return None;
     }
@@ -154,7 +142,7 @@ pub(super) fn card_of(entry: &ModelEntry, account: &AccountId, reach: &Reach) ->
         account: account.clone(),
         model: ModelId::parse(&entry.id.0).ok()?,
         locality: Where::Cloud { region: None },
-        billing: Billing::Metered(price_of(reach)),
+        billing: Billing::Metered,
         capabilities,
     })
 }
@@ -186,7 +174,7 @@ pub fn remote_models(entries: &[ModelEntry], accounts: &[AccountVerdict]) -> Vec
                 let reach = reachable(entry, granted, &WIRES)?;
                 let account = account_with(&resolved, &reach.provider, *wanted)?;
                 Some(RemoteModel {
-                    card: card_of(entry, &account.account, reach)?,
+                    card: card_of(entry, &account.account)?,
                     entry: entry.clone(),
                     reach: reach.clone(),
                     verdict: account.verdict.clone(),

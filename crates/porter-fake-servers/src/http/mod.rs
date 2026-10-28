@@ -187,51 +187,10 @@ fn pair(pairs: &[(String, String)], name: &str) -> Option<String> {
         .map(|(_, v)| v.clone())
 }
 
-/// `a=1&b=two%20words` as decoded pairs.
+/// `a=1&b=two%20words` as decoded pairs (`+` is a space, as in any form).
 pub fn form_pairs(text: &str) -> Vec<(String, String)> {
-    text.split('&')
-        .filter(|part| !part.is_empty())
-        .map(|part| {
-            let (k, v) = part.split_once('=').unwrap_or((part, ""));
-            (percent_decode(k), percent_decode(v))
-        })
-        .collect()
-}
-
-/// Percent-decodes (and reads `+` as a space).
-pub fn percent_decode(text: &str) -> String {
-    let bytes = text.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        let hex = |b: u8| (b as char).to_digit(16);
-        match bytes[i] {
-            b'+' => out.push(b' '),
-            b'%' if i + 2 < bytes.len()
-                && hex(bytes[i + 1]).is_some()
-                && hex(bytes[i + 2]).is_some() =>
-            {
-                out.push(
-                    (hex(bytes[i + 1]).unwrap_or(0) * 16 + hex(bytes[i + 2]).unwrap_or(0)) as u8,
-                );
-                i += 2;
-            }
-            b => out.push(b),
-        }
-        i += 1;
-    }
-    String::from_utf8_lossy(&out).into_owned()
-}
-
-/// Percent-encodes everything but unreserved characters.
-pub fn percent_encode(text: &str) -> String {
-    text.bytes()
-        .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                (b as char).to_string()
-            }
-            _ => format!("%{b:02X}"),
-        })
+    form_urlencoded::parse(text.as_bytes())
+        .map(|(k, v)| (k.into_owned(), v.into_owned()))
         .collect()
 }
 
@@ -299,30 +258,6 @@ pub(crate) async fn read_request<S: AsyncRead + Unpin>(
     }))
 }
 
-fn reason(status: u16) -> &'static str {
-    match status {
-        200 => "OK",
-        201 => "Created",
-        204 => "No Content",
-        206 => "Partial Content",
-        207 => "Multi-Status",
-        301 => "Moved Permanently",
-        302 => "Found",
-        304 => "Not Modified",
-        400 => "Bad Request",
-        401 => "Unauthorized",
-        403 => "Forbidden",
-        404 => "Not Found",
-        405 => "Method Not Allowed",
-        409 => "Conflict",
-        412 => "Precondition Failed",
-        416 => "Range Not Satisfiable",
-        501 => "Not Implemented",
-        507 => "Insufficient Storage",
-        _ => "Status",
-    }
-}
-
 pub(crate) async fn write_response<S: AsyncWrite + Unpin>(
     stream: &mut S,
     response: &Response,
@@ -331,7 +266,10 @@ pub(crate) async fn write_response<S: AsyncWrite + Unpin>(
     let mut head = format!(
         "HTTP/1.1 {} {}\r\n",
         response.status,
-        reason(response.status)
+        http::StatusCode::from_u16(response.status)
+            .ok()
+            .and_then(|code| code.canonical_reason())
+            .unwrap_or("Status")
     );
     for (n, v) in &response.headers {
         head.push_str(&format!("{n}: {v}\r\n"));
@@ -391,5 +329,35 @@ where
             }
             Some(_) = connections.join_next(), if !connections.is_empty() => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn status_line(status: u16) -> String {
+        let mut out = Vec::new();
+        let response = Response {
+            status,
+            headers: Vec::new(),
+            body: Vec::new(),
+        };
+        write_response(&mut out, &response, true)
+            .await
+            .expect("written");
+        String::from_utf8(out)
+            .expect("text")
+            .lines()
+            .next()
+            .expect("a line")
+            .to_owned()
+    }
+
+    #[tokio::test]
+    async fn the_status_line_carries_the_standard_reason() {
+        assert_eq!(status_line(207).await, "HTTP/1.1 207 Multi-Status");
+        assert_eq!(status_line(429).await, "HTTP/1.1 429 Too Many Requests");
+        assert_eq!(status_line(599).await, "HTTP/1.1 599 Status");
     }
 }

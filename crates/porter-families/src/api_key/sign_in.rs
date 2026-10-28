@@ -1,60 +1,37 @@
-//! The ApiKey sign-in: one hidden field, the models listing as the check, a review. A provider
+//! The ApiKey sign-in flow: one hidden field, the models listing as the check, a review. A provider
 //! file that names no server (`openai-compatible`) also asks for the server's address, and its
 //! key may be left empty.
 
-use crate::key::{
-    asks_server, check, check_server, fault_of, own_server, review_of, signed, signed_server,
-};
-use porter_core::sheet::{
+use crate::key::{asks_server, check, check_server, fault_of, own_server, signed, signed_server};
+use porter_core::{Family, LoginName, SecretText, ServiceEndpoint, Tls, server_address_shape};
+use porter_family_kit::{Flow, Move};
+use porter_http::Http;
+use porter_http_reqwest::ReqwestHttp;
+use porter_ids::UrlScheme;
+use porter_provider::{ProviderSpec, SignInMode, SignInStep, Signed};
+use porter_sheet::{
     Entry, FieldAnswer, FieldKind, FieldSpec, FieldValue, Presence, SignInFault, SignInInput,
 };
-use porter_core::{
-    Family, LoginName, SecretText, ServiceEndpoint, Tls, UrlScheme, server_address_shape,
-};
-use porter_http::{Http, HyperHttp};
-use porter_provider::{ProviderSpec, SignIn, SignInMode, SignInStep, Signed};
 use std::sync::Arc;
 
-#[derive(Debug)]
-enum State {
-    Fresh,
-    /// The form is on screen.
-    Asked,
-    /// The key works; the person reviews what it opens.
-    Reviewing(Box<Signed>),
-    Ended,
-}
-
-/// The ApiKey sign-in conversation.
-pub struct ApiKeySignIn<H = HyperHttp> {
+/// The ApiKey sign-in flow.
+pub struct ApiKeyFlow<H = ReqwestHttp> {
     spec: ProviderSpec,
     http: Arc<H>,
     mode: SignInMode,
-    state: State,
 }
 
-impl<H> std::fmt::Debug for ApiKeySignIn<H> {
+impl<H> std::fmt::Debug for ApiKeyFlow<H> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ApiKeySignIn")
+        f.debug_struct("ApiKeyFlow")
             .field("spec", &self.spec.id)
-            .field("state", &self.state)
             .finish_non_exhaustive()
     }
 }
 
-impl<H> ApiKeySignIn<H> {
+impl<H> ApiKeyFlow<H> {
     pub(super) fn new(spec: ProviderSpec, http: Arc<H>, mode: SignInMode) -> Self {
-        Self {
-            spec,
-            http,
-            mode,
-            state: State::Fresh,
-        }
-    }
-
-    fn failed(&mut self, fault: SignInFault) -> SignInStep {
-        self.state = State::Ended;
-        SignInStep::Failed(fault)
+        Self { spec, http, mode }
     }
 
     /// The server the account already has, when it signs in again.
@@ -91,19 +68,12 @@ impl<H> ApiKeySignIn<H> {
         }
     }
 
-    fn finished(&mut self, signed: Signed) -> SignInStep {
+    fn finished(&self, signed: Signed) -> Move<()> {
         match self.mode {
-            SignInMode::Add => {
-                let step = review_of(&signed);
-                self.state = State::Reviewing(Box::new(signed));
-                step
-            }
-            SignInMode::Reauthenticate { .. } => {
-                self.state = State::Ended;
-                SignInStep::Done(signed)
-            }
+            SignInMode::Add => Move::Review(signed),
+            SignInMode::Reauthenticate { .. } => Move::Done(signed),
             // a variant a newer porter adds: the sign-in ends as unreadable
-            _ => self.failed(SignInFault::Unreadable),
+            _ => Move::Fail(SignInFault::Unreadable),
         }
     }
 }
@@ -174,31 +144,30 @@ async fn server_signed<H: Http>(
     Ok(signed_server(spec, server, key))
 }
 
-impl<H: Http + 'static> ApiKeySignIn<H> {
-    async fn submitted(&mut self, answers: Vec<FieldAnswer>) -> SignInStep {
+impl<H: Http + 'static> ApiKeyFlow<H> {
+    async fn submitted(&self, answers: Vec<FieldAnswer>) -> Move<()> {
         let signed = match asks_server(&self.spec) {
             true => server_signed(&*self.http, &self.spec, self.held_server(), &answers).await,
             false => company_signed(&*self.http, &self.spec, &answers).await,
         };
         match signed {
             Ok(signed) => self.finished(signed),
-            Err(fault) => self.failed(fault),
+            Err(fault) => Move::Fail(fault),
         }
     }
 }
 
-impl<H: Http + 'static> SignIn for ApiKeySignIn<H> {
-    async fn next(&mut self, input: SignInInput) -> SignInStep {
-        let state = std::mem::replace(&mut self.state, State::Ended);
-        match (state, input) {
-            (_, SignInInput::Cancel) => SignInStep::Failed(SignInFault::Cancelled),
-            (_, SignInInput::Start) => {
-                self.state = State::Asked;
-                SignInStep::AskFields(self.form())
-            }
-            (State::Asked, SignInInput::Fields(answers)) => self.submitted(answers).await,
-            (State::Reviewing(signed), SignInInput::Confirm(_)) => SignInStep::Done(*signed),
-            _ => self.failed(SignInFault::Unreadable),
+impl<H: Http + 'static> Flow for ApiKeyFlow<H> {
+    type Mid = ();
+
+    async fn start(&mut self) -> Move<()> {
+        Move::Next(SignInStep::AskFields(self.form()), ())
+    }
+
+    async fn resume(&mut self, (): (), input: SignInInput) -> Move<()> {
+        match input {
+            SignInInput::Fields(answers) => self.submitted(answers).await,
+            _ => Move::Fail(SignInFault::Unreadable),
         }
     }
 }

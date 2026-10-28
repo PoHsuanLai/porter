@@ -4,7 +4,10 @@ use crate::policy::{ClassFloor, Floor, LocalOnly};
 use crate::route::Permit;
 use crate::route::TierChoice;
 use crate::spend::SpendVerdict;
-use porter_core::{AccountId, Billing, DataClass, Locality, ModelId};
+use porter_capability::ModelId;
+use porter_capability::{Billing, Locality};
+use porter_core::AccountId;
+use porter_core::DataClass;
 use proptest::prelude::*;
 
 fn readiness() -> impl Strategy<Value = Readiness> {
@@ -77,7 +80,7 @@ fn candidates() -> impl Strategy<Value = Vec<PickCandidate>> {
             rows.into_iter()
                 .enumerate()
                 .map(
-                    |(i, (readiness, swap, locality, permission, spend, price, nc))| {
+                    |(i, (readiness, swap, locality, permission, spend, billing, nc))| {
                         let mut c = cand(
                             &format!("m{i}"),
                             u32::try_from(i).expect("small"),
@@ -88,13 +91,10 @@ fn candidates() -> impl Strategy<Value = Vec<PickCandidate>> {
                         c.route.permission = permission;
                         c.route.spend = spend;
                         c.route.tier = TierChoice::Other;
-                        c.route.billing = match price {
+                        c.route.billing = match billing {
                             0 => Billing::Free,
                             1 => Billing::PlanBudget,
-                            _ => Billing::Metered(porter_core::PriceTable {
-                                input_per_mtok: porter_core::MicroUsd(u64::from(price)),
-                                output_per_mtok: porter_core::MicroUsd(0),
-                            }),
+                            _ => Billing::Metered,
                         };
                         c.licence = if nc {
                             LicenceClass::NonCommercial

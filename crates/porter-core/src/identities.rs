@@ -4,11 +4,9 @@
 //! Tailscale, AI keys and agent logins are accounts but not identities.
 
 use crate::account::Account;
-use crate::auth_kind::AuthKind;
-use crate::error::CoreError;
-use crate::id::{AccountId, ProviderId, slug_id};
+use crate::{AccountId, ProviderId};
+use porter_ids::slug_id;
 use serde::{Deserialize, Serialize};
-use std::fmt;
 
 slug_id!(
     /// One identity signed in on this machine. It is the id of the registry account it is, and a
@@ -52,45 +50,6 @@ pub enum IdentityKind {
     Password,
 }
 
-impl IdentityKind {
-    /// Every kind, so a table over them is total.
-    pub const ALL: [IdentityKind; 2] = [IdentityKind::OAuth, IdentityKind::Password];
-
-    /// The word on the bus and in files.
-    pub fn slug(self) -> &'static str {
-        match self {
-            IdentityKind::OAuth => "oauth",
-            IdentityKind::Password => "password",
-        }
-    }
-
-    /// The kind a word names, if it is one.
-    pub fn from_slug(slug: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|kind| kind.slug() == slug)
-    }
-
-    /// The identity kind an account of this sign-in is, or `None` when such an account is not an
-    /// identity (a local runtime, a key, an agent's own login, Tailscale). No wildcard arm: a new
-    /// sign-in kind is placed here.
-    pub fn of(auth: AuthKind) -> Option<Self> {
-        match auth {
-            AuthKind::OAuthPkce => Some(IdentityKind::OAuth),
-            AuthKind::Password | AuthKind::AppPassword => Some(IdentityKind::Password),
-            AuthKind::None
-            | AuthKind::LocalRuntime
-            | AuthKind::LoginFlowV2
-            | AuthKind::LocalBridge
-            | AuthKind::KeyPair
-            | AuthKind::ApiKey
-            | AuthKind::OAuthMintsKey
-            | AuthKind::OAuthPlan
-            | AuthKind::CloudIdentity
-            | AuthKind::AgentLogin
-            | AuthKind::OwnProgram => None,
-        }
-    }
-}
-
 /// One identity, as `Identities1.List` gives it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
@@ -125,11 +84,11 @@ impl Identity {
         }
     }
 
-    /// The identity `account` is, or `None` when it is not one (see [`IdentityKind::of`]).
+    /// The identity `account` is, or `None` when it is not one (see [`crate::AuthKind::facts`]).
     /// `provider_name` is what the provider file labels the provider; without it the provider's
     /// id stands in.
     pub fn of(account: &Account, provider_name: Option<&str>) -> Option<Self> {
-        let kind = IdentityKind::of(account.auth)?;
+        let kind = account.auth.facts().identity?;
         let name = provider_name.unwrap_or(account.provider.as_str());
         Some(Self::new(
             IdentityId::of(&account.id),
@@ -144,34 +103,18 @@ impl Identity {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn only_the_sign_in_kinds_are_identities() {
-        let table = [
-            (AuthKind::OAuthPkce, Some(IdentityKind::OAuth)),
-            (AuthKind::Password, Some(IdentityKind::Password)),
-            (AuthKind::AppPassword, Some(IdentityKind::Password)),
-            (AuthKind::LocalRuntime, None),
-            (AuthKind::ApiKey, None),
-            (AuthKind::AgentLogin, None),
-            (AuthKind::OwnProgram, None),
-            (AuthKind::OAuthMintsKey, None),
-        ];
-        for (auth, want) in table {
-            assert_eq!(IdentityKind::of(auth), want, "{auth:?}");
-        }
-    }
+    use porter_ids::word::{from_word, word as word_of};
 
     #[test]
     fn a_kind_reads_back_from_its_word_and_an_identity_from_its_account() {
-        for kind in IdentityKind::ALL {
-            assert_eq!(IdentityKind::from_slug(kind.slug()), Some(kind));
-            assert_eq!(
-                serde_json::to_string(&kind).expect("json"),
-                format!("\"{}\"", kind.slug())
-            );
+        for (kind, word) in [
+            (IdentityKind::OAuth, "oauth"),
+            (IdentityKind::Password, "password"),
+        ] {
+            assert_eq!(word_of(&kind), word);
+            assert_eq!(from_word::<IdentityKind>(word), Some(kind));
         }
-        assert_eq!(IdentityKind::from_slug("OAuth"), None);
+        assert_eq!(from_word::<IdentityKind>("OAuth"), None);
         let account = AccountId::parse("ada.example").expect("id");
         let id = IdentityId::of(&account);
         assert!(id.is(&account));

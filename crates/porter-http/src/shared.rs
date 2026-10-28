@@ -4,20 +4,20 @@
 //! nothing next to the request.
 
 use crate::error::HttpError;
-use crate::http::Http;
-use crate::message::{HttpRequest, HttpResponse};
+use crate::seam::Http;
+use http::{Request, Response};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-type Reply<'a> = Pin<Box<dyn Future<Output = Result<HttpResponse, HttpError>> + Send + 'a>>;
+type Reply<'a> = Pin<Box<dyn Future<Output = Result<Response<Vec<u8>>, HttpError>> + Send + 'a>>;
 
 trait DynHttp: Send + Sync {
-    fn send_boxed(&self, request: HttpRequest) -> Reply<'_>;
+    fn send_boxed(&self, request: Request<Vec<u8>>) -> Reply<'_>;
 }
 
 impl<H: Http> DynHttp for H {
-    fn send_boxed(&self, request: HttpRequest) -> Reply<'_> {
+    fn send_boxed(&self, request: Request<Vec<u8>>) -> Reply<'_> {
         Box::pin(self.send(request))
     }
 }
@@ -42,8 +42,8 @@ impl std::fmt::Debug for SharedHttp {
 impl Http for SharedHttp {
     fn send(
         &self,
-        request: HttpRequest,
-    ) -> impl Future<Output = Result<HttpResponse, HttpError>> + Send {
+        request: Request<Vec<u8>>,
+    ) -> impl Future<Output = Result<Response<Vec<u8>>, HttpError>> + Send {
         self.0.send_boxed(request)
     }
 }

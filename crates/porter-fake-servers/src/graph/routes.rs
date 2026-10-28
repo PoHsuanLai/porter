@@ -4,7 +4,7 @@
 //! for a delta token the server has dropped, upload sessions, redirected downloads).
 
 use super::drive::{Aim, Body, CHUNK_UNIT, Drive, Node, Refused, Upload};
-use crate::http::{Request, Response, percent_decode};
+use crate::http::{Request, Response};
 use serde_json::{Value, json};
 
 /// What a test can change about how the server answers.
@@ -142,7 +142,7 @@ fn route(drive: &Drive, path: &str) -> Option<(Address, String)> {
                 let names = names
                     .split('/')
                     .filter(|s| !s.is_empty())
-                    .map(percent_decode)
+                    .map(porter_ids::percent::decode)
                     .collect();
                 Some((
                     Address::Below(from, names),
@@ -162,15 +162,18 @@ fn route(drive: &Drive, path: &str) -> Option<(Address, String)> {
         let names = names
             .split('/')
             .filter(|s| !s.is_empty())
-            .map(percent_decode)
+            .map(porter_ids::percent::decode)
             .collect();
         return Some((
-            Address::Below(percent_decode(id), names),
+            Address::Below(porter_ids::percent::decode(id), names),
             op.trim_start_matches('/').to_owned(),
         ));
     }
     let (id, op) = rest.split_once('/').unwrap_or((rest, ""));
-    Some((Address::Item(percent_decode(id)), op.to_owned()))
+    Some((
+        Address::Item(porter_ids::percent::decode(id)),
+        op.to_owned(),
+    ))
 }
 
 /// Whether OneDrive takes `name`: here, the characters it refuses and a leading or trailing

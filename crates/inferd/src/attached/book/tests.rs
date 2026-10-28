@@ -1,14 +1,14 @@
 use super::*;
-use crate::attached::config::{Attached, Place, Reach};
 use crate::attached::local_model;
-use crate::catalog::parse_entry_text;
 use crate::entries;
 use crate::lab::Lab;
-use crate::startup::Level;
-use crate::testkit::Scratch;
-use porter_core::ModelId;
+use porter_capability::ModelId;
 use porter_fake_servers::net::Bind;
+use porter_router::attached::config::{Attached, Place, Reach};
+use porter_router::catalog::parse_entry_text;
+use porter_router::startup::Level;
 use std::sync::Mutex;
+use test_kit::Scratch;
 
 fn model_on(reach: Reach, place: Place, scratch: &Scratch) -> LocalModel {
     let attached = Attached {
@@ -54,7 +54,7 @@ async fn an_engine_not_yet_looked_at_is_unavailable_and_a_look_makes_it_ready() 
 #[tokio::test(start_paused = true)]
 async fn nothing_looks_between_two_opens_and_each_open_looks_once_per_engine() {
     let scratch = Scratch::new("bk");
-    let lab = Lab::start(&Bind::Loopback, "lab", &[entries::SERVED], None).await;
+    let lab = Lab::start(&Bind::Port(0), "lab", &[entries::SERVED], None).await;
     let model = model_on(
         Reach::Loopback {
             host: std::net::Ipv4Addr::LOCALHOST,

@@ -47,14 +47,14 @@ fn pop3_and_smtp() -> String {
 
 fn report() -> SearchOptions {
     SearchOptions {
-        pop3: Pop3::Report,
+        report_pop3: true,
         ..SearchOptions::default()
     }
 }
 
 fn offer_oauth() -> SearchOptions {
     SearchOptions {
-        oauth_only: OAuthOnly::Offer,
+        oauth_only_ok: true,
         ..SearchOptions::default()
     }
 }
@@ -210,7 +210,7 @@ fn starttls_only_is_a_miss_under_try_next_and_a_finding_otherwise() {
     ]
     .concat());
     let try_next = SearchOptions {
-        starttls_only: StartTlsOnly::TryNext,
+        starttls_only: true,
         ..SearchOptions::default()
     };
     assert_eq!(
@@ -264,7 +264,7 @@ async fn try_next_skips_a_starttls_document_and_reaches_the_ispdb() {
     let found = search(
         &http,
         &SearchOptions {
-            starttls_only: StartTlsOnly::TryNext,
+            starttls_only: true,
             ..SearchOptions::default()
         },
     )

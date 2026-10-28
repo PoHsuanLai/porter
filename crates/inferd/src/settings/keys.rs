@@ -1,13 +1,12 @@
 //! The vocabulary of the rows: slugs, the classes, slots and tiers they range over, and the
 //! `ai.model.<slot>.<tier>` paths (the old `<kind>` segments still read).
 
-use porter_core::{DataClass, HelperId, Tier};
+use porter_capability::Tier;
+use porter_core::DataClass;
+use porter_core::HelperId;
 use porter_infer::{Chooser, Slot};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-
-/// The slots a model serves, from its capabilities: moved to `porter_router::router`.
-pub use porter_router::router::slots_of;
 
 /// Every data class, one `ai.floor.<class>` row each. `class_is_listed` keeps this complete.
 pub const CLASSES: [DataClass; 13] = [
@@ -121,6 +120,8 @@ mod tests {
                 | DataClass::Voice
                 | DataClass::Prompt
                 | DataClass::Public => {}
+                // A class added later is listed above when it is added.
+                _ => {}
             }
         }
     }

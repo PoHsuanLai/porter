@@ -3,8 +3,8 @@
 //! v1). inferd keeps no audio after the turn.
 
 use crate::ids::Base64Bytes;
+use porter_capability::LanguageTag;
 use porter_core::DataClass;
-use porter_core::capability::LanguageTag;
 use porter_core::consent::Usage;
 use serde::{Deserialize, Serialize};
 use std::fmt;

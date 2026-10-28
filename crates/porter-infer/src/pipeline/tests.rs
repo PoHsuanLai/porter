@@ -4,7 +4,9 @@ use crate::pick::SwapCost;
 use crate::policy::{ClassFloor, Floor, LocalOnly};
 use crate::route::{Permit, RouteCandidate, TierChoice};
 use crate::spend::SpendVerdict;
-use porter_core::{AccountId, Billing, Locality, ModelId};
+use porter_capability::ModelId;
+use porter_capability::{Billing, Locality};
+use porter_core::AccountId;
 
 pub(super) fn mref(name: &str) -> ModelRef {
     ModelRef {

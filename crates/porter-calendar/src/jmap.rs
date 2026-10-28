@@ -8,8 +8,9 @@ use crate::CalendarStore;
 use crate::error::CalendarError;
 use crate::event::{CalendarRef, Event, Stored, When};
 use crate::json::{body, exchange, request, text};
-use porter_core::WebUrl;
-use porter_http::{Http, Method};
+use porter_http::Http;
+use porter_http::http::Method;
+use porter_ids::WebUrl;
 use serde_json::{Value, json};
 
 /// The capabilities every request names it uses.
@@ -69,7 +70,7 @@ impl<H: Http> Jmap<H> {
         let asked = json!({ "using": USING, "methodCalls": method_calls });
         let response = exchange(
             &self.http,
-            request(Method::Post, self.api.clone(), &asked),
+            request(Method::POST, &self.api, &asked)?,
             "a JMAP request",
         )
         .await?;

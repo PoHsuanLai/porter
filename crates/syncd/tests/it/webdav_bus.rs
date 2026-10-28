@@ -5,26 +5,35 @@
 //! nothing again.
 
 use crate::common;
+use porter_ids::clock::SystemClock;
 
 use common::bus::PrivateBus;
 use common::hosted::{Link, host};
 use common::{Known, client};
+use porter_callers::CallerRole;
+use porter_capability::CapabilityKind;
+use porter_capability::StorageScope;
 use porter_client::Accounts;
-use porter_core::capability::StorageScope;
-use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
+use porter_core::{AccountId, GrantId};
 use porter_core::{
-    AccountId, AppName, AuthKind, CapabilityKind, Credential, DataClass, EndpointUrl, Family,
-    GrantId, LoginName, SecretKey, SecretPurpose, SecretText, SpaceScope, Tls, UnixSeconds,
+    AppName, AuthKind, Credential, DataClass, EndpointUrl, Family, LoginName, SecretKey,
+    SecretPurpose, SecretText, SpaceScope, Tls,
 };
-use porter_dbus::{CallerRole, STATUS_KEY_QUOTA, SyncProxy};
+use porter_core::{
+    GrantKey,
+    consent::{Decision, Grant, GrantScope, Usage},
+};
+use porter_dbus::sync::STATUS_KEY_QUOTA;
+use porter_dbus::sync::SyncProxy;
 use porter_fake::{cloud_provider, storage_account};
 use porter_fake_servers::{FakeNextcloud, NextcloudHandle, Running};
+use porter_ids::UnixSeconds;
 use porter_secrets::{MemorySecrets, Secrets};
-use porter_service::Registry;
+use porter_service_core::registry::Registry;
+use porter_sync::Clock;
 use porter_sync::ConflictRule;
 use std::collections::BTreeSet;
 use std::sync::Arc;
-use storage_webdav::Clock;
 use syncd::clock::Wall;
 use syncd::dataset::MemoryDataset;
 use syncd::driver::Driver;
@@ -76,7 +85,7 @@ impl Rig {
 }
 
 /// Polls every 20 ms; the limit is idle time (`common::eventually_alive`): the wait ends only
-/// when the rig has done nothing for [`porter_fake::GENEROUS`].
+/// when the rig has done nothing for [`test_kit::GENEROUS`].
 async fn eventually(rig: &Rig, what: &str, check: impl FnMut() -> bool) {
     common::eventually_alive(what, || rig.pulse(), check).await;
 }
@@ -172,7 +181,8 @@ async fn a_folder_syncs_against_nextcloud_through_the_relay_and_status_shows_the
         rig.grant.clone(),
         rig.endpoint.clone(),
         "Photos",
-        Clock::system(),
+        Clock::new(SystemClock),
+        "t1",
     )
     .expect("replica");
     let journal = rig.bus.scratch().join("journal");

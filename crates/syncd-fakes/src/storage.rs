@@ -8,12 +8,14 @@
 //! The files on disk are ordinary files with a line of text: nothing here is downloaded from
 //! anywhere, only the states are. Test tooling, never installed.
 
-use porter_dbus::{
+use porter_dbus::sync::STORAGE_PATH;
+use porter_dbus::sync::{
     DRIVE_KEY_ACCOUNT, DRIVE_KEY_LABEL, DRIVE_KEY_LOCAL, DRIVE_KEY_PATH, DRIVE_KEY_PROVIDER,
-    DRIVE_KEY_STATE, DRIVE_KEY_TOTAL, DRIVE_KEY_USED, DRIVE_KEY_WORDS, Details, DriveState,
+    DRIVE_KEY_STATE, DRIVE_KEY_TOTAL, DRIVE_KEY_USED, DRIVE_KEY_WORDS, DriveState,
     ITEM_KEY_FRACTION, ITEM_KEY_KEPT, ITEM_KEY_KIND, ITEM_KEY_OTHER, ITEM_KEY_STATE, ITEM_KEY_URL,
-    ITEM_KEY_WORDS, ItemDetails, ItemKind, ItemState, Refused, STORAGE_PATH, Saved,
+    ITEM_KEY_WORDS, ItemDetails, ItemKind, ItemState, Refused, Saved, StorageServed, StorageServer,
 };
+use porter_dbus::{Call, Details};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -28,8 +30,28 @@ pub const TICK: Duration = Duration::from_millis(100);
 /// How far one tick moves a transfer: twenty ticks, two seconds, from nothing to done.
 const STEP: f64 = 0.05;
 
-/// The words a refused action gives, as Files may show them: the same as the live service.
-pub use porter_drive::words;
+/// The words a refused action gives, as Files may show them: the same as the live service
+/// (`syncd::words::reason`; a test in syncd holds the two together).
+pub mod words {
+    /// A path on no drive.
+    pub const NOT_ON_A_DRIVE: &str = "This item isn't in a cloud drive.";
+    /// An online document asked to download, keep or remove.
+    pub const ONLINE_ONLY: &str = "This document opens online.";
+    /// A download asked for while the drive cannot be reached.
+    pub const OFFLINE: &str = "This file will download when you're connected.";
+    /// A removal asked for an item with changes not sent yet.
+    pub const WAITING: &str = "Waiting to upload.";
+    /// A removal asked for an item with two versions.
+    pub const CONFLICT: &str = "This file has two versions. Choose one first.";
+    /// Keep Downloaded off, or a removal, asked for an item inside a kept folder.
+    pub const KEPT_WITH_FOLDER: &str = "This item is kept downloaded with its folder.";
+    /// A drive id that names no drive.
+    pub const NO_DRIVE: &str = "This drive isn't in Files.";
+    /// Save a Copy asked for an item that is not an online document.
+    pub const NOT_A_DOCUMENT: &str = "Only an online document can be saved as a copy.";
+    /// Save a Copy asked for a Form, Site or Map, which have no file format.
+    pub const NO_FILE_FORMAT: &str = "This document can't be saved as a file.";
+}
 
 /// What a file of the other version of a conflict is called: its name with this before the
 /// extension.
@@ -1026,10 +1048,10 @@ impl FakeStorage {
         };
         let (items, drives) = signals;
         for (drive, details) in items {
-            let _ = FakeStorage::items_changed(emitter, &drive, details).await;
+            let _ = StorageServed::<FakeStorage>::items_changed(emitter, &drive, details).await;
         }
         if drives {
-            let _ = FakeStorage::drives_changed(emitter).await;
+            let _ = StorageServed::<FakeStorage>::drives_changed(emitter).await;
         }
         out
     }
@@ -1041,20 +1063,21 @@ impl FakeStorage {
     }
 }
 
-#[zbus::interface(name = "org.quire.Storage1")]
-impl FakeStorage {
-    fn drives(&self) -> fdo::Result<Vec<(String, Details)>> {
+impl StorageServer for FakeStorage {
+    type Error = fdo::Error;
+
+    async fn drives(&self, _: Call<'_>) -> fdo::Result<Vec<(String, Details)>> {
         Ok(self.lock().drives())
     }
 
-    fn items(&self, paths: Vec<String>) -> fdo::Result<ItemDetails> {
+    async fn items(&self, _: Call<'_>, paths: Vec<String>) -> fdo::Result<ItemDetails> {
         Ok(self.lock().items(&paths))
     }
 
     async fn download(
         &self,
+        Call { emitter, .. }: Call<'_>,
         paths: Vec<String>,
-        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> fdo::Result<Refused> {
         Ok(self
             .apply(&emitter, |world, changed| {
@@ -1065,9 +1088,9 @@ impl FakeStorage {
 
     async fn keep(
         &self,
+        Call { emitter, .. }: Call<'_>,
         paths: Vec<String>,
         keep: bool,
-        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> fdo::Result<Refused> {
         Ok(self
             .apply(&emitter, |world, changed| {
@@ -1078,8 +1101,8 @@ impl FakeStorage {
 
     async fn remove_download(
         &self,
+        Call { emitter, .. }: Call<'_>,
         paths: Vec<String>,
-        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> fdo::Result<Refused> {
         Ok(self
             .apply(&emitter, |world, changed| {
@@ -1088,11 +1111,10 @@ impl FakeStorage {
             .await)
     }
 
-    #[zbus(out_args("saved", "refused"))]
     async fn save_copy(
         &self,
+        Call { emitter, .. }: Call<'_>,
         paths: Vec<String>,
-        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> fdo::Result<(Saved, Refused)> {
         Ok(self
             .apply(&emitter, |world, changed| {
@@ -1103,9 +1125,9 @@ impl FakeStorage {
 
     async fn set_paused(
         &self,
+        Call { emitter, .. }: Call<'_>,
         drives: Vec<String>,
         paused: bool,
-        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> fdo::Result<Refused> {
         Ok(self
             .apply(&emitter, |world, changed| {
@@ -1116,19 +1138,9 @@ impl FakeStorage {
 
     /// The fake tells every connection; it takes the call so Files can make it as it will to
     /// syncd.
-    fn watch(&self) -> fdo::Result<()> {
+    async fn watch(&self, _: Call<'_>) -> fdo::Result<()> {
         Ok(())
     }
-
-    #[zbus(signal)]
-    async fn drives_changed(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
-
-    #[zbus(signal)]
-    async fn items_changed(
-        emitter: &SignalEmitter<'_>,
-        drive: &str,
-        items: ItemDetails,
-    ) -> zbus::Result<()>;
 }
 
 /// Serves `storage` at `/org/quire/Storage1` on `connection` under `name`, and steps its
@@ -1136,7 +1148,7 @@ impl FakeStorage {
 pub async fn serve(connection: &Connection, name: &str, storage: FakeStorage) -> zbus::Result<()> {
     connection
         .object_server()
-        .at(STORAGE_PATH, storage.clone())
+        .at(STORAGE_PATH, StorageServed(storage.clone()))
         .await?;
     connection.request_name(name.to_owned()).await?;
     let emitter = SignalEmitter::new(connection, STORAGE_PATH)?.into_owned();
@@ -1171,13 +1183,13 @@ pub fn planted_paths(world: &World) -> Vec<PathBuf> {
 mod tests {
     use super::*;
 
-    fn world() -> (porter_fake::Scratch, World) {
-        let dir = porter_fake::Scratch::new("storage-fake");
+    fn world() -> (test_kit::Scratch, World) {
+        let dir = test_kit::Scratch::new("storage-fake");
         let world = World::plant(dir.path()).expect("the fake plants its drives");
         (dir, world)
     }
 
-    fn path(dir: &porter_fake::Scratch, under: &str) -> String {
+    fn path(dir: &test_kit::Scratch, under: &str) -> String {
         dir.path()
             .join("drives")
             .join(under)

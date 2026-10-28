@@ -1,6 +1,6 @@
 //! The fakes behave as the seams they stand in for.
 
-use porter_core::Provenance;
+use porter_capability::Provenance;
 use porter_fake::{cloud_provider, storage_account};
 use porter_provider::{Presented, Provider, ProviderError};
 
@@ -35,10 +35,10 @@ async fn an_account_that_needs_a_secret_cannot_open_without_one() {
 
 #[tokio::test]
 async fn a_scripted_conversation_shows_its_views_and_reads_its_inputs_then_closes() {
-    use porter_core::sheet::{SheetInput, SheetView};
-    use porter_core::wire::ParentWindow;
     use porter_fake::ScriptedSheets;
-    use porter_service::{SheetFault, SheetLink, SheetOpen, Sheets};
+    use porter_service_core::sheets::{SheetFault, SheetLink, SheetOpen, Sheets};
+    use porter_sheet::{SheetInput, SheetView};
+    use porter_wire::ParentWindow;
     let sheets =
         ScriptedSheets::default().conversing([vec![SheetInput::Back, SheetInput::Dismiss]]);
     let log = sheets.log();
@@ -70,8 +70,8 @@ async fn a_scripted_conversation_shows_its_views_and_reads_its_inputs_then_close
 
 #[tokio::test]
 async fn the_fake_provider_signs_in_at_once_and_revokes() {
-    use porter_core::sheet::{SignInFault, SignInInput};
     use porter_provider::{RevokeOutcome, SignIn, SignInMode, SignInStart, SignInStep};
+    use porter_sheet::{SignInFault, SignInInput};
     let provider = cloud_provider();
     let mut sign_in = provider
         .sign_in(SignInStart::new(SignInMode::Add))

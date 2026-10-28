@@ -10,20 +10,23 @@ use engine_supervisor::{EngineId, SupervisorConfig};
 use hosting::engine::{Chat, Script};
 use hosting::entries;
 use hosting::rig::{Plan, SpeechPlan, World};
-use inferd::pipeline::{PipelineInput, VecAudio, plan, run_pipeline};
 use inferd::runner::{Pin, Pinned, Turns};
 use inferd::speech::Ears;
+use porter_capability::SpeechMode;
+use porter_capability::Tier;
 use porter_client::{Accounts, ClientError, DbusSession, DbusTransport, InferSession};
-use porter_core::capability::SpeechMode;
+use porter_core::DataClass;
 use porter_core::consent::Usage;
-use porter_core::need::SpeechNeed;
-use porter_core::{DataClass, Need, Tier};
 use porter_infer::{
     Answer, AudioFrame, AudioRate, AutoPolicy, Base64Bytes, ChatMessage, ChatReply, ChatRequest,
     ClientFrame, DescribeImages, Flow, HeardDelta, InferEvent, InferReply, InferRequest, LangPick,
     Modality, ModelError, ModelLabel, ModelRef, OpenOptions, Readiness, RequestShape, Role,
     ShowReason, StageRole, TierMap, TranscribeBegin, TranscribeMode,
 };
+use porter_match::Need;
+use porter_match::SpeechNeed;
+use porter_router::pipeline::plan;
+use porter_turns::pipeline::{PipelineInput, VecAudio, run_pipeline};
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -88,7 +91,7 @@ async fn speak(session: &mut DbusSession, frames: u64, end: bool) -> Vec<InferEv
         .expect("request");
     let mut before = Vec::new();
     loop {
-        let event = tokio::time::timeout(porter_fake::GENEROUS, session.next())
+        let event = tokio::time::timeout(test_kit::GENEROUS, session.next())
             .await
             .expect("an event in time")
             .expect("an event");
@@ -117,7 +120,7 @@ async fn speak(session: &mut DbusSession, frames: u64, end: bool) -> Vec<InferEv
 async fn until_finished(session: &mut impl InferSession) -> Vec<InferEvent> {
     let mut events = Vec::new();
     loop {
-        let event = tokio::time::timeout(porter_fake::GENEROUS, session.next())
+        let event = tokio::time::timeout(test_kit::GENEROUS, session.next())
             .await
             .expect("an event in time")
             .expect("an event");
@@ -237,7 +240,7 @@ async fn the_audit_entry_of_a_transcription_counts_audio_and_keeps_no_words() {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     };
-    let entries = tokio::time::timeout(porter_fake::GENEROUS, recorded)
+    let entries = tokio::time::timeout(test_kit::GENEROUS, recorded)
         .await
         .expect("an audit entry");
     assert_eq!(entries.len(), 1);
@@ -257,7 +260,7 @@ async fn wait_ready(world: &World, spawns: usize) {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     };
-    tokio::time::timeout(porter_fake::GENEROUS, ready)
+    tokio::time::timeout(test_kit::GENEROUS, ready)
         .await
         .expect("the speech engine is ready");
 }
@@ -291,7 +294,7 @@ async fn the_engine_restarts_after_a_crash_and_a_turn_in_flight_fails_not_hangs(
             }
         }
     };
-    tokio::time::timeout(porter_fake::GENEROUS, heard_first)
+    tokio::time::timeout(test_kit::GENEROUS, heard_first)
         .await
         .expect("heard the first partial");
     speech.crash(&engine_of(&world));
@@ -402,9 +405,9 @@ async fn a_hear_then_answer_pipeline_hears_on_the_speech_host_and_answers_on_a_t
         inputs: BTreeSet::from([Modality::Audio]),
         answer: Answer::Text,
     };
-    let need = Need::Llm(porter_core::need::LlmNeed::new(
-        [porter_core::capability::LlmFeature::Chat].into(),
-        porter_core::Tokens(1000),
+    let need = Need::Llm(porter_match::LlmNeed::new(
+        [porter_capability::LlmFeature::Chat].into(),
+        porter_ids::Tokens(1000),
     ));
     let planned = plan(
         &shape,

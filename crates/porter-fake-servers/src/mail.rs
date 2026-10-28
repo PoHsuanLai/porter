@@ -119,22 +119,18 @@ impl Accounts {
     }
 }
 
-/// `authzid NUL user NUL password`, base64: the `PLAIN` initial response.
+/// The base64 `PLAIN` initial response, read through `porter_core::token`.
 pub fn decode_plain(b64: &str) -> Option<(String, Secret)> {
     let raw = String::from_utf8(STANDARD.decode(b64.trim()).ok()?).ok()?;
-    let mut parts = raw.split('\0');
-    let (_authzid, user, password) = (parts.next()?, parts.next()?, parts.next()?);
+    let (user, password) = porter_core::token::parse_plain(&raw)?;
     Some((user.to_owned(), Secret::Password(password.to_owned())))
 }
 
-/// `user=U ^A auth=Bearer T ^A ^A`, base64: the `XOAUTH2` initial response.
+/// The base64 `XOAUTH2` initial response, read through `porter_core::token`.
 pub fn decode_xoauth2(b64: &str) -> Option<(String, Secret)> {
     let raw = String::from_utf8(STANDARD.decode(b64.trim()).ok()?).ok()?;
-    let user = raw.split('\u{1}').find_map(|p| p.strip_prefix("user="))?;
-    let token = raw
-        .split('\u{1}')
-        .find_map(|p| p.strip_prefix("auth=Bearer "))?;
-    Some((user.to_owned(), Secret::Bearer(token.to_owned())))
+    let (user, bearer) = porter_core::token::parse_xoauth2(&raw)?;
+    Some((user.to_owned(), Secret::Bearer(bearer.to_owned())))
 }
 
 /// Base64 of text, for the `334` prompts and for tests building a `PLAIN` response.

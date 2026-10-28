@@ -2,18 +2,20 @@
 //! APIs) on loopback, the shipped provider file pointed at it, and an `Http` that sends every
 //! URL the family builds to the loopback fake it names.
 
-use porter_core::sheet::SignInInput;
-use porter_core::{Audience, UnixSeconds};
+use porter_core::Audience;
 use porter_fake_servers::browser::split_loopback;
-use porter_fake_servers::http::{Request, Scheme, send};
+use porter_fake_servers::http::{Scheme, send};
 use porter_fake_servers::{Google, shipped};
-use porter_families::{GoogleEnv, GoogleProvider};
-use porter_http::{Header, Http, HttpError, HttpRequest, HttpResponse, Status};
-use porter_oauth::{AppReview, ClientRegistry, ClientTraits, MailRights};
+use porter_family_oauth::{Google as GoogleRules, OAuthEnv, OAuthProvider};
+use porter_http::http::{Request, Response};
+use porter_http::{Http, HttpError};
+use porter_ids::UnixSeconds;
+use porter_oauth::{ClientRegistry, ClientTraits};
 use porter_provider::{
     ClientChannel, ClientEntry, ClientId, ClientsFile, Issuer, ProviderSpec, SignIn, SignInMode,
     SignInStart, SignInStep,
 };
+use porter_sheet::SignInInput;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -35,13 +37,16 @@ impl Wire {
 }
 
 impl Http for Wire {
-    async fn send(&self, request: HttpRequest) -> Result<HttpResponse, HttpError> {
+    async fn send(&self, request: Request<Vec<u8>>) -> Result<Response<Vec<u8>>, HttpError> {
         let (address, target) =
-            split_loopback(request.url.as_str()).map_err(|_| HttpError::Unreachable)?;
-        let mut wire = Request::new(request.method.token(), &target).with_body(request.body);
-        for h in &request.headers {
-            wire = wire.with_header(h.name.as_str(), &h.value.0);
+            split_loopback(&request.uri().to_string()).map_err(|_| HttpError::Unreachable)?;
+        let mut wire = porter_fake_servers::http::Request::new(request.method().as_str(), &target);
+        for (name, value) in request.headers() {
+            if let Ok(value) = value.to_str() {
+                wire = wire.with_header(name.as_str(), value);
+            }
         }
+        let wire = wire.with_body(request.into_body());
         if wire.form_value("grant_type").as_deref() == Some("refresh_token") {
             self.refresh_scopes
                 .lock()
@@ -51,15 +56,13 @@ impl Http for Wire {
         let response = send(&address, Scheme::Http, &wire)
             .await
             .map_err(|_| HttpError::Unreachable)?;
-        Ok(HttpResponse {
-            status: Status(response.status),
-            headers: response
-                .headers
-                .iter()
-                .map(|(n, v)| Header::new(n, v.clone()))
-                .collect(),
-            body: response.body,
-        })
+        let answer = response
+            .headers
+            .iter()
+            .fold(Response::builder().status(response.status), |b, (n, v)| {
+                b.header(n.as_str(), v.as_str())
+            });
+        Ok(answer.body(response.body)?)
     }
 }
 
@@ -73,22 +76,22 @@ pub enum Row {
 }
 
 pub const PLAIN: Row = Row::Of(ClientTraits {
-    mail: MailRights::Withheld,
-    review: AppReview::Verified,
+    byo: false,
+    testing: false,
 });
 pub const TESTING: Row = Row::Of(ClientTraits {
-    mail: MailRights::Withheld,
-    review: AppReview::Testing,
+    byo: false,
+    testing: true,
 });
 pub const BYO: Row = Row::Of(ClientTraits {
-    mail: MailRights::Byo,
-    review: AppReview::Testing,
+    byo: true,
+    testing: true,
 });
 
 pub struct Rig {
     pub google: Google,
     pub clock: Arc<AtomicI64>,
-    pub provider: GoogleProvider<Wire>,
+    pub provider: OAuthProvider<GoogleRules, Wire>,
     pub spec: ProviderSpec,
     pub wire: Wire,
 }
@@ -129,10 +132,10 @@ impl Rig {
         let counter = Arc::new(AtomicI64::new(0));
         let wire = Wire::default();
         // The clock is replaced below by the counting one.
-        let env = GoogleEnv::new(
+        let env = OAuthEnv::new(
             wire.clone(),
             registry,
-            porter_core::clock::FixedClock::new(UnixSeconds(0)),
+            porter_ids::clock::FixedClock::new(UnixSeconds(0)),
         )
         .with_channel(ClientChannel::Development)
         .with_poll_slice(Duration::from_millis(20))
@@ -146,7 +149,7 @@ impl Rig {
             let n = u8::try_from(counter.fetch_add(1, Ordering::SeqCst) % 200).unwrap_or(0);
             Some(([n; 32], [n.wrapping_add(1); 16]))
         }));
-        let provider = GoogleProvider::with_env(spec.clone(), env);
+        let provider = OAuthProvider::with_env(GoogleRules, spec.clone(), env);
         Self {
             google,
             clock,

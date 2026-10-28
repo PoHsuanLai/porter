@@ -1,9 +1,9 @@
 use super::*;
+use crate::Reason;
 use crate::testing::{MemoryListing, MemorySource};
-use crate::words;
-use porter_fake::Scratch;
 use porter_sync::ItemKind;
 use std::time::Duration;
+use test_kit::Scratch;
 
 struct Rig {
     dir: Scratch,
@@ -23,11 +23,13 @@ fn config(dir: &Scratch, chunk: u64) -> DriveConfig {
     }
 }
 
-fn rig(chunk: u64) -> Rig {
+async fn rig(chunk: u64) -> Rig {
     let dir = Scratch::new("porter-drive");
     let listing = Arc::new(MemoryListing::default());
     let source = Arc::new(MemorySource::default());
-    let drive = Drive::open(config(&dir, chunk), listing.clone(), source.clone()).expect("drive");
+    let drive = Drive::open(config(&dir, chunk), listing.clone(), source.clone())
+        .await
+        .expect("drive");
     Rig {
         dir,
         listing,
@@ -64,7 +66,7 @@ impl Rig {
 }
 
 async fn eventually(what: &str, mut check: impl FnMut() -> bool) {
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         if check() {
             return;
@@ -76,7 +78,7 @@ async fn eventually(what: &str, mut check: impl FnMut() -> bool) {
 
 #[tokio::test]
 async fn names_follow_both_rules_and_are_the_same_after_a_restart() {
-    let rig = rig(1 << 20);
+    let rig = rig(1 << 20).await;
     rig.listing.folder("f", None, "Work");
     rig.file("b2", Some("f"), "Plan.pdf", 3);
     rig.file("a1", Some("f"), "Plan.pdf", 3);
@@ -102,6 +104,7 @@ async fn names_follow_both_rules_and_are_the_same_after_a_restart() {
         rig.listing.clone(),
         rig.source.clone(),
     )
+    .await
     .expect("drive");
     let mut names_again: Vec<String> = again
         .children(&folder)
@@ -122,7 +125,7 @@ async fn names_follow_both_rules_and_are_the_same_after_a_restart() {
 
 #[tokio::test]
 async fn opening_a_cloud_file_fetches_it_in_chunks_and_the_fraction_moves() {
-    let rig = rig(4);
+    let rig = rig(4).await;
     rig.file("v", None, "Video.mp4", 16);
     assert_eq!(rig.state("v"), ItemState::Cloud);
     rig.source.hold();
@@ -150,7 +153,7 @@ async fn opening_a_cloud_file_fetches_it_in_chunks_and_the_fraction_moves() {
 
 #[tokio::test]
 async fn a_read_in_the_middle_waits_for_its_own_chunk_first() {
-    let rig = rig(4);
+    let rig = rig(4).await;
     rig.file("v", None, "Video.mp4", 32);
     rig.source.hold();
     rig.drive.open_file(&remote("v")).expect("open");
@@ -176,7 +179,7 @@ async fn a_read_in_the_middle_waits_for_its_own_chunk_first() {
 
 #[tokio::test]
 async fn offline_a_read_fails_and_the_item_says_it_downloads_when_connected() {
-    let rig = rig(4);
+    let rig = rig(4).await;
     rig.file("d", None, "Doc.txt", 10);
     rig.source.set_offline(true);
     rig.drive.open_file(&remote("d")).expect("open");
@@ -184,8 +187,8 @@ async fn offline_a_read_fails_and_the_item_says_it_downloads_when_connected() {
     assert_eq!(read, Err(ReadError::Offline));
     let status = rig.drive.status(&remote("d")).expect("status");
     assert_eq!(status.state, ItemState::Error);
-    assert_eq!(status.words.as_deref(), Some(words::OFFLINE));
-    assert_eq!(rig.drive.download(&remote("d")), Err(words::OFFLINE));
+    assert_eq!(status.reason, Some(Reason::Offline));
+    assert_eq!(rig.drive.download(&remote("d")), Err(Reason::Offline));
     rig.source.set_offline(false);
     rig.drive.set_offline(false);
     let read = rig
@@ -198,7 +201,7 @@ async fn offline_a_read_fails_and_the_item_says_it_downloads_when_connected() {
 
 #[tokio::test]
 async fn keeping_a_folder_fetches_what_is_under_it_and_what_is_added_later() {
-    let rig = rig(4);
+    let rig = rig(4).await;
     rig.listing.folder("p", None, "Pictures");
     rig.listing.folder("q", Some("p"), "2026");
     rig.file("a", Some("p"), "a.jpg", 9);
@@ -219,11 +222,11 @@ async fn keeping_a_folder_fetches_what_is_under_it_and_what_is_added_later() {
 
     assert_eq!(
         rig.drive.remove_download(&remote("a")),
-        Err(words::KEPT_WITH_FOLDER)
+        Err(Reason::KeptWithFolder)
     );
     assert_eq!(
         rig.drive.keep(&remote("b"), false),
-        Err(words::KEPT_WITH_FOLDER)
+        Err(Reason::KeptWithFolder)
     );
     rig.drive.remove_download(&remote("p")).expect("remove");
     assert_eq!(rig.drive.local_bytes(), 0);
@@ -240,7 +243,7 @@ async fn keeping_a_folder_fetches_what_is_under_it_and_what_is_added_later() {
 
 #[tokio::test]
 async fn keeping_everything_fetches_the_whole_drive_and_what_is_added_and_never_evicts_it() {
-    let rig = rig(4);
+    let rig = rig(4).await;
     rig.listing.folder("p", None, "Pictures");
     rig.file("a", Some("p"), "a.jpg", 9);
     rig.file("b", None, "b.txt", 5);
@@ -269,18 +272,18 @@ async fn keeping_everything_fetches_the_whole_drive_and_what_is_added_and_never_
     }
     assert_eq!(
         rig.drive.remove_download(&remote("a")),
-        Err(words::KEPT_WITH_DRIVE)
+        Err(Reason::KeptWithDrive)
     );
     assert_eq!(
         rig.drive.keep(&remote("p"), false),
-        Err(words::KEPT_WITH_DRIVE)
+        Err(Reason::KeptWithDrive)
     );
     assert!(!rig.drive.short_of_room());
 }
 
 #[tokio::test]
 async fn keeping_everything_off_leaves_the_files_here_but_evictable_and_keeps_what_was_kept() {
-    let rig = rig(4);
+    let rig = rig(4).await;
     for id in ["a", "b", "k"] {
         rig.file(id, None, &format!("{id}.bin"), 8);
     }
@@ -327,6 +330,7 @@ async fn keeping_everything_past_the_free_space_fetches_nothing_and_removes_noth
         listing.clone(),
         source.clone(),
     )
+    .await
     .expect("drive");
     let rig = Rig {
         dir,
@@ -379,6 +383,7 @@ async fn a_free_space_that_is_not_known_is_never_short_and_everything_downloads(
         listing.clone(),
         source.clone(),
     )
+    .await
     .expect("drive");
     let rig = Rig {
         dir,
@@ -398,7 +403,7 @@ async fn a_free_space_that_is_not_known_is_never_short_and_everything_downloads(
 
 #[tokio::test]
 async fn a_new_version_makes_the_copy_stale_and_a_kept_one_is_fetched_again() {
-    let rig = rig(4);
+    let rig = rig(4).await;
     rig.file("k", None, "kept.txt", 4);
     rig.file("o", None, "other.txt", 4);
     rig.drive.keep(&remote("k"), true).expect("keep");
@@ -423,7 +428,7 @@ async fn a_new_version_makes_the_copy_stale_and_a_kept_one_is_fetched_again() {
 
 #[tokio::test]
 async fn eviction_keeps_the_cache_under_its_limit_and_spares_kept_and_open_files() {
-    let rig = rig(1 << 20);
+    let rig = rig(1 << 20).await;
     for id in ["x", "y", "z", "w"] {
         rig.file(id, None, &format!("{id}.bin"), 8);
     }
@@ -455,7 +460,7 @@ async fn eviction_keeps_the_cache_under_its_limit_and_spares_kept_and_open_files
 
 #[tokio::test]
 async fn an_online_document_reads_as_its_link_and_is_never_downloaded() {
-    let rig = rig(4);
+    let rig = rig(4).await;
     rig.listing.online(
         "doc1",
         None,
@@ -473,23 +478,24 @@ async fn an_online_document_reads_as_its_link_and_is_never_downloaded() {
     let link: serde_json::Value = serde_json::from_slice(&read).expect("json");
     assert_eq!(link["url"], "https://docs.example.test/document/d/doc1");
     assert_eq!(link["doc_id"], "doc1");
-    assert_eq!(rig.drive.download(&node.id), Err(words::ONLINE_ONLY));
-    assert_eq!(rig.drive.keep(&node.id, true), Err(words::ONLINE_ONLY));
-    assert_eq!(rig.drive.remove_download(&node.id), Err(words::ONLINE_ONLY));
+    assert_eq!(rig.drive.download(&node.id), Err(Reason::OnlineOnly));
+    assert_eq!(rig.drive.keep(&node.id, true), Err(Reason::OnlineOnly));
+    assert_eq!(rig.drive.remove_download(&node.id), Err(Reason::OnlineOnly));
     assert!(rig.source.fetched().is_empty());
     assert_eq!(rig.drive.local_bytes(), 0);
 }
 
 #[tokio::test]
 async fn what_is_here_and_kept_is_remembered_across_a_restart() {
-    let rig = rig(4);
+    let rig = rig(4).await;
     rig.file("k", None, "kept.txt", 6);
     rig.drive.keep(&remote("k"), true).expect("keep");
     eventually("here", || rig.state("k") == ItemState::Downloaded).await;
     rig.drive.flush().expect("flush");
     drop(rig.drive);
-    let again =
-        Drive::open(config(&rig.dir, 4), rig.listing.clone(), rig.source.clone()).expect("drive");
+    let again = Drive::open(config(&rig.dir, 4), rig.listing.clone(), rig.source.clone())
+        .await
+        .expect("drive");
     let status = again.status(&remote("k")).expect("status");
     assert_eq!(status.state, ItemState::Downloaded);
     assert!(status.kept);
@@ -500,7 +506,7 @@ const DOCX: &str = "application/vnd.openxmlformats-officedocument.wordprocessing
 
 #[tokio::test]
 async fn a_copy_is_saved_next_to_its_document_named_as_it_is_and_waits_to_upload() {
-    let rig = rig(4);
+    let rig = rig(4).await;
     rig.listing.folder("f", None, "Work");
     let url = "https://docs.example.test/document/d/doc1";
     rig.listing
@@ -528,7 +534,7 @@ async fn a_copy_is_saved_next_to_its_document_named_as_it_is_and_waits_to_upload
     assert_eq!(status.state, ItemState::Waiting);
     assert_eq!(
         rig.drive.remove_download(&copy),
-        Err(words::WAITING),
+        Err(Reason::Waiting),
         "nothing made here is lost"
     );
     let again = rig.drive.save_copy(&plan.id).await.expect("again");
@@ -539,8 +545,9 @@ async fn a_copy_is_saved_next_to_its_document_named_as_it_is_and_waits_to_upload
 
     // The same names after a restart.
     drop(rig.drive);
-    let reopened =
-        Drive::open(config(&rig.dir, 4), rig.listing.clone(), rig.source.clone()).expect("drive");
+    let reopened = Drive::open(config(&rig.dir, 4), rig.listing.clone(), rig.source.clone())
+        .await
+        .expect("drive");
     let names: Vec<String> = reopened
         .children(&remote("f"))
         .expect("children")
@@ -555,7 +562,7 @@ async fn a_copy_is_saved_next_to_its_document_named_as_it_is_and_waits_to_upload
 
 #[tokio::test]
 async fn save_a_copy_refuses_what_has_no_file_and_says_why() {
-    let rig = rig(4);
+    let rig = rig(4).await;
     rig.file("bin", None, "Notes.txt", 3);
     let form = "https://docs.example.test/forms/d/form1";
     rig.listing.online("form1", None, "Survey", form, None);
@@ -571,11 +578,11 @@ async fn save_a_copy_refuses_what_has_no_file_and_says_why() {
         let id = remote(id);
         async move { drive.save_copy(&id).await }
     };
-    assert_eq!(copy("bin").await, Err(words::NOT_A_DOCUMENT));
-    assert_eq!(copy("form1").await, Err(words::NO_FILE_FORMAT));
-    assert_eq!(copy("big").await, Err(words::TOO_LARGE));
+    assert_eq!(copy("bin").await, Err(Reason::NotADocument));
+    assert_eq!(copy("form1").await, Err(Reason::NoFileFormat));
+    assert_eq!(copy("big").await, Err(Reason::TooLarge));
     rig.source.set_offline(true);
-    assert_eq!(copy("doc").await, Err(words::COPY_FAILED));
+    assert_eq!(copy("doc").await, Err(Reason::CopyFailed));
     assert!(
         rig.drive
             .children(&NodeId::Top)
@@ -586,13 +593,15 @@ async fn save_a_copy_refuses_what_has_no_file_and_says_why() {
     );
 }
 
-fn reopen(dir: &Scratch, listing: &Arc<MemoryListing>, source: &Arc<MemorySource>) -> Drive {
-    Drive::open(config(dir, 4), listing.clone(), source.clone()).expect("drive")
+async fn reopen(dir: &Scratch, listing: &Arc<MemoryListing>, source: &Arc<MemorySource>) -> Drive {
+    Drive::open(config(dir, 4), listing.clone(), source.clone())
+        .await
+        .expect("drive")
 }
 
 #[tokio::test]
 async fn a_second_drive_over_one_cache_waits_for_the_first_to_go() {
-    let rig = rig(4);
+    let rig = rig(4).await;
     rig.file("k", None, "kept.txt", 4);
     rig.drive.keep(&remote("k"), true).expect("keep");
     eventually("here", || rig.state("k") == ItemState::Downloaded).await;
@@ -600,7 +609,7 @@ async fn a_second_drive_over_one_cache_waits_for_the_first_to_go() {
         lock_wait: Duration::from_millis(50),
         ..config(&rig.dir, 4)
     };
-    let refused = Drive::open(soon, rig.listing.clone(), rig.source.clone());
+    let refused = Drive::open(soon, rig.listing.clone(), rig.source.clone()).await;
     assert!(
         matches!(refused, Err(DriveError::InUse)),
         "the first is still open: {refused:?}"
@@ -621,19 +630,21 @@ async fn a_second_drive_over_one_cache_waits_for_the_first_to_go() {
         drive,
     } = rig;
     drop(drive);
-    let second = Drive::open(config(&dir, 4), listing.clone(), source.clone()).expect("opens");
+    let second = Drive::open(config(&dir, 4), listing.clone(), source.clone())
+        .await
+        .expect("opens");
     gone.join().expect("thread");
     assert!(!second.status(&remote("k")).expect("status").kept);
     second.keep(&remote("k"), true).expect("keep");
     second.flush().expect("flush");
     drop(second);
-    let third = reopen(&dir, &listing, &source);
+    let third = reopen(&dir, &listing, &source).await;
     assert!(third.status(&remote("k")).expect("status").kept);
 }
 
 #[tokio::test]
 async fn the_index_claims_only_bytes_synced_and_its_old_copy_claims_none() {
-    let rig = rig(4);
+    let rig = rig(4).await;
     rig.file("k", None, "kept.txt", 6);
     rig.drive.keep(&remote("k"), true).expect("keep");
     eventually("here", || rig.state("k") == ItemState::Downloaded).await;
@@ -658,7 +669,7 @@ async fn the_index_claims_only_bytes_synced_and_its_old_copy_claims_none() {
     let index = drive.cache_dir().join("index.json");
     drop(drive);
     std::fs::write(&index, b"{ not json").expect("break the index");
-    let again = reopen(&dir, &listing, &source);
+    let again = reopen(&dir, &listing, &source).await;
     let status = again.status(&remote("k")).expect("status");
     assert!(status.kept, "what is kept stands");
     assert_eq!(
@@ -676,7 +687,7 @@ async fn the_index_claims_only_bytes_synced_and_its_old_copy_claims_none() {
 
 #[tokio::test]
 async fn a_cancelled_transfer_says_nothing_of_the_one_after_it() {
-    let rig = rig(4);
+    let rig = rig(4).await;
     rig.file("d", None, "Doc.txt", 4);
     rig.source.hold();
     rig.drive.open_file(&remote("d")).expect("open");
@@ -709,16 +720,15 @@ fn hashed(rig: &Rig, id: &str, size: u64, version: &str, of: &[u8]) {
         size,
         version,
     );
-    entry.hash = crate::hash::of_bytes(porter_core::capability::HashKind::Sha256, of)
+    entry.hash = crate::hash::of_bytes(porter_capability::HashKind::Sha256, of)
         .map(porter_sync::ContentHash);
     rig.listing.put(entry);
 }
 
 #[tokio::test]
 async fn a_download_is_checked_against_the_drives_hash_and_dropped_when_it_differs() {
-    let rig = rig(4);
-    rig.source
-        .set_hashes(porter_core::capability::HashKind::Sha256);
+    let rig = rig(4).await;
+    rig.source.set_hashes(porter_capability::HashKind::Sha256);
     hashed(&rig, "g", 8, "v1", b"12345678");
     rig.source.put("g", b"12345678".to_vec());
     rig.drive.download(&remote("g")).expect("download");
@@ -739,7 +749,7 @@ async fn a_download_is_checked_against_the_drives_hash_and_dropped_when_it_diffe
 
 #[tokio::test]
 async fn with_no_hash_a_download_whose_version_moved_on_is_dropped() {
-    let rig = rig(4);
+    let rig = rig(4).await;
     rig.file("v", None, "v.bin", 8);
     rig.source.hold();
     rig.drive.open_file(&remote("v")).expect("open");
@@ -755,7 +765,7 @@ async fn with_no_hash_a_download_whose_version_moved_on_is_dropped() {
 
 #[tokio::test]
 async fn a_waiting_read_joins_the_newer_version_instead_of_fighting_it() {
-    let rig = rig(4);
+    let rig = rig(4).await;
     rig.file("n", None, "n.bin", 8);
     rig.source.hold();
     rig.drive.open_file(&remote("n")).expect("open");
@@ -779,7 +789,7 @@ async fn a_waiting_read_joins_the_newer_version_instead_of_fighting_it() {
 
 #[tokio::test]
 async fn the_limit_counts_only_what_is_not_kept() {
-    let rig = rig(1 << 20);
+    let rig = rig(1 << 20).await;
     rig.file("k", None, "k.bin", 16);
     rig.file("a", None, "a.bin", 8);
     rig.file("b", None, "b.bin", 8);
@@ -804,7 +814,7 @@ async fn the_limit_counts_only_what_is_not_kept() {
 
 #[tokio::test]
 async fn nothing_is_evicted_when_the_folders_above_cannot_be_read() {
-    let rig = rig(1 << 20);
+    let rig = rig(1 << 20).await;
     rig.file("a", None, "a.bin", 8);
     rig.drive.download(&remote("a")).expect("download");
     eventually("here", || rig.state("a") == ItemState::Downloaded).await;
@@ -816,7 +826,7 @@ async fn nothing_is_evicted_when_the_folders_above_cannot_be_read() {
 
 #[tokio::test]
 async fn a_copy_is_on_the_disk_when_answered_and_one_the_index_lost_is_taken_in() {
-    let rig = rig(4);
+    let rig = rig(4).await;
     let url = "https://docs.example.test/document/d/doc1";
     rig.listing.online("doc1", None, "Plan", url, Some(DOCX));
     rig.source.put_export("doc1", b"docx".to_vec());
@@ -844,7 +854,7 @@ async fn a_copy_is_on_the_disk_when_answered_and_one_the_index_lost_is_taken_in(
         drive,
     } = rig;
     drop(drive);
-    let again = reopen(&dir, &listing, &source);
+    let again = reopen(&dir, &listing, &source).await;
     let node = again
         .lookup(&NodeId::Top, &format!("Recovered File {}", n + 4))
         .expect("lookup")
@@ -856,7 +866,7 @@ async fn a_copy_is_on_the_disk_when_answered_and_one_the_index_lost_is_taken_in(
 
 #[tokio::test]
 async fn an_empty_listing_drops_nothing() {
-    let rig = rig(4);
+    let rig = rig(4).await;
     rig.file("k", None, "k.bin", 4);
     rig.drive.keep(&remote("k"), true).expect("keep");
     eventually("here", || rig.state("k") == ItemState::Downloaded).await;
@@ -870,7 +880,7 @@ async fn an_empty_listing_drops_nothing() {
 
 #[tokio::test]
 async fn reached_again_a_file_that_failed_offline_is_in_the_cloud_again() {
-    let rig = rig(4);
+    let rig = rig(4).await;
     rig.file("d", None, "Doc.txt", 10);
     rig.source.set_offline(true);
     rig.drive.open_file(&remote("d")).expect("open");
@@ -898,6 +908,7 @@ async fn a_stalled_fetch_fails_its_reader_at_its_deadline() {
         listing.clone(),
         source.clone(),
     )
+    .await
     .expect("drive");
     listing.file("s", None, "s.bin", 4, "v1");
     source.put("s", b"slow".to_vec());

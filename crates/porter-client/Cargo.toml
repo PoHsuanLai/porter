@@ -1,6 +1,6 @@
 [package]
 name = "porter-client"
-description = "The app-facing API: find an account by capability, ask for consent, get tokens and inference, over D-Bus, the latchkey socket, or in process."
+description = "The app-facing API: find an account by capability, ask for consent, get tokens and inference, over D-Bus or in process."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,22 +10,29 @@ publish.workspace = true
 
 [dependencies]
 porter-core = { workspace = true }
+porter-tailnet = { workspace = true }
+porter-tailscale = { workspace = true }
+porter-match = { workspace = true }
+porter-capability = { workspace = true }
+porter-wire = { workspace = true }
+porter-ids = { workspace = true }
 porter-infer = { workspace = true, optional = true }
 porter-bridge = { workspace = true, optional = true }
 # `engines`: the turn the daemon runs (`run_chat`) and the clock its retries wait on.
 porter-turns = { workspace = true, optional = true }
-model-http = { workspace = true, optional = true, features = ["hyper", "tls"] }
+model-http = { workspace = true, optional = true, features = ["client", "tls"] }
 model-openai-compat = { workspace = true, optional = true }
 model-provider = { workspace = true, optional = true }
 model-wire = { workspace = true, optional = true }
 porter-provider = { workspace = true, optional = true }
 porter-secrets = { workspace = true, optional = true }
 porter-service = { workspace = true, optional = true }
+porter-service-core = { workspace = true, optional = true }
+porter-callers = { workspace = true, optional = true }
 porter-dbus = { workspace = true, optional = true }
 porter-fs = { workspace = true, optional = true }
 # `relays`: `PorterRelays`, the relay host that runs `porter_proxy::relay` over rustls.
 porter-proxy = { workspace = true, optional = true, features = ["io", "tls"] }
-latchkey = { workspace = true, optional = true }
 rustix = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
@@ -35,44 +42,49 @@ zbus = { workspace = true, optional = true }
 zeroize = { workspace = true }
 
 [dev-dependencies]
+test-kit = { workspace = true }
 # The tests name the service, the secrets and the provider catalogue whether or not `in-process`
 # is on; the feature gates only the crate's own `InProcess` and its dependencies.
 porter-provider = { workspace = true }
 porter-secrets = { workspace = true }
 porter-service = { workspace = true }
+porter-service-core = { workspace = true }
 ds-settings = { workspace = true }
-latchkey = { workspace = true }
 cua-action = { workspace = true }
 porter-fake = { workspace = true }
 porter-fake-servers = { workspace = true }
 # The scripted inference session the session tests play (`porter_infer::testing`).
 porter-infer = { workspace = true, features = ["testing"] }
-porter-families = { workspace = true, features = ["generic"] }
-porter-http = { workspace = true, features = ["hyper"] }
+porter-families = { workspace = true }
+porter-family-generic = { workspace = true }
+porter-http = { workspace = true }
+porter-http-reqwest = { workspace = true }
 tokio = { workspace = true }
 zbus = { workspace = true }
 
-# The daemons the bus and socket tests start (Linux only, as their transports are). They bring
+# The daemons the bus tests start (Linux only, as the transport is). They bring
 # peephole (who is calling, through pidfds) and the Secret Service store, which build only there;
 # the portable build (macOS, Windows) tests the pure and in-process paths without them.
+porter-sheet = { workspace = true }
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 accountd = { path = "../accountd" }
+porter-spaces = { workspace = true }
 inferd = { path = "../inferd" }
+porter-router = { workspace = true }
 # tailscaled's LocalAPI client, over its Unix socket, for the tailnet bus test.
 porter-tailscale = { workspace = true, features = ["io"] }
 
 [features]
-# Inference: sessions with inferd, `Need::Llm` paths, `prepare`. Default on so every existing
-# consumer builds as before; an accounts-only consumer says `default-features = false` (plus
-# `socket` or `dbus`) and builds no porter-infer, so no stoker.
-default = ["infer", "in-process"]
+# No feature is on by default: a consumer names the ones it uses.
+default = []
+# Inference: sessions with inferd, `Need::Llm` paths, `prepare`. An accounts-only consumer leaves
+# it off and builds no porter-infer, so no stoker.
 infer = ["dep:porter-infer"]
 # `InProcess`: the app hosts the account service itself (porter-service, its secrets and the
-# provider catalogue). On by default so every existing consumer builds as before; a consumer
-# that only talks to accountd over a bus says `default-features = false` and builds none of
-# them: `cargo tree -p porter-client --no-default-features --features dbus` reaches none
+# provider catalogue). A consumer that only talks to accountd over a bus leaves it off and builds
+# none of them: `cargo tree -p porter-client --features dbus` reaches none
 # (scripts/check-boundary.sh).
-in-process = ["dep:porter-provider", "dep:porter-secrets", "dep:porter-service"]
+in-process = ["dep:porter-provider", "dep:porter-secrets", "dep:porter-service", "dep:porter-service-core"]
 # Inference with no inferd: `EngineHost`, a `SessionHost` that routes need -> engine over a table
 # the app gives and drives the OpenAI-compatible engines it points at (Ollama, llama.cpp, LM
 # Studio, vLLM, a company's API), with keys from a `KeySource` the app implements. Off by
@@ -91,23 +103,13 @@ lending = ["dep:porter-fs"]
 # own `AccountService` (`InProcess::with_relays`), on its tokio runtime, over rustls. Off by
 # default: it brings porter-proxy with TLS and a runtime.
 relays = ["dep:porter-proxy", "dep:tokio"]
-# Frames over a Unix stream socket with descriptors riding on them (what both carriers below
-# share). Pulls in the runtime, so it is off by default: the pure build reaches none.
-framed = ["dep:rustix", "dep:serde", "dep:tokio"]
-# The D-Bus transport (Linux, the desktop's accountd and inferd).
-dbus = ["framed", "dep:porter-dbus", "dep:serde_json", "dep:zbus"]
-# The latchkey socket carrier (other desktops, macOS; a named pipe on Windows is not built):
-# the agent's address, lock and start come from latchkey. Without it `SocketTransport` finds
-# nobody.
-socket = ["framed", "dep:latchkey"]
+# The D-Bus transport (Linux, the desktop's accountd and inferd). It reads the session `Open`
+# returns as frames over a Unix stream socket with descriptors riding on them, so it pulls in the
+# runtime: the pure build reaches none.
+dbus = ["dep:rustix", "dep:serde", "dep:tokio", "dep:porter-callers", "dep:porter-dbus", "dep:serde_json", "dep:zbus"]
 
 [lints]
 workspace = true
-
-# Its own test executable: it builds without porter-infer (`--no-default-features --features
-# socket`) and starts that executable again as a fake child, by test name.
-[[test]]
-name = "socket_accounts"
 
 # Lists the guests and answers one, for Settings and the shell to copy.
 [[example]]

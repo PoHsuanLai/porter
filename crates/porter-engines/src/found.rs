@@ -170,7 +170,7 @@ mod tests {
     use super::*;
     use crate::host::{Arch, Backend};
     use crate::manifest::{Delivery, Row};
-    use porter_fake::Scratch;
+    use test_kit::Scratch;
 
     static ROWS: [Row; 1] = [Row {
         engine: EngineId::LlamaCpp,

@@ -4,7 +4,8 @@
 //! bound to another, inside the jail, and nothing leaves the computer. Nothing here touches the
 //! real Tailscale or `/var/run/tailscale`.
 
-use porter_dbus::{Details, machine_to_dbus};
+use porter_dbus::Details;
+use porter_dbus::accounts::machine_to_dbus;
 use porter_fake_servers::{Daemon, FakeLocalApi, FakePeer, Network};
 use porter_tailscale::LocalApi;
 use std::net::{IpAddr, Ipv4Addr};
@@ -39,7 +40,7 @@ impl FakeTailscale {
             .expect("fake tailscale");
         let api = LocalApi::new(fake.socket())
             .with_program_dirs(Vec::new())
-            .with_timeout(porter_fake::GENEROUS);
+            .with_timeout(test_kit::GENEROUS);
         Self {
             fake,
             api,

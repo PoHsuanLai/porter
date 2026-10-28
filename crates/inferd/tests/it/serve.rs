@@ -5,18 +5,23 @@
 
 use crate::support;
 
-use inferd::serve::{Carried, Seams, TurnStep, serve_session};
-use inferd::session::SessionSpec;
-use porter_core::capability::{CuaEnv, SpeechMode};
+use inferd::serve::serve_session;
+use porter_capability::Tier;
+use porter_capability::{CuaEnv, SpeechMode};
+use porter_core::DataClass;
 use porter_core::consent::Usage;
-use porter_core::need::{CuaNeed, SpeechNeed};
-use porter_core::{Count, DataClass, Need, Tier, Tokens};
+use porter_ids::{Count, Tokens};
 use porter_infer::{
     AttachIndex, AudioFrame, AudioRate, Base64Bytes, ChatControl, ChatMessage, ChatReply,
     ChatRequest, ClientFrame, CuaBegin, CuaStepReply, ImagePart, ImageSource, InferEvent,
     InferRefusal, InferReply, InferRequest, MessagePart, ModelError, Role, StopReason, TokenUsage,
     ToolParallelism, TranscribeBegin, TranscribeMode, TranscribeReply,
 };
+use porter_match::Need;
+use porter_match::{CuaNeed, SpeechNeed};
+use porter_router::carried::Carried;
+use porter_router::seams::{Seams, TurnStep};
+use porter_router::session::SessionSpec;
 use std::os::fd::OwnedFd;
 
 /// The `Answer` note every chat turn sends after `Routed`: the router here names the model as
@@ -68,6 +73,7 @@ fn usage() -> TokenUsage {
         input: Tokens(1),
         output: Tokens(1),
         cached: Tokens(0),
+        charge: None,
     }
 }
 

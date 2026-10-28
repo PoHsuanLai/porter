@@ -1,16 +1,22 @@
 //! Scripted seams and a raw client for the session server's tests. The test plays the engine: a
 //! started turn hands the test a sender, and the turn yields whatever the test pushes.
 
-use inferd::serve::{
-    AuditSink, Carried, EngineFailed, EngineHost, Router, RunningTurn, TurnRunner, TurnStep,
-};
-use inferd::session::{RouteDecision, SessionSpec};
-use porter_core::wire::{FrameRead, decode_frame, encode_frame};
-use porter_core::{AccountId, DataClass, Locality, ModelId, Need, Tier, Tokens};
+use porter_capability::ModelId;
+use porter_capability::{Locality, Tier};
+use porter_core::AccountId;
+use porter_core::DataClass;
+use porter_ids::Tokens;
 use porter_infer::{
     AudioFrame, ClientFrame, InferEvent, InferRefusal, InferReply, InferRequest, ModelRef,
     Readiness, ServedBy,
 };
+use porter_match::Need;
+use porter_router::carried::Carried;
+use porter_router::seams::{
+    AuditSink, EngineFailed, EngineHost, Router, RunningTurn, TurnRunner, TurnStep,
+};
+use porter_router::session::{RouteDecision, SessionSpec};
+use porter_wire::{decode_frame, encode_frame};
 use rustix::net::{SendAncillaryBuffer, SendAncillaryMessage, SendFlags, sendmsg};
 use std::io::{IoSlice, Read, Seek};
 use std::mem::MaybeUninit;
@@ -46,10 +52,7 @@ pub fn spec(need: Need, class: DataClass) -> SessionSpec {
 }
 
 pub fn llm() -> Need {
-    Need::Llm(porter_core::need::LlmNeed::new(
-        Default::default(),
-        Tokens(1),
-    ))
+    Need::Llm(porter_match::LlmNeed::new(Default::default(), Tokens(1)))
 }
 
 /// A router with one fixed answer.
@@ -154,7 +157,7 @@ impl TurnRunner for Runner {
     fn start_heard(
         &self,
         chat: porter_infer::ChatRequest,
-        heard: inferd::session::HeardAudio,
+        heard: porter_router::session::HeardAudio,
     ) -> Turn {
         self.audio.lock().expect("lock").extend(heard.frames);
         self.start(InferRequest::Chat(chat), Vec::new())
@@ -241,15 +244,14 @@ impl Client {
 
     /// The next event, or `None` when the daemon closed the socket.
     pub async fn event(&mut self) -> Option<InferEvent> {
-        tokio::time::timeout(porter_fake::GENEROUS, self.event_inner())
+        tokio::time::timeout(test_kit::GENEROUS, self.event_inner())
             .await
             .expect("an event or a close within the generous wait")
     }
 
     async fn event_inner(&mut self) -> Option<InferEvent> {
         loop {
-            if let Ok(FrameRead::Complete(envelope, used)) = decode_frame::<InferEvent>(&self.inbox)
-            {
+            if let Ok(Some((envelope, used))) = decode_frame::<InferEvent>(&self.inbox) {
                 self.inbox.drain(..used);
                 return Some(envelope.body);
             }
@@ -278,7 +280,7 @@ impl Client {
 /// Waits until `check` holds (at once when it does); panics once the generous wait has passed
 /// by the clock.
 pub async fn eventually(what: &str, mut check: impl FnMut() -> bool) {
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         if check() {
             return;

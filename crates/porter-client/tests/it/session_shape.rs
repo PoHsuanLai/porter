@@ -1,9 +1,10 @@
 //! `Accounts::session` and `Accounts::infer` over a transport whose sessions are scripted.
 #![cfg(feature = "infer")]
 
+use porter_capability::Tier;
 use porter_client::{Accounts, ClientError, InferSession, Transport, TransportError};
-use porter_core::need::LlmNeed;
-use porter_core::{AccountsReply, AccountsRequest, DataClass, Need, Tier, Tokens};
+use porter_core::DataClass;
+use porter_ids::Tokens;
 use porter_infer::OpenOptions;
 use porter_infer::testing::{FakeInferSession, Script, ScriptStep};
 use porter_infer::{ChatControl, ToolParallelism};
@@ -11,6 +12,9 @@ use porter_infer::{
     ChatReply, ClientFrame, InferEvent, InferRefusal, InferReply, InferRequest, RequestKind,
     ServedBy, StopReason, TokenUsage,
 };
+use porter_match::LlmNeed;
+use porter_match::Need;
+use porter_wire::{AccountsReply, AccountsRequest};
 use std::sync::Mutex;
 
 #[derive(Debug)]
@@ -45,8 +49,8 @@ fn need() -> Need {
 fn served() -> ServedBy {
     ServedBy {
         account: porter_core::AccountId::parse("local").expect("id"),
-        model: porter_core::ModelId::parse("echo").expect("id"),
-        locality: porter_core::Locality::OnDevice,
+        model: porter_capability::ModelId::parse("echo").expect("id"),
+        locality: porter_capability::Locality::OnDevice,
     }
 }
 
@@ -74,6 +78,7 @@ async fn infer_reads_to_the_finished_event() {
         input: Tokens(1),
         output: Tokens(1),
         cached: Tokens(0),
+        charge: None,
     };
     let reply = InferReply::Chat(ChatReply::new(
         "hi".into(),

@@ -10,7 +10,8 @@
 //! listing with the changes not on the drive yet laid over it (see `view`).
 //!
 //! - **One drive per directory.** [`Drive::open`] takes an exclusive lock on `lock` (`flock`),
-//!   waiting [`DriveConfig::lock_wait`] for a drive still open there to go, else
+//!   waiting (async, yielding to the runtime) [`DriveConfig::lock_wait`] for a drive still open
+//!   there to go, else
 //!   [`DriveError::InUse`]. The lock goes with the drive, after its index is written.
 //! - **What the index claims is on the disk.** A content file a fetch wrote to is synced
 //!   (`fdatasync`) before an index that notes its ranges is written. An index read from the
@@ -41,13 +42,14 @@ pub use fetch::ReadError;
 pub use state::{ItemState, Status};
 pub use write::{WriteError, WriteHandle};
 
+use crate::Reason;
 use crate::index::{Dirty, Edit, Index, IndexFile};
 use crate::limit::CacheLimit;
 use crate::listing::{Listing, ListingError};
 use crate::sink::Sink;
 use crate::source::Source;
 use fetch::Transfer;
-use porter_core::UnixSeconds;
+use porter_ids::UnixSeconds;
 use porter_sync::{ItemKind, RemoteId};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -228,8 +230,8 @@ pub enum FreeSpace {
 /// Why an item's last fetch failed, as its status shows it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Failure {
-    /// The words Files shows.
-    pub words: String,
+    /// Why, for whoever shows it.
+    pub reason: Reason,
     /// It may pass by itself (no network, a stall): cleared when the drive is reached again.
     pub transient: bool,
 }
@@ -286,9 +288,9 @@ pub(crate) struct Inner {
     paused: AtomicBool,
     /// The drive refused the account's sign-in: nothing is sent until it is signed in again.
     signed_out: AtomicBool,
-    /// Changes the drive could not take now with words to say why (in use there), until their
+    /// Changes the drive could not take now, with the reason (in use there), until their
     /// next try.
-    waiting: Mutex<HashMap<NodeId, &'static str>>,
+    waiting: Mutex<HashMap<NodeId, Reason>>,
     /// Changes the drive answered with a newer version: held until a listing pass shows it.
     stale: Mutex<HashSet<NodeId>>,
     /// When the sender tries again after the drive could not take a change, and how long it
@@ -334,7 +336,8 @@ impl Drop for Inner {
 }
 
 /// Takes the lock of the cache directory `dir`, waiting up to `wait` for the drive holding it.
-fn lock(dir: &Path, wait: Duration) -> Result<std::fs::File, DriveError> {
+/// The wait yields to the runtime, so the task that lets the previous drive go can run.
+async fn lock(dir: &Path, wait: Duration) -> Result<std::fs::File, DriveError> {
     let file = std::fs::OpenOptions::new()
         .create(true)
         .truncate(false)
@@ -345,7 +348,7 @@ fn lock(dir: &Path, wait: Duration) -> Result<std::fs::File, DriveError> {
         match file.try_lock() {
             Ok(()) => return Ok(file),
             Err(std::fs::TryLockError::WouldBlock) if std::time::Instant::now() < deadline => {
-                std::thread::sleep(LOCK_EVERY);
+                tokio::time::sleep(LOCK_EVERY).await;
             }
             Err(std::fs::TryLockError::WouldBlock) => return Err(DriveError::InUse),
             Err(std::fs::TryLockError::Error(why)) => return Err(why.into()),
@@ -490,7 +493,7 @@ impl std::fmt::Debug for Drive {
 /// The content file name of `id` at `version`.
 fn key(id: &RemoteId, version: &str) -> String {
     let digest = Sha256::digest(format!("{}\0{version}", id.0).as_bytes());
-    digest.iter().take(20).map(|b| format!("{b:02x}")).collect()
+    hex::encode(&digest[..20])
 }
 
 /// The text an inode number is made from, and the index names an item by when it keeps the
@@ -517,33 +520,34 @@ fn ino_for(id: &NodeId) -> u64 {
 impl Drive {
     /// The drive over `listing`, fetching from `source`, with its cache as `config` says, shown
     /// read-only. Must be called inside a Tokio runtime: its fetches and the index's writes run
-    /// there.
+    /// there. If another drive holds the cache, it waits (without blocking the runtime) up to
+    /// [`DriveConfig::lock_wait`] for that drive to go.
     ///
     /// # Errors
-    /// No runtime, or the cache directory could not be made.
-    pub fn open(
+    /// No runtime, the cache directory could not be made, or it stayed in use.
+    pub async fn open(
         config: DriveConfig,
         listing: Arc<dyn Listing>,
         source: Arc<dyn Source>,
     ) -> Result<Drive, DriveError> {
-        Self::open_with(config, listing, source, None)
+        Self::open_with(config, listing, source, None).await
     }
 
     /// The drive as [`Drive::open`] opens it, and changed here: each change is kept in the cache
     /// first, then sent to `sink`.
     ///
     /// # Errors
-    /// No runtime, or the cache directory could not be made.
-    pub fn open_writable(
+    /// No runtime, the cache directory could not be made, or it stayed in use.
+    pub async fn open_writable(
         config: DriveConfig,
         listing: Arc<dyn Listing>,
         source: Arc<dyn Source>,
         sink: Arc<dyn Sink>,
     ) -> Result<Drive, DriveError> {
-        Self::open_with(config, listing, source, Some(sink))
+        Self::open_with(config, listing, source, Some(sink)).await
     }
 
-    fn open_with(
+    async fn open_with(
         config: DriveConfig,
         listing: Arc<dyn Listing>,
         source: Arc<dyn Source>,
@@ -552,7 +556,7 @@ impl Drive {
         let runtime = tokio::runtime::Handle::try_current().map_err(|_| DriveError::NoRuntime)?;
         std::fs::create_dir_all(config.cache.join("content"))?;
         std::fs::create_dir_all(config.cache.join("local"))?;
-        let lock = lock(&config.cache, config.lock_wait)?;
+        let lock = lock(&config.cache, config.lock_wait).await?;
         let file = IndexFile::new(&config.cache);
         let mut index = file.load();
         let changed = reconcile(&config.cache, &mut index)?;

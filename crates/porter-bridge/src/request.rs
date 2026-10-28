@@ -12,8 +12,8 @@ use model_catalog::SamplingDefaults;
 use model_openai_compat::Flavor;
 use model_provider as sp;
 use model_provider::EmbedCaps;
-use porter_core::need::DimsNeed;
 use porter_infer as pi;
+use porter_match::DimsNeed;
 #[cfg(unix)]
 use std::fs::File;
 #[cfg(unix)]
@@ -26,6 +26,7 @@ pub const MAX_ATTACHMENT: u64 = 1 << 30;
 
 /// Why a request could not be turned into a model turn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum BridgeError {
     /// A name, schema or argument text is malformed, or an image type has no encoder.
     #[error("the request cannot be expressed to the engine")]
@@ -184,7 +185,7 @@ fn tool_choice(choice: &pi::ToolChoice) -> Result<sp::ToolChoice, BridgeError> {
     })
 }
 
-fn milli(permille: porter_core::Permille) -> sp::Milli {
+fn milli(permille: porter_ids::Permille) -> sp::Milli {
     sp::Milli(u16::try_from(permille.0).unwrap_or(u16::MAX))
 }
 
@@ -421,7 +422,7 @@ fn task_instruction(task: pi::Task) -> Result<&'static str, BridgeError> {
 pub fn task_turn_for(
     target: &Target,
     request: &pi::TaskRequest,
-    tier: porter_core::Tier,
+    tier: porter_capability::Tier,
 ) -> Result<sp::TurnRequest, BridgeError> {
     let chat = pi::ChatRequest::new(
         vec![

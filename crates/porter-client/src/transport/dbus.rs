@@ -1,6 +1,6 @@
 //! The D-Bus carrier: porter-dbus proxies on the session bus; the caller's identity is what
 //! the bus says about the connection. `Inference1.Open` is built (a socket fd, framed with
-//! `porter_core::wire`), and so are the two sheet calls accountd still serves (adding an identity
+//! `porter_wire`), and so are the two sheet calls accountd still serves (adding an identity
 //! and signing it in again). No credential crosses the bus any more, so nothing else of accounts
 //! is carried: finding, choosing, tokens and relays are the library's, for an app that hosts its
 //! own `AccountService` ([`super::InProcess`]), and every other call answers `Unsupported`.
@@ -12,13 +12,18 @@ use super::Transport;
 use super::dbus_session::DbusSession;
 use crate::Destination;
 use crate::error::TransportError;
-use porter_core::lending::{ComputerCandidate, GuestAnswer, GuestRow};
-use porter_core::{AccountsReply, AccountsRequest, NodeId};
 #[cfg(feature = "infer")]
-use porter_core::{DataClass, Need, Tier};
+use porter_capability::Tier;
+#[cfg(feature = "infer")]
+use porter_core::DataClass;
 use porter_dbus::{BusConnection, BusError, BusFailure, classify};
 #[cfg(feature = "infer")]
 use porter_infer::{ComputerName, OpenOptions, PlaceId, PlaceRow, Readiness};
+#[cfg(feature = "infer")]
+use porter_match::Need;
+use porter_tailnet::{ComputerCandidate, GuestAnswer, GuestRow};
+use porter_tailscale::NodeId;
+use porter_wire::{AccountsReply, AccountsRequest};
 #[cfg(feature = "infer")]
 use serde::Serialize;
 use zbus::names::UniqueName;
@@ -98,7 +103,7 @@ impl DbusTransport {
 
     /// The person's computers on their Tailscale network (`org.quire.Tailnet1`), over this
     /// connection: for the shell, Settings and the terminal.
-    pub async fn tailnet(&self) -> Result<crate::Tailnet, crate::TailnetError> {
+    pub async fn tailnet(&self) -> Result<crate::Tailnet, crate::CallFailure> {
         crate::Tailnet::connect_at(&self.connection, &self.accounts).await
     }
 }
@@ -150,7 +155,7 @@ pub(super) fn slug<T: Serialize + ?Sized>(value: &T) -> Result<String, Transport
 pub(crate) fn bus_error(error: &BusError) -> TransportError {
     // inferd's answer to a call that named its places and has none to run in.
     #[cfg(feature = "infer")]
-    if let Some((reason, kind)) = porter_dbus::place_refusal_of(error)
+    if let Some((reason, kind)) = porter_dbus::inference::place_refusal_of(error)
         && let Some(reason) = porter_infer::NoPlaceReason::from_name(&reason)
     {
         return TransportError::NoAllowedPlace {
@@ -159,7 +164,7 @@ pub(crate) fn bus_error(error: &BusError) -> TransportError {
         };
     }
     // inferd's plain refusal of a call about computers or guests.
-    if let Some((name, words)) = porter_dbus::computer_refusal_of(error) {
+    if let Some((name, words)) = porter_dbus::inference::computer_refusal_of(error) {
         return TransportError::Computer {
             reason: crate::error::ComputerReason::from_name(&name),
             words,
@@ -169,6 +174,8 @@ pub(crate) fn bus_error(error: &BusError) -> TransportError {
         BusFailure::NoDaemon => TransportError::Unreachable,
         BusFailure::Denied(why) => TransportError::Denied(why),
         BusFailure::Other(why) => TransportError::Malformed(format!("bus: {why}")),
+        // a failure a later porter-dbus adds
+        _ => TransportError::Malformed("a bus failure this client does not know".to_owned()),
     }
 }
 

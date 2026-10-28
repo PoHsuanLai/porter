@@ -18,11 +18,7 @@ pub struct Planned {
 }
 
 fn tag(text: &str) -> String {
-    Sha256::digest(text.as_bytes())
-        .iter()
-        .take(3)
-        .map(|b| format!("{b:02x}"))
-        .collect()
+    hex::encode(&Sha256::digest(text.as_bytes())[..3])
 }
 
 /// A directory name: the URL segment with everything but letters, digits and `._-` made `_`
@@ -102,7 +98,7 @@ pub fn plan(kind: PimKind, found: Vec<Found>) -> Vec<Planned> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_core::WebUrl;
+    use porter_ids::WebUrl;
 
     fn found(segment: &str, url: &str) -> Found {
         Found {
@@ -184,7 +180,7 @@ mod tests {
 #[cfg(test)]
 mod kind_tests {
     use super::*;
-    use porter_core::WebUrl;
+    use porter_ids::WebUrl;
 
     #[test]
     fn a_calendar_and_an_address_book_of_one_name_never_share_a_directory_or_a_dataset() {

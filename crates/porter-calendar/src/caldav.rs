@@ -10,15 +10,14 @@
 use crate::CalendarStore;
 use crate::error::CalendarError;
 use crate::event::{CalendarRef, Event, Stored};
-use crate::json::{encode, removed, url};
-use dav_proto::names::{CALDAV, CALENDAR_DATA, DISPLAYNAME, GETETAG, RESOURCETYPE};
-use dav_proto::{Depth, Multistatus, escape, parse_multistatus};
-use porter_core::WebUrl;
-use porter_dav::{Home, collections, current_user_principal, home_set, propfind};
-use porter_http::{Http, HttpRequest, HttpResponse, Method};
-
-/// Apple's calendar colour, which most servers keep (`#0082c9FF`).
-const CALENDAR_COLOR: &str = "http://apple.com/ns/ical/calendar-color";
+use crate::json::{encode, if_match, removed, url, with_header};
+use dav_proto::discover::{Error as WalkError, Home, Next, Reach, Scope, Walk};
+use dav_proto::names::{CALDAV, CALENDAR_DATA, GETETAG};
+use dav_proto::{Depth, escape, parse_multistatus};
+use porter_http::http::header::{ACCEPT, CONTENT_TYPE, IF_NONE_MATCH};
+use porter_http::http::{Method, Request, Response};
+use porter_http::{HeaderText, Http, HttpError, request, uri, webdav};
+use porter_ids::WebUrl;
 
 /// A CalDAV account's calendars, under its calendar home.
 #[derive(Debug, Clone)]
@@ -33,29 +32,15 @@ impl<H: Http> CalDav<H> {
         Self { http, home }
     }
 
-    /// The calendar home found from `start`, any URL on the server the principal's
-    /// `current-user-principal` is asked at (RFC 5397), then the principal's
-    /// `calendar-home-set` (RFC 4791 §6.2.1).
+    /// The calendar home found from `start`, any URL on the server: dav-proto's discovery walk
+    /// asks it for the principal (RFC 5397) and the principal's `calendar-home-set` (RFC 4791
+    /// §6.2.1).
     pub async fn discover(http: H, start: WebUrl) -> Result<Self, CalendarError> {
-        let at = propfind_status(
-            &http,
-            start.clone(),
-            &[dav_proto::names::CURRENT_USER_PRINCIPAL],
-        )
-        .await?;
-        let principal = current_user_principal(&at)
-            .map(|href| resolve(&start, &href))
-            .transpose()?
-            .unwrap_or(start);
-        let at = propfind_status(
-            &http,
-            principal.clone(),
-            &[dav_proto::names::CALENDAR_HOME_SET],
-        )
-        .await?;
-        let home = home_set(&at, Home::Calendar)
+        let found = walk(&http, &start, Reach::Homes).await?;
+        let home = found
+            .homes_of(Home::Calendar)
             .first()
-            .map(|href| resolve(&principal, href))
+            .map(|home| url(&home.to_string()))
             .transpose()?
             .ok_or_else(|| CalendarError::Malformed("no calendar-home-set".to_owned()))?;
         Ok(Self { http, home })
@@ -72,7 +57,7 @@ impl<H: Http> CalDav<H> {
         url(&format!("{calendar}{slash}{}.ics", encode(uid)))
     }
 
-    async fn send(&self, request: HttpRequest) -> Result<HttpResponse, CalendarError> {
+    async fn send(&self, request: Request<Vec<u8>>) -> Result<Response<Vec<u8>>, CalendarError> {
         Ok(self.http.send(request).await?)
     }
 
@@ -83,16 +68,18 @@ impl<H: Http> CalDav<H> {
         uid: &str,
         at: WebUrl,
     ) -> Result<Option<Stored>, CalendarError> {
-        let response = self
-            .send(HttpRequest::new(Method::Get, at.clone()).with_header("Accept", "text/calendar"))
-            .await?;
-        match response.status.0 {
+        let asked = request(Method::GET, &at)
+            .header(ACCEPT, "text/calendar")
+            .body(Vec::new())
+            .map_err(HttpError::from)?;
+        let response = self.send(asked).await?;
+        match response.status().as_u16() {
             200..=299 => Ok(Some(Stored {
                 calendar: calendar.to_owned(),
                 uid: uid.to_owned(),
                 id: at.as_str().to_owned(),
                 version: response.header("etag").map(str::to_owned),
-                ics: Some(String::from_utf8_lossy(&response.body).into_owned()),
+                ics: Some(String::from_utf8_lossy(response.body()).into_owned()),
             })),
             404 | 410 => Ok(None),
             status => Err(CalendarError::of_status(status, "the GET of an event")),
@@ -103,18 +90,19 @@ impl<H: Http> CalDav<H> {
     /// server that does not answer the query (or not with a multistatus) has none to give.
     async fn query(&self, calendar: &str, uid: &str) -> Result<Option<Stored>, CalendarError> {
         let at = url(calendar)?;
-        let request = HttpRequest::new(Method::Report, at.clone())
-            .with_header("Depth", Depth::One.as_str())
-            .with_header("Content-Type", "application/xml; charset=utf-8")
-            .with_body(calendar_query(uid));
-        let response = self.send(request).await?;
-        if response.status.0 != 207 {
-            return match response.status.0 {
+        let asked = request(webdav::report(), &at)
+            .header("Depth", Depth::One.as_str())
+            .header(CONTENT_TYPE, "application/xml; charset=utf-8")
+            .body(calendar_query(uid).into_bytes())
+            .map_err(HttpError::from)?;
+        let response = self.send(asked).await?;
+        if response.status().as_u16() != 207 {
+            return match response.status().as_u16() {
                 401 | 403 => Err(CalendarError::Unauthorized),
                 _ => Ok(None),
             };
         }
-        let status = parse_multistatus(&String::from_utf8_lossy(&response.body))
+        let status = parse_multistatus(&String::from_utf8_lossy(response.body()))
             .map_err(|e| CalendarError::Malformed(e.to_string()))?;
         let Some(found) = status.responses.iter().find(|r| {
             !r.gone()
@@ -135,33 +123,25 @@ impl<H: Http> CalDav<H> {
 
 impl<H: Http> CalendarStore for CalDav<H> {
     async fn calendars(&self) -> Result<Vec<CalendarRef>, CalendarError> {
-        let request = propfind(
-            self.home.clone(),
-            Depth::One,
-            &[RESOURCETYPE, DISPLAYNAME, CALENDAR_COLOR],
-        );
-        let response = self.send(request).await?;
-        let status = multistatus(&response, "the PROPFIND of the calendar home")?;
-        let hrefs = collections(&status, Home::Calendar);
-        let mut out = Vec::new();
-        for response in status.responses.iter().filter(|r| hrefs.contains(&r.href)) {
-            let id = resolve(&self.home, &response.href)?;
-            let name = response
-                .found(DISPLAYNAME)
-                .filter(|name| !name.is_empty())
-                .map(str::to_owned)
-                .unwrap_or_else(|| last_segment(id.path()));
-            out.push(CalendarRef {
-                id: id.as_str().to_owned(),
-                name,
-                color: response
-                    .found(CALENDAR_COLOR)
-                    .filter(|c| !c.is_empty())
-                    .map(str::to_owned),
-                writable: true,
-            });
-        }
-        Ok(out)
+        let found = walk(&self.http, &self.home, Reach::Collections).await?;
+        found
+            .collections
+            .iter()
+            .filter(|collection| collection.home == Home::Calendar)
+            .map(|collection| {
+                let id = url(&collection.url.to_string())?;
+                let name = collection
+                    .display_name
+                    .clone()
+                    .unwrap_or_else(|| last_segment(id.path()));
+                Ok(CalendarRef {
+                    id: id.as_str().to_owned(),
+                    name,
+                    color: collection.color.clone(),
+                    writable: true,
+                })
+            })
+            .collect()
     }
 
     async fn find(&self, calendar: &str, uid: &str) -> Result<Option<Stored>, CalendarError> {
@@ -176,26 +156,23 @@ impl<H: Http> CalendarStore for CalDav<H> {
 
     async fn put(&self, calendar: &str, event: &Event) -> Result<Stored, CalendarError> {
         let held = self.find(calendar, &event.uid).await?;
-        let (at, condition) = match &held {
-            Some(held) => (
-                url(&held.id)?,
-                held.version.as_ref().map(|etag| ("If-Match", etag.clone())),
-            ),
-            None => (
-                Self::resource(calendar, &event.uid)?,
-                Some(("If-None-Match", "*".to_owned())),
-            ),
+        let at = match &held {
+            Some(held) => url(&held.id)?,
+            None => Self::resource(calendar, &event.uid)?,
         };
-        let mut request = HttpRequest::new(Method::Put, at.clone())
-            .with_header("Content-Type", "text/calendar; charset=utf-8")
-            .with_body(event.ics.clone());
-        if let Some((name, value)) = condition {
-            request = request.with_header(name, value);
-        }
-        let response = self.send(request).await?;
-        if !response.status.is_success() {
+        let asked = request(Method::PUT, &at)
+            .header(CONTENT_TYPE, "text/calendar; charset=utf-8")
+            .body(event.ics.clone().into_bytes())
+            .map_err(HttpError::from)?;
+        let asked = match held.as_ref().map(|held| held.version.as_deref()) {
+            Some(Some(etag)) => if_match(asked, etag)?,
+            Some(None) => asked,
+            None => with_header(asked, IF_NONE_MATCH, "*")?,
+        };
+        let response = self.send(asked).await?;
+        if !response.status().is_success() {
             return Err(CalendarError::of_status(
-                response.status.0,
+                response.status().as_u16(),
                 "the PUT of an event",
             ));
         }
@@ -212,32 +189,41 @@ impl<H: Http> CalendarStore for CalDav<H> {
         let Some(held) = self.find(calendar, uid).await? else {
             return Ok(false);
         };
-        let mut request = HttpRequest::new(Method::Delete, url(&held.id)?);
+        let mut asked = request(Method::DELETE, &url(&held.id)?)
+            .body(Vec::new())
+            .map_err(HttpError::from)?;
         if let Some(etag) = &held.version {
-            request = request.with_header("If-Match", etag.clone());
+            asked = if_match(asked, etag)?;
         }
-        let response = self.send(request).await?;
+        let response = self.send(asked).await?;
         removed(&response, "the DELETE of an event")
     }
 }
 
-/// A PROPFIND of `props` at depth 0, read.
-async fn propfind_status<H: Http>(
+/// What dav-proto's discovery walk finds from `start` as far as `reach`, each request sent
+/// through the seam (any host the server points to: iCloud keeps its homes on another).
+async fn walk<H: Http>(
     http: &H,
-    at: WebUrl,
-    props: &[&str],
-) -> Result<Multistatus, CalendarError> {
-    let response = http.send(propfind(at, Depth::Zero, props)).await?;
-    multistatus(&response, "a PROPFIND")
+    start: &WebUrl,
+    reach: Reach,
+) -> Result<dav_proto::discover::Found, CalendarError> {
+    let (mut walk, first) = Walk::start(uri(start)?, reach, &[Home::Calendar], Scope::Anywhere);
+    let mut reply = http.send(first).await?;
+    loop {
+        match walk.advance(&reply).map_err(walk_error)? {
+            Next::Done(found) => return Ok(found),
+            Next::Ask(request) => reply = http.send(request).await?,
+        }
+    }
 }
 
-/// A `207` response's multistatus.
-fn multistatus(response: &HttpResponse, what: &'static str) -> Result<Multistatus, CalendarError> {
-    if response.status.0 != 207 {
-        return Err(CalendarError::of_status(response.status.0, what));
+/// What a reply that ended the walk means.
+fn walk_error(error: WalkError) -> CalendarError {
+    match error {
+        WalkError::Unauthorized => CalendarError::Unauthorized,
+        WalkError::Status(status) => CalendarError::of_status(status, "the discovery of calendars"),
+        other => CalendarError::Malformed(other.to_string()),
     }
-    parse_multistatus(&String::from_utf8_lossy(&response.body))
-        .map_err(|e| CalendarError::Malformed(e.to_string()))
 }
 
 /// An href from a reply, as a URL: a path against `base`'s origin, a full URL as it is.
@@ -352,11 +338,8 @@ mod tests {
     struct NoHttp;
 
     impl Http for NoHttp {
-        async fn send(
-            &self,
-            _request: HttpRequest,
-        ) -> Result<HttpResponse, porter_http::HttpError> {
-            Err(porter_http::HttpError::Unreachable)
+        async fn send(&self, _request: Request<Vec<u8>>) -> Result<Response<Vec<u8>>, HttpError> {
+            Err(HttpError::Unreachable)
         }
     }
 }

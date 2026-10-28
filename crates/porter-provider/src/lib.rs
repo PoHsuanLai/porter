@@ -36,6 +36,7 @@ pub use sign_in::{
     SignInStep, Signed,
 };
 pub use spec::{
-    AiSpec, AuthOrigin, AuthSpec, CapabilityRow, Discovery, DomainMatch, DomainName, Endpoint,
-    Issuer, IssuerEndpoints, LinkedOrigin, Matching, Port, ProviderSpec,
+    AiSpec, ApiRow, AuthOrigin, AuthSpec, CapabilityRow, Discovery, DomainMatch, DomainName,
+    Endpoint, Issuer, IssuerData, IssuerEndpoints, LinkedOrigin, Matching, Port, ProbeRow,
+    ProviderSpec, ScopeClass, ScopeRow,
 };

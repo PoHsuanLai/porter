@@ -132,7 +132,7 @@ fn an_html_body_becomes_text_and_an_empty_one_falls_back_to_the_preview() {
             "body":{"contentType":"html","content":"<html><body><p>Agenda &amp; notes</p><p>Line<br>two</p></body></html>"}}"#,
     );
     assert!(
-        has(&html, "DESCRIPTION:Agenda & notes\\nLine\\ntwo"),
+        has(&html, "DESCRIPTION:Agenda & notes\\n\\nLine\\ntwo"),
         "{html:#?}"
     );
     let preview = lines(
@@ -256,6 +256,23 @@ fn the_text_helpers_escape_and_strip() {
     assert_eq!(escape("a\\b;c,d\r\ne\nf"), "a\\\\b\\;c\\,d\\ne\\nf");
     assert_eq!(
         html_text("<div>one</div><div>two&nbsp;&lt;3</div>"),
-        "one\ntwo <3"
+        "one\n\ntwo <3"
     );
+}
+
+#[test]
+fn html_text_leaves_out_css_decodes_numeric_entities_and_reads_attributes_whole() {
+    let page = "<html><head><style>p { color: red } .x > .y { margin: 0 }</style></head>\
+                <body><p>caf&#233; &#x41; &amp; &lt;b&gt;</p>\
+                <a href=\"https://x.test/\" title=\"a>b\">the link</a></body></html>";
+    let text = html_text(page);
+    assert!(!text.contains("color"), "{text:?}");
+    assert!(!text.contains("margin"), "{text:?}");
+    assert!(text.contains("caf\u{e9} A & <b>"), "{text:?}");
+    assert!(text.contains("the link"), "{text:?}");
+    assert!(
+        !text.contains("b\">"),
+        "a > inside an attribute is not text: {text:?}"
+    );
+    assert!(!text.contains('\r'), "{text:?}");
 }

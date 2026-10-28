@@ -1,10 +1,8 @@
-//! The URL the person opens: the authorize endpoint with PKCE, `state` and the scopes, and the
-//! same for OpenRouter, whose key mint has its own page.
+//! The URL the person opens: the authorize endpoint with PKCE, `state` and the scopes.
 //!
 //! The scope-per-resource rule is ported from mailo's `first_resource`
 //! (`~/mailo/crates/mail-runtime/src/oauth.rs`).
 
-use crate::form::encode;
 use crate::pkce::Pkce;
 use porter_provider::{
     ClientEntry, ConsentHistory, Issuer, IssuerEndpoints, LoginHint, SignInStart,
@@ -109,7 +107,7 @@ pub fn authorize_url_for(
     ];
     let challenge = pkce.challenge();
     pairs.extend([
-        ("code_challenge", challenge.0.as_str()),
+        ("code_challenge", challenge.as_str()),
         ("code_challenge_method", "S256"),
     ]);
     if let Some(hint) = &ask.login_hint {
@@ -123,25 +121,6 @@ pub fn authorize_url_for(
         pairs.push(("include_granted_scopes", "true"));
     }
     with_query(endpoints.authorize.as_str(), &pairs)
-}
-
-/// OpenRouter's key-mint page: it takes a callback and a challenge, and sends the person back
-/// with `?code=`. It has no client id and no `state` parameter, so the state travels in the
-/// callback's own query and comes back with the code.
-pub fn openrouter_auth_url(endpoints: &IssuerEndpoints, pkce: &Pkce, redirect: &str) -> String {
-    let callback = format!(
-        "{}/?state={}",
-        redirect.trim_end_matches('/'),
-        encode(&pkce.state.0)
-    );
-    with_query(
-        endpoints.authorize.as_str(),
-        &[
-            ("callback_url", callback.as_str()),
-            ("code_challenge", pkce.challenge().0.as_str()),
-            ("code_challenge_method", "S256"),
-        ],
-    )
 }
 
 fn with_query(base: &str, pairs: &[(&str, &str)]) -> String {
@@ -208,7 +187,7 @@ mod tests {
         assert!(url.starts_with("https://login.microsoftonline.com/common/oauth2/v2.0/authorize?"));
         let q = query(&url);
         let get = |k: &str| q.iter().find(|(n, _)| n == k).map(|(_, v)| v.as_str());
-        assert_eq!(get("code_challenge"), Some(pkce.challenge().0.as_str()));
+        assert_eq!(get("code_challenge"), Some(pkce.challenge().as_str()));
         assert_eq!(get("code_challenge_method"), Some("S256"));
         assert_eq!(get("state"), Some(pkce.state.0.as_str()));
         assert_eq!(get("redirect_uri"), Some("http://127.0.0.1:4000"));
@@ -299,26 +278,6 @@ mod tests {
             assert_eq!(get("prompt"), prompt, "{issuer:?} {consent:?} {hint:?}");
             assert_eq!(get("login_hint"), login_hint, "{issuer:?} {consent:?}");
         }
-    }
-
-    #[test]
-    fn openrouter_carries_state_in_the_callback() {
-        let pkce = Pkce::from_random([5; 32], [6; 16]);
-        let url = openrouter_auth_url(
-            &Issuer::OpenRouter.endpoints(),
-            &pkce,
-            "http://127.0.0.1:4000",
-        );
-        let q = query(&url);
-        let callback = &q
-            .iter()
-            .find(|(n, _)| n == "callback_url")
-            .expect("callback")
-            .1;
-        assert_eq!(
-            callback,
-            &format!("http://127.0.0.1:4000/?state={}", pkce.state.0)
-        );
     }
 
     #[test]

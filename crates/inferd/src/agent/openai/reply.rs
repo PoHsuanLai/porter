@@ -3,7 +3,7 @@
 
 use crate::agent::fail::{Failure, Shape};
 use crate::agent::wire::{SseOut, counted};
-use porter_core::Permille;
+use porter_ids::Permille;
 use porter_infer::{ChatReply, StopReason, ToolCallPart};
 use serde_json::{Value, json};
 

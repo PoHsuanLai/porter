@@ -163,7 +163,7 @@ pub fn preference(gpus: &Gpus, choice: BackendChoice) -> Vec<Backend> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_fake::Scratch;
+    use test_kit::Scratch;
 
     fn card(drm: &Path, name: &str, vendor: &str) {
         let dir = drm.join(name).join("device");

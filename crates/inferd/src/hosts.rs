@@ -7,7 +7,6 @@
 //! (`PrivateNetwork`, a read-only home, the GPU device and a memory cap), is not built; the unit
 //! spec already carries the sandbox for it.
 
-use crate::startup::{Cause, Diagnostics, TailBuf, clear_socket};
 use engine_supervisor::{
     EngineHost, EngineId, ExitCode, GpuError, GpuMemory, GpuProbe, HostError, Probe, ReadyProbe,
     UnitSpec,
@@ -17,6 +16,8 @@ use model_http::{
     BodySink, ChunkFlow, Exchange, Framing, HttpClient, ResponseHead, RouteRoot, Timeouts,
     Transport, UrlPath, Verb, WaitMs,
 };
+use porter_router::local::unix_endpoint;
+use porter_router::startup::{Cause, Diagnostics, TailBuf, clear_socket};
 use rustix::process::Pid;
 use speech_host_client::{HostSocket, SpeechHostClient};
 use speech_provider::SpeechToText;
@@ -408,10 +409,6 @@ impl BodySink for StatusOnly {
 /// computer, where the answer of an engine that is up can take seconds; a probe that waits ten
 /// delays only the next ask of an engine that does not answer at all.
 const PROBE_TIMEOUT: WaitMs = WaitMs(10_000);
-
-/// The endpoints of an engine on a Unix socket and of a runtime on loopback moved to
-/// `porter_router::local`.
-pub use porter_router::local::{loopback_endpoint, unix_endpoint};
 
 impl ReadyProbe for HealthProbe {
     async fn probe(&self, id: &EngineId) -> Probe {

@@ -15,11 +15,17 @@ testing = []
 
 [dependencies]
 porter-core = { workspace = true }
+porter-tailnet = { workspace = true }
+porter-tailscale = { workspace = true }
+porter-match = { workspace = true }
+porter-capability = { workspace = true }
+porter-ids = { workspace = true }
+porter-engines = { workspace = true }
 porter-infer = { workspace = true }
 cua-action = { workspace = true }
 engine-supervisor = { workspace = true }
 model-catalog = { workspace = true }
-# The types of an engine's address and token only: no `hyper`, no `tls`, so no runtime.
+# The types of an engine's address and token only: no `client`, no `tls`, so no runtime.
 model-http = { workspace = true }
 model-openai-compat = { workspace = true }
 model-provider = { workspace = true }
@@ -30,6 +36,7 @@ serde = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
+test-kit = { workspace = true }
 toml = { workspace = true }
 
 [lints]

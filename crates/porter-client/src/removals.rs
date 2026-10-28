@@ -5,10 +5,13 @@
 //! gives each removal as the account's object-path segment, the spelling that names an app's
 //! directories. The signal is accountd's, and only a connection accountd knows is told.
 
+use crate::call_failure::CallFailure;
 use crate::error::TransportError;
 use crate::identities::{Identities, IdentitiesError, IdentityRemovals};
-use porter_core::{AccountId, object_segment};
-use porter_dbus::{ACCOUNTS_PATH, BusConnection};
+use porter_core::AccountId;
+use porter_dbus::BusConnection;
+use porter_dbus::accounts::ACCOUNTS_PATH;
+use porter_ids::object_segment;
 use zbus::export::futures_core::Stream;
 
 /// An identity accountd has removed, as the object-path segment its account was served at.
@@ -45,8 +48,8 @@ pub struct Removals {
 
 fn transport(error: IdentitiesError) -> TransportError {
     match error {
-        IdentitiesError::Unreachable => TransportError::Unreachable,
-        IdentitiesError::Denied(why) => TransportError::Denied(why),
+        IdentitiesError::Bus(CallFailure::Unreachable) => TransportError::Unreachable,
+        IdentitiesError::Bus(CallFailure::Denied(why)) => TransportError::Denied(why),
         other => TransportError::Malformed(other.to_string()),
     }
 }
@@ -79,7 +82,7 @@ impl Removals {
                 continue;
             };
             return Some(RemovedAccount {
-                segment: object_segment(&account),
+                segment: object_segment(account.as_str()),
             });
         }
     }

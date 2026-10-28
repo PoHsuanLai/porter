@@ -1,10 +1,13 @@
 use super::*;
+use porter_capability::Tier;
+use porter_core::DataClass;
 use porter_core::consent::Usage;
-use porter_core::need::DimsNeed;
-use porter_core::{DataClass, Permille, Tier};
-use porter_router::testkit::{Scratch, models};
+use porter_ids::Permille;
+use porter_match::DimsNeed;
+use porter_router::testkit::models;
 use std::io::Write;
 use std::os::fd::OwnedFd;
+use test_kit::Scratch;
 
 fn chat_model() -> (Scratch, LocalModel) {
     let scratch = Scratch::new("bridge");
@@ -101,11 +104,11 @@ fn reasoning_picks_the_catalog_sampling_set_and_an_explicit_sampling_wins() {
     own.control.sampling = pi::Knob::Set(pi::Sampling {
         temperature: Permille(300),
         top_p: pi::Knob::Set(Permille(900)),
-        top_k: pi::Knob::Set(porter_core::Count(40)),
+        top_k: pi::Knob::Set(porter_ids::Count(40)),
         min_p: pi::Knob::Off,
         seed: pi::Knob::Set(pi::Seed(7)),
     });
-    own.control.max_output = pi::Knob::Set(porter_core::Tokens(1));
+    own.control.max_output = pi::Knob::Set(porter_ids::Tokens(1));
     own.control.stop = vec!["END".into()];
     let turn = chat_turn(&model, &own, &Frames::default()).expect("turn");
     assert_eq!(
@@ -366,7 +369,7 @@ fn embedding_texts_carry_the_prefix_of_their_role_and_are_cut_into_batches() {
         &embed(
             &["a", "b", "c"],
             pi::EmbedRole::Document,
-            DimsNeed::Exactly(porter_core::Dims(4)),
+            DimsNeed::Exactly(porter_ids::Dims(4)),
         ),
     )
     .expect("turns");

@@ -4,16 +4,18 @@
 //! runtime on its loopback port, its engine id names no process, and its card says `OnDevice`.
 
 use super::{Probed, Runtime};
-use crate::catalog::parse_entry_text;
-use crate::local::LocalModel;
 use engine_supervisor::{EngineId, EnginePaths, EngineSpec, ProgramPath, SocketPath, command};
 use model_catalog::MiB;
 use model_http::Port;
 use model_openai_compat::Flavor;
 use model_provider::ModelName;
-use porter_core::capability::{Capability, EmbedCap, LlmCap, LlmFeature, LlmWire};
-use porter_core::{AccountId, Billing, Locality, Offer};
+use porter_capability::Offer;
+use porter_capability::{Billing, Locality};
+use porter_capability::{Capability, EmbedCap, LlmCap, LlmFeature, LlmWire};
+use porter_core::AccountId;
 use porter_infer::ModelCard;
+use porter_router::catalog::parse_entry_text;
+use porter_router::local::LocalModel;
 use std::path::{Path, PathBuf};
 
 const SAMPLING: &str = r#"sampling = { reasoning_on = { temperature = 600, top_p = { kind = "off" }, top_k = { kind = "off" }, min_p = { kind = "off" }, repeat_penalty = { kind = "off" }, seed = { kind = "off" } }, reasoning_default = "off", reasoning_off = { temperature = 0, top_p = { kind = "off" }, top_k = { kind = "off" }, min_p = { kind = "off" }, repeat_penalty = { kind = "off" }, seed = { kind = "off" } } }"#;
@@ -146,6 +148,7 @@ pub fn local_model(
         llama_server: ProgramPath(PathBuf::from("probed")),
         speech_host: ProgramPath(PathBuf::new()),
         kokoro_python: ProgramPath(PathBuf::new()),
+        strata_python: ProgramPath(PathBuf::new()),
         hf_cache: PathBuf::new(),
     };
     Some(LocalModel {

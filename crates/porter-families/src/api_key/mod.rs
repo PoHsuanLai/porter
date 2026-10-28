@@ -13,15 +13,19 @@
 mod sign_in;
 
 use crate::key::{asks_server, check, check_server, key_of, own_server};
-use porter_core::{Account, AccountId, Claim, EndpointUrl};
-use porter_http::{Http, HyperHttp};
+use porter_capability::Claim;
+use porter_core::AccountId;
+use porter_core::{Account, EndpointUrl};
+use porter_family_kit::Conversation;
+use porter_http::Http;
+use porter_http_reqwest::ReqwestHttp;
 use porter_provider::{
     Presented, Provider, ProviderError, ProviderSpec, RevokeOutcome, SignInStart,
 };
 use std::sync::Arc;
 
 pub use crate::key::KeySession as ApiKeySession;
-pub use sign_in::ApiKeySignIn;
+pub use sign_in::ApiKeyFlow;
 
 /// Where a person deletes a key, by provider file id.
 const KEY_PAGES: &[(&str, &str)] = &[
@@ -33,7 +37,7 @@ const KEY_PAGES: &[(&str, &str)] = &[
 ];
 
 /// The ApiKey family's provider, over the HTTP seam `H` (hyper's client in a daemon).
-pub struct ApiKeyProvider<H = HyperHttp> {
+pub struct ApiKeyProvider<H = ReqwestHttp> {
     spec: ProviderSpec,
     http: Arc<H>,
 }
@@ -74,7 +78,7 @@ impl<H> ApiKeyProvider<H> {
 
 impl<H: Http + 'static> Provider for ApiKeyProvider<H> {
     type Session = ApiKeySession;
-    type SignIn = ApiKeySignIn<H>;
+    type SignIn = Conversation<ApiKeyFlow<H>>;
 
     fn spec(&self) -> &ProviderSpec {
         &self.spec
@@ -105,12 +109,12 @@ impl<H: Http + 'static> Provider for ApiKeyProvider<H> {
         Ok(ApiKeySession::new(account.clone()))
     }
 
-    fn sign_in(&self, start: SignInStart) -> Result<ApiKeySignIn<H>, ProviderError> {
-        Ok(ApiKeySignIn::new(
+    fn sign_in(&self, start: SignInStart) -> Result<Self::SignIn, ProviderError> {
+        Ok(Conversation::new(ApiKeyFlow::new(
             self.spec.clone(),
             Arc::clone(&self.http),
             start.mode,
-        ))
+        )))
     }
 
     async fn revoke(
@@ -123,5 +127,17 @@ impl<H: Http + 'static> Provider for ApiKeyProvider<H> {
             .find(|(id, _)| *id == self.spec.id.as_str())
             .and_then(|(_, page)| EndpointUrl::parse(page).ok())
             .map_or(RevokeOutcome::Unsupported, RevokeOutcome::Manual))
+    }
+}
+
+/// This family for `spec` when it takes a pasted API key, else the spec back.
+#[cfg(feature = "set")]
+pub(crate) fn build(spec: ProviderSpec, _io: &crate::set::FamilyIo) -> crate::set::Built {
+    match spec.auth.kind {
+        porter_core::AuthKind::ApiKey => {
+            let provider: ApiKeyProvider = ApiKeyProvider::new(spec);
+            Ok(Box::new(provider))
+        }
+        _ => Err(Box::new(spec)),
     }
 }

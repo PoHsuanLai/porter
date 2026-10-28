@@ -2,20 +2,17 @@
 //! the whole drive (Keep Everything Downloaded), what a new listing changes, and eviction.
 
 use super::{Drive, FreeSpace, Inner, NodeId, held};
+use crate::Reason;
 use crate::listing::Entry;
-use crate::words;
 use porter_sync::{ItemKind, RemoteId};
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-/// Why an action did not take an item: words a person reads.
-pub type Refusal = &'static str;
-
 impl Inner {
     /// The files at or under `id` (a file: itself), from the listing.
-    pub(super) fn files_under(&self, id: &RemoteId) -> Result<Vec<Entry>, Refusal> {
-        let entry = self.entry(id).ok().flatten().ok_or(words::NOT_ON_A_DRIVE)?;
+    pub(super) fn files_under(&self, id: &RemoteId) -> Result<Vec<Entry>, Reason> {
+        let entry = self.entry(id).ok().flatten().ok_or(Reason::NotOnADrive)?;
         Ok(match entry.kind {
             ItemKind::Folder => self
                 .listing
@@ -176,16 +173,16 @@ impl Drive {
     /// taken and nothing happens.
     ///
     /// # Errors
-    /// The words when it is refused: an online document, an item that is not there, or the
+    /// The reason when it is refused: an online document, an item that is not there, or the
     /// drive cannot be reached now.
-    pub fn download(&self, id: &NodeId) -> Result<(), Refusal> {
+    pub fn download(&self, id: &NodeId) -> Result<(), Reason> {
         let id = &self.inner.canonical(id);
         let remote = match id {
-            NodeId::Top => return Err(words::NOT_ON_A_DRIVE),
+            NodeId::Top => return Err(Reason::NotOnADrive),
             NodeId::Local(_) => {
                 return match self.inner.edit(id) {
                     Some(_) => Ok(()),
-                    None => Err(words::NOT_ON_A_DRIVE),
+                    None => Err(Reason::NotOnADrive),
                 };
             }
             NodeId::Remote(remote) => remote,
@@ -195,9 +192,9 @@ impl Drive {
             .entry(remote)
             .ok()
             .flatten()
-            .ok_or(words::NOT_ON_A_DRIVE)?;
+            .ok_or(Reason::NotOnADrive)?;
         if matches!(entry.kind, ItemKind::Online { .. }) {
-            return Err(words::ONLINE_ONLY);
+            return Err(Reason::OnlineOnly);
         }
         let files = self.inner.files_under(remote)?;
         let missing: Vec<Entry> = files
@@ -208,10 +205,10 @@ impl Drive {
             return Ok(());
         }
         if self.inner.offline.load(Ordering::SeqCst) {
-            return Err(words::OFFLINE);
+            return Err(Reason::Offline);
         }
         match self.inner.download_all(&missing) {
-            true => Err(words::OFFLINE),
+            true => Err(Reason::Offline),
             false => Ok(()),
         }
     }
@@ -220,20 +217,20 @@ impl Drive {
     /// is added later) and never evicts it; off turns it off for everything under it too.
     ///
     /// # Errors
-    /// The words when it is refused: an online document, an item that is not there, or turning
+    /// The reason when it is refused: an online document, an item that is not there, or turning
     /// off an item kept with its folder.
-    pub fn keep(&self, id: &NodeId, keep: bool) -> Result<(), Refusal> {
+    pub fn keep(&self, id: &NodeId, keep: bool) -> Result<(), Reason> {
         let inner = &self.inner;
         let id = &inner.canonical(id);
         let remote = match id {
-            NodeId::Top => return Err(words::NOT_ON_A_DRIVE),
+            NodeId::Top => return Err(Reason::NotOnADrive),
             NodeId::Local(_) => {
-                inner.edit(id).ok_or(words::NOT_ON_A_DRIVE)?;
+                inner.edit(id).ok_or(Reason::NotOnADrive)?;
                 if !keep && inner.keeps_all() {
-                    return Err(words::KEPT_WITH_DRIVE);
+                    return Err(Reason::KeptWithDrive);
                 }
                 if !keep && inner.kept_by_folder(id) {
-                    return Err(words::KEPT_WITH_FOLDER);
+                    return Err(Reason::KeptWithFolder);
                 }
                 return Ok(());
             }
@@ -243,15 +240,15 @@ impl Drive {
             .entry(remote)
             .ok()
             .flatten()
-            .ok_or(words::NOT_ON_A_DRIVE)?;
+            .ok_or(Reason::NotOnADrive)?;
         if matches!(entry.kind, ItemKind::Online { .. }) {
-            return Err(words::ONLINE_ONLY);
+            return Err(Reason::OnlineOnly);
         }
         if !keep && inner.keeps_all() {
-            return Err(words::KEPT_WITH_DRIVE);
+            return Err(Reason::KeptWithDrive);
         }
         if !keep && inner.kept_by_folder(id) {
-            return Err(words::KEPT_WITH_FOLDER);
+            return Err(Reason::KeptWithFolder);
         }
         let under: Vec<Entry> = match entry.kind {
             ItemKind::Folder => inner.listing.descendants(remote).unwrap_or_default(),
@@ -279,7 +276,7 @@ impl Drive {
             let files = inner.files_under(remote)?;
             let missing: Vec<Entry> = files.into_iter().filter(|f| !inner.here(f)).collect();
             if inner.download_all(&missing) {
-                return Err(words::OFFLINE);
+                return Err(Reason::Offline);
             }
         } else {
             inner.evict();
@@ -291,25 +288,25 @@ impl Drive {
     /// listed and downloads again when opened, and turns Keep Downloaded off for it.
     ///
     /// # Errors
-    /// The words when it is refused: an online document, an item that is not there or is kept
+    /// The reason when it is refused: an online document, an item that is not there or is kept
     /// with its folder, or one with changes not sent yet (the first of a folder's refusals
     /// stands for it; the rest of it is still freed).
-    pub fn remove_download(&self, id: &NodeId) -> Result<(), Refusal> {
+    pub fn remove_download(&self, id: &NodeId) -> Result<(), Reason> {
         let inner = &self.inner;
         let id = &inner.canonical(id);
         if inner.keeps_all() && *id != NodeId::Top {
-            return Err(words::KEPT_WITH_DRIVE);
+            return Err(Reason::KeptWithDrive);
         }
         if self.inner.kept_by_folder(id) {
-            return Err(words::KEPT_WITH_FOLDER);
+            return Err(Reason::KeptWithFolder);
         }
         let remote = match id {
-            NodeId::Top => return Err(words::NOT_ON_A_DRIVE),
+            NodeId::Top => return Err(Reason::NotOnADrive),
             NodeId::Local(_) => {
-                inner.edit(id).ok_or(words::NOT_ON_A_DRIVE)?;
+                inner.edit(id).ok_or(Reason::NotOnADrive)?;
                 return match inner.other(id) {
-                    Some(_) => Err(words::CONFLICT),
-                    None => Err(words::WAITING),
+                    Some(_) => Err(Reason::Conflict),
+                    None => Err(Reason::Waiting),
                 };
             }
             NodeId::Remote(remote) => remote,
@@ -318,12 +315,12 @@ impl Drive {
             .entry(remote)
             .ok()
             .flatten()
-            .ok_or(words::NOT_ON_A_DRIVE)?;
+            .ok_or(Reason::NotOnADrive)?;
         if matches!(entry.kind, ItemKind::Online { .. }) {
-            return Err(words::ONLINE_ONLY);
+            return Err(Reason::OnlineOnly);
         }
         if inner.other(id).is_some() {
-            return Err(words::CONFLICT);
+            return Err(Reason::Conflict);
         }
         let under: Vec<Entry> = match entry.kind {
             ItemKind::Folder => inner.listing.descendants(remote).unwrap_or_default(),
@@ -361,7 +358,7 @@ impl Drive {
             .values()
             .any(|edit| !edit.removed && folders.contains(&edit.parent));
         match waiting {
-            true => Err(words::WAITING),
+            true => Err(Reason::Waiting),
             false => Ok(()),
         }
     }
@@ -495,7 +492,7 @@ impl Drive {
     }
 
     /// Whether keeping the whole drive downloaded needs more room than the cache's file system
-    /// has free, as the last look found ([`crate::words::NO_ROOM_FOR_ALL`]): what is not here is
+    /// has free, as the last look found ([`crate::Reason::NoRoomForAll`]): what is not here is
     /// then not fetched until it fits. Always `false` while the drive is not kept whole.
     pub fn short_of_room(&self) -> bool {
         *self.inner.short_of_room.borrow()

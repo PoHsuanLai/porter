@@ -4,9 +4,11 @@
 
 use crate::hosting::bus;
 
-use porter_core::Need;
-use porter_core::need::LlmNeed;
-use porter_dbus::{Details, INFERENCE_BUS, InferenceProxy, need_to_dbus};
+use porter_dbus::Details;
+use porter_dbus::inference::INFERENCE_BUS;
+use porter_dbus::inference::{InferenceProxy, need_to_dbus};
+use porter_match::LlmNeed;
+use porter_match::Need;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 
@@ -121,7 +123,7 @@ async fn answered(bus: &bus::PrivateBus, proc_root: &Path, table: Table) -> (boo
     let proxy = InferenceProxy::new(&client).await.expect("proxy");
     let need = need_to_dbus(&Need::Llm(LlmNeed::new(
         Default::default(),
-        porter_core::Tokens(1),
+        porter_ids::Tokens(1),
     )));
     let reply = bus::within(
         "inferd's answer to Availability",

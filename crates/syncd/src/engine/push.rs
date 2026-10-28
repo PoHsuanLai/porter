@@ -2,9 +2,9 @@
 //! its base version.
 
 use super::{Compared, Engine, Halt, Outcome, Report};
-use crate::clock::Clock;
 use crate::dataset::{Dataset, replica_hash};
 use crate::journal::Op;
+use porter_ids::clock::Clock;
 use porter_sync::{
     Acknowledgement, BaseVersion, Conflict, ItemState, JournalItem, LocalChange, PutItem,
     PutRefused, PutTarget, RemoteId, RemoteSide, RemoteVersion, Replica, TombstoneOrigin,
@@ -140,6 +140,11 @@ impl<R: Replica, D: Dataset, K: Clock> Engine<R, D, K> {
             Err(PutRefused::Transient(after) | PutRefused::InUse(after)) => {
                 Err(Halt::Stop(Outcome::Retry(after)))
             }
+            // a refusal a later porter-sync adds: counted as refused
+            Err(_) => {
+                report.refused += 1;
+                Ok(())
+            }
         }
     }
 
@@ -189,6 +194,11 @@ impl<R: Replica, D: Dataset, K: Clock> Engine<R, D, K> {
             Err(PutRefused::Unauthorized) => Err(Halt::Stop(Outcome::Unauthorized)),
             Err(PutRefused::Transient(after) | PutRefused::InUse(after)) => {
                 Err(Halt::Stop(Outcome::Retry(after)))
+            }
+            // a refusal a later porter-sync adds: counted as refused
+            Err(_) => {
+                report.refused += 1;
+                Ok(())
             }
         }
     }

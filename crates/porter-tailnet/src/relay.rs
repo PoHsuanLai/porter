@@ -3,19 +3,21 @@
 //! A [`Relay`] listens on a unix socket at a path of its own and, for each connection to it,
 //! asks the [`Dialer`] for a connection to the computer (which asks Tailscale who is at the
 //! address, every time) and then carries the bytes both ways. It reads none of them. When the
-//! computer cannot be reached, the program that dialed is answered with a short refusal in the
-//! words of the reason, so that what it shows says why.
+//! computer cannot be reached, the program that dialed is answered with a short refusal whose
+//! text the caller of [`Relay::start`] wrote for that reason (its [`OnFault`]), so that what the
+//! program shows says why.
 
 use crate::dial::{DialError, Dialer};
-use porter_core::NodeId;
+use porter_tailscale::NodeId;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::io::{AsyncWriteExt, copy_bidirectional};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::task::{JoinHandle, JoinSet};
 
-/// Told of each connection that could not be carried to the computer.
-pub type OnFault = Arc<dyn Fn(&DialError) + Send + Sync>;
+/// Told of each connection that could not be carried to the computer. It returns the text the
+/// program that dialed is answered with: this crate writes no words of its own.
+pub type OnFault = Arc<dyn Fn(&DialError) -> String + Send + Sync>;
 
 /// A listener at a local path that leads to one computer; it stops when dropped (the path stays,
 /// and the next relay at it replaces the file).
@@ -79,9 +81,9 @@ async fn carry(mut local: UnixStream, node: NodeId, dialer: Dialer, on_fault: On
             let _ = copy_bidirectional(&mut local, &mut remote).await;
         }
         Err(fault) => {
-            on_fault(&fault);
+            let message = on_fault(&fault);
             let body = serde_json::json!({
-                "error": {"message": fault.to_string(), "type": "unreachable", "code": "unreachable"}
+                "error": {"message": message, "type": "unreachable", "code": "unreachable"}
             })
             .to_string();
             let answer = format!(

@@ -2,10 +2,9 @@
 //! asks: every scope, those asked only on use included, with the class the code gives it, and the
 //! clients.toml row it reads.
 
-use porter_core::capability::CapabilityKind as K;
-use porter_families::{Sensitivity, on_use_scopes_of, scope_sensitivity, scopes_of};
-use porter_oauth::{AppReview, ClientRegistry, MailRights};
-use porter_provider::{ClientChannel, Issuer};
+use porter_capability::CapabilityKind as K;
+use porter_oauth::ClientRegistry;
+use porter_provider::{ClientChannel, Issuer, ScopeClass};
 
 fn guide() -> String {
     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/google.md");
@@ -23,15 +22,20 @@ fn every_scope_the_code_asks_is_in_the_guide_with_its_class() {
         K::Storage,
         K::Photos,
     ] {
-        for scope in scopes_of(kind).iter().chain(on_use_scopes_of(kind)) {
+        let data = Issuer::Google.data();
+        for scope in data
+            .kind_scopes(kind)
+            .into_iter()
+            .chain(data.on_use_scopes(&[kind]))
+        {
             let row = text
                 .lines()
                 .find(|line| line.starts_with('|') && line.contains(&format!("`{scope}`")))
                 .unwrap_or_else(|| panic!("{scope} is not in a table row of the guide"));
-            let class = match scope_sensitivity(scope) {
-                Sensitivity::NonSensitive => "non-sensitive",
-                Sensitivity::Sensitive => "sensitive",
-                Sensitivity::Restricted => "restricted",
+            let class = match data.class_of(scope) {
+                ScopeClass::NonSensitive => "non-sensitive",
+                ScopeClass::Sensitive => "sensitive",
+                ScopeClass::Restricted => "restricted",
             };
             assert!(row.contains(class), "{scope}: {row}");
             // `sensitive` is also inside `non-sensitive`, so the strongest word must match.
@@ -61,7 +65,7 @@ fn the_row_in_the_guide_is_a_row_the_registry_reads() {
         .and_then(|rest| rest.split("```").next())
         .expect("a toml block");
     // The commented `# byo = true` is the owner's to switch on.
-    let dir = porter_fake::Scratch::new("guide");
+    let dir = test_kit::Scratch::new("guide");
     let (shipped, own) = (dir.join("shipped.toml"), dir.join("own.toml"));
     std::fs::write(&shipped, "").expect("write");
     std::fs::write(&own, block).expect("write");
@@ -72,15 +76,12 @@ fn the_row_in_the_guide_is_a_row_the_registry_reads() {
     assert_eq!(client.client_id.0, "123-abc.apps.googleusercontent.com");
     assert!(client.client_secret.is_some());
     let traits = registry.traits(Issuer::Google, ClientChannel::Stable);
-    assert_eq!(traits.review, AppReview::Testing);
-    assert_eq!(traits.mail, MailRights::Withheld);
+    assert!(traits.testing);
+    assert!(!traits.byo);
     let with_mail = block.replace("# byo = true", "byo = true");
     std::fs::write(&own, with_mail).expect("write");
     let registry = ClientRegistry::from_paths(&shipped, &own).expect("the row parses");
-    assert_eq!(
-        registry.traits(Issuer::Google, ClientChannel::Stable).mail,
-        MailRights::Byo
-    );
+    assert!(registry.traits(Issuer::Google, ClientChannel::Stable).byo);
 }
 
 #[test]

@@ -1,62 +1,40 @@
-//! The AgentLogin sign-in: nothing is asked. It shows the agent and, once the person confirms,
-//! ends in a `Signed` with no credential at all. (Signing in again goes through the same two
-//! steps; the sheet confirms the review itself.)
+//! The AgentLogin sign-in flow: nothing is asked. It shows the agent and, once the person
+//! confirms, ends in a `Signed` with no credential at all. (Signing in again goes through the
+//! same two steps; the sheet confirms the review itself.)
 
 use porter_core::AccountLabel;
 use porter_core::Restriction;
-use porter_core::sheet::{SignInFault, SignInInput};
-use porter_provider::{ProviderSpec, SignIn, SignInStep, Signed};
+use porter_family_kit::{Flow, Move};
+use porter_provider::{ProviderSpec, Signed};
+use porter_sheet::{SignInFault, SignInInput};
 
+/// The AgentLogin sign-in flow.
 #[derive(Debug)]
-enum State {
-    Fresh,
-    Reviewing,
-    Ended,
-}
-
-/// The AgentLogin sign-in conversation.
-#[derive(Debug)]
-pub struct AgentLoginSignIn {
+pub struct AgentLoginFlow {
     spec: ProviderSpec,
-    state: State,
 }
 
-impl AgentLoginSignIn {
+impl AgentLoginFlow {
     pub(super) fn new(spec: ProviderSpec) -> Self {
-        Self {
-            spec,
-            state: State::Fresh,
-        }
+        Self { spec }
     }
+}
 
-    fn signed(&self) -> Signed {
-        Signed::new(
+impl Flow for AgentLoginFlow {
+    type Mid = ();
+
+    async fn start(&mut self) -> Move<()> {
+        Move::Review(Signed::new(
             AccountLabel(self.spec.label.clone()),
             Vec::new(),
             super::claims(&self.spec),
             Vec::new(),
             Restriction::none(),
-        )
+        ))
     }
-}
 
-impl SignIn for AgentLoginSignIn {
-    async fn next(&mut self, input: SignInInput) -> SignInStep {
-        let state = std::mem::replace(&mut self.state, State::Ended);
-        match (state, input) {
-            (_, SignInInput::Cancel) => SignInStep::Failed(SignInFault::Cancelled),
-            (State::Fresh, SignInInput::Start) => {
-                self.state = State::Reviewing;
-                let signed = self.signed();
-                SignInStep::Review {
-                    claims: signed.claims,
-                    endpoints: signed.endpoints,
-                    restriction: signed.restriction,
-                    label: signed.label,
-                }
-            }
-            (State::Reviewing, SignInInput::Confirm(_)) => SignInStep::Done(self.signed()),
-            _ => SignInStep::Failed(SignInFault::Unreadable),
-        }
+    /// The flow never waits for an answer, so one is not the person's.
+    async fn resume(&mut self, (): (), _input: SignInInput) -> Move<()> {
+        Move::Fail(SignInFault::Unreadable)
     }
 }

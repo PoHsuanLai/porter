@@ -11,7 +11,7 @@ const PREFIX: &str = "sk-porter-agent-";
 pub fn random_hex<const N: usize>() -> Option<String> {
     let mut bytes = [0_u8; N];
     getrandom::fill(&mut bytes).ok()?;
-    Some(bytes.iter().map(|b| format!("{b:02x}")).collect())
+    Some(hex::encode(bytes))
 }
 
 /// A session's token.

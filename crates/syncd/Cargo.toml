@@ -10,19 +10,28 @@ publish.workspace = true
 
 [dependencies]
 porter-core = { workspace = true }
+porter-match = { workspace = true }
+porter-capability = { workspace = true }
+porter-sheet = { workspace = true }
+porter-wire = { workspace = true }
+porter-ids = { workspace = true }
 porter-daemon = { workspace = true }
 porter-fs = { workspace = true }
-porter-client = { workspace = true, features = ["dbus", "relays"] }
-dav-proto = { workspace = true }
-porter-dav = { workspace = true }
-porter-dbus = { workspace = true, features = ["callers-file"] }
+porter-client = { workspace = true, features = ["dbus", "in-process", "relays"] }
+dav-proto = { workspace = true, features = ["discover"] }
+porter-callers = { workspace = true, features = ["file"] }
+porter-dbus = { workspace = true }
 porter-drive = { workspace = true }
 porter-drive-fuse = { workspace = true }
 porter-families = { workspace = true, features = ["set"] }
+porter-family-oauth = { workspace = true }
 porter-http = { workspace = true }
+porter-http-relay = { workspace = true }
 porter-provider = { workspace = true }
 porter-secrets = { workspace = true, features = ["oo7"] }
 porter-service = { workspace = true }
+porter-service-core = { workspace = true }
+porter-service-accounts = { workspace = true }
 porter-sheets = { workspace = true }
 porter-store = { workspace = true }
 porter-sync = { workspace = true }
@@ -34,6 +43,11 @@ clap = { workspace = true }
 rusqlite = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+chrono = { workspace = true }
+hex = { workspace = true }
+mime_guess = { workspace = true }
+nanohtml2text = { workspace = true }
+windows-zones = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
 # `signal`: SIGTERM unmounts the drives before the process ends.
@@ -42,14 +56,19 @@ toml = { workspace = true }
 zbus = { workspace = true }
 
 [dev-dependencies]
+test-kit = { workspace = true }
 ds-settings = { workspace = true, features = ["testing"] }
 syncd = { path = ".", features = ["testing"] }
 base64 = { workspace = true }
+tempfile = { workspace = true }
 porter-fake = { workspace = true }
 porter-fake-servers = { workspace = true }
+porter-http-reqwest = { workspace = true }
 porter-drive = { workspace = true, features = ["testing"] }
 porter-secrets = { workspace = true, features = ["testing"] }
 porter-sync = { workspace = true, features = ["testing"] }
+# The words the fake of Storage1 gives are held to the live ones (tests/it/fake_words.rs).
+syncd-fakes = { workspace = true }
 # A paused clock for the stop wait's timing test.
 tokio = { workspace = true, features = ["test-util"] }
 
@@ -63,7 +82,7 @@ workspace = true
 # the system caller table, because a jail cannot write /etc/porter. A release build ignores both
 # variables. A test in tests/dist.rs fails if this feature is ever default, and
 # check-boundary.sh checks it too.
-test-proc-root = ["porter-dbus/test-proc-root"]
+test-proc-root = ["porter-callers/test-proc-root"]
 # Test builds only, never default and never in dist: `SYNCD_KEYS=file:<absolute path>` keeps
 # syncd's own credentials in one 0600 plain-text JSON file (porter-secrets' `FileSecrets`)
 # instead of the Secret Service, for private-bus and scratch runs with no keyring. A release

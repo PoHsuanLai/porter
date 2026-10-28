@@ -1,8 +1,8 @@
 use crate::common::{LOGIN_PAGE, network, start};
-use porter_fake::{Deadline, GENEROUS};
 use porter_fake_servers::Daemon;
 use porter_tailscale::{Backend, Notice, TailscaleError, Watch};
 use std::time::Duration;
+use test_kit::{Deadline, GENEROUS};
 
 async fn next(watch: &mut Watch) -> Notice {
     // A notice that should come is waited for as long as a starved machine needs.

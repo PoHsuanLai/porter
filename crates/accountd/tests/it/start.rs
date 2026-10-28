@@ -8,10 +8,13 @@ use crate::common;
 use accountd::{BusSheets, Options, TableCallers, serve_with};
 use common::bus::PrivateBus;
 use common::{Shared, caller};
-use porter_dbus::{ACCOUNTS_BUS, CallerRole};
-use porter_fake::{FixedClock, MemoryStore, RecordingAudit, cloud_provider};
+use porter_callers::CallerRole;
+use porter_dbus::accounts::ACCOUNTS_BUS;
+use porter_fake::{MemoryStore, RecordingAudit, cloud_provider};
 use porter_fake_servers::HeldRuntime;
-use porter_service::{AccountService, Registry};
+use porter_ids::clock::FixedClock;
+use porter_service::AccountService;
+use porter_service_core::registry::Registry;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -79,7 +82,7 @@ async fn a_call_made_as_soon_as_the_name_is_owned_is_answered() {
     });
     // The call is on its way (or answered) before the object server's runtime runs.
     held.release_once_sent(PAUSE).await;
-    let answer = tokio::time::timeout(porter_fake::GENEROUS, call)
+    let answer = tokio::time::timeout(test_kit::GENEROUS, call)
         .await
         .expect("the first call is answered")
         .expect("the call's task");

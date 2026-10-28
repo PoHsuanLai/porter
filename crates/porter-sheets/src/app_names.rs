@@ -11,9 +11,10 @@
 //! nothing is cached and an app installed or renamed shows its new name on the next read. Only
 //! the unlocalised `Name=` is read; `Name[xx]=` is not (FINDINGS).
 
-use porter_core::capability::AgentProgram;
-use porter_core::{AppLabel, AppName, AuthKind, Capability};
-use porter_dbus::{AppTitle, CallerTable};
+use porter_callers::{AppTitle, CallerTable};
+use porter_capability::AgentProgram;
+use porter_capability::Capability;
+use porter_core::{AppLabel, AppName, AuthKind};
 use porter_provider::ProviderSpec;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -117,9 +118,9 @@ fn entry_name(text: &str) -> Option<AppTitle> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_dbus::{CallerRole, CallerRow};
-    use porter_fake::Scratch;
+    use porter_callers::{CallerRole, CallerRow};
     use std::path::Path;
+    use test_kit::Scratch;
 
     fn app(text: &str) -> AppName {
         AppName::parse(text).expect("name")

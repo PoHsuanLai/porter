@@ -1,6 +1,6 @@
 //! The caller's side: syncd asks the helper to show a drive, and gets the open FUSE connection.
 
-use crate::wire::{self, Access, FolderName, Reply, Request};
+use crate::wire::{self, Access, Code, FolderName, Reply, Request};
 use std::io;
 use std::net::Shutdown;
 use std::os::fd::OwnedFd;
@@ -18,8 +18,8 @@ pub enum AskError {
     /// No helper listens at the socket (it is not there, or nothing answers it): the caller
     /// may mount by itself.
     Absent,
-    /// The helper refused, with words a person can be shown.
-    Refused(String),
+    /// The helper refused, for this reason.
+    Refused(Code),
     /// The exchange failed, or the answer was not of the format.
     Broken(io::Error),
 }
@@ -28,7 +28,7 @@ impl std::fmt::Display for AskError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             AskError::Absent => f.write_str("porter-mountd is not running"),
-            AskError::Refused(words) => write!(f, "porter-mountd refused: {words}"),
+            AskError::Refused(code) => write!(f, "porter-mountd refused: {code}"),
             AskError::Broken(why) => write!(f, "porter-mountd did not answer: {why}"),
         }
     }
@@ -83,7 +83,7 @@ pub fn mount(socket: &Path, name: &FolderName, access: Access) -> Result<OwnedFd
             io::ErrorKind::InvalidData,
             "the answer came with no connection",
         ))),
-        (Reply::Refused(words), _) => Err(AskError::Refused(words)),
+        (Reply::Refused(code), _) => Err(AskError::Refused(code)),
     }
 }
 
@@ -96,6 +96,6 @@ pub fn unmount(socket: &Path, name: &FolderName) -> Result<(), AskError> {
     let request = Request::Unmount { name: name.clone() };
     match ask(&stream, &request).map_err(AskError::Broken)? {
         (Reply::Done, _) => Ok(()),
-        (Reply::Refused(words), _) => Err(AskError::Refused(words)),
+        (Reply::Refused(code), _) => Err(AskError::Refused(code)),
     }
 }

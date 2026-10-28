@@ -4,7 +4,11 @@ use crate::control::StopReason;
 use crate::cua::CuaStepReply;
 use crate::error::{InferRefusal, ModelError};
 use crate::scores::OptionScores;
-use porter_core::{AccountId, Locality, ModelId, Tokens};
+use model_provider::Money;
+use porter_capability::Locality;
+use porter_capability::ModelId;
+use porter_core::AccountId;
+use porter_ids::Tokens;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -168,8 +172,8 @@ impl SpeakReply {
     }
 }
 
-/// Tokens in and out.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// Tokens in and out, and what the provider said the reply cost when it said.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TokenUsage {
     /// Prompt tokens.
     pub input: Tokens,
@@ -177,6 +181,10 @@ pub struct TokenUsage {
     pub output: Tokens,
     /// Prompt tokens the engine served from its cache; a share of `input`.
     pub cached: Tokens,
+    /// The charge the provider reported for the reply; `None` when it reported none (a model on
+    /// this computer, a provider that reports tokens only). Never worked out from a price.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub charge: Option<Money>,
 }
 
 /// The account and model that answered, and where it ran.

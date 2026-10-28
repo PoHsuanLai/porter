@@ -1,5 +1,8 @@
 use super::*;
-use porter_core::{AccountId, Locality, ModelId};
+use porter_capability::Locality;
+use porter_capability::ModelId;
+use porter_core::AccountId;
+use rust_decimal::Decimal;
 
 fn served() -> pi::ServedBy {
     pi::ServedBy {
@@ -25,6 +28,7 @@ fn end(stop: sp::StopReason) -> sp::TurnEnd {
             output: sp::Tokens(4),
             cached: sp::Tokens(3),
             images: sp::ImageCount(1),
+            charge: Some(sp::Money::usd(Decimal::new(95, 5))),
         },
         served: sp::ModelName("m".into()),
         first_token: None,
@@ -98,9 +102,10 @@ fn a_reply_is_gathered_from_the_events_in_order() {
     assert_eq!(
         reply.usage,
         pi::TokenUsage {
-            input: porter_core::Tokens(10),
-            output: porter_core::Tokens(4),
-            cached: porter_core::Tokens(3),
+            input: porter_ids::Tokens(10),
+            output: porter_ids::Tokens(4),
+            cached: porter_ids::Tokens(3),
+            charge: Some(sp::Money::usd(Decimal::new(95, 5))),
         }
     );
     assert_eq!(reply.served, served());
@@ -203,8 +208,8 @@ fn a_turn_that_asked_gets_the_shares_of_its_options_on_the_reply() {
     let (reply, why) = asking(&["yes", "no"]).chat_reply_noted(&end, served());
     assert_eq!(why, None);
     let scores = reply.scores.expect("scores");
-    assert_eq!(scores.share_of("yes"), Some(porter_core::Permille(750)));
-    assert_eq!(scores.share_of("no"), Some(porter_core::Permille(250)));
+    assert_eq!(scores.share_of("yes"), Some(porter_ids::Permille(750)));
+    assert_eq!(scores.share_of("no"), Some(porter_ids::Permille(250)));
 }
 
 #[test]

@@ -2,10 +2,11 @@ use super::*;
 use crate::probe::testing::{chat, found};
 use crate::probed::Standing;
 use crate::report::{ReportFault, Reports};
-use porter_core::capability::LlmFeature;
-use porter_core::{AccountId, Claim};
+use porter_capability::Claim;
+use porter_capability::LlmFeature;
+use porter_core::AccountId;
 use porter_fake_servers::{FakeModels, ModelDef, Wire, net::Bind};
-use porter_http::HyperHttp;
+use porter_http_reqwest::ReqwestHttp;
 use std::sync::Mutex;
 
 fn up(runtime: Runtime, port: u16) -> Found {
@@ -156,8 +157,8 @@ impl Reports for Arc<Recorder> {
     }
 }
 
-fn http() -> HyperHttp {
-    HyperHttp::new().with_limits(porter_http::Limits {
+fn http() -> ReqwestHttp {
+    ReqwestHttp::new().with_limits(porter_http_reqwest::Limits {
         timeout: Duration::from_secs(5),
         max_body: 1 << 20,
     })
@@ -199,7 +200,7 @@ fn port_of(fake: &porter_fake_servers::ModelsHandle) -> u16 {
         .expect("number")
 }
 
-fn watch(config: ProbeConfig, engines: &Engines, recorder: &Arc<Recorder>) -> Watch<HyperHttp> {
+fn watch(config: ProbeConfig, engines: &Engines, recorder: &Arc<Recorder>) -> Watch<ReqwestHttp> {
     Watch::new(
         http(),
         config,
@@ -212,7 +213,7 @@ fn watch(config: ProbeConfig, engines: &Engines, recorder: &Arc<Recorder>) -> Wa
 #[tokio::test]
 async fn a_runtime_that_comes_up_is_installed_reported_ok_and_one_that_stops_goes_offline_and_back()
 {
-    let fake = fake_on(&Bind::Loopback).await;
+    let fake = fake_on(&Bind::Port(0)).await;
     let port = port_of(&fake);
     let (engines, recorder) = (Engines::default(), Arc::new(Recorder::default()));
     let mut watch = watch(only_ollama(port), &engines, &recorder);
@@ -254,7 +255,7 @@ async fn a_runtime_that_comes_up_is_installed_reported_ok_and_one_that_stops_goe
 
 #[tokio::test]
 async fn a_report_accountd_did_not_get_is_asked_again_and_a_rejected_one_is_not() {
-    let fake = fake_on(&Bind::Loopback).await;
+    let fake = fake_on(&Bind::Port(0)).await;
     let (engines, recorder) = (Engines::default(), Arc::new(Recorder::default()));
     let mut watch = watch(only_ollama(port_of(&fake)), &engines, &recorder);
 
@@ -305,7 +306,7 @@ async fn a_runtime_that_was_never_there_is_never_reported() {
 async fn rescan_looks_now_and_answers_when_the_look_is_done() {
     let (engines, recorder) = (Engines::default(), Arc::new(Recorder::default()));
     // A wait too long to matter: only the start and `now` look.
-    let fake = fake_on(&Bind::Loopback).await;
+    let fake = fake_on(&Bind::Port(0)).await;
     let config = ProbeConfig {
         every_s: 3600,
         longest_s: 3600,
@@ -337,15 +338,15 @@ async fn rescan_looks_now_and_answers_when_the_look_is_done() {
 /// The real client, except that while `slow` is set every request waits and then times out, as a
 /// starved computer's answers do.
 struct Slowed {
-    inner: HyperHttp,
+    inner: ReqwestHttp,
     slow: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Http for Slowed {
     async fn send(
         &self,
-        request: porter_http::HttpRequest,
-    ) -> Result<porter_http::HttpResponse, porter_http::HttpError> {
+        request: porter_http::http::Request<Vec<u8>>,
+    ) -> Result<porter_http::http::Response<Vec<u8>>, porter_http::HttpError> {
         match self.slow.load(std::sync::atomic::Ordering::Relaxed) {
             true => {
                 tokio::time::sleep(Duration::from_millis(20)).await;
@@ -394,7 +395,7 @@ fn a_runtime_lost_to_timeouts_is_down_only_on_the_third_look_in_a_row() {
 
 #[tokio::test]
 async fn a_slow_look_does_not_end_a_runtimes_models_but_a_stop_still_does() {
-    let fake = fake_on(&Bind::Loopback).await;
+    let fake = fake_on(&Bind::Port(0)).await;
     let slow = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let (engines, recorder) = (Engines::default(), Arc::new(Recorder::default()));
     let mut watch = Watch::new(

@@ -25,18 +25,16 @@ pub mod record;
 pub mod render;
 pub mod replayer;
 
-use crate::local::LocalModel;
 use engine_supervisor::{EngineId, SupervisorConfig};
 use host::{ReplayHost, Replaying};
 use model_catalog::MiB;
 use model_provider::Tokens;
+use porter_router::local::LocalModel;
+use porter_router::local::NamedEngine;
 use replayer::Replayer;
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
-
-/// What `[engines.<name>]` says of a replay engine: it moved to `porter_router::local`.
-pub use porter_router::local::NamedEngine;
 
 /// The context a replay model claims when its cassette cannot be read.
 const FALLBACK_CONTEXT: Tokens = Tokens(8192);

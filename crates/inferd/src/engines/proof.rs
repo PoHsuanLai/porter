@@ -8,13 +8,13 @@
 
 use super::{Engines, Offered, through_grants};
 use crate::runner::{Pin, Turns};
-use crate::serve::{EngineHost, RunningTurn, TurnRunner, TurnStep};
-use crate::session::SessionSpec;
 use crate::toolproof::asks_for_tools;
-use porter_core::Tier;
+use porter_capability::Tier;
 use porter_infer::{
     InferReply, InferRequest, ModelError, ModelRef, Pick, Slot, ToolProof, judge, probe_request,
 };
+use porter_router::seams::{EngineHost, RunningTurn, TurnRunner, TurnStep};
+use porter_router::session::SessionSpec;
 use std::time::Duration;
 
 /// The longest the check waits on one model, loading included.

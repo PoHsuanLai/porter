@@ -6,8 +6,8 @@ use dav_proto::names::{
     RESOURCETYPE, SYNC_TOKEN,
 };
 use dav_proto::{
-    Error, Multistatus, PropStatus, SyncChange, SyncEnd, parse_multistatus, parse_sync_collection,
-    token_expired,
+    Error, Multistatus, PropStatus, Quota, SyncChange, SyncEnd, parse_multistatus,
+    parse_sync_collection, quota, token_expired,
 };
 
 fn text(name: &str) -> String {
@@ -213,4 +213,31 @@ fn a_207_with_mixed_statuses_per_href_and_per_property() {
         [changed("/dav/cal/work/", ""), removed("/dav/cal/gone/")]
     );
     assert_eq!(reply.end, SyncEnd::Missing);
+}
+
+#[test]
+fn the_quota_reader_gives_both_halves_when_the_server_does() {
+    assert_eq!(
+        quota(&fixture("nextcloud-quota.xml")),
+        Quota {
+            used: Some(5_368_709),
+            available: Some(10_737_418_240)
+        }
+    );
+}
+
+#[test]
+fn the_quota_reader_gives_the_used_half_alone() {
+    assert_eq!(
+        quota(&fixture("fastmail-quota.xml")),
+        Quota {
+            used: Some(48_213),
+            available: None
+        }
+    );
+}
+
+#[test]
+fn the_quota_reader_gives_nothing_for_a_reply_without_quota() {
+    assert_eq!(quota(&fixture("generic-sync-first.xml")), Quota::default());
 }

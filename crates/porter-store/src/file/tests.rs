@@ -1,44 +1,15 @@
 use super::*;
-use porter_core::capability::VocabVersion;
+use porter_capability::VocabVersion;
 use porter_fake::{llm_account, mail_account, storage_account};
-use porter_service::Registry;
-use std::path::Path;
-use std::sync::atomic::{AtomicU32, Ordering};
-
-static NEXT: AtomicU32 = AtomicU32::new(0);
-
-/// A directory under the system temp directory, removed on drop.
-struct Scratch(PathBuf);
-
-impl Scratch {
-    fn new() -> Self {
-        let dir = std::env::temp_dir().join(format!(
-            "porter-store-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        std::fs::create_dir_all(&dir).expect("scratch dir");
-        Self(dir)
-    }
-
-    fn path(&self) -> &Path {
-        &self.0
-    }
-}
-
-impl Drop for Scratch {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
-}
+use test_kit::Scratch;
 
 fn registry() -> Persisted {
-    Registry {
+    Persisted {
+        vocab: VocabVersion::CURRENT,
         accounts: vec![storage_account(), mail_account(), llm_account()],
         grants: vec![],
         toggles: vec![],
     }
-    .persisted()
 }
 
 fn store_in(scratch: &Scratch) -> FileStore {
@@ -46,15 +17,13 @@ fn store_in(scratch: &Scratch) -> FileStore {
     FileStore::new(scratch.path().join("porter"))
 }
 
-/// The host names the directory: a store at a location keeps both files there and nowhere else,
-/// and `new` is the same store as `at` the same directory.
+/// The host names the directory: a store keeps both files there and nowhere else.
 #[tokio::test]
-async fn a_store_keeps_its_files_in_the_location_the_host_names() {
-    let scratch = Scratch::new();
+async fn a_store_keeps_its_files_in_the_directory_the_host_names() {
+    let scratch = Scratch::new("store");
     let dir = scratch.path().join("an-app");
-    let store = FileStore::at(StoreLocation::new(&dir));
-    assert_eq!(store, FileStore::new(dir.clone()));
-    assert_eq!(store.location().dir(), dir);
+    let store = FileStore::new(&dir);
+    assert_eq!(store.dir(), dir);
     assert_eq!(store.path(), dir.join("registry.json"));
     assert_eq!(store.backup_path(), dir.join("registry.json.bak"));
     store.save(&registry()).await.expect("saved");
@@ -64,13 +33,13 @@ async fn a_store_keeps_its_files_in_the_location_the_host_names() {
 
 #[tokio::test]
 async fn nothing_stored_loads_empty() {
-    let scratch = Scratch::new();
+    let scratch = Scratch::new("store");
     assert_eq!(store_in(&scratch).load().await, Ok(Persisted::empty()));
 }
 
 #[tokio::test]
 async fn a_saved_registry_loads_back_equal() {
-    let scratch = Scratch::new();
+    let scratch = Scratch::new("store");
     let store = store_in(&scratch);
     store.save(&registry()).await.expect("saved");
     assert_eq!(store.load().await, Ok(registry()));
@@ -85,7 +54,7 @@ async fn a_saved_registry_loads_back_equal() {
 
 #[tokio::test]
 async fn a_crash_between_write_and_rename_leaves_the_old_file() {
-    let scratch = Scratch::new();
+    let scratch = Scratch::new("store");
     let store = store_in(&scratch);
     store.save(&registry()).await.expect("saved");
     let before = std::fs::read(store.path()).expect("read");
@@ -106,7 +75,7 @@ async fn a_crash_between_write_and_rename_leaves_the_old_file() {
 /// and interleaved one file, and a rename could publish half of each.
 #[tokio::test]
 async fn overlapping_saves_never_share_a_staging_file() {
-    let scratch = Scratch::new();
+    let scratch = Scratch::new("store");
     let store = store_in(&scratch);
     let names: std::collections::HashSet<PathBuf> = (0..64).map(|_| store.staging()).collect();
     assert_eq!(names.len(), 64);
@@ -138,7 +107,7 @@ async fn overlapping_saves_never_share_a_staging_file() {
 /// nothing to keep; a refused file is not copied over the backup.
 #[tokio::test]
 async fn each_commit_keeps_the_previous_good_file_as_the_backup() {
-    let scratch = Scratch::new();
+    let scratch = Scratch::new("store");
     let store = store_in(&scratch);
     store.save(&registry()).await.expect("first");
     assert!(!store.backup_path().exists());
@@ -158,11 +127,11 @@ async fn each_commit_keeps_the_previous_good_file_as_the_backup() {
     assert_eq!(std::fs::read(store.path()).expect("read"), b"{oops");
 }
 
-/// rel-5: the refusal at start names both files in plain words, says nothing was changed, and
+/// rel-5: the refusal at start names both files, and
 /// loading leaves both exactly as they were.
 #[tokio::test]
 async fn a_refused_registry_is_explained_with_both_files_and_touched_by_nobody() {
-    let scratch = Scratch::new();
+    let scratch = Scratch::new("store");
     let store = store_in(&scratch);
     store.save(&registry()).await.expect("first");
     store.save(&Persisted::empty()).await.expect("second");
@@ -172,25 +141,21 @@ async fn a_refused_registry_is_explained_with_both_files_and_touched_by_nobody()
         panic!("the file is refused");
     };
     let said = store.refusal(&fault);
-    assert!(said.contains(&store.path().display().to_string()), "{said}");
-    assert!(
-        said.contains(&store.backup_path().display().to_string()),
-        "{said}"
-    );
-    assert!(said.contains("Nothing was changed"), "{said}");
+    assert_eq!(said.file(), store.path());
+    assert_eq!(said.backup(), Some(store.backup_path().as_path()));
     assert_eq!(std::fs::read(store.path()).expect("read"), b"{oops");
     assert_eq!(std::fs::read(store.backup_path()).expect("bak"), bak);
     // With no backup the message says so rather than naming a file that is not there.
-    let alone = Scratch::new();
+    let alone = Scratch::new("store");
     let none = store_in(&alone);
     std::fs::create_dir_all(alone.path().join("porter")).expect("dir");
     std::fs::write(none.path(), b"{oops").expect("write");
-    assert!(none.refusal(&fault).contains("no earlier copy"));
+    assert_eq!(none.refusal(&fault).backup(), None);
 }
 
 #[tokio::test]
 async fn a_corrupt_file_is_refused_and_never_overwritten() {
-    let scratch = Scratch::new();
+    let scratch = Scratch::new("store");
     let store = store_in(&scratch);
     std::fs::create_dir_all(scratch.path().join("porter")).expect("dir");
     let garbage: &[u8] = b"{\"vocab\": 3, \"accounts\": [oops";
@@ -214,7 +179,7 @@ async fn a_corrupt_file_is_refused_and_never_overwritten() {
 
 #[tokio::test]
 async fn a_file_that_cannot_be_read_is_unavailable_not_empty() {
-    let scratch = Scratch::new();
+    let scratch = Scratch::new("store");
     let store = store_in(&scratch);
     // A directory where the file should be: reading it fails, and it is not "nothing stored".
     std::fs::create_dir_all(store.path()).expect("dir");
@@ -227,7 +192,7 @@ async fn a_file_that_cannot_be_read_is_unavailable_not_empty() {
 /// here with the old document as a fixture.
 #[tokio::test]
 async fn the_vocabulary_of_the_file_decides_whether_it_loads() {
-    let scratch = Scratch::new();
+    let scratch = Scratch::new("store");
     let store = store_in(&scratch);
     store.save(&registry()).await.expect("saved");
     let text = std::fs::read_to_string(store.path()).expect("read");
@@ -260,7 +225,7 @@ async fn the_vocabulary_of_the_file_decides_whether_it_loads() {
 #[tokio::test]
 async fn the_file_is_readable_by_its_owner_alone() {
     use std::os::unix::fs::PermissionsExt;
-    let scratch = Scratch::new();
+    let scratch = Scratch::new("store");
     let store = store_in(&scratch);
     store.save(&registry()).await.expect("saved");
     store.save(&registry()).await.expect("saved again");

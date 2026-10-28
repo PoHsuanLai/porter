@@ -22,6 +22,7 @@ use tokio::sync::Notify;
 
 /// Why an install was not started.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum StartError {
     /// One is under way already.
     #[error("an install of this engine is already under way")]
@@ -80,7 +81,7 @@ pub struct Parts {
     pub helper: HelperProgram,
     /// The folder of a Strata the person pointed at, read each time it is looked for.
     pub strata_folder: Arc<dyn Fn() -> Option<PathBuf> + Send + Sync>,
-    /// Whether a system path is one only root could have written (see `porter_daemon::root_held`).
+    /// Whether a system path is one only root could have written (see `porter_callers::root_held`).
     pub held: fn(&Path) -> bool,
 }
 

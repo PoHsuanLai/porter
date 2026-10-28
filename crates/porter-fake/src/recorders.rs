@@ -2,8 +2,9 @@
 //! they moved into a service.
 
 use porter_core::store::Persisted;
-use porter_service::audit::AuditEntry;
-use porter_service::{AuditSink, RegistryStore, StoreError};
+use porter_core::store::{RegistryStore, StoreError};
+use porter_service_core::audit::AuditEntry;
+use porter_service_core::audit::AuditSink;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {

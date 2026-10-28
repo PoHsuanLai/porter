@@ -11,44 +11,14 @@
 //! while changes.next().await.is_some() { /* read the list again */ }
 //! ```
 
-use porter_core::{CoreError, Machine};
-use porter_dbus::{
-    BusConnection, BusError, BusFailure, BusStream, TailnetChanged, TailnetChangedStream,
-    TailnetProxy, classify, machine_from_dbus,
+use crate::call_failure::CallFailure;
+use porter_dbus::accounts::{
+    TailnetChanged, TailnetChangedStream, TailnetProxy, machine_from_dbus,
 };
+use porter_dbus::{BusConnection, BusStream};
+use porter_tailscale::Machine;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-
-/// Why a Tailnet call failed. More reasons may be added: match with a wildcard.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
-pub enum TailnetError {
-    /// accountd does not know this caller, or it is not the shell, Settings or the terminal.
-    #[error("refused by accountd: {0}")]
-    Denied(String),
-    /// accountd is not there.
-    #[error("no account service reachable")]
-    Unreachable,
-    /// accountd sent something that is not porter's protocol.
-    #[error("malformed: {0}")]
-    Malformed(String),
-}
-
-impl From<BusError> for TailnetError {
-    fn from(error: BusError) -> Self {
-        match classify(&error) {
-            BusFailure::NoDaemon => TailnetError::Unreachable,
-            BusFailure::Denied(why) => TailnetError::Denied(why),
-            BusFailure::Other(why) => TailnetError::Malformed(why),
-        }
-    }
-}
-
-impl From<CoreError> for TailnetError {
-    fn from(error: CoreError) -> Self {
-        TailnetError::Malformed(error.to_string())
-    }
-}
 
 /// accountd's list of the person's computers, as its callers see it.
 #[derive(Debug, Clone)]
@@ -58,7 +28,7 @@ pub struct Tailnet {
 
 impl Tailnet {
     /// The list over `connection`.
-    pub async fn connect(connection: &BusConnection) -> Result<Self, TailnetError> {
+    pub async fn connect(connection: &BusConnection) -> Result<Self, CallFailure> {
         Self::connect_at(connection, &crate::Destination::WellKnown).await
     }
 
@@ -66,7 +36,7 @@ impl Tailnet {
     pub async fn connect_at(
         connection: &BusConnection,
         to: &crate::Destination,
-    ) -> Result<Self, TailnetError> {
+    ) -> Result<Self, CallFailure> {
         Ok(Self {
             proxy: to.proxy(connection).await?,
         })
@@ -75,7 +45,7 @@ impl Tailnet {
     /// The other computers on the person's network, none for this one, in accountd's order. The
     /// list is empty with no Tailscale account, or one that is not working: the account's own
     /// state says why.
-    pub async fn machines(&self) -> Result<Vec<Machine>, TailnetError> {
+    pub async fn machines(&self) -> Result<Vec<Machine>, CallFailure> {
         self.proxy
             .machines()
             .await?
@@ -86,7 +56,7 @@ impl Tailnet {
 
     /// The changes to the list, from now on. It subscribes, then reads the list once so
     /// accountd counts this connection among those it tells.
-    pub async fn watch(&self) -> Result<MachineChanges, TailnetError> {
+    pub async fn watch(&self) -> Result<MachineChanges, CallFailure> {
         let stream = self.proxy.receive_changed().await?;
         self.proxy.machines().await?;
         Ok(MachineChanges(stream))

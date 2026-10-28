@@ -1,9 +1,8 @@
 use super::*;
 use crate::step::{Effect, Input, RelayEnd, Relaying, Side};
 use crate::testing::{bytewise, sent, whole};
-use porter_core::{
-    CapabilityKind, EndpointUrl, Family, LoginName, RelayAuth, SecretText, ServiceEndpoint, Tls,
-};
+use porter_capability::CapabilityKind;
+use porter_core::{EndpointUrl, Family, LoginName, RelayAuth, SecretText, ServiceEndpoint, Tls};
 
 fn plan(url: &str, tls: Tls, auth: RelayAuth) -> RelayPlan {
     RelayPlan::new(
@@ -15,6 +14,7 @@ fn plan(url: &str, tls: Tls, auth: RelayAuth) -> RelayPlan {
         },
         CapabilityKind::Storage,
         auth,
+        porter_core::Reach::origin(),
     )
 }
 
@@ -222,6 +222,36 @@ fn another_origin_or_an_ambiguous_head_is_refused() {
             RelayFault::Protocol,
         ),
         (
+            "two spaces in the request line",
+            "GET  /x HTTP/1.1\r\n\r\n",
+            RelayFault::Protocol,
+        ),
+        (
+            "a method that is not a token",
+            "G(T /x HTTP/1.1\r\n\r\n",
+            RelayFault::Protocol,
+        ),
+        (
+            "a second head after the first",
+            "GET /x HTTP/1.1\r\n\r\nGET /y HTTP/1.1\r\n\r\n",
+            RelayFault::Protocol,
+        ),
+        (
+            "a header without a colon",
+            "GET /x HTTP/1.1\r\nHost\r\n\r\n",
+            RelayFault::Protocol,
+        ),
+        (
+            "a control byte in a value",
+            "GET /x HTTP/1.1\r\nX: a\x01b\r\n\r\n",
+            RelayFault::Protocol,
+        ),
+        (
+            "a header name that is not a token",
+            "GET /x HTTP/1.1\r\nX(A: b\r\n\r\n",
+            RelayFault::Protocol,
+        ),
+        (
             "a nul",
             "GET /x HTTP/1.1\r\nX: a\0b\r\n\r\n",
             RelayFault::Protocol,
@@ -331,6 +361,11 @@ fn a_contacts_grants_relay_refuses_the_files_and_ocs_and_passes_its_address_book
     );
     contacts.endpoint.family = Family::CardDav;
     contacts.kind = CapabilityKind::Contacts;
+    // What the service plans for it: the address books alone.
+    contacts.reach = porter_core::Reach::under(vec![porter_core::PathReach::new(
+        b"/remote.php/dav/addressbooks/users/ada".to_vec(),
+        porter_core::ReachMethods::Any,
+    )]);
     for refused in [
         "PROPFIND /remote.php/dav/files/ada/ HTTP/1.1\r\nDepth: 1\r\n\r\n",
         "GET /ocs/v2.php/core/apppassword HTTP/1.1\r\nOCS-APIRequest: true\r\n\r\n",

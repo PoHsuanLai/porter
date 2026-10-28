@@ -10,25 +10,29 @@ use hosting::lab::Lab;
 use hosting::rig::{Plan, World};
 use hosting::{bus, entries};
 use inferd::attached::{Attached, KeyFileProblem, NotReady, Place, Reach};
-use inferd::serve::EngineHost;
 use inferd::settings::{MyNetwork, Settings};
-use inferd::startup::Cause;
+use porter_capability::LlmFeature;
+use porter_capability::ModelId;
+use porter_capability::{Locality, Tier};
 use porter_client::InferSession;
-use porter_core::capability::LlmFeature;
+use porter_core::DataClass;
 use porter_core::consent::Usage;
-use porter_core::need::LlmNeed;
-use porter_core::{DataClass, Locality, ModelId, Need, Tier, Tokens};
-use porter_fake::Scratch;
 use porter_fake_servers::net::Bind;
+use porter_ids::Tokens;
 use porter_infer::{
     ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRefusal, InferReply, InferRequest,
     MessagePart, ModelRef, Role as ChatRole,
 };
+use porter_match::LlmNeed;
+use porter_match::Need;
+use porter_router::seams::EngineHost;
+use porter_router::startup::Cause;
 use rustix::process::{Pid, Signal, kill_process};
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
+use test_kit::Scratch;
 
 const ATTACHED: &str = entries::ATTACHED;
 
@@ -46,7 +50,7 @@ fn fake_lab_process() {
     let key = std::env::var("FAKE_LAB_KEY").ok();
     // However it goes, no fake lab outlives a test by long.
     std::thread::spawn(|| {
-        std::thread::sleep(porter_fake::GENEROUS * 3);
+        std::thread::sleep(test_kit::GENEROUS * 3);
         std::process::exit(9);
     });
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -120,7 +124,7 @@ fn lab_process(dir: &Dir, key: Option<&str>) -> Started {
         command.env("FAKE_LAB_KEY", key);
     }
     let child = Started(command.spawn().expect("start the lab"));
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         if dir.0.join("ready").exists() {
             return child;
@@ -297,7 +301,7 @@ async fn a_chat_streams_over_the_socket_and_nothing_is_started() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_chat_streams_over_a_loopback_port_too() {
-    let lab = Lab::start(&Bind::Loopback, "lab", &[entries::SERVED], None).await;
+    let lab = Lab::start(&Bind::Port(0), "lab", &[entries::SERVED], None).await;
     let reach = Reach::Loopback {
         host: std::net::Ipv4Addr::LOCALHOST,
         port: model_http::Port(lab.port()),
@@ -439,7 +443,7 @@ async fn this_device_takes_on_device_only_data_and_my_network_does_not_unless_th
     let listed = world.served.listed();
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].card.locality, Locality::LocalNetwork);
-    assert_eq!(listed[0].card.billing, porter_core::Billing::Free);
+    assert_eq!(listed[0].card.billing, porter_capability::Billing::Free);
     assert_eq!(listed[0].spend, porter_infer::SpendVerdict::Within);
     assert_eq!(listed[0].permission, porter_infer::Permit::Granted);
 
@@ -513,11 +517,11 @@ async fn an_eviction_pass_leaves_the_attached_engines_process_alive_and_still_re
         "an attached id is not also one inferd runs"
     );
 
-    let first = tokio::time::timeout(porter_fake::GENEROUS, world.supervised.want(&a)).await;
+    let first = tokio::time::timeout(test_kit::GENEROUS, world.supervised.want(&a)).await;
     assert_eq!(first, Ok(Ok(())), "the first engine starts");
     // The first engine goes idle: a turn in the last probe window is never a victim.
     tokio::time::sleep(Duration::from_millis(900)).await;
-    let second = tokio::time::timeout(porter_fake::GENEROUS, world.supervised.want(&b)).await;
+    let second = tokio::time::timeout(test_kit::GENEROUS, world.supervised.want(&b)).await;
     assert_eq!(second, Ok(Ok(())), "the second engine starts");
     let states = world.supervised.snapshot().states;
     assert!(matches!(
@@ -589,7 +593,7 @@ fn real_inferd(bus: &bus::PrivateBus, config: &str, catalog: &[(&str, String)]) 
 
 /// The exit code of `child`, waited for as long as a starved machine needs, or `None`.
 fn exit_within(child: &mut Started) -> Option<i32> {
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         if let Some(status) = child.0.try_wait().expect("wait") {
             return Some(status.code().unwrap_or(-1));
@@ -623,8 +627,9 @@ async fn sigterm_to_the_real_inferd_leaves_the_attached_engines_process_alive() 
     let mut inferd = real_inferd(&bus, &config, &[("attached.toml", entries::attached())]);
     let client = bus.connect().await;
     let dbus = zbus::fdo::DBusProxy::new(&client).await.expect("dbus");
-    let name = zbus::names::BusName::try_from(porter_dbus::INFERENCE_BUS).expect("bus name");
-    let deadline = porter_fake::Deadline::generous();
+    let name =
+        zbus::names::BusName::try_from(porter_dbus::inference::INFERENCE_BUS).expect("bus name");
+    let deadline = test_kit::Deadline::generous();
     while !dbus.name_has_owner(name.clone()).await.expect("ask") {
         if deadline.passed() {
             deadline.fail("inferd takes its name");

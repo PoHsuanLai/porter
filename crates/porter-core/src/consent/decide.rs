@@ -1,8 +1,8 @@
 //! Consent decisions as pure functions: what the stored grants say for one key, and what an
 //! app may learn about a need without holding a grant.
 
-use super::grant::{Decision, Grant, GrantKey, GrantScope};
-use crate::id::GrantId;
+use super::grant::{Decision, Grant, GrantScope};
+use crate::GrantId;
 use serde::{Deserialize, Serialize};
 
 /// What the consent store says for one key.
@@ -13,7 +13,7 @@ pub enum Verdict {
     Granted {
         /// The grant that allows it.
         grant: GrantId,
-        /// Once (spent by this use), always, or for a launcher session.
+        /// Once (spent by this use), always, or for a session.
         scope: GrantScope,
     },
     /// Refused; the app is not prompted again.
@@ -35,15 +35,6 @@ pub fn decide<K: Eq>(grants: &[Grant<K>], key: &K) -> Verdict {
             grant: grant.id.clone(),
             scope: grant.scope.clone(),
         },
-    }
-}
-
-/// [`decide`] for an account key, with the Space ownership rule first: a key of one app over
-/// another app's own Space is `Denied` whatever the store holds, and is never asked.
-pub fn decide_key(grants: &[Grant], key: &GrantKey) -> Verdict {
-    match key.space_is_open() {
-        true => decide(grants, key),
-        false => Verdict::Denied,
     }
 }
 

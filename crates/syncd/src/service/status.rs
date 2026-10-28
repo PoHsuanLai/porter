@@ -3,9 +3,9 @@
 
 use super::hub::{DatasetName, StatusSnapshot};
 use crate::scheduler::Pausing;
-use porter_dbus::{
-    ACCOUNTS_PATH, CONFLICT_KEY_NUMBER, Details, STATUS_KEY_QUOTA, to_vardict, zvariant,
-};
+use porter_dbus::accounts::ACCOUNTS_PATH;
+use porter_dbus::sync::{CONFLICT_KEY_NUMBER, STATUS_KEY_QUOTA};
+use porter_dbus::{Details, to_vardict, zvariant};
 use porter_sync::{BaseVersion, MassDelete, Quota, RemoteSide, StoredConflict};
 use serde_json::json;
 use zvariant::{Dict, OwnedValue, Signature, Value};
@@ -138,7 +138,7 @@ pub fn conflict_details(stored: &StoredConflict) -> Details {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_core::{Bytes, UnixSeconds};
+    use porter_ids::{Bytes, UnixSeconds};
     use porter_sync::{Conflict, LocalId, RemoteId, RemoteVersion};
 
     fn text(details: &Details, key: &str) -> Option<String> {

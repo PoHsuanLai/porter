@@ -1,19 +1,19 @@
 //! The account service over its seams: the audience a grant covers, the endpoints a candidate
 //! carries and a relay may dial, and what is saved and audited when the registry changes.
 
-use porter_core::capability::{Access, Delta, Offered, QuotaReport, StorageScope};
+use porter_capability::CapabilityKind;
+use porter_capability::{Access, Delta, StorageScope};
 use porter_core::consent::{GrantScope, Usage};
-use porter_core::need::{MailNeed, StorageNeed};
-use porter_core::wire::ParentWindow;
-use porter_core::wire::Refusal;
-use porter_core::{
-    AccountId, AccountsReply, AccountsRequest, AppId, AppName, Audience, CapabilityKind, DataClass,
-    EndpointUrl, Family, GrantId, Isolation, Need,
-};
-use porter_fake::{
-    FixedClock, MemoryStore, NOW, RecordingAudit, Scripted, ScriptedSheets, fake_service,
-};
-use porter_service::audit::AuditEvent;
+use porter_core::{AccountId, GrantId};
+use porter_core::{AppId, AppName, DataClass, EndpointUrl, Family, Isolation};
+use porter_fake::{MemoryStore, NOW, RecordingAudit, Scripted, ScriptedSheets, fake_service};
+use porter_ids::clock::FixedClock;
+use porter_match::Need;
+use porter_match::{MailNeed, StorageNeed};
+use porter_service_core::audit::AuditEvent;
+use porter_wire::ParentWindow;
+use porter_wire::Refusal;
+use porter_wire::{AccountsReply, AccountsRequest};
 
 fn app(name: &str) -> AppId {
     AppId {
@@ -27,12 +27,12 @@ fn files() -> Need {
         Access::ReadWrite,
         Delta::Poll,
         StorageScope::AppFolder,
-        QuotaReport::Unreported,
+        false,
     ))
 }
 
 fn mail() -> Need {
-    Need::Mail(MailNeed::new(Access::Read, Offered::Present, Delta::Poll))
+    Need::Mail(MailNeed::new(Access::Read, true, Delta::Poll))
 }
 
 fn url(text: &str) -> EndpointUrl {
@@ -66,9 +66,9 @@ impl<P, S, U, R, A> Serves for porter_service::AccountService<P, S, U, FixedCloc
 where
     P: porter_provider::Provider,
     S: porter_secrets::Secrets,
-    U: porter_service::Sheets,
-    R: porter_service::RegistryStore,
-    A: porter_service::AuditSink,
+    U: porter_service_core::sheets::Sheets,
+    R: porter_core::store::RegistryStore,
+    A: porter_service_core::audit::AuditSink,
 {
     async fn serve(&self, app: &AppId, request: AccountsRequest) -> AccountsReply {
         self.handle(app, request).await
@@ -80,47 +80,6 @@ fn granted(reply: AccountsReply) -> porter_core::Candidate {
         AccountsReply::Chosen(candidate) => candidate,
         other => panic!("not chosen: {other:?}"),
     }
-}
-
-#[tokio::test]
-async fn a_grant_covers_the_audiences_of_its_own_kind_only() {
-    let sheets = ScriptedSheets::answering([
-        Scripted::AllowFirst(GrantScope::Always),
-        Scripted::AllowFirst(GrantScope::Always),
-    ]);
-    let service = fake_service(sheets).await;
-    let me = app("org.quire.Mail");
-    let storage = granted(choose(&service, &me, files(), DataClass::Files).await);
-    let sending = granted(choose(&service, &me, mail(), DataClass::Mail).await);
-    let token = |grant: &GrantId, audience: &str| {
-        service.handle(
-            &me,
-            AccountsRequest::IssueToken {
-                grant: grant.clone(),
-                audience: Audience(audience.into()),
-            },
-        )
-    };
-    assert!(matches!(
-        token(&storage.grant, "webdav").await,
-        AccountsReply::Token(_)
-    ));
-    assert_eq!(
-        token(&storage.grant, "imap").await,
-        AccountsReply::Refused(Refusal::AudienceNotGranted)
-    );
-    assert!(matches!(
-        token(&sending.grant, "imap").await,
-        AccountsReply::Token(_)
-    ));
-    assert!(matches!(
-        token(&sending.grant, "smtp").await,
-        AccountsReply::Token(_)
-    ));
-    assert_eq!(
-        token(&sending.grant, "webdav").await,
-        AccountsReply::Refused(Refusal::AudienceNotGranted)
-    );
 }
 
 #[tokio::test]
@@ -142,17 +101,8 @@ async fn a_candidate_lists_the_endpoints_of_the_kind_that_fit() {
         "no CalDAV root for files"
     );
     assert_eq!(families(&sending), vec![Family::Imap, Family::Smtp]);
-    let queried = service
-        .handle(
-            &me,
-            AccountsRequest::Query {
-                need: mail(),
-                class: DataClass::Mail,
-                usage: Usage::Interactive,
-            },
-        )
-        .await;
-    assert_eq!(queried, AccountsReply::Candidates(vec![sending]));
+    let queried = service.candidates(&me, &mail(), DataClass::Mail, Usage::Interactive);
+    assert_eq!(queried, vec![sending]);
 }
 
 #[tokio::test]
@@ -228,7 +178,7 @@ async fn an_opened_relay_is_audited_with_its_grant_and_endpoint_and_a_refused_on
     let service = fake_service(sheets).await.with_audit(audit.clone());
     let me = app("org.quire.Photos");
     let storage = granted(choose(&service, &me, files(), DataClass::Files).await);
-    let opened = |entries: Vec<porter_service::audit::AuditEntry>| {
+    let opened = |entries: Vec<porter_service_core::audit::AuditEntry>| {
         entries
             .into_iter()
             .filter(|e| matches!(e.event, AuditEvent::ProxyOpened { .. }))
@@ -273,7 +223,7 @@ async fn a_linked_relay_dials_only_an_origin_the_provider_file_declares_and_pres
     let me = app("org.quire.Photos");
     let storage = granted(choose(&service, &me, files(), DataClass::Files).await);
     let mailer = granted(choose(&service, &me, mail(), DataClass::Mail).await);
-    let opened = |entries: Vec<porter_service::audit::AuditEntry>| {
+    let opened = |entries: Vec<porter_service_core::audit::AuditEntry>| {
         entries
             .into_iter()
             .filter(|e| matches!(e.event, AuditEvent::ProxyOpened { .. }))
@@ -472,27 +422,11 @@ async fn every_change_to_the_registry_is_saved_and_audited_without_a_value() {
         AccountsReply::Refused(Refusal::Denied)
     );
     assert_eq!(asks.asked().len(), 2);
-    let token = service
-        .handle(
-            &me,
-            AccountsRequest::IssueToken {
-                grant: storage.grant.clone(),
-                audience: Audience("webdav".into()),
-            },
-        )
-        .await;
-    assert!(matches!(token, AccountsReply::Token(_)));
-    assert_eq!(
-        service
-            .handle(
-                &me,
-                AccountsRequest::Revoke {
-                    grant: storage.grant.clone()
-                }
-            )
-            .await,
-        AccountsReply::Revoked
-    );
+    service
+        .open_authenticated(&me, &storage.grant, &storage.endpoints[0].url)
+        .await
+        .expect("planned");
+    assert_eq!(service.revoke(&me, &storage.grant).await, Ok(()));
     let removed: AccountId = storage.account.clone();
     service.remove_account(&removed).await.expect("removed");
     let saved = store.stored().expect("saved");
@@ -522,9 +456,9 @@ async fn every_change_to_the_registry_is_saved_and_audited_without_a_value() {
             ),
             (
                 NOW,
-                AuditEvent::TokenIssued {
+                AuditEvent::ProxyOpened {
                     grant: storage.grant.clone(),
-                    audience: Audience("webdav".into())
+                    endpoint: storage.endpoints[0].url.clone(),
                 }
             ),
             (
@@ -564,7 +498,7 @@ async fn a_service_starts_from_what_the_store_holds() {
     let me = app("org.quire.Photos");
     let storage = granted(choose(&service, &me, files(), DataClass::Files).await);
     let stored = first.stored().expect("saved");
-    let registry = porter_service::Registry::from_persisted(stored.clone());
+    let registry = porter_service_core::registry::Registry::from_persisted(stored.clone());
     assert_eq!(registry.persisted(), stored);
     assert_eq!(registry.grants[0].id, storage.grant);
 }

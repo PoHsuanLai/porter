@@ -8,10 +8,12 @@ use crate::common;
 
 use common::Proc;
 use common::bus::PrivateBus;
-use porter_core::{AccountId, Credential, SecretKey, SecretPurpose, SecretText, UnixSeconds};
-use porter_fake::Scratch;
-use porter_secrets::{Oo7Secrets, PutOutcome, Secrets, SecretsError};
+use porter_core::AccountId;
+use porter_core::{Credential, SecretKey, SecretPurpose, SecretText};
+use porter_ids::UnixSeconds;
+use porter_secrets::{Oo7Secrets, Secrets, SecretsError};
 use std::process::{Command, Stdio};
+use test_kit::Scratch;
 
 const CHILD: &str = "RIG_OO7_CHILD";
 
@@ -53,7 +55,7 @@ async fn oo7_child() {
         store
             .put_if_absent(&one, &credential("RIG-REFRESH-2"))
             .await,
-        Ok(PutOutcome::AlreadyThere)
+        Ok(false)
     );
     assert_eq!(
         store.get(&one).await.expect("get"),
@@ -72,7 +74,7 @@ async fn oo7_child() {
         store
             .put_if_absent(&two, &credential("RIG-REFRESH-4"))
             .await,
-        Ok(PutOutcome::Stored)
+        Ok(true)
     );
     store.delete(&one).await.expect("delete");
     assert_eq!(store.get(&one).await, Err(SecretsError::Missing));
@@ -103,7 +105,7 @@ async fn accountds_oo7_secrets_stores_and_reads_back_through_the_fake_and_it_end
     let dbus = zbus::fdo::DBusProxy::new(&probe).await.expect("proxy");
     let name: zbus::names::BusName<'_> = "org.freedesktop.secrets".try_into().expect("name");
     let mut taken = false;
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         if dbus.name_has_owner(name.clone()).await.unwrap_or(false) {
             taken = true;

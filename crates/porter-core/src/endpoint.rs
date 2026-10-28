@@ -5,18 +5,19 @@
 //! An endpoint is parsed once where it enters (a provider file, discovery, a legacy record, the
 //! bus); everything past that holds typed values.
 
-use crate::capability::CapabilityKind;
 use crate::error::CoreError;
 use crate::family::Family;
+use crate::protocol::EndpointProtocol;
 use crate::secret::SecretText;
+use porter_capability::CapabilityKind;
+use porter_ids::{IdError, Origin, UrlScheme, WebUrl, split_authority};
 use serde::{Deserialize, Serialize};
-use std::fmt;
 
+mod reach;
 mod server_address;
 
-pub use server_address::{
-    SERVER_ADDRESS_RULE, ServerAddress, ServerAddressFault, server_address, server_address_shape,
-};
+pub use reach::{PathReach, Reach, ReachMethods};
+pub use server_address::{ServerAddress, ServerAddressFault, server_address, server_address_shape};
 
 /// One server of an account, as an app or the relay needs to reach it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -49,140 +50,11 @@ pub enum Tls {
 #[serde(transparent)]
 pub struct LoginName(pub String);
 
-/// The wire protocol an authenticated relay speaks for an endpoint (`porter-proxy`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum EndpointProtocol {
-    /// IMAP: the relay authenticates and the app sees a `PREAUTH` greeting.
-    Imap,
-    /// SMTP submission: the relay does EHLO, STARTTLS and AUTH.
-    Smtp,
-    /// HTTP/1.1 (WebDAV, CalDAV, CardDAV, OCS, JMAP): the relay adds `Authorization`.
-    Http,
-    /// ManageSieve (RFC 5804): the relay does STARTTLS and AUTHENTICATE.
-    Sieve,
-    /// POP3 (RFC 1939): the relay does `STLS` and `USER`/`PASS` (or `AUTH`); the app sees a
-    /// session that is already in the transaction state.
-    Pop3,
-}
-
-/// The schemes an endpoint URL may have.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum UrlScheme {
-    /// `http`.
-    Http,
-    /// `https`.
-    Https,
-    /// `imap`.
-    Imap,
-    /// `imaps`.
-    Imaps,
-    /// `smtp`.
-    Smtp,
-    /// `smtps`.
-    Smtps,
-    /// `sieve` (ManageSieve, STARTTLS).
-    Sieve,
-    /// `sieves` (ManageSieve over TLS from the first byte).
-    Sieves,
-    /// `pop3` (POP3, STARTTLS as `STLS`).
-    Pop3,
-    /// `pop3s` (POP3 over TLS from the first byte).
-    Pop3s,
-}
-
-impl UrlScheme {
-    fn parse(text: &str) -> Option<Self> {
-        match text {
-            "http" => Some(UrlScheme::Http),
-            "https" => Some(UrlScheme::Https),
-            "imap" => Some(UrlScheme::Imap),
-            "imaps" => Some(UrlScheme::Imaps),
-            "smtp" => Some(UrlScheme::Smtp),
-            "smtps" => Some(UrlScheme::Smtps),
-            "sieve" => Some(UrlScheme::Sieve),
-            "sieves" => Some(UrlScheme::Sieves),
-            "pop3" => Some(UrlScheme::Pop3),
-            "pop3s" => Some(UrlScheme::Pop3s),
-            _ => None,
-        }
-    }
-
-    fn text(self) -> &'static str {
-        match self {
-            UrlScheme::Http => "http",
-            UrlScheme::Https => "https",
-            UrlScheme::Imap => "imap",
-            UrlScheme::Imaps => "imaps",
-            UrlScheme::Smtp => "smtp",
-            UrlScheme::Smtps => "smtps",
-            UrlScheme::Sieve => "sieve",
-            UrlScheme::Sieves => "sieves",
-            UrlScheme::Pop3 => "pop3",
-            UrlScheme::Pop3s => "pop3s",
-        }
-    }
-
-    /// The protocol this scheme names.
-    pub fn protocol(self) -> EndpointProtocol {
-        match self {
-            UrlScheme::Http | UrlScheme::Https => EndpointProtocol::Http,
-            UrlScheme::Imap | UrlScheme::Imaps => EndpointProtocol::Imap,
-            UrlScheme::Smtp | UrlScheme::Smtps => EndpointProtocol::Smtp,
-            UrlScheme::Sieve | UrlScheme::Sieves => EndpointProtocol::Sieve,
-            UrlScheme::Pop3 | UrlScheme::Pop3s => EndpointProtocol::Pop3,
-        }
-    }
-
-    /// The port used when the URL names none.
-    pub fn default_port(self) -> u16 {
-        match self {
-            UrlScheme::Http => 80,
-            UrlScheme::Https => 443,
-            UrlScheme::Imap => 143,
-            UrlScheme::Imaps => 993,
-            UrlScheme::Smtp => 587,
-            UrlScheme::Smtps => 465,
-            UrlScheme::Sieve | UrlScheme::Sieves => 4190,
-            UrlScheme::Pop3 => 110,
-            UrlScheme::Pop3s => 995,
-        }
-    }
-
-    /// The security a scheme allows: `https`, `imaps` and `smtps` are TLS from the first byte,
-    /// `http` has no upgrade, and `imap`, `smtp`, `sieve` and `pop3` upgrade with STARTTLS or
-    /// stay plain.
-    fn admits(self, tls: Tls) -> bool {
-        match self {
-            UrlScheme::Https
-            | UrlScheme::Imaps
-            | UrlScheme::Smtps
-            | UrlScheme::Sieves
-            | UrlScheme::Pop3s => tls == Tls::Implicit,
-            UrlScheme::Http => tls == Tls::Plain,
-            UrlScheme::Imap | UrlScheme::Smtp | UrlScheme::Sieve | UrlScheme::Pop3 => {
-                matches!(tls, Tls::StartTls | Tls::Plain)
-            }
-        }
-    }
-}
-
 /// An endpoint's URL: `scheme://host[:port][/path]`, with no user info, query or fragment.
 /// Its serde form is the text.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct EndpointUrl(String);
-
-/// Scheme, host and port: what "the same server" means.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Origin {
-    /// The scheme.
-    pub scheme: UrlScheme,
-    /// The host in lower case, an IPv6 literal without its brackets.
-    pub host: String,
-    /// The port, the scheme's default when the URL named none.
-    pub port: u16,
-}
 
 impl EndpointUrl {
     /// The URL written as `text`, or why it is not an endpoint URL.
@@ -205,9 +77,32 @@ impl EndpointUrl {
         }
     }
 
-    /// The URL's text.
-    pub fn as_str(&self) -> &str {
-        &self.0
+    /// `path` under this URL: `https://example.org/nextcloud` joined with `/index.php` is
+    /// `https://example.org/nextcloud/index.php`.
+    pub fn join(&self, path: &str) -> Option<Self> {
+        let base = self.0.trim_end_matches('/');
+        Self::parse(&format!("{base}/{}", path.trim_start_matches('/'))).ok()
+    }
+
+    /// The server a person typed: a host (`cloud.example.org`), or an address with a scheme, a
+    /// port and a path (`https://example.org/nextcloud`). A bare host is `https`; plain `http`
+    /// is for this computer only.
+    pub fn typed_server(text: &str) -> Option<Self> {
+        let text = text.trim().trim_end_matches('/');
+        if text.is_empty() {
+            return None;
+        }
+        let with_scheme = match text.contains("://") {
+            true => text.to_owned(),
+            false => format!("https://{text}"),
+        };
+        let url = Self::parse(&with_scheme).ok()?;
+        let origin = url.origin();
+        match origin.scheme {
+            UrlScheme::Https => Some(url),
+            UrlScheme::Http if origin.is_loopback() => Some(url),
+            _ => None,
+        }
     }
 
     /// The scheme, host and port.
@@ -240,81 +135,34 @@ impl EndpointUrl {
     }
 }
 
-/// `host[:port]` or `[v6][:port]`; the host is never empty.
-pub(crate) fn split_authority(authority: &str) -> Option<(&str, Option<&str>)> {
-    let (host, port) = match authority.strip_prefix('[') {
-        Some(bracketed) => {
-            let (host, after) = bracketed.split_once(']')?;
-            (host, after.strip_prefix(':'))
+impl TryFrom<&EndpointUrl> for WebUrl {
+    type Error = IdError;
+    /// An endpoint URL that is a web URL: `https`, or `http` to this computer.
+    fn try_from(url: &EndpointUrl) -> Result<Self, IdError> {
+        Self::parse(url.as_str())
+    }
+}
+
+/// The security a scheme allows: `https`, `imaps` and `smtps` are TLS from the first byte,
+/// `http` has no upgrade, and `imap`, `smtp`, `sieve` and `pop3` upgrade with STARTTLS or
+/// stay plain.
+fn admits(scheme: UrlScheme, tls: Tls) -> bool {
+    match scheme {
+        UrlScheme::Https
+        | UrlScheme::Imaps
+        | UrlScheme::Smtps
+        | UrlScheme::Sieves
+        | UrlScheme::Pop3s => tls == Tls::Implicit,
+        UrlScheme::Http => tls == Tls::Plain,
+        UrlScheme::Imap | UrlScheme::Smtp | UrlScheme::Sieve | UrlScheme::Pop3 => {
+            matches!(tls, Tls::StartTls | Tls::Plain)
         }
-        None => match authority.split_once(':') {
-            Some((host, port)) => (host, Some(port)),
-            None => (authority, None),
-        },
-    };
-    let host_ok = !host.is_empty()
-        && host
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_' | b':'));
-    host_ok.then_some((host, port))
-}
-
-impl TryFrom<String> for EndpointUrl {
-    type Error = CoreError;
-    fn try_from(text: String) -> Result<Self, CoreError> {
-        Self::parse(&text)
+        // A scheme this build does not know admits no security.
+        _ => false,
     }
 }
 
-impl From<EndpointUrl> for String {
-    fn from(url: EndpointUrl) -> String {
-        url.0
-    }
-}
-
-impl fmt::Display for EndpointUrl {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl Origin {
-    /// Whether the host is this computer (`localhost`, `127.0.0.0/8`, `::1`).
-    pub fn is_loopback(&self) -> bool {
-        self.host == "localhost"
-            || self
-                .host
-                .parse::<std::net::IpAddr>()
-                .is_ok_and(|ip| ip.is_loopback())
-    }
-
-    /// Whether the host is an address only a tailnet hands out: one in Tailscale's ranges
-    /// (100.64.0.0/10, fd7a:115c:a1e0::/48), a MagicDNS name under `.ts.net`, or a MagicDNS
-    /// short name (one label, no dot), which only a tailnet's resolver answers for.
-    pub fn is_tailnet(&self) -> bool {
-        match self.host.parse::<std::net::IpAddr>() {
-            Ok(std::net::IpAddr::V4(ip)) => {
-                let [a, b, ..] = ip.octets();
-                a == 100 && (64..128).contains(&b)
-            }
-            Ok(std::net::IpAddr::V6(ip)) => {
-                let s = ip.segments();
-                s[0] == 0xfd7a && s[1] == 0x115c && s[2] == 0xa1e0
-            }
-            Err(_) => {
-                let host = self.host.trim_end_matches('.');
-                host.ends_with(".ts.net")
-                    || (!host.is_empty() && !host.contains('.') && host != "localhost")
-            }
-        }
-    }
-}
-
-impl fmt::Display for Origin {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}://{}:{}", self.scheme.text(), self.host, self.port)
-    }
-}
+porter_ids::string_newtype!(EndpointUrl, CoreError);
 
 /// Why an endpoint is not one porter will use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -332,6 +180,24 @@ pub enum EndpointFault {
 }
 
 impl ServiceEndpoint {
+    /// The endpoint of `family` at `url` for `login`, with the TLS mode its scheme means, when
+    /// that is coherent ([`Self::check`]).
+    pub fn coherent(family: Family, url: EndpointUrl, login: &LoginName) -> Option<Self> {
+        let tls = match url.origin().scheme {
+            UrlScheme::Https | UrlScheme::Imaps | UrlScheme::Smtps | UrlScheme::Pop3s => {
+                Tls::Implicit
+            }
+            _ => Tls::Plain,
+        };
+        let endpoint = Self {
+            tls,
+            family,
+            url,
+            login: login.clone(),
+        };
+        endpoint.check().ok().map(|()| endpoint)
+    }
+
     /// The protocol a relay speaks to it, if the relay carries its family.
     pub fn protocol(&self) -> Option<EndpointProtocol> {
         self.family.relay_protocol()
@@ -352,11 +218,11 @@ impl ServiceEndpoint {
         let origin = self.url.origin();
         if self
             .protocol()
-            .is_some_and(|p| p != origin.scheme.protocol())
+            .is_some_and(|p| Some(p) != EndpointProtocol::of_scheme(origin.scheme))
         {
             return Err(EndpointFault::SchemeMismatch);
         }
-        if !origin.scheme.admits(self.tls) {
+        if !admits(origin.scheme, self.tls) {
             return Err(EndpointFault::TlsMismatch);
         }
         let own_server = self.family == Family::ChatCompletions && origin.is_tailnet();
@@ -393,15 +259,24 @@ pub struct RelayPlan {
     pub kind: CapabilityKind,
     /// What it presents.
     pub auth: RelayAuth,
+    /// The paths of the endpoint's origin it may send requests to.
+    pub reach: Reach,
 }
 
 impl RelayPlan {
-    /// A plan to dial `endpoint` for a grant of `kind`, presenting `auth` there.
-    pub fn new(endpoint: ServiceEndpoint, kind: CapabilityKind, auth: RelayAuth) -> Self {
+    /// A plan to dial `endpoint` for a grant of `kind`, presenting `auth` there and going no
+    /// further than `reach`.
+    pub fn new(
+        endpoint: ServiceEndpoint,
+        kind: CapabilityKind,
+        auth: RelayAuth,
+        reach: Reach,
+    ) -> Self {
         Self {
             endpoint,
             kind,
             auth,
+            reach,
         }
     }
 }

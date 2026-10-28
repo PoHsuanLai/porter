@@ -8,7 +8,7 @@
 use porter_engines::{Arch, OsRelease, Roots};
 use porter_engines_install::helper::{Helper, Report, parse_args};
 use porter_engines_install::{CancelToken, Fetcher};
-use porter_http::HyperHttp;
+use porter_http_reqwest::ReqwestHttp;
 use std::io::{BufRead, Write};
 use std::process::ExitCode;
 
@@ -48,7 +48,7 @@ fn main() -> ExitCode {
     };
     let release = OsRelease::parse(&std::fs::read_to_string("/etc/os-release").unwrap_or_default());
     let helper = Helper::new(
-        Fetcher::new(HyperHttp::new()),
+        Fetcher::new(ReqwestHttp::new()),
         Roots::new(Roots::SYSTEM.into(), std::path::PathBuf::new()),
         arch,
         release,

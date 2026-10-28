@@ -3,7 +3,7 @@
 
 use crate::common::Script;
 use porter_calendar::{CalendarError, CalendarStore, Date, Event, Google, Graph, Jmap, When};
-use porter_core::WebUrl;
+use porter_ids::WebUrl;
 
 fn event(uid: &str) -> Event {
     let day = Date {

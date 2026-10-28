@@ -1,16 +1,17 @@
 //! What accountd persists (porter PLAN §2.3): the registry as one JSON document. Once it is on
 //! disk a vocabulary bump costs something: the stored `vocab` says which version wrote it, and
-//! reading an older file goes through the migration table, one step per version.
+//! reading an older file goes through the migration table, one step per version that changed the
+//! document's shape. A version that did not change it has no row: the document is read as it
+//! was and only its version moves.
 
+use crate::AccountId;
 use crate::account::Account;
-use crate::auth_kind::AuthKind;
-use crate::capability::{CapabilityKind, VocabVersion};
 use crate::consent::Grant;
-use crate::effective::Toggle;
-use crate::id::AccountId;
-use crate::identities::IdentityKind;
+use porter_capability::Toggle;
+use porter_capability::{CapabilityKind, VocabVersion};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::future::Future;
 
 /// The first vocabulary version a file was ever written with. Older numbers never reached a
 /// disk, so there is nothing to migrate from.
@@ -52,7 +53,7 @@ pub enum StoreFault {
     /// Written by a newer build.
     #[error("registry file is from vocabulary {0:?}, newer than this build")]
     FromNewerVocabulary(VocabVersion),
-    /// Older than any version with a migration.
+    /// Older than the first version ever stored, or a version whose change has no migration.
     #[error("no migration from vocabulary {0:?}")]
     NoMigration(VocabVersion),
     /// An account holds an endpoint porter would not use.
@@ -60,105 +61,53 @@ pub enum StoreFault {
     BadEndpoint(AccountId),
 }
 
+/// Why the registry could not be read or written.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum StoreError {
+    /// The stored document was refused (corrupt, from a newer build); the daemon must not start
+    /// empty over it.
+    #[error(transparent)]
+    Fault(#[from] StoreFault),
+    /// The medium failed (a full disk, a read-only state directory).
+    #[error("registry store unavailable")]
+    Unavailable,
+}
+
+/// Where the registry lives between runs (porter PLAN §2.3): a seam, so the daemon writes a JSON
+/// file atomically, an app hosting porter writes its platform state directory, and tests keep it
+/// in memory. Loads and saves the registry as one document.
+pub trait RegistryStore: Send + Sync {
+    /// The stored registry; an empty one where nothing was stored yet.
+    fn load(&self) -> impl Future<Output = Result<Persisted, StoreError>> + Send;
+
+    /// Replaces the stored registry, all or nothing.
+    fn save(&self, state: &Persisted) -> impl Future<Output = Result<(), StoreError>> + Send;
+}
+
+/// Stores nothing: the registry lives for the life of the process.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NoStore;
+
+impl RegistryStore for NoStore {
+    async fn load(&self) -> Result<Persisted, StoreError> {
+        Ok(Persisted::empty())
+    }
+
+    async fn save(&self, _state: &Persisted) -> Result<(), StoreError> {
+        Ok(())
+    }
+}
+
 /// A step from one vocabulary version to the next, over the document's JSON.
 type Migration = fn(Value) -> Result<Value, StoreFault>;
 
-/// Every step, keyed by the version it starts from. A bump of `VocabVersion::CURRENT` adds its
-/// row here, with a fixture of the old document in the tests.
-const MIGRATIONS: &[(VocabVersion, Migration)] = &[
-    (VocabVersion(3), from_three),
-    (VocabVersion(4), from_four),
-    (VocabVersion(5), from_five),
-    (VocabVersion(6), from_six),
-    (VocabVersion(7), from_seven),
-    (VocabVersion(8), from_eight),
-    (VocabVersion(9), from_nine),
-    (VocabVersion(10), from_ten),
-    (VocabVersion(11), from_eleven),
-    (VocabVersion(12), from_twelve),
-];
-
-/// 3 to 4 added the `sieve` family and changed the sheet's wire types; the stored document is
-/// the same shape, so only its version moves.
-fn from_three(document: Value) -> Result<Value, StoreFault> {
-    Ok(document)
-}
-
-/// 4 to 5 added the `agent` capability kind, `Subject::Agent`, `AuthKind::AgentLogin` and
-/// `AccountState::NeedsLogin`, all new variants: a document written at 4 has none of them and
-/// reads as it was, so only its version moves.
-fn from_four(document: Value) -> Result<Value, StoreFault> {
-    Ok(document)
-}
-
-/// 5 to 6 added the `tasks` data class (a grant for Task lists): a new variant, so a document
-/// written at 5 has none and reads as it was, and only its version moves.
-fn from_five(document: Value) -> Result<Value, StoreFault> {
-    Ok(document)
-}
-
-/// 6 to 7 added `Restriction::signed_in` (defaulted, absent when unknown), `ReauthReason`,
-/// `ProviderKind` and the `row` of the sheet's views, all defaulted: a document written at 6
-/// has none and reads as it was, with the sign-in's age unknown, so only its version moves.
-fn from_six(document: Value) -> Result<Value, StoreFault> {
-    Ok(document)
-}
-
-/// 7 to 8 added `GrantScope::Session` (`{"session": "<id>"}` beside `"once"` and `"always"`), a
-/// new variant: a document written at 7 holds only the two old words and reads as it was, so
-/// only its version moves.
-fn from_seven(document: Value) -> Result<Value, StoreFault> {
-    Ok(document)
-}
-
-/// 8 to 9 added `SignInFault::AlreadyAdded` and the defaulted `app_label` of `ConsentAsk` and
-/// `allow_label` of `ReviewView`, all of the sheet's wire and none of the document: a document
-/// written at 8 reads as it was, so only its version moves.
-fn from_eight(document: Value) -> Result<Value, StoreFault> {
-    Ok(document)
-}
-
-/// 9 to 10 added the defaulted `mark_face` of `ProviderRow` (`MarkFace`, `MarkLetter`,
-/// `MarkColour`), all of the sheet's wire and none of the document: a document written at 9
-/// reads as it was, so only its version moves.
-fn from_nine(document: Value) -> Result<Value, StoreFault> {
-    Ok(document)
-}
-
-/// 10 to 11 added the defaulted `group` of `ProviderRow` (`ProviderGroup`), the sheet's wire and
-/// none of the document: a document written at 10 reads as it was, so only its version moves.
-fn from_ten(document: Value) -> Result<Value, StoreFault> {
-    Ok(document)
-}
-
-/// 11 to 12 added `AuthKind::OwnProgram` (`own_program`, Tailscale's sign-in), three
-/// `SignInFault`s (`not_running`, `signed_out`, `not_allowed`) and `Machine`, `MachineOwner` and
-/// `NodeId`, all new variants or types of the wire: a document written at 11 has none of them and
-/// reads as it was, so only its version moves.
-fn from_eleven(document: Value) -> Result<Value, StoreFault> {
-    Ok(document)
-}
-
-/// 12 to 13 split the registry by who uses a credential (accountd keeps identities, inferd the AI
-/// keys and permits, syncd its own sign-ins). The document is the same shape, so a file reads as
-/// it was and a hosted service's own file loads unchanged; only accountd drops what it no longer
-/// holds, with [`prune_to_identities`], after the migration.
-fn from_twelve(document: Value) -> Result<Value, StoreFault> {
-    Ok(document)
-}
-
-/// Drops from `persisted` what accountd no longer holds: it keeps the identity accounts (OAuth,
-/// password, app password, and Nextcloud's sign-in, which is a password the server minted) and
-/// the Tailscale account, and empties the grants and the toggles. Only accountd applies this,
-/// and it keeps a copy of the old file first.
-pub fn prune_to_identities(persisted: &mut Persisted) {
-    persisted.accounts.retain(|account| {
-        IdentityKind::of(account.auth).is_some()
-            || matches!(account.auth, AuthKind::LoginFlowV2 | AuthKind::OwnProgram)
-    });
-    persisted.grants.clear();
-    persisted.toggles.clear();
-}
+/// Every step, keyed by the version it starts from. A bump of `VocabVersion::CURRENT` that changes
+/// the stored document's shape adds its row here, with a fixture of the old document in the
+/// tests; a bump that only adds defaulted fields or new variants adds nothing, since a document
+/// written before it reads as it was. Versions 3 to 12 changed no stored shape, so the table
+/// starts empty; their frozen documents are in the tests.
+const MIGRATIONS: &[(VocabVersion, Migration)] = &[];
 
 impl Persisted {
     /// A registry with nothing in it, at this build's vocabulary.
@@ -211,12 +160,9 @@ fn migrate(document: Value, from: VocabVersion) -> Result<Value, StoreFault> {
     let mut at = from;
     let mut document = document;
     while at < current {
-        let step = MIGRATIONS
-            .iter()
-            .find(|(start, _)| *start == at)
-            .map(|(_, step)| step)
-            .ok_or(StoreFault::NoMigration(at))?;
-        document = step(document)?;
+        if let Some((_, step)) = MIGRATIONS.iter().find(|(start, _)| *start == at) {
+            document = step(document)?;
+        }
         at = VocabVersion(at.0 + 1);
         if let Some(slot) = document.get_mut("vocab") {
             *slot = Value::from(at.0);

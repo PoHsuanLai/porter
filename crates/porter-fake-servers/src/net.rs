@@ -16,12 +16,20 @@ use tokio::net::{UnixListener, UnixStream};
 /// Where a fake binds.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Bind {
-    /// An ephemeral port on `127.0.0.1`.
-    Loopback,
-    /// This port on `127.0.0.1` (a fake that stops and comes back where it was).
+    /// This port on `127.0.0.1` (a fake that stops and comes back where it was); port 0 is an
+    /// ephemeral one.
     Port(u16),
     /// A socket file in this (scratch) directory, named after the fake.
     Socket(PathBuf),
+}
+
+/// How a phase of a mail session begins (IMAP, POP3 and SMTP fakes alike).
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Entry {
+    /// A new connection: send the greeting. `secure` says it is TLS from the first byte.
+    Greet { secure: bool },
+    /// After STARTTLS: the channel is secure and no greeting is sent.
+    Resume,
 }
 
 /// A bound listener and the address it is reachable at.
@@ -61,19 +69,12 @@ impl Listener {
     /// Binds as `bind` says; `name` names the socket file for `Bind::Socket`.
     pub async fn bind(bind: &Bind, name: &str) -> io::Result<Self> {
         match bind {
-            Bind::Loopback => {
-                let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
+            Bind::Port(port) => {
+                let listener = TcpListener::bind(("127.0.0.1", *port)).await?;
                 let port = listener.local_addr()?.port();
                 Ok(Self {
                     kind: Kind::Tcp(listener),
                     address: FakeAddress::Loopback(port),
-                })
-            }
-            Bind::Port(port) => {
-                let listener = TcpListener::bind(("127.0.0.1", *port)).await?;
-                Ok(Self {
-                    kind: Kind::Tcp(listener),
-                    address: FakeAddress::Loopback(*port),
                 })
             }
             #[cfg(unix)]

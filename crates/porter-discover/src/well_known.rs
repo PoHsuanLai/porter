@@ -2,12 +2,12 @@
 
 use crate::found::{DiscoverFault, Found, Source};
 use crate::mail::mail_claim;
-use porter_core::capability::{Access, Capability, CapabilityKind, Delta, MailTransport, Offered};
-use porter_core::capability::{PimCap, PimTransport};
-use porter_core::{
-    Claim, EndpointUrl, Family, LoginName, Offer, Provenance, ServiceEndpoint, Subject, Tls,
-};
-use porter_http::{Http, HttpRequest, HttpResponse, Method};
+use porter_capability::{Access, Capability, CapabilityKind, Delta, MailTransport};
+use porter_capability::{Claim, Offer, Provenance, Subject};
+use porter_capability::{PimCap, PimTransport};
+use porter_core::{EndpointUrl, Family, LoginName, ServiceEndpoint, Tls};
+use porter_http::http::{Method, Response};
+use porter_http::{HeaderText, Http, request_to};
 use porter_provider::DomainName;
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -48,11 +48,11 @@ pub fn well_known_urls(domain: &DomainName, kind: CapabilityKind) -> Vec<Endpoin
 pub fn well_known_found(
     kind: CapabilityKind,
     requested: &EndpointUrl,
-    response: &HttpResponse,
+    response: &Response<Vec<u8>>,
     login: &LoginName,
 ) -> Result<Found, DiscoverFault> {
     let (_, family) = well_known_of(kind).ok_or(DiscoverFault::NoServers)?;
-    let url = match response.status.0 {
+    let url = match response.status().as_u16() {
         301 | 302 | 303 | 307 | 308 => redirect_target(requested, response.header("location"))?,
         200..=299 | 401 => requested.clone(),
         404 | 410 => return Err(DiscoverFault::NoServers),
@@ -83,7 +83,7 @@ pub async fn discover_well_known<H: Http>(
 ) -> Result<Found, DiscoverFault> {
     let mut fault = DiscoverFault::NoServers;
     for url in well_known_urls(domain, kind) {
-        let Ok(request) = HttpRequest::to(Method::Get, &url) else {
+        let Ok(Ok(request)) = request_to(Method::GET, &url).map(|r| r.body(Vec::new())) else {
             continue;
         };
         match http.send(request).await {
@@ -113,7 +113,7 @@ fn redirect_target(
         false => location.to_owned(),
     };
     let url = EndpointUrl::parse(&text).map_err(|_| DiscoverFault::Unreadable)?;
-    match url.origin().scheme == porter_core::UrlScheme::Https {
+    match url.origin().scheme == porter_ids::UrlScheme::Https {
         true => Ok(url),
         false => Err(DiscoverFault::Unreadable),
     }
@@ -124,7 +124,7 @@ fn well_known_claim(kind: CapabilityKind) -> Claim {
         access: Access::ReadWrite,
         delta: Delta::Poll,
         transport,
-        collections: Offered::Present,
+        collections: true,
     };
     let offer = match kind {
         CapabilityKind::Calendar => Offer::Present(Capability::Calendar(pim(PimTransport::CalDav))),
@@ -132,7 +132,7 @@ fn well_known_claim(kind: CapabilityKind) -> Claim {
         CapabilityKind::Contacts => {
             Offer::Present(Capability::Contacts(pim(PimTransport::CardDav)))
         }
-        _ => return mail_claim(MailTransport::Jmap, Offered::Absent),
+        _ => return mail_claim(MailTransport::Jmap, false),
     };
     Claim {
         subject: Subject::Account,
@@ -161,7 +161,7 @@ pub fn parse_jmap_session(json: &str) -> Result<Found, DiscoverFault> {
         return Err(DiscoverFault::Unreadable);
     }
     let url = EndpointUrl::parse(&session.api_url).map_err(|_| DiscoverFault::Unreadable)?;
-    let tls = match url.origin().scheme == porter_core::UrlScheme::Https {
+    let tls = match url.origin().scheme == porter_ids::UrlScheme::Https {
         true => Tls::Implicit,
         false => Tls::Plain,
     };
@@ -173,10 +173,7 @@ pub fn parse_jmap_session(json: &str) -> Result<Found, DiscoverFault> {
     };
     endpoint.check().map_err(|_| DiscoverFault::NoServers)?;
     let has = |name: &str| session.capabilities.contains_key(name);
-    let send = match has(SUBMISSION) {
-        true => Offered::Present,
-        false => Offered::Absent,
-    };
+    let send = has(SUBMISSION);
     let claims = [
         has(MAIL).then(|| mail_claim(MailTransport::Jmap, send)),
         has(CONTACTS).then(|| jmap_pim(Capability::Contacts)),
@@ -201,7 +198,7 @@ fn jmap_pim(wrap: fn(PimCap) -> Capability) -> Claim {
             access: Access::ReadWrite,
             delta: Delta::Poll,
             transport: PimTransport::Jmap,
-            collections: Offered::Present,
+            collections: true,
         })),
         provenance: Provenance::Discovered,
     }

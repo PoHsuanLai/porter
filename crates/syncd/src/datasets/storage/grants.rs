@@ -9,13 +9,12 @@
 //! `google_photos_upload` and `google_photos_picker` endpoints are Google Photos.
 
 use crate::datasets::pim::AccountdUnavailable;
-use porter_client::{Accounts, Found, Transport};
-use porter_core::capability::{
-    Access, Albums, Delta, LibraryRead, Offered, QuotaReport, StorageScope,
-};
+use porter_capability::{Access, Albums, Delta, LibraryRead, StorageScope};
+use porter_client::{Accounts, Found, HostedCore, InProcess};
 use porter_core::consent::Usage;
-use porter_core::need::{PhotosNeed, StorageNeed};
-use porter_core::{Candidate, DataClass, Family, Need, ServiceEndpoint};
+use porter_core::{Candidate, DataClass, Family, ServiceEndpoint};
+use porter_match::Need;
+use porter_match::{PhotosNeed, StorageNeed};
 use std::future::Future;
 use std::sync::Arc;
 
@@ -64,7 +63,7 @@ pub fn storage_need() -> Need {
         Access::ReadWrite,
         Delta::Poll,
         StorageScope::AppFolder,
-        QuotaReport::Unreported,
+        false,
     ))
 }
 
@@ -75,7 +74,7 @@ pub fn drive_need() -> Need {
         Access::ReadWrite,
         Delta::Poll,
         StorageScope::Full,
-        QuotaReport::Unreported,
+        false,
     ))
 }
 
@@ -83,9 +82,9 @@ pub fn drive_need() -> Need {
 pub fn photos_need() -> Need {
     Need::Photos(PhotosNeed::new(
         LibraryRead::PickerOnly,
-        Offered::Present,
+        true,
         Albums::AppCreated,
-        Offered::Absent,
+        false,
         Delta::None,
     ))
 }
@@ -95,9 +94,9 @@ pub fn photos_need() -> Need {
 pub fn picker_need() -> Need {
     Need::Photos(PhotosNeed::new(
         LibraryRead::PickerOnly,
-        Offered::Absent,
+        false,
         Albums::None,
-        Offered::Absent,
+        false,
         Delta::None,
     ))
 }
@@ -175,7 +174,9 @@ impl<T> ClientStorageGrants<T> {
     }
 }
 
-impl<T: Transport> StorageGrants for ClientStorageGrants<T> {
+impl<C: HostedCore, B: Send + Sync, H: Send + Sync> StorageGrants
+    for ClientStorageGrants<InProcess<C, B, H>>
+{
     async fn granted(&self, kind: StorageKind) -> Result<Vec<Candidate>, AccountdUnavailable> {
         // Google Photos: an account that uploads, or one that only picks (each scope stands
         // alone); the same grant answers both, and `seen` keeps one candidate per account.

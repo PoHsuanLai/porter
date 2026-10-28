@@ -1,0 +1,104 @@
+//! `org.quire.Accounts1.Launcher` at `/org/quire/Accounts1` on accountd's name: what the agent
+//! launcher (docket-acp) asks of the daemon that holds the AI keys. Callable only by a connection
+//! whose caller role is `AgentLauncher` (a unit's row in the caller table); accountd refuses
+//! every other sender `AccessDenied`.
+//!
+//! The launcher registers the agent programs it runs (`RegisterLauncher`); accountd answers with two
+//! unicast signals, `AgentLoginRequested` and `AgentLogoutRequested`, sent to the connection that
+//! registered the agent's program, and the launcher reports only a coarse outcome
+//! (`ReportAgentLogin`, `ReportAgentLogout`). Nothing of an agent's login crosses: no token, no
+//! URL, no code.
+//!
+//! The launcher also owns launcher sessions: `BeginSession` and `EndSession` name the span a
+//! "This session only" permit lasts, and `RequestAgentKey` opens the consent sheet for an agent
+//! program's key, offering that scope when the request names an open session of the caller. For an
+//! agent that cannot be pointed at inferd, `IssueProcessCredential` hands the process one key, on a
+//! sealed memfd, under a permit; `ProcessCredentialRevoked` tells the launcher
+//! that accountd ended it.
+//!
+//! Errors are `org.quire.Accounts1.Error.<Name>`: the refusals of [`crate::accounts::refusal_error_name`] and the
+//! launcher's own, [`LauncherFault`](crate::accounts::LauncherFault).
+
+use crate::Details;
+use porter_dbus_macros::bus_interface;
+use zbus::zvariant::{OwnedFd, OwnedObjectPath};
+
+/// The interface, written once. `#[bus_interface]` makes [`LauncherProxy`] for its callers from this
+/// trait, [`LauncherServer`] for the daemon to implement and [`LauncherServed`] to register.
+#[bus_interface(
+    interface = "org.quire.Accounts1.Launcher",
+    default_service = "org.quire.Accounts1",
+    default_path = "/org/quire/Accounts1"
+)]
+pub trait Launcher {
+    /// Registers the connection as the launcher of these agent programs (`AgentProgram` ids). The
+    /// registration lives as long as the connection. One launcher per program, first wins: a
+    /// program a live connection already holds is `AlreadyRegistered` (`LauncherFault`);
+    /// registering a program the caller holds is a no-op, and later calls add more programs.
+    fn register_launcher(&self, programs: &[&str]) -> zbus::Result<()>;
+    /// Opens a launcher session (a `SessionToken` id the launcher chose, usually an ACP
+    /// session). Only a connection that registered a program may. The session belongs to this
+    /// connection and ends at `EndSession` or when the connection leaves the bus. A session
+    /// another connection holds is `SessionTaken`; beginning one this connection holds is a
+    /// no-op.
+    fn begin_session(&self, session: &str) -> zbus::Result<()>;
+    /// Ends a session this connection began: its session permits are removed and the process
+    /// credentials under them end (`session_closed`). A session that is not open, or is another
+    /// connection's, is `UnknownSession`.
+    fn end_session(&self, session: &str) -> zbus::Result<()>;
+    /// Opens the consent sheet for an agent program's key: the app is `org.quire.Agent.<program>`.
+    /// `session` is empty, or an open session of this connection, in which case the sheet also
+    /// offers "This session only". Returns a Request object, answered with the chosen key and
+    /// the permit for it: the results of a `Choose` response, whose `grant` is the permit's id.
+    /// For a program this connection registered.
+    fn request_agent_key(
+        &self,
+        program: &str,
+        class: &str,
+        session: &str,
+        parent_window: &str,
+        options: &Details,
+    ) -> zbus::Result<OwnedObjectPath>;
+    /// What the launcher reports of an `AgentLoginRequested`: `outcome` is `ready`, `failed` or
+    /// `cancelled`, `reason` one of `LoginFault`'s words for `failed` and empty otherwise (see
+    /// `LoginOutcome::to_wire`). Only the connection that got the request may answer it; any
+    /// other is `UnknownRequest`.
+    fn report_agent_login(&self, request: &str, outcome: &str, reason: &str) -> zbus::Result<()>;
+    /// What the launcher reports of an `AgentLogoutRequested`; `ready` means signed out.
+    fn report_agent_logout(&self, request: &str, outcome: &str, reason: &str) -> zbus::Result<()>;
+    /// An API key for a process the launcher spawns: for a program the caller's connection has
+    /// registered, under `permit` (a key permit for `org.quire.Agent.<program>`). The reply is
+    /// the credential's id and its handle, a file descriptor (`h`, a sealed memfd) holding the key
+    /// text, read position at the start. That is the one way a key is handed over, since a file
+    /// would be a place a key could be left. The key is in neither the body nor any signal.
+    fn issue_process_credential(
+        &self,
+        permit: &str,
+        program: &str,
+    ) -> zbus::Result<(String, OwnedFd)>;
+    /// Ends a credential this connection was issued: the launcher ends the process (a memfd
+    /// that was passed on cannot be recalled).
+    fn revoke_process_credential(&self, id: &str) -> zbus::Result<()>;
+    /// Sent to the registrant of `program` alone: sign the agent in (the agent does it itself;
+    /// accountd learns only the outcome).
+    #[zbus(signal)]
+    fn agent_login_requested(
+        &self,
+        request: String,
+        account: String,
+        program: String,
+    ) -> zbus::Result<()>;
+    /// Sent to the registrant of `program` alone: sign the agent out.
+    #[zbus(signal)]
+    fn agent_logout_requested(
+        &self,
+        request: String,
+        account: String,
+        program: String,
+    ) -> zbus::Result<()>;
+    /// Sent to the launcher that was issued the credential, alone: accountd ended it (the permit
+    /// was revoked or the account removed), so the launcher must end the process. `reason` is a
+    /// `CredentialEnd` word. Not sent when the launcher itself ended it or left the bus.
+    #[zbus(signal)]
+    fn process_credential_revoked(&self, id: String, reason: String) -> zbus::Result<()>;
+}

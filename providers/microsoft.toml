@@ -23,31 +23,46 @@ mx_suffixes = ["mail.protection.outlook.com", "outlook.com"]
 family = "imap"
 endpoint = "imaps://outlook.office365.com:993"
 kind = "mail"
-v = { access = "read_write", send = "present", delta = "push", transport = "imap", labels = "folders" }
+access = "read_write"
+send = "present"
+delta = "push"
+transport = "imap"
+labels = "folders"
 
 [[capability]]
 family = "graph"
 endpoint = "https://graph.microsoft.com"
 kind = "calendar"
-v = { access = "read_write", delta = "poll", transport = "graph", collections = "present" }
+access = "read_write"
+delta = "poll"
+transport = "graph"
+collections = "present"
 
 [[capability]]
 family = "graph"
 endpoint = "https://graph.microsoft.com"
 kind = "contacts"
-v = { access = "read_write", delta = "poll", transport = "graph", collections = "present" }
+access = "read_write"
+delta = "poll"
+transport = "graph"
+collections = "present"
 
 [[capability]]
 family = "graph"
 endpoint = "https://graph.microsoft.com"
 kind = "tasks"
-v = { access = "read_write", delta = "poll", transport = "graph", collections = "present" }
+access = "read_write"
+delta = "poll"
+transport = "graph"
+collections = "present"
 
 [[capability]]
 family = "graph"
 endpoint = "https://graph.microsoft.com"
 kind = "notes"
-v = { access = "read_write", delta = "none", transport = "one_note" }
+access = "read_write"
+delta = "none"
+transport = "one_note"
 
 [[capability]]
 family = "graph"
@@ -59,7 +74,13 @@ kind = "storage"
 # `https://<n>.up.1drv.com/up/<token>` and `https://<n>.files.1drv.com/...`, OneDrive for Business
 # and SharePoint `https://<tenant>[-my].sharepoint.com/...`). `*.sharepoint.com` is every tenant's.
 linked_origins = ["*.up.1drv.com", "*.files.1drv.com", "*.sharepoint.com"]
-v = { access = "read_write", delta = "poll", quota = "reported", scope = "app_folder", hashes = "quick_xor", ranges = "present", chunked_upload = "present" }
+access = "read_write"
+delta = "poll"
+quota = "reported"
+scope = "app_folder"
+hashes = "quick_xor"
+ranges = "present"
+chunked_upload = "present"
 
 # The whole OneDrive (`Files.ReadWrite`), asked only when the person turns on "Show in Files" for
 # the account, in a sign-in that asks for it alone; the app folder above is what sign-in asks.
@@ -69,4 +90,10 @@ endpoint = "https://graph.microsoft.com"
 kind = "storage"
 ask = "on_use"
 linked_origins = ["*.up.1drv.com", "*.files.1drv.com", "*.sharepoint.com"]
-v = { access = "read_write", delta = "poll", quota = "reported", scope = "full", hashes = "quick_xor", ranges = "present", chunked_upload = "present" }
+access = "read_write"
+delta = "poll"
+quota = "reported"
+scope = "full"
+hashes = "quick_xor"
+ranges = "present"
+chunked_upload = "present"

@@ -5,6 +5,7 @@
 //! ([`Edit`]: files and folders made here, new bytes, new names and places, removals), which
 //! are the queue of what is sent.
 
+use crate::Reason;
 use crate::drive::NodeId;
 use crate::ranges::Ranges;
 use porter_fs::atomic::AtomicFile;
@@ -134,10 +135,10 @@ pub(crate) struct Edit {
     pub made: i64,
     /// Its place in the queue: the oldest change is sent first.
     pub seq: u64,
-    /// The drive refused it (no room, no right to change it): the words, until it is tried
-    /// again (the next listing change, or a new change of it).
-    #[serde(default)]
-    pub refused: Option<String>,
+    /// The drive refused it (no room, no right to change it): why, until it is tried again
+    /// (the next listing change, or a new change of it).
+    #[serde(default, deserialize_with = "crate::reason::read_kept")]
+    pub refused: Option<Reason>,
     /// The id reserved for an item made here, on a drive that lets its client choose one: on
     /// the disk before it is first sent, so every try makes the same item.
     #[serde(default)]

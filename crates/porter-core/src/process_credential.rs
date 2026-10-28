@@ -2,53 +2,27 @@
 //! session ask P2). accountd makes it; the launcher names it to end the credential and is told it
 //! when accountd ends one. It is not a secret and it is never derived from one.
 
-use crate::error::CoreError;
-use crate::id::is_id;
+use porter_ids::IdError;
+use porter_ids::is_id;
 use serde::{Deserialize, Serialize};
-use std::fmt;
 
 /// One handed-off credential. The same grammar as every id of ours, so it is also safe as a
-/// single path segment (the tmpfs file lives in a directory of this name).
+/// single path segment.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct ProcessCredentialId(Box<str>);
 
 impl ProcessCredentialId {
     /// The id written as `text`.
-    pub fn parse(text: &str) -> Result<Self, CoreError> {
+    pub fn parse(text: &str) -> Result<Self, IdError> {
         match is_id(text) {
             true => Ok(Self(text.into())),
-            false => Err(CoreError::MalformedId {
-                what: "process credential id",
-                text: text.to_owned(),
-            }),
+            false => Err(IdError::malformed("process credential id", text)),
         }
     }
-
-    /// The id as written.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
 }
 
-impl TryFrom<String> for ProcessCredentialId {
-    type Error = CoreError;
-    fn try_from(text: String) -> Result<Self, CoreError> {
-        Self::parse(&text)
-    }
-}
-
-impl From<ProcessCredentialId> for String {
-    fn from(id: ProcessCredentialId) -> String {
-        id.0.into()
-    }
-}
-
-impl fmt::Display for ProcessCredentialId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
+porter_ids::string_newtype!(ProcessCredentialId, IdError);
 
 #[cfg(test)]
 mod tests {

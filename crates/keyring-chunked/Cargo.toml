@@ -1,0 +1,18 @@
+[package]
+name = "keyring-chunked"
+description = "A keyring-core credential store that keeps a secret too long for one entry (the Windows Credential Manager's 2560 bytes) in several, and reads it back whole."
+version = "0.1.0"
+edition.workspace = true
+license = "MIT OR Apache-2.0"
+rust-version.workspace = true
+repository.workspace = true
+keywords = ["keyring", "keyring-core", "credential", "windows", "secret"]
+categories = ["authentication", "os"]
+publish = false
+
+[dependencies]
+keyring-core = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

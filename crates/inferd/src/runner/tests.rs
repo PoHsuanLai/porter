@@ -1,12 +1,16 @@
 use super::*;
-use crate::serve::RunningTurn;
-use crate::testkit::{Scratch, models};
+use crate::testkit::models;
+use porter_capability::Locality;
+use porter_capability::ModelId;
+use porter_core::AccountId;
+use porter_core::DataClass;
 use porter_core::consent::Usage;
-use porter_core::{AccountId, DataClass, Locality, ModelId};
 use porter_infer::{
     ChatMessage, ChatRequest, ImagePart, ImageSource, MessagePart, Role, SpeakRequest,
     TranscribeBegin, TranscribeMode, VoiceName,
 };
+use porter_router::seams::RunningTurn;
+use test_kit::Scratch;
 use tokio::io::AsyncReadExt;
 use tokio::net::UnixListener;
 
@@ -108,7 +112,7 @@ async fn kinds_the_runner_cannot_serve_are_refused_unsupported_and_so_is_a_step_
         InferRequest::Speak(
             SpeakRequest::new(
                 "hi".into(),
-                porter_core::capability::LanguageTag::parse("en").expect("tag"),
+                porter_capability::LanguageTag::parse("en").expect("tag"),
                 DataClass::Voice,
                 Usage::Interactive,
             )
@@ -139,7 +143,7 @@ async fn a_model_with_no_embedding_details_refuses_to_embed() {
     let request = InferRequest::Embed(porter_infer::EmbedRequest::new(
         vec!["a".into()],
         porter_infer::EmbedRole::Query,
-        porter_core::need::DimsNeed::Any,
+        porter_match::DimsNeed::Any,
         DataClass::Notes,
         Usage::Background,
     ));
@@ -162,7 +166,7 @@ async fn dropping_a_running_turn_closes_the_engines_connection() {
     assert!(engine.read(&mut buf).await.expect("read") > 0);
     drop(turn);
     // Dropping the turn aborts its task and closes the socket: the engine sees the end.
-    let end = tokio::time::timeout(porter_fake::GENEROUS, async {
+    let end = tokio::time::timeout(test_kit::GENEROUS, async {
         loop {
             match engine.read(&mut buf).await {
                 Ok(0) | Err(_) => return,

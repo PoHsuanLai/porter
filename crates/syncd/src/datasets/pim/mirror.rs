@@ -14,7 +14,7 @@ use super::PimKind;
 use super::vdir::{self, Meta};
 use crate::dataset::{Dataset, DatasetError, DatasetId, Direction, fingerprint};
 use crate::journal::{Journal, Op};
-use porter_core::Bytes;
+use porter_ids::Bytes;
 use porter_sync::{Blob, ConflictRule, ContentHash, ItemPath, ItemState, LocalId, Scanned};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -161,7 +161,7 @@ impl Inner {
             return server;
         }
         let digest = Sha256::digest(path.0.as_bytes());
-        let tag: String = digest.iter().take(4).map(|b| format!("{b:02x}")).collect();
+        let tag = hex::encode(&digest[..4]);
         let ext = self.kind.extension();
         let stem = server.strip_suffix(ext).unwrap_or(&server);
         format!("{stem}-{tag}{ext}")

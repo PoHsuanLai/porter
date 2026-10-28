@@ -22,18 +22,22 @@ use super::{Feed, FeedChange, FeedCursor, Page, PimSource};
 use crate::dataset::fingerprint;
 use crate::datasets::pim::PimKind;
 use crate::datasets::pim::discover::{DiscoverError, Found};
-use crate::datasets::pim::relay::{PimDial, pim_http};
+use crate::datasets::pim::relay::pim_http;
 use json::{Calendar, CalendarPage, Event, EventPage};
 use porter_client::{Accounts, Transport};
-use porter_core::{Bytes, EndpointUrl, GrantId, WebUrl};
-use porter_http::{Http, HttpError, HttpRequest, HttpResponse, Method};
+use porter_core::EndpointUrl;
+use porter_core::GrantId;
+use porter_http::http::{Method, Response};
+use porter_http::{HeaderText, Http, HttpError, request};
+use porter_http_relay::{RelayDial, RelayHttp};
+use porter_ids::{Bytes, UnixSeconds, WebUrl};
+use porter_sync::{Clock, DELETED};
 use porter_sync::{
     ItemKind, ItemPath, More, RemoteId, RemoteItem, RemoteVersion, ReplicaError, RetryAfter,
     Tombstone,
 };
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
-use storage_webdav::{Clock, DELETED, StreamHttp};
 
 /// How many events a delta page asks for.
 const PAGE: usize = 100;
@@ -55,8 +59,9 @@ impl FeedCursor for DeltaLink {
 /// The calendars of one Microsoft account.
 #[derive(Debug)]
 pub struct GraphCalendarSource<T: Transport> {
-    http: Arc<StreamHttp<PimDial<T>>>,
+    http: Arc<RelayHttp<RelayDial<T>>>,
     base: WebUrl,
+    clock: Clock,
 }
 
 impl<T: Transport> GraphCalendarSource<T> {
@@ -65,11 +70,13 @@ impl<T: Transport> GraphCalendarSource<T> {
         accounts: Arc<Accounts<T>>,
         grant: GrantId,
         endpoint: EndpointUrl,
+        clock: Clock,
     ) -> Result<Self, DiscoverError> {
         let base = WebUrl::try_from(&endpoint).map_err(|_| DiscoverError::Unreadable)?;
         Ok(Self {
             http: Arc::new(pim_http(accounts, grant, endpoint)),
             base,
+            clock,
         })
     }
 }
@@ -77,7 +84,7 @@ impl<T: Transport> GraphCalendarSource<T> {
 /// One calendar's feed.
 #[derive(Debug)]
 pub struct GraphCalendarFeed<T: Transport> {
-    http: Arc<StreamHttp<PimDial<T>>>,
+    http: Arc<RelayHttp<RelayDial<T>>>,
     base: String,
     calendar: String,
     clock: Clock,
@@ -87,55 +94,31 @@ pub(super) fn origin(base: &WebUrl) -> String {
     base.as_str().trim_end_matches('/').to_owned()
 }
 
+/// What a Graph or Google id keeps in a path segment: the unreserved characters and `=`, which
+/// the ids' base64 padding uses.
+const ID_SEGMENT: &porter_ids::percent::AsciiSet = &porter_ids::percent::UNRESERVED.remove(b'=');
+
 /// A path segment: everything but unreserved characters and `=` percent-encoded.
 pub(super) fn encode(segment: &str) -> String {
-    segment
-        .bytes()
-        .map(
-            |b| match b.is_ascii_alphanumeric() || b"-_.~=".contains(&b) {
-                true => char::from(b).to_string(),
-                false => format!("%{b:02X}"),
-            },
-        )
-        .collect()
+    porter_ids::percent::encode(segment, ID_SEGMENT)
 }
 
 pub(super) fn decode(segment: &str) -> String {
-    let bytes = segment.as_bytes();
-    let mut out = Vec::new();
-    let mut at = 0;
-    while at < bytes.len() {
-        let hex = bytes
-            .get(at + 1..at + 3)
-            .and_then(|h| std::str::from_utf8(h).ok())
-            .and_then(|h| u8::from_str_radix(h, 16).ok());
-        match (bytes[at], hex) {
-            (b'%', Some(byte)) => {
-                out.push(byte);
-                at += 3;
-            }
-            (byte, _) => {
-                out.push(byte);
-                at += 1;
-            }
-        }
-    }
-    String::from_utf8_lossy(&out).into_owned()
-}
-
-pub(super) fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
+    porter_ids::percent::decode(segment)
 }
 
 /// The directory name of a calendar: stable (a rename must not move it) and short (Graph's ids
 /// are long).
 fn segment_of(id: &str) -> String {
-    format!("graph-{}", hex(&Sha256::digest(id.as_bytes())[..6]))
+    format!("graph-{}", hex::encode(&Sha256::digest(id.as_bytes())[..6]))
 }
 
 /// The file name of an event: short and safe whatever its id.
 pub(super) fn name_of(id: &str) -> ItemPath {
-    ItemPath(format!("{}.ics", hex(&Sha256::digest(id.as_bytes())[..10])))
+    ItemPath(format!(
+        "{}.ics",
+        hex::encode(&Sha256::digest(id.as_bytes())[..10])
+    ))
 }
 
 /// A calendar's colour: its `hexColor` when it has one, else the nearest of Outlook's named
@@ -159,17 +142,17 @@ fn color_of(calendar: &Calendar) -> Option<String> {
     Some(named.to_owned())
 }
 
-pub(super) fn retry_after(response: &HttpResponse) -> RetryAfter {
+pub(super) fn retry_after(response: &Response<Vec<u8>>, now: UnixSeconds) -> RetryAfter {
     response
-        .retry_after_seconds()
+        .retry_after_seconds(now)
         .map_or(RetryAfter(30), RetryAfter)
 }
 
-fn read_error(response: &HttpResponse) -> ReplicaError {
-    match response.status.0 {
+fn read_error(response: &Response<Vec<u8>>, now: UnixSeconds) -> ReplicaError {
+    match response.status().as_u16() {
         401 | 403 => ReplicaError::Unauthorized,
         404 => ReplicaError::Gone,
-        _ => ReplicaError::Transient(retry_after(response)),
+        _ => ReplicaError::Transient(retry_after(response, now)),
     }
 }
 
@@ -181,13 +164,13 @@ pub(super) async fn get<H: Http>(
     http: &H,
     url: &str,
     prefer: Option<&str>,
-) -> Result<HttpResponse, HttpError> {
+) -> Result<Response<Vec<u8>>, HttpError> {
     let url = WebUrl::parse(url).map_err(|_| HttpError::Unreachable)?;
-    let mut request = HttpRequest::new(Method::Get, url).with_header("Accept", "application/json");
+    let mut builder = request(Method::GET, &url).header("Accept", "application/json");
     if let Some(prefer) = prefer {
-        request = request.with_header("Prefer", prefer);
+        builder = builder.header("Prefer", prefer);
     }
-    http.send(request).await
+    http.send(builder.body(Vec::new())?).await
 }
 
 impl<T: Transport + 'static> PimSource for GraphCalendarSource<T> {
@@ -208,13 +191,13 @@ impl<T: Transport + 'static> PimSource for GraphCalendarSource<T> {
                 HttpError::Unreachable | HttpError::TimedOut => DiscoverError::Unreachable,
                 _ => DiscoverError::Unreadable,
             })?;
-            match response.status.0 {
+            match response.status().as_u16() {
                 200 => {}
                 401 | 403 => return Err(DiscoverError::Unauthorized),
                 other => return Err(DiscoverError::Status(other)),
             }
             let page: CalendarPage =
-                serde_json::from_slice(&response.body).map_err(|_| DiscoverError::Unreadable)?;
+                serde_json::from_slice(response.body()).map_err(|_| DiscoverError::Unreadable)?;
             for calendar in &page.value {
                 let own = format!("{base}/v1.0/me/calendars/{}/", encode(&calendar.id));
                 found.push(Found {
@@ -244,7 +227,7 @@ impl<T: Transport + 'static> PimSource for GraphCalendarSource<T> {
             http: Arc::clone(&self.http),
             base: origin(&self.base),
             calendar: id,
-            clock: Clock::system(),
+            clock: self.clock.clone(),
         }
     }
 }
@@ -303,13 +286,13 @@ impl<T: Transport + 'static> Feed for GraphCalendarFeed<T> {
         let response = get(&*self.http, &url, Some(&prefer))
             .await
             .map_err(unreached)?;
-        match (response.status.0, resuming) {
+        match (response.status().as_u16(), resuming) {
             (200, _) => {}
             // `syncStateNotFound` and its kin: the server dropped what the link stands for.
             (410, true) => return Err(ReplicaError::AnchorExpired),
-            _ => return Err(read_error(&response)),
+            _ => return Err(read_error(&response, self.clock.now())),
         }
-        let page: EventPage = serde_json::from_slice(&response.body)
+        let page: EventPage = serde_json::from_slice(response.body())
             .map_err(|_| ReplicaError::Transient(RetryAfter(30)))?;
         let (next, more) = match (page.next, page.delta) {
             (Some(next), _) => (next, More::More),
@@ -341,10 +324,10 @@ impl<T: Transport + 'static> Feed for GraphCalendarFeed<T> {
         let response = get(&*self.http, &url, Some(prefer))
             .await
             .map_err(unreached)?;
-        if response.status.0 != 200 {
-            return Err(read_error(&response));
+        if response.status().as_u16() != 200 {
+            return Err(read_error(&response, self.clock.now()));
         }
-        let event: Event = serde_json::from_slice(&response.body)
+        let event: Event = serde_json::from_slice(response.body())
             .map_err(|_| ReplicaError::Transient(RetryAfter(30)))?;
         convert::to_ics(&event)
             .map(String::into_bytes)

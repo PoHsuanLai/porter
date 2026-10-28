@@ -7,31 +7,36 @@
 use crate::attached::AttachedBook;
 use crate::cloud::Cloud;
 use crate::cloud::models::RemoteModel;
+use crate::cloud::spend::UsageValue;
 use crate::cloud::turn::CloudPin;
-use crate::local::{LocalModel, Weights};
 use crate::peers::{Caller, Role};
 use crate::probed::{ProbedBook, Standing};
-use crate::router::placed::{Allowed, Placed, Rules, Serving, Unplaced, choose_in};
-use crate::router::{Listed, Unchosen, choose, chosen_for};
 use crate::runner::{Pin, Pinned};
 use crate::seats::Gate;
-use crate::serve::{EngineFailed, EngineHost};
-use crate::session::{RouteDecision, Routing, SessionSpec};
 use crate::settings::{Live, Settings};
-use crate::startup::Cause;
 use crate::supervise::{Snapshot, Supervised};
-use crate::swap::{Budget, running_of, swap_cost};
 use crate::toolproof::{ToolProofs, asks_for_tools};
 use engine_supervisor::{EngineId, EngineState, MonoMs};
 use model_catalog::Licence;
-use porter_core::capability::SpeechMode;
+use model_provider::Money;
+use porter_capability::SpeechMode;
+use porter_capability::{Locality, Tier};
+use porter_core::AccountId;
 use porter_core::consent::{Availability, Usage};
-use porter_core::{AccountId, AppId, DataClass, Locality, MicroUsd, Need, Tier};
+use porter_core::{AppId, DataClass};
 use porter_infer::{
-    Asker, InferRefusal, LicenceClass, ModelCard, ModelRef, Period, Permit, PickRefusal,
-    PlaceRefusal, Policy, Readiness, ServedBy, Slot, SpendScope, SpendVerdict, SwapCost, TierMap,
-    Why,
+    Asker, ChargeTotal, InferRefusal, LicenceClass, ModelCard, ModelRef, Period, Permit,
+    PickRefusal, PlaceRefusal, Policy, Readiness, ServedBy, Slot, SpendScope, SpendVerdict,
+    SwapCost, TierMap, Why,
 };
+use porter_match::Need;
+use porter_router::local::{LocalModel, Weights};
+use porter_router::router::placed::{Allowed, Placed, Rules, Serving, Unplaced, choose_in};
+use porter_router::router::{Listed, Unchosen, choose, chosen_for};
+use porter_router::seams::{EngineFailed, EngineHost};
+use porter_router::session::{RouteDecision, Routing, SessionSpec};
+use porter_router::startup::Cause;
+use porter_router::swap::{Budget, running_of, swap_cost};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -275,7 +280,7 @@ impl Engines {
 
     /// What `app` has used of hosted models today and this month, by name; empty when this daemon
     /// has none (the `Usage` dictionary of `Inference1`).
-    pub fn usage_of(&self, app: &AppId) -> Vec<(String, u64)> {
+    pub fn usage_of(&self, app: &AppId) -> Vec<(String, UsageValue)> {
         match &self.book.cloud {
             Some(cloud) => cloud
                 .ledger()
@@ -284,18 +289,23 @@ impl Engines {
         }
     }
 
-    /// What was spent through `account` on hosted models this calendar month, and the monthly cap
-    /// on an account (`ai.spend.account_monthly_cents`); nothing spent when this daemon has none.
-    pub fn month_of(&self, account: &AccountId) -> (MicroUsd, Option<MicroUsd>) {
+    /// What providers reported was charged through `account` on hosted models this calendar
+    /// month, and the monthly cap on an account (`ai.spend.account_monthly_cents`); nothing
+    /// charged when this daemon has none.
+    pub fn month_of(&self, account: &AccountId) -> (ChargeTotal, Option<Money>) {
         let cap = self.settings().spend.limits.account.monthly;
-        let spent = self.book.cloud.as_ref().map_or(0, |cloud| {
-            let scope = SpendScope::Account(account.clone());
-            cloud
-                .ledger()
-                .spent(&scope, Period::Monthly, cloud.now())
-                .micro_usd
-        });
-        (MicroUsd(spent), cap)
+        let spent = self
+            .book
+            .cloud
+            .as_ref()
+            .map_or_else(ChargeTotal::default, |cloud| {
+                let scope = SpendScope::Account(account.clone());
+                cloud
+                    .ledger()
+                    .spent(&scope, Period::Monthly, cloud.now())
+                    .charges
+            });
+        (spent, cap)
     }
 
     /// The hosted models `app` is offered for data of `class` now: what its grants reach, and the
@@ -1128,7 +1138,7 @@ impl SessionRouter {
     }
 }
 
-impl crate::serve::Router for SessionRouter {
+impl porter_router::seams::Router for SessionRouter {
     async fn route(&self, spec: &SessionSpec) -> Result<RouteDecision, InferRefusal> {
         self.route_why(spec)
             .await
@@ -1207,8 +1217,8 @@ mod who;
 pub use running::RunError;
 pub use who::Who;
 
-impl crate::keys::SpendBook for Engines {
-    fn month(&self, account: &AccountId) -> (MicroUsd, Option<MicroUsd>) {
+impl crate::spend_rows::SpendBook for Engines {
+    fn month(&self, account: &AccountId) -> (ChargeTotal, Option<Money>) {
         self.month_of(account)
     }
 }

@@ -234,7 +234,8 @@ mod tests {
 
     #[test]
     fn an_atomic_write_leaves_the_whole_file_and_no_temporary() {
-        let dir = scratch("atomic");
+        let _dir_guard = scratch("atomic");
+        let dir = _dir_guard.path().to_owned();
         write_atomic(&dir, "a.ics", b"one").expect("write");
         write_atomic(&dir, "a.ics", b"two!").expect("rewrite");
         assert_eq!(std::fs::read(dir.join("a.ics")).expect("read"), b"two!");
@@ -247,12 +248,12 @@ mod tests {
         let gone = write_atomic(&dir.join("missing"), "a.ics", b"x").expect_err("no directory");
         assert_eq!(gone.kind(), std::io::ErrorKind::NotFound);
         assert!(!dir.join("missing").exists());
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
     fn metadata_files_follow_the_collection_and_are_not_touched_when_unchanged() {
-        let dir = scratch("meta");
+        let _dir_guard = scratch("meta");
+        let dir = _dir_guard.path().to_owned();
         let meta = Meta {
             displayname: Some("Work".into()),
             color: Some("#0082c9FF".into()),
@@ -289,7 +290,6 @@ mod tests {
             "Home"
         );
         assert!(!dir.join(COLOR).exists(), "no colour, no file");
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
@@ -297,7 +297,8 @@ mod tests {
         // The account was removed and its mirror deleted between the supervisor's look at the
         // collections and its write of their names: nothing comes back (rel-13 follow-up, the
         // pim_bus removal test that found the account's directory again).
-        let root = scratch("meta-gone");
+        let _root_guard = scratch("meta-gone");
+        let root = _root_guard.path().to_owned();
         let dir = root.join("account").join("personal");
         let meta = Meta {
             displayname: Some("Work".into()),
@@ -306,17 +307,16 @@ mod tests {
         let refused = write_meta(&dir, &meta).expect_err("no directory");
         assert_eq!(refused.kind(), std::io::ErrorKind::NotFound);
         assert!(!root.join("account").exists());
-        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
     fn listing_returns_only_the_kinds_visible_files() {
-        let dir = scratch("list");
+        let _dir_guard = scratch("list");
+        let dir = _dir_guard.path().to_owned();
         for name in ["b.ics", "a.ics", "c.vcf", ".d.ics.1.tmp", "displayname"] {
             std::fs::write(dir.join(name), "x").expect("file");
         }
         assert_eq!(items_in(&dir, PimKind::Calendar), ["a.ics", "b.ics"]);
         assert_eq!(items_in(&dir, PimKind::Contacts), ["c.vcf"]);
-        let _ = std::fs::remove_dir_all(dir);
     }
 }

@@ -1,42 +1,50 @@
 //! Credentials and where they are filed (design/31 §4.6). These values live in accountd and
 //! the secret store only: no wire type carries a [`Credential`].
 
-use crate::capability::CapabilityKind;
-use crate::id::AccountId;
-use crate::units::UnixSeconds;
+use crate::AccountId;
+use porter_capability::CapabilityKind;
+use porter_ids::UnixSeconds;
+use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-/// Secret text: its `Debug` never shows it, so it cannot leak into a log, a panic or an error,
-/// and its bytes are overwritten when it is dropped, so a freed buffer does not keep it. (A copy
-/// made by growing a `String` before it was wrapped, or by a caller of [`SecretText::expose`],
-/// is that code's to wipe.)
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct SecretText(String);
+/// Secret text, held in a [`secrecy::SecretString`]: its `Debug` never shows it, so it cannot
+/// leak into a log, a panic or an error; its bytes are overwritten when it is dropped, so a freed
+/// buffer does not keep it; two of them compare in constant time (`subtle`). It has no
+/// `Serialize`: a value that must be written goes through [`write_secret`] or
+/// [`write_secret_option`], named at the field that writes it. (A copy made by growing a `String`
+/// before it was wrapped, or by a caller of [`SecretText::expose`], is that code's to wipe.)
+#[derive(Clone)]
+pub struct SecretText(SecretString);
 
 impl SecretText {
     /// Wraps a secret.
     pub fn new(text: impl Into<String>) -> Self {
-        Self(text.into())
+        Self(SecretString::from(text.into()))
     }
 
     /// The secret itself, for the one call that must present it.
     pub fn expose(&self) -> &str {
-        &self.0
+        self.0.expose_secret()
     }
 }
+
+impl PartialEq for SecretText {
+    fn eq(&self, other: &Self) -> bool {
+        self.expose()
+            .as_bytes()
+            .ct_eq(other.expose().as_bytes())
+            .into()
+    }
+}
+
+impl Eq for SecretText {}
 
 impl Zeroize for SecretText {
     fn zeroize(&mut self) {
         self.0.zeroize();
-    }
-}
-
-impl Drop for SecretText {
-    fn drop(&mut self) {
-        self.zeroize();
     }
 }
 
@@ -45,6 +53,33 @@ impl ZeroizeOnDrop for SecretText {}
 impl fmt::Debug for SecretText {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("<redacted>")
+    }
+}
+
+impl<'de> Deserialize<'de> for SecretText {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        SecretString::deserialize(deserializer).map(Self)
+    }
+}
+
+/// Writes a secret as its text. The one way a [`SecretText`] is serialised, named by
+/// `#[serde(serialize_with = "...")]` at each field that must carry it (the stored credential,
+/// an issued token, a typed sheet answer, `clients.toml`).
+pub fn write_secret<S: serde::Serializer>(
+    secret: &SecretText,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str(secret.expose())
+}
+
+/// [`write_secret`] for an optional secret.
+pub fn write_secret_option<S: serde::Serializer>(
+    secret: &Option<SecretText>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    match secret {
+        Some(secret) => serializer.serialize_some(secret.expose()),
+        None => serializer.serialize_none(),
     }
 }
 
@@ -61,6 +96,7 @@ pub struct SecretKey {
 /// servers; a CardDAV password may differ from the mail one).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "v", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum SecretPurpose {
     /// The account's one password or app password.
     Password,
@@ -84,15 +120,18 @@ pub enum SecretPurpose {
 /// A secret as stored. `Debug` is written by hand and redacts every secret field.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "v", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum Credential {
     /// A password or app password.
-    Password(SecretText),
+    Password(#[serde(serialize_with = "write_secret")] SecretText),
     /// OAuth tokens.
     #[serde(rename = "oauth")]
     OAuth {
         /// The current access token.
+        #[serde(serialize_with = "write_secret")]
         access: SecretText,
         /// The refresh token; it never leaves accountd.
+        #[serde(serialize_with = "write_secret")]
         refresh: SecretText,
         /// When `access` expires.
         expires_at: UnixSeconds,
@@ -102,15 +141,16 @@ pub enum Credential {
         granted: GrantedScopes,
     },
     /// An API key.
-    ApiKey(SecretText),
+    ApiKey(#[serde(serialize_with = "write_secret")] SecretText),
     /// A bearer token the person pasted (a JMAP API token): presented as a bearer, with no
     /// refresh. It is filed where a password would be, so an account has one such secret.
-    Bearer(SecretText),
+    Bearer(#[serde(serialize_with = "write_secret")] SecretText),
     /// An access key pair.
     KeyPair {
         /// The public half (an access key id).
         access_key: String,
         /// The secret half.
+        #[serde(serialize_with = "write_secret")]
         secret: SecretText,
     },
 }
@@ -230,6 +270,29 @@ mod tests {
         assert_eq!(granted.holds("calendar"), Some(false));
     }
 
+    /// `SecretText` has no `Serialize`: a writer names `write_secret`. (Method resolution picks
+    /// the inherent constant only for a type that is `Serialize`.)
+    #[test]
+    fn a_secret_text_does_not_implement_serialize() {
+        struct Probe<T>(std::marker::PhantomData<T>);
+        trait Otherwise {
+            const SERIALIZE: bool = false;
+        }
+        impl<T> Otherwise for Probe<T> {}
+        impl<T: Serialize> Probe<T> {
+            const SERIALIZE: bool = true;
+        }
+        const { assert!(!Probe::<SecretText>::SERIALIZE) };
+        const { assert!(Probe::<String>::SERIALIZE) };
+    }
+
+    #[test]
+    fn secrets_compare_by_their_text() {
+        assert_eq!(SecretText::new("pw"), SecretText::new("pw"));
+        assert_ne!(SecretText::new("pw"), SecretText::new("pw2"));
+        assert_ne!(SecretText::new("pw"), SecretText::new("px"));
+    }
+
     /// `SecretText` wipes itself when dropped: it is `ZeroizeOnDrop`, and `zeroize`, which its
     /// `Drop` calls, leaves nothing of the secret.
     #[test]
@@ -238,6 +301,10 @@ mod tests {
         wiped_on_drop::<SecretText>();
         let mut secret = SecretText::new("pw-xyz");
         secret.zeroize();
-        assert_eq!(secret.expose(), "");
+        assert!(
+            secret.expose().bytes().all(|b| b == 0),
+            "{:?}",
+            secret.expose()
+        );
     }
 }

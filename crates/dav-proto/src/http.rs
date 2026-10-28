@@ -1,5 +1,6 @@
-//! The requests as `http::Request<String>` (feature `http`): the bodies of the crate root with
-//! their method, `Depth` and `Content-Type`. The URI is the caller's, already resolved.
+//! The requests as `http::Request<String>` (feature `http`), and as `http::Request<Vec<u8>>` in
+//! [`bytes`]: the bodies of the crate root with their method, `Depth` and `Content-Type`. The URI
+//! is the caller's, already resolved.
 
 use crate::{Depth, Multiget, SyncLevel};
 use ::http::header::{CONTENT_TYPE, HeaderName, HeaderValue};
@@ -26,6 +27,33 @@ pub fn multiget(uri: Uri, kind: Multiget, hrefs: &[&str]) -> Request<String> {
         Depth::One,
         crate::multiget(kind, hrefs),
     )
+}
+
+/// The same requests with the body as bytes, `http::Request<Vec<u8>>`, which is what an HTTP
+/// seam sends.
+pub mod bytes {
+    use crate::{Depth, Multiget, SyncLevel};
+    use ::http::{Request, Uri};
+
+    /// [`super::propfind`] with a byte body.
+    pub fn propfind(uri: Uri, depth: Depth, props: &[&str]) -> Request<Vec<u8>> {
+        super::propfind(uri, depth, props).map(String::into_bytes)
+    }
+
+    /// [`super::sync_collection`] with a byte body.
+    pub fn sync_collection(
+        uri: Uri,
+        token: &str,
+        level: SyncLevel,
+        props: &[&str],
+    ) -> Request<Vec<u8>> {
+        super::sync_collection(uri, token, level, props).map(String::into_bytes)
+    }
+
+    /// [`super::multiget`] with a byte body.
+    pub fn multiget(uri: Uri, kind: Multiget, hrefs: &[&str]) -> Request<Vec<u8>> {
+        super::multiget(uri, kind, hrefs).map(String::into_bytes)
+    }
 }
 
 fn xml(method: Method, uri: Uri, depth: Depth, body: String) -> Request<String> {
@@ -63,6 +91,19 @@ mod tests {
         assert_eq!(request.headers()["depth"], "1");
         assert_eq!(request.headers()[CONTENT_TYPE], XML);
         assert!(request.body().contains("<d:getetag/>"));
+    }
+
+    #[test]
+    fn the_byte_requests_are_the_string_requests_with_their_body_as_bytes() {
+        let text = propfind(uri(), Depth::One, &[GETETAG]);
+        let request = bytes::propfind(uri(), Depth::One, &[GETETAG]);
+        assert_eq!(request.body(), text.body().as_bytes());
+        assert_eq!(request.method(), text.method());
+        assert_eq!(request.headers(), text.headers());
+        let get = bytes::multiget(uri(), Multiget::Addressbook, &["/a.vcf"]);
+        assert_eq!(get.headers()["depth"], "1");
+        let sync = bytes::sync_collection(uri(), "t", SyncLevel::One, &[GETETAG]);
+        assert_eq!(sync.headers()["depth"], "0");
     }
 
     #[test]

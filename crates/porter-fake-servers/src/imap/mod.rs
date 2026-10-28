@@ -9,13 +9,13 @@ use crate::mail::{
     Accounts, Lines, MailCtx, MailEvent, MailHandle, Mechanism, decode_plain, decode_xoauth2,
     secure_enough,
 };
-use crate::net::{Bind, Listener, Peer};
+use crate::net::{Bind, Entry, Listener, Peer};
 use crate::seen::Running;
 use crate::shipped::point;
 use crate::tls;
 use commands::{fetch, read_args, select};
 use porter_core::{Family, Tls};
-use porter_fake::{FakeAddress, FakeProtocol, FakeServer};
+use porter_fake::{FakeAddress, FakeServer};
 use porter_provider::ProviderSpec;
 use std::future::Future;
 use std::io;
@@ -92,10 +92,6 @@ impl FakeImap {
 }
 
 impl FakeServer for FakeImap {
-    fn protocol(&self) -> FakeProtocol {
-        FakeProtocol::Imap
-    }
-
     fn address(&self) -> &FakeAddress {
         self.listener.address()
     }
@@ -160,15 +156,6 @@ async fn run(
             }
         }
     }
-}
-
-/// How a phase of a session begins.
-#[derive(Debug, Clone, Copy)]
-enum Entry {
-    /// A new connection: send the greeting.
-    Greet { secure: bool },
-    /// After STARTTLS: the channel is secure and no greeting is sent.
-    Resume,
 }
 
 /// Where a session stands.

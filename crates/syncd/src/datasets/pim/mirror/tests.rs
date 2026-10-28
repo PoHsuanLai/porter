@@ -2,7 +2,7 @@ use super::*;
 use crate::datasets::pim::items_in;
 use crate::journal::Journal;
 use crate::testing::scratch;
-use porter_core::UnixSeconds;
+use porter_ids::UnixSeconds;
 use porter_sync::{
     Anchor, BaseVersion, Conflict, RemoteId, RemoteSide, RemoteVersion, StoredAnchor,
     StoredConflict,
@@ -15,10 +15,10 @@ pub(super) fn ics(uid: &str, summary: &str) -> Blob {
     )
 }
 
-fn open(name: &str) -> (PimMirror, Journal, PathBuf) {
+fn open(name: &str) -> (PimMirror, Journal, tempfile::TempDir) {
     let dir = scratch(name);
-    let journal = Journal::open(&dir.join("j.sqlite")).expect("journal");
-    let root = dir.join("vdir/a1/personal");
+    let journal = Journal::open(&dir.path().join("j.sqlite")).expect("journal");
+    let root = dir.path().join("vdir/a1/personal");
     let mirror = PimMirror::open(
         DatasetId::parse("pim_cal_personal").expect("id"),
         PimKind::Calendar,
@@ -35,7 +35,7 @@ fn path(name: &str) -> ItemPath {
 
 #[tokio::test]
 async fn an_item_is_stored_under_its_uid_read_back_and_discarded() {
-    let (mirror, _journal, dir) = open("store");
+    let (mirror, _journal, _dir) = open("store");
     let stored = mirror
         .store(None, &path("server-name.ics"), ics("abc-1", "one"))
         .await
@@ -68,12 +68,11 @@ async fn an_item_is_stored_under_its_uid_read_back_and_discarded() {
     mirror.discard(&stored.local).await.expect("again");
     assert!(items_in(mirror.root(), PimKind::Calendar).is_empty());
     assert!(mirror.scan().await.expect("scan").is_empty());
-    let _ = std::fs::remove_dir_all(dir);
 }
 
 #[tokio::test]
 async fn storing_what_is_already_there_does_not_touch_the_file() {
-    let (mirror, _journal, dir) = open("idem");
+    let (mirror, _journal, _dir) = open("idem");
     let first = mirror
         .store(None, &path("a.ics"), ics("u", "x"))
         .await
@@ -89,12 +88,11 @@ async fn storing_what_is_already_there_does_not_touch_the_file() {
         std::fs::metadata(&file).expect("m").modified().expect("t"),
         before
     );
-    let _ = std::fs::remove_dir_all(dir);
 }
 
 #[tokio::test]
 async fn a_uid_that_changes_moves_the_file_and_a_shared_uid_keeps_both_items() {
-    let (mirror, _journal, dir) = open("names");
+    let (mirror, _journal, _dir) = open("names");
     let first = mirror
         .store(None, &path("a.ics"), ics("one", "x"))
         .await
@@ -126,12 +124,11 @@ async fn a_uid_that_changes_moves_the_file_and_a_shared_uid_keeps_both_items() {
         "{third:?}"
     );
     assert_eq!(mirror.scan().await.expect("scan").len(), 3);
-    let _ = std::fs::remove_dir_all(dir);
 }
 
 #[tokio::test]
 async fn the_mirror_is_pull_only_and_a_local_edit_or_deletion_is_not_a_change() {
-    let (mirror, _journal, dir) = open("readonly");
+    let (mirror, _journal, _dir) = open("readonly");
     assert_eq!(mirror.direction(), Direction::PullOnly);
     let item = mirror
         .store(None, &path("s.ics"), ics("s", "small"))
@@ -158,20 +155,18 @@ async fn the_mirror_is_pull_only_and_a_local_edit_or_deletion_is_not_a_change() 
         mirror.read(&item.local).await.expect("read"),
         ics("s", "changed")
     );
-    let _ = std::fs::remove_dir_all(dir);
 }
 
 #[tokio::test]
 async fn nothing_outside_the_collection_can_be_read_or_discarded() {
     let (mirror, _journal, dir) = open("escape");
-    std::fs::write(dir.join("secret"), "s").expect("secret");
+    std::fs::write(dir.path().join("secret"), "s").expect("secret");
     for name in ["../../../secret", "/etc/passwd", ".hidden", "a/b.ics", ""] {
         let id = LocalId(name.to_owned());
         assert!(mirror.read(&id).await.is_err(), "{name:?}");
         assert!(mirror.discard(&id).await.is_err(), "{name:?}");
     }
-    assert!(dir.join("secret").exists());
-    let _ = std::fs::remove_dir_all(dir);
+    assert!(dir.path().join("secret").exists());
 }
 
 fn row(local: &str, hash: Option<&ContentHash>, state: ItemState) -> porter_sync::JournalItem {
@@ -189,7 +184,8 @@ fn row(local: &str, hash: Option<&ContentHash>, state: ItemState) -> porter_sync
 
 #[tokio::test]
 async fn opening_queues_every_damaged_item_to_be_fetched_again_and_nothing_else() {
-    let dir = scratch("heal");
+    let _guard = scratch("heal");
+    let dir = _guard.path().to_owned();
     let journal = Journal::open(&dir.join("j.sqlite")).expect("journal");
     let root = dir.join("vdir/a1/personal");
     std::fs::create_dir_all(&root).expect("root");
@@ -285,5 +281,4 @@ async fn opening_queues_every_damaged_item_to_be_fetched_again_and_nothing_else(
     .expect("open");
     assert_eq!(again.healed(), 0);
     assert!(journal.anchor().expect("anchor").is_some());
-    let _ = std::fs::remove_dir_all(dir);
 }

@@ -2,7 +2,8 @@
 //! unicast signal is never addressed to a name another process may be given later.
 
 use crate::callers::Callers;
-use crate::core::{Core, Host};
+use crate::host::Host;
+use crate::state::Core;
 use std::pin::Pin;
 use std::sync::Arc;
 use zbus::Connection;

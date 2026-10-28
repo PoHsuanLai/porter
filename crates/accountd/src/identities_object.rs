@@ -22,18 +22,24 @@
 //!   knows. An app decides what to do with its own copies; accountd reaches into nothing.
 
 use crate::callers::Callers;
-use crate::core::{Core, Host, Standing, hint};
 use crate::errors::RefusedError;
-use crate::identities::UseFault;
+use crate::host::Host;
 use crate::request::departed;
+use crate::state::{Core, Standing, hint};
+use porter_callers::CallerRole;
+use porter_capability::CapabilityKind;
+use porter_core::AccountId;
+use porter_core::ProviderHint;
 use porter_core::consent::{AccountChoice, AskPurpose, ConsentAnswer, ConsentAsk, Usage};
-use porter_core::wire::{ProviderHint, Refusal};
-use porter_core::{
-    AccountId, AccountLabel, CapabilityKind, DataClass, Identity, IdentityId, IdentityKind,
-};
-use porter_dbus::{CallerRole, Details, IDENTITIES_PATH, SheetKind, identity_to_dbus};
+use porter_core::{AccountLabel, DataClass, Identity, IdentityId, IdentityKind};
+use porter_dbus::accounts::IDENTITIES_PATH;
+use porter_dbus::accounts::sheet::SheetKind;
+use porter_dbus::accounts::{IdentitiesServed, IdentitiesServer, identity_to_dbus};
+use porter_dbus::{Call, Details};
+use porter_identities::{IdentitiesApi, Unsaved};
 use porter_secrets::sealed_key;
-use porter_service::Registry;
+use porter_service_core::registry::Registry;
+use porter_wire::Refusal;
 use std::sync::Arc;
 use zbus::fdo::DBusProxy;
 use zbus::message::Header;
@@ -79,17 +85,15 @@ fn identity_arg(text: &str) -> Result<IdentityId, RefusedError> {
 }
 
 /// What a use that could not be saved is told, in plain words.
-fn unsaved(fault: UseFault) -> RefusedError {
-    match fault {
-        UseFault::Unsaved => RefusedError::failed("The list of apps could not be saved."),
-    }
+fn unsaved(_: Unsaved) -> RefusedError {
+    RefusedError::failed("The list of apps could not be saved.")
 }
 
 impl<H: Host, C: Callers> IdentitiesObject<H, C> {
     /// The caller, which must be an app the person uses, Settings, the shell or a porter daemon.
     /// The agent, computer use, the agent launcher, the terminal and the compositor are refused,
     /// and so is a role porter does not know yet.
-    async fn user(&self, header: &Header<'_>) -> Result<porter_dbus::Caller, RefusedError> {
+    async fn user(&self, header: &Header<'_>) -> Result<porter_callers::Caller, RefusedError> {
         let caller = self.0.identify(header, Standing::Any).await?;
         match caller.role {
             role if may_use(role) => Ok(caller),
@@ -108,7 +112,7 @@ impl<H: Host, C: Callers> IdentitiesObject<H, C> {
     }
 
     /// The caller, which must be Settings or the shell.
-    async fn manager(&self, header: &Header<'_>) -> Result<porter_dbus::Caller, RefusedError> {
+    async fn manager(&self, header: &Header<'_>) -> Result<porter_callers::Caller, RefusedError> {
         let caller = self.user(header).await?;
         match caller.role {
             CallerRole::Settings | CallerRole::SheetHost => Ok(caller),
@@ -132,11 +136,12 @@ impl<H: Host, C: Callers> IdentitiesObject<H, C> {
     }
 }
 
-#[zbus::interface(name = "org.quire.Identities1")]
-impl<H: Host, C: Callers> IdentitiesObject<H, C> {
+impl<H: Host, C: Callers> IdentitiesServer for IdentitiesObject<H, C> {
+    type Error = RefusedError;
+
     async fn list(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
     ) -> Result<Vec<(String, Details)>, RefusedError> {
         self.user(&header).await?;
         Ok(self
@@ -148,7 +153,7 @@ impl<H: Host, C: Callers> IdentitiesObject<H, C> {
 
     async fn offer(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         provider_hint: String,
         parent_window: String,
     ) -> Result<(String, String, String), RefusedError> {
@@ -202,7 +207,7 @@ impl<H: Host, C: Callers> IdentitiesObject<H, C> {
             .receive_name_owner_changed_with_args(&[(0, sender.as_str())])
             .await
             .map_err(RefusedError::failed)?;
-        let window = crate::core::window(&parent_window);
+        let window = crate::state::window(&parent_window);
         let answer = tokio::select! {
             answer = desk.pick(ask, &window) => answer,
             // The app left: the sheet is taken down with the dropped pick, and nobody is told.
@@ -227,7 +232,7 @@ impl<H: Host, C: Callers> IdentitiesObject<H, C> {
 
     async fn take_password(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         identity_id: String,
     ) -> Result<OwnedFd, RefusedError> {
         let caller = self.user(&header).await?;
@@ -264,7 +269,7 @@ impl<H: Host, C: Callers> IdentitiesObject<H, C> {
 
     async fn register_use(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         identity_id: String,
     ) -> Result<(), RefusedError> {
         let caller = self.user(&header).await?;
@@ -280,7 +285,7 @@ impl<H: Host, C: Callers> IdentitiesObject<H, C> {
 
     async fn uses(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         identity_id: String,
     ) -> Result<Vec<String>, RefusedError> {
         self.manager(&header).await?;
@@ -295,9 +300,6 @@ impl<H: Host, C: Callers> IdentitiesObject<H, C> {
             .map(ToString::to_string)
             .collect())
     }
-
-    #[zbus(signal)]
-    async fn identity_removed(emitter: &SignalEmitter<'_>, identity_id: &str) -> zbus::Result<()>;
 }
 
 impl<H: Host, C: Callers> Core<H, C> {
@@ -322,8 +324,11 @@ impl<H: Host, C: Callers> Core<H, C> {
                     continue;
                 };
                 let emitter = emitter.set_destination(destination);
-                let _ =
-                    IdentitiesObject::<H, C>::identity_removed(&emitter, identity.as_str()).await;
+                let _ = IdentitiesServed::<IdentitiesObject<H, C>>::identity_removed(
+                    &emitter,
+                    identity.as_str(),
+                )
+                .await;
             }
         }
     }

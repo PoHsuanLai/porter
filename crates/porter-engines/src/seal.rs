@@ -33,6 +33,7 @@ impl TreeSeal {
 
 /// Why a tree could not be sealed.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum SealError {
     /// A file or directory could not be read.
     #[error("cannot read {path}: {kind}")]
@@ -145,7 +146,7 @@ pub fn seal_of(root: &Path) -> Result<TreeSeal, SealError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_fake::Scratch;
+    use test_kit::Scratch;
 
     fn make(root: &Path, mode: u32, name: &str, body: &str) {
         let path = root.join(name);

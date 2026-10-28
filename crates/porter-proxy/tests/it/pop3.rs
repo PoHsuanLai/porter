@@ -20,7 +20,7 @@ async fn pop3(
     porter_fake_servers::Running<porter_fake_servers::MailHandle>,
     u16,
 ) {
-    let running = FakePop3::start(&Bind::Loopback, tls, accounts(), mailbox(3))
+    let running = FakePop3::start(&Bind::Port(0), tls, accounts(), mailbox(3))
         .await
         .expect("pop3");
     let port = port(running.address());

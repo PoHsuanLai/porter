@@ -1,4 +1,4 @@
-//! `org.quire.Photos1.Picker` on syncd's object (`porter_dbus::PhotosPickerProxy`): the Google
+//! `org.quire.Photos1.Picker` on syncd's object (`porter_dbus::sync::PhotosPickerProxy`): the Google
 //! Photos Picker for the Photos app. Served in a build with the `photos-picker` feature; an
 //! account answers through it while its Photos row in Settings is on. The caller is identified as `Sync1`'s are (the connection's, by
 //! porter-dbus's `Callers`), and only an app that owns the Photos datasets (`org.quire.Photos`)
@@ -19,11 +19,17 @@ use super::errors::RefusedError;
 use super::hub::Access;
 use crate::datasets::photos::google::{GooglePicker, PickerError, PickerState, SessionId};
 use crate::paths::AccountDir;
+#[cfg(feature = "photos-picker")]
+use porter_callers::Callers;
 use porter_client::Transport;
 #[cfg(feature = "photos-picker")]
-use porter_core::wire::Refusal;
+use porter_dbus::Call;
 #[cfg(feature = "photos-picker")]
-use porter_dbus::{Callers, PICKER_PICKED, PICKER_WAITING, SYNC_PATH};
+use porter_dbus::sync::SYNC_PATH;
+#[cfg(feature = "photos-picker")]
+use porter_dbus::sync::{PICKER_PICKED, PICKER_WAITING, PhotosPickerServed, PhotosPickerServer};
+#[cfg(feature = "photos-picker")]
+use porter_wire::Refusal;
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -219,11 +225,12 @@ fn none_here() -> RefusedError {
 struct PickerObject<C, D>(Arc<Core<C, D>>);
 
 #[cfg(feature = "photos-picker")]
-#[zbus::interface(name = "org.quire.Photos1.Picker")]
-impl<C: Callers, D: PickerDesk> PickerObject<C, D> {
+impl<C: Callers, D: PickerDesk> PhotosPickerServer for PickerObject<C, D> {
+    type Error = RefusedError;
+
     async fn start(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         account: String,
     ) -> Result<(String, String, u32), RefusedError> {
         let (account, _) = self.0.admit(&header, &account, None).await?;
@@ -239,7 +246,7 @@ impl<C: Callers, D: PickerDesk> PickerObject<C, D> {
 
     async fn poll(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         account: String,
         session: String,
     ) -> Result<String, RefusedError> {
@@ -261,7 +268,7 @@ impl<C: Callers, D: PickerDesk> PickerObject<C, D> {
 
     async fn import(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         account: String,
         session: String,
     ) -> Result<Vec<String>, RefusedError> {
@@ -277,7 +284,7 @@ impl<C: Callers, D: PickerDesk> PickerObject<C, D> {
 
     async fn cancel(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         account: String,
         session: String,
     ) -> Result<(), RefusedError> {
@@ -306,7 +313,7 @@ pub async fn serve_picker<C: Callers, D: PickerDesk>(
     });
     connection
         .object_server()
-        .at(SYNC_PATH, PickerObject(core))
+        .at(SYNC_PATH, PhotosPickerServed(PickerObject(core)))
         .await?;
     Ok(())
 }

@@ -22,7 +22,7 @@
 
 use crate::app_id::AppName;
 use crate::error::CoreError;
-use crate::id::well_formed;
+use porter_ids::is_id;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -37,6 +37,7 @@ pub struct SpaceId(String);
 
 /// What a [`SpaceId`] names.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum SpaceKind {
     /// Outside any Space (`desktop`).
     Outside,
@@ -69,7 +70,7 @@ pub struct DesktopSpace(String);
 impl DesktopSpace {
     /// The id written as `text`, or why it is not one.
     pub fn parse(text: &str) -> Result<Self, CoreError> {
-        match well_formed(text) && text != SpaceId::DESKTOP {
+        match is_id(text) && text != SpaceId::DESKTOP {
             true => Ok(Self(text.to_owned())),
             false => Err(CoreError::MalformedId {
                 what: "desktop space id",
@@ -77,31 +78,9 @@ impl DesktopSpace {
             }),
         }
     }
-
-    /// The id's text.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
 }
 
-impl TryFrom<String> for DesktopSpace {
-    type Error = CoreError;
-    fn try_from(text: String) -> Result<Self, CoreError> {
-        Self::parse(&text)
-    }
-}
-
-impl From<DesktopSpace> for String {
-    fn from(id: DesktopSpace) -> String {
-        id.0
-    }
-}
-
-impl fmt::Display for DesktopSpace {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
+porter_ids::string_newtype!(DesktopSpace, CoreError);
 
 /// The app name and number of an `app:<app name>:<n>` text, when it is one.
 fn app_parts(text: &str) -> Option<(AppName, LocalSpace)> {
@@ -124,18 +103,13 @@ impl SpaceId {
     /// The id written as `text`, or why it is not one: `desktop`, a slug, or
     /// `app:<app name>:<n>`.
     pub fn parse(text: &str) -> Result<Self, CoreError> {
-        match well_formed(text) || app_parts(text).is_some() {
+        match is_id(text) || app_parts(text).is_some() {
             true => Ok(Self(text.to_owned())),
             false => Err(CoreError::MalformedId {
                 what: "space id",
                 text: text.to_owned(),
             }),
         }
-    }
-
-    /// The id's text.
-    pub fn as_str(&self) -> &str {
-        &self.0
     }
 
     /// The id of a desktop-wide Space.
@@ -183,24 +157,7 @@ impl SpaceId {
     }
 }
 
-impl TryFrom<String> for SpaceId {
-    type Error = CoreError;
-    fn try_from(text: String) -> Result<Self, CoreError> {
-        Self::parse(&text)
-    }
-}
-
-impl From<SpaceId> for String {
-    fn from(id: SpaceId) -> String {
-        id.0
-    }
-}
-
-impl fmt::Display for SpaceId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
+porter_ids::string_newtype!(SpaceId, CoreError);
 
 /// Which Spaces a decision covers.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]

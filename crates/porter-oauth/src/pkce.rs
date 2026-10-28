@@ -5,27 +5,19 @@ use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use porter_core::SecretText;
 use sha2::{Digest, Sha256};
-
-/// The challenge sent with the authorize request: the verifier's SHA-256, base64url.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CodeChallenge(pub String);
+use subtle::ConstantTimeEq;
 
 /// The `state` that ties a redirect to the sign-in that started it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OAuthState(pub String);
 
 impl OAuthState {
-    /// Whether `presented` is this state. Compared without an early exit: the value is a secret
-    /// and a timing oracle on it costs an attacker nothing (ported from mailo's `Pending::accepts`,
-    /// `~/mailo/crates/mail-runtime/src/oauth.rs`).
+    /// Whether `presented` is this state. The bytes are compared in constant time (`subtle`):
+    /// the value is a secret and a timing oracle on it costs an attacker nothing. A different
+    /// length is refused first, as `ct_eq` of slices does.
     pub fn accepts(&self, presented: &str) -> bool {
         let (ours, theirs) = (self.0.as_bytes(), presented.as_bytes());
-        ours.len() == theirs.len()
-            && ours
-                .iter()
-                .zip(theirs)
-                .fold(0u8, |acc, (a, b)| acc | (a ^ b))
-                == 0
+        ours.len() == theirs.len() && bool::from(ours.ct_eq(theirs))
     }
 }
 
@@ -47,9 +39,10 @@ impl Pkce {
         }
     }
 
-    /// The `S256` challenge for the verifier.
-    pub fn challenge(&self) -> CodeChallenge {
-        CodeChallenge(URL_SAFE_NO_PAD.encode(Sha256::digest(self.verifier.expose().as_bytes())))
+    /// The `S256` challenge for the verifier, sent with the authorize request: its SHA-256,
+    /// base64url.
+    pub fn challenge(&self) -> String {
+        URL_SAFE_NO_PAD.encode(Sha256::digest(self.verifier.expose().as_bytes()))
     }
 }
 
@@ -99,7 +92,7 @@ mod tests {
         };
         assert_eq!(
             pkce.challenge(),
-            CodeChallenge("E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM".into())
+            "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
         );
     }
 }

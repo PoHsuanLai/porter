@@ -20,6 +20,7 @@
 //! more arm in `AccountMirrors::refresh`. Nothing else is touched.
 
 mod adapter;
+mod civil;
 pub mod dav;
 pub mod google;
 pub mod graph;
@@ -31,7 +32,7 @@ pub use graph::{GraphCalendarFeed, GraphCalendarSource};
 
 use super::PimKind;
 use super::discover::{DiscoverError, Found};
-use porter_core::capability::{Capability, PimTransport};
+use porter_capability::{Capability, PimTransport};
 use porter_core::{Candidate, ServiceEndpoint};
 use porter_sync::{More, RemoteItem, ReplicaError, Tombstone};
 use std::future::Future;
@@ -92,18 +93,16 @@ pub trait Feed: Send + Sync + 'static {
 
     /// What the backend offers; the default is a read-only feed whose items the engine compares
     /// by SHA-256.
-    fn features(&self) -> porter_core::capability::StorageCap {
-        use porter_core::capability::{
-            Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope,
-        };
+    fn features(&self) -> porter_capability::StorageCap {
+        use porter_capability::{Access, Delta, HashKind, StorageCap, StorageScope};
         StorageCap {
             access: Access::Read,
             delta: Delta::Poll,
-            quota: QuotaReport::Unreported,
+            quota: false,
             scope: StorageScope::Full,
             hashes: HashKind::Sha256,
-            ranges: Offered::Absent,
-            chunked_upload: Offered::Absent,
+            ranges: false,
+            chunked_upload: false,
         }
     }
 
@@ -111,7 +110,7 @@ pub trait Feed: Send + Sync + 'static {
     fn quota(&self) -> impl Future<Output = Result<porter_sync::Quota, ReplicaError>> + Send {
         async {
             Ok(porter_sync::Quota {
-                used: porter_core::Bytes(0),
+                used: porter_ids::Bytes(0),
                 total: None,
             })
         }

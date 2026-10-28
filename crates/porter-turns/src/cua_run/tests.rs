@@ -6,14 +6,15 @@ use model_provider::{
     ModelName, Part, Script, ScriptedProvider, StopReason, ToolCall, ToolCallId, TurnEnd,
     TurnEvent, TurnUsage,
 };
-use porter_core::capability::CuaEnv;
+use porter_capability::CuaEnv;
 use porter_infer::{
     AttachIndex, FrameImage, FrameLayout, InferEvent, InferRefusal, MediaKind, StepIndex, TreeText,
     WindowGeometry,
 };
-use porter_router::testkit::{Scratch, models};
+use porter_router::testkit::models;
 use std::io::Write;
 use std::os::fd::OwnedFd;
+use test_kit::Scratch;
 
 fn memfd(bytes: &[u8]) -> OwnedFd {
     let fd = rustix::fs::memfd_create("t", rustix::fs::MemfdFlags::CLOEXEC).expect("memfd");

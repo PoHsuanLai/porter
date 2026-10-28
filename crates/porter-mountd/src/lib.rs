@@ -13,10 +13,8 @@
 //! - [`server`]: the helper's side ([`server::Helper`] over a [`server::Mounts`]; on a real
 //!   computer [`server::Fusermount`]), and its socket ([`server::listener`]).
 //! - [`mountinfo`]: what is mounted where.
-//! - [`words`]: what a refusal says.
 
 pub mod client;
 pub mod mountinfo;
 pub mod server;
 pub mod wire;
-pub mod words;

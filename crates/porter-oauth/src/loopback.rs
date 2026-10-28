@@ -26,6 +26,7 @@ pub struct AuthCode(pub SecretText);
 
 /// Why a redirect was not accepted.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum LoopbackFault {
     /// The `state` is not this sign-in's.
     #[error("wrong state")]
@@ -47,17 +48,34 @@ pub enum LoopbackFault {
     TimedOut,
 }
 
+/// The most header lines a redirect request may carry (a browser sends about twenty).
+const MAX_HEADERS: usize = 64;
+
+/// Whether `buf` holds a whole request head (through the blank line): `Ok(false)` while more is
+/// to come, a fault when what has arrived cannot be an HTTP request head.
+#[cfg(feature = "io")]
+pub(crate) fn head_complete(buf: &[u8]) -> Result<bool, LoopbackFault> {
+    let mut headers = [httparse::EMPTY_HEADER; MAX_HEADERS];
+    match httparse::Request::new(&mut headers).parse(buf) {
+        Ok(httparse::Status::Complete(_)) => Ok(true),
+        Ok(httparse::Status::Partial) => Ok(false),
+        Err(_) => Err(LoopbackFault::Malformed),
+    }
+}
+
 /// The code in the redirect request `head` (through the blank line), if its `state` is
 /// `expected`.
 pub fn parse_redirect(head: &[u8], expected: &OAuthState) -> Result<AuthCode, LoopbackFault> {
     if head.len() > MAX_REDIRECT_BYTES {
         return Err(LoopbackFault::Oversized);
     }
-    let text = String::from_utf8_lossy(head);
-    let line = text.lines().next().unwrap_or("");
-    let mut parts = line.split_whitespace();
-    let target = match (parts.next(), parts.next(), parts.next()) {
-        (Some("GET"), Some(target), Some(version)) if version.starts_with("HTTP/") => target,
+    let mut headers = [httparse::EMPTY_HEADER; MAX_HEADERS];
+    let mut request = httparse::Request::new(&mut headers);
+    let target = match request.parse(head) {
+        Ok(httparse::Status::Complete(_)) => match (request.method, request.path) {
+            (Some("GET"), Some(target)) => target,
+            _ => return Err(LoopbackFault::Malformed),
+        },
         _ => return Err(LoopbackFault::Malformed),
     };
     let params = target
@@ -147,6 +165,26 @@ mod tests {
                 Err(LoopbackFault::Malformed),
             ),
             ("junk", "\u{0}\u{1}", Err(LoopbackFault::Malformed)),
+            (
+                "a header name with a space",
+                "GET /?code=c&state=st-1 HTTP/1.1\r\nBad Name: x\r\n\r\n",
+                Err(LoopbackFault::Malformed),
+            ),
+            (
+                "not HTTP/1",
+                "GET /?code=c&state=st-1 HTTP/2\r\n\r\n",
+                Err(LoopbackFault::Malformed),
+            ),
+            (
+                "an unfinished head",
+                "GET /?code=c&state=st-1 HTTP/1.1\r\n",
+                Err(LoopbackFault::Malformed),
+            ),
+            (
+                "a plus in the code is a space",
+                "GET /?code=a+b&state=st-1 HTTP/1.1\r\n\r\n",
+                Ok("a b"),
+            ),
             ("empty", "", Err(LoopbackFault::Malformed)),
         ];
         for (name, request, want) in cases {

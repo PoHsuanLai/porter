@@ -1,6 +1,6 @@
 //! Where syncd reads and writes, resolved from the environment (PLAN §2.3): the one place the
 //! daemon names a path, so a test can give it scratch directories. An account is named on disk
-//! by its object-path segment (`porter_core::object_segment`), the form the account's
+//! by its object-path segment (`porter_ids::object_segment`), the form the account's
 //! directories are named in, so a wipe needs no map back to the id.
 
 pub use porter_daemon::xdg::PathError;
@@ -16,7 +16,7 @@ pub struct Paths {
     /// `$XDG_DATA_HOME/porter/vdir`: the PIM mirrors, one directory per account (W6e).
     pub mirrors: PathBuf,
     /// The system caller table, `/etc/porter/callers.toml` (another file in a test build:
-    /// [`porter_daemon::SystemCallers`]).
+    /// [`porter_callers::SystemCallers`]).
     pub callers_system: PathBuf,
     /// The user's caller table, `$XDG_CONFIG_HOME/porter/callers.toml`; its rows win.
     pub callers_user: PathBuf,
@@ -43,7 +43,7 @@ impl Paths {
         Ok(Self {
             journals: state.join("porter/sync"),
             mirrors: data.join("porter/vdir"),
-            callers_system: PathBuf::from(porter_daemon::SYSTEM_CALLERS),
+            callers_system: PathBuf::from(porter_callers::SYSTEM_CALLERS),
             callers_user: config.join("porter/callers.toml"),
             cloud: home.join("Cloud"),
             drive_cache: cache.join("porter/drives"),
@@ -180,8 +180,8 @@ impl KeepPaths {
     }
 
     /// The clients files the sign-in families read.
-    pub fn client_files(&self) -> porter_families::ClientFiles {
-        porter_families::ClientFiles {
+    pub fn client_files(&self) -> porter_family_oauth::ClientFiles {
+        porter_family_oauth::ClientFiles {
             shipped: self.clients_shipped.clone(),
             own: self.clients_user.clone(),
         }
@@ -233,27 +233,7 @@ pub const BUILD: Build = if cfg!(feature = "test-proc-root") {
 
 /// Whether this binary honours `SYNCD_PROC_ROOT`: only with the `test-proc-root` feature. A
 /// release build ignores the variable.
-pub const PROC_GATE: porter_daemon::ProcGate = if cfg!(feature = "test-proc-root") {
-    porter_daemon::ProcGate::Honour
-} else {
-    porter_daemon::ProcGate::Ignore
-};
-
-/// The directory callers are read from in place of `/proc` (`SYNCD_PROC_ROOT`), for a test
-/// build only. A release build ignores the variable.
-///
-/// Kept for one batch at its old path; the choice itself is [`porter_daemon::ProcRoot`], which
-/// `Config::from_env` now calls with [`PROC_GATE`].
-pub fn proc_root(build: Build, value: Option<String>) -> Option<PathBuf> {
-    let gate = match build {
-        Build::Test => porter_daemon::ProcGate::Honour,
-        Build::Release => porter_daemon::ProcGate::Ignore,
-    };
-    porter_daemon::ProcRoot::choose(gate, crate::daemon::PROC_ROOT_VAR, |_| {
-        value.as_deref().map(std::ffi::OsString::from)
-    })
-    .into_fixture()
-}
+pub const HONOURS_PROC_ROOT: bool = cfg!(feature = "test-proc-root");
 
 /// How often the supervisors read grants again (`SYNCD_RESCAN_S`, whole seconds, at least 1),
 /// for a test build only, so a scenario need not wait the default ten minutes for a grant it

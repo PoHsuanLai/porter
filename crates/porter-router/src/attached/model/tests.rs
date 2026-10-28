@@ -1,10 +1,12 @@
 use super::*;
 use crate::attached::config::{Place, Reach};
 use crate::catalog::{CatalogDirs, local_claims, parse_entry_text, read_catalog};
-use crate::testkit::Scratch;
 use crate::testkit::entries;
 use model_openai_compat::Flavor;
-use porter_core::{Locality, ModelId, Subject};
+use porter_capability::Locality;
+use porter_capability::ModelId;
+use porter_capability::Subject;
+use test_kit::Scratch;
 
 fn attached(id: &str, place: Place) -> Attached {
     Attached {
@@ -41,7 +43,7 @@ fn an_attached_model_is_the_catalogues_entry_with_the_place_the_person_said() {
     assert_eq!(here.card.locality, Locality::OnDevice);
     assert_eq!(there.card.locality, Locality::LocalNetwork);
     for model in [&here, &there] {
-        assert_eq!(model.card.billing, porter_core::Billing::Free);
+        assert_eq!(model.card.billing, porter_capability::Billing::Free);
         // A request names, and `/v1/models` must list, the name the catalogue says it is served as.
         assert_eq!(model.name.0, entries::SERVED);
         assert_eq!(model.entry.id.0, entries::ATTACHED);

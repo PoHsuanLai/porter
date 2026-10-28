@@ -13,18 +13,21 @@ use common::hosted::{Hosted, Link, NoDirectory, Service, host, keep};
 use common::{Known, client};
 use ds_settings::live::{AnyOwner, LiveClient};
 use ds_settings::schema::KeyPath;
+use porter_callers::CallerRole;
+use porter_capability::{Claim, Offer, Provenance, Subject};
+use porter_core::AccountId;
 use porter_core::{
-    Account, AccountId, AccountLabel, AccountState, AuthKind, Claim, Credential, EndpointUrl,
-    Family, LoginName, Offer, Provenance, Restriction, SecretKey, SecretPurpose, SecretText,
-    ServiceEndpoint, Subject, Tls, UnixSeconds,
+    Account, AccountLabel, AccountState, AuthKind, Credential, EndpointUrl, Family, LoginName,
+    Restriction, SecretKey, SecretPurpose, SecretText, ServiceEndpoint, Tls,
 };
-use porter_dbus::{CallerRole, SyncProxy};
+use porter_dbus::sync::SyncProxy;
 use porter_fake::FakeProvider;
 use porter_fake_servers::{FakeGraph, GraphHandle, Running};
 use porter_families::set::ProviderNames;
+use porter_ids::UnixSeconds;
 use porter_provider::Provider;
 use porter_secrets::{MemorySecrets, Secrets};
-use porter_service::Registry;
+use porter_service_core::registry::Registry;
 use std::sync::Arc;
 use std::time::Duration;
 use syncd::datasets::pim::Wiring;
@@ -171,6 +174,9 @@ async fn rig() -> Rig {
         settings: Settings::quick(),
         network,
         owners: Access::default(),
+        clock: porter_sync::Clock::new(porter_ids::clock::SystemClock),
+        nonce: "t1".to_owned(),
+        millis: Arc::new(syncd::datasets::photos::ManualMillis::at(1_700_000_000_000)),
     };
     let supervisor = StorageSupervisor::new(
         wiring,
@@ -201,7 +207,7 @@ fn word(on: bool) -> toml::Value {
 }
 
 async fn eventually(what: &str, mut check: impl FnMut() -> bool) {
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         if check() {
             return;

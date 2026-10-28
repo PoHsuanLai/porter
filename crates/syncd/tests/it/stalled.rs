@@ -5,13 +5,13 @@
 //! the pieces' spacing are virtual; with no kernel I/O the clock can only advance when every
 //! task waits on a timer), so a loaded machine cannot make a gap longer than the idle time.
 
-use porter_core::WebUrl;
 use porter_core::stream::{ByteStream, duplex};
-use porter_http::{Http, HttpError, HttpRequest, Method};
+use porter_http::http::{Method, Request};
+use porter_http::{Http, HttpError, request};
+use porter_http_relay::{Dial, RelayHttp, RelayLimits, RelayStream};
+use porter_ids::WebUrl;
 use std::sync::Mutex;
 use std::time::Duration;
-use storage_webdav::{Dial, StreamHttp, StreamLimits};
-use syncd::webdav::RelayStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio::time::Instant;
@@ -41,22 +41,27 @@ impl Dial for Once {
     }
 }
 
-fn get() -> HttpRequest {
-    HttpRequest::new(
-        Method::Get,
-        WebUrl::parse("http://127.0.0.1:9/dav/").expect("url"),
-    )
+fn get() -> Request<Vec<u8>> {
+    let url = WebUrl::parse("http://127.0.0.1:9/dav/").expect("url");
+    request(Method::GET, &url)
+        .body(Vec::new())
+        .expect("request")
 }
 
 const IDLE: Duration = Duration::from_millis(200);
 
+/// Limits whose silence is the test's idle time.
+fn limits() -> RelayLimits {
+    RelayLimits {
+        silence: IDLE,
+        ..RelayLimits::default()
+    }
+}
+
 #[tokio::test(start_paused = true)]
 async fn a_server_that_never_answers_ends_the_request_as_timed_out() {
     let (ours, mut theirs) = duplex(64 * 1024);
-    let http = StreamHttp::new(
-        Once::new(RelayStream::from_memory(ours).with_idle(IDLE)),
-        StreamLimits::default(),
-    );
+    let http = RelayHttp::new(Once::new(RelayStream::from_memory(ours)), limits());
     // The server reads the request and then says nothing, holding the connection open.
     let silent = tokio::spawn(async move {
         let mut request = [0u8; 1024];
@@ -74,10 +79,7 @@ async fn a_server_that_never_answers_ends_the_request_as_timed_out() {
 #[tokio::test]
 async fn a_body_that_stalls_part_way_ends_the_request_as_timed_out() {
     let (ours, mut theirs) = UnixStream::pair().expect("pair");
-    let http = StreamHttp::new(
-        Once::new(RelayStream::from_unix(ours).with_idle(IDLE)),
-        StreamLimits::default(),
-    );
+    let http = RelayHttp::new(Once::new(RelayStream::from_unix(ours)), limits());
     let stalls = tokio::spawn(async move {
         let mut request = [0u8; 1024];
         let _ = theirs.read(&mut request).await;
@@ -95,10 +97,7 @@ async fn a_body_that_stalls_part_way_ends_the_request_as_timed_out() {
 #[tokio::test(start_paused = true)]
 async fn a_slow_server_that_keeps_sending_is_not_cut_off_by_the_idle_time() {
     let (ours, mut theirs) = duplex(64 * 1024);
-    let http = StreamHttp::new(
-        Once::new(RelayStream::from_memory(ours).with_idle(IDLE)),
-        StreamLimits::default(),
-    );
+    let http = RelayHttp::new(Once::new(RelayStream::from_memory(ours)), limits());
     // Four pieces, 120 ms apart: 480 ms in all, more than the idle time, but never silent for it.
     let slow = tokio::spawn(async move {
         let mut request = [0u8; 1024];
@@ -115,15 +114,15 @@ async fn a_slow_server_that_keeps_sending_is_not_cut_off_by_the_idle_time() {
         std::future::pending::<()>().await;
     });
     let got = http.send(get()).await.expect("answered");
-    assert_eq!(got.body, b"abcdef");
+    assert_eq!(got.body(), b"abcdef");
     slow.abort();
 }
 
 #[tokio::test]
 async fn a_timed_out_connection_is_not_sent_the_request_again_on_a_new_one() {
     let (ours, mut theirs) = UnixStream::pair().expect("pair");
-    let dial = Once::new(RelayStream::from_unix(ours).with_idle(IDLE));
-    let http = StreamHttp::new(dial, StreamLimits::default());
+    let dial = Once::new(RelayStream::from_unix(ours));
+    let http = RelayHttp::new(dial, limits());
     let answers_once = tokio::spawn(async move {
         let mut request = [0u8; 1024];
         let _ = theirs.read(&mut request).await;

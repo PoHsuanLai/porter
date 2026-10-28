@@ -4,7 +4,7 @@
 use crate::change::{Change, Tombstone};
 use crate::item::{ContentHash, ItemPath, RemoteItem, RemoteVersion};
 use crate::journal::{ItemState, JournalItem, LocalId};
-use porter_core::{Bytes, UnixSeconds};
+use porter_ids::{Bytes, UnixSeconds};
 use std::collections::BTreeSet;
 
 /// The changes a full listing implies against the journal, as the feed would have said them:

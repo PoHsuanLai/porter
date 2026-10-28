@@ -1,8 +1,8 @@
 use super::*;
-use crate::catalog::{CatalogDirs, parse_entry_text, read_catalog};
 use crate::entries;
-use porter_core::capability::{Capability, LlmFeature};
+use porter_capability::{Capability, LlmFeature};
 use porter_core::consent::GrantScope;
+use porter_router::catalog::{CatalogDirs, parse_entry_text, read_catalog};
 use std::path::PathBuf;
 
 fn catalogue() -> Vec<ModelEntry> {
@@ -154,18 +154,12 @@ fn no_account_is_no_card() {
 }
 
 #[test]
-fn a_card_is_a_cloud_model_at_the_reachs_price_that_can_chat_and_call_tools() {
+fn a_card_is_a_metered_cloud_model_that_can_chat_and_call_tools() {
     let models = remote_models(&catalogue(), &[account("openai", granted("g"))]);
     let card = &models[0].card;
     assert_eq!(card.model.as_str(), "gpt-6-luna");
     assert_eq!(card.locality, Where::Cloud { region: None });
-    assert_eq!(
-        card.billing,
-        Billing::Metered(PriceTable {
-            input_per_mtok: MicroUsd(100_000),
-            output_per_mtok: MicroUsd(500_000),
-        })
-    );
+    assert_eq!(card.billing, Billing::Metered);
     let [Capability::Llm(llm)] = card.capabilities.as_slice() else {
         panic!("one language capability: {:?}", card.capabilities);
     };

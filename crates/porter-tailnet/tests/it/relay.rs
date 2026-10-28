@@ -1,12 +1,12 @@
 //! A local path that leads to one of the persons's computers, checked on every connection.
 
 use super::common::{addresses, fake, free_port, network, scratch};
-use porter_core::NodeId;
-use porter_fake::GENEROUS;
 use porter_fake_servers::Daemon;
 use porter_tailnet::{DialError, Dialer, OnFault, Relay};
+use porter_tailscale::NodeId;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
+use test_kit::GENEROUS;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, UnixStream};
 
@@ -56,19 +56,22 @@ async fn bytes_go_both_ways_and_each_connection_asks_tailscale_again() {
     let path = dir.join("pi.sock");
     let faults = Arc::new(Mutex::new(Vec::new()));
     let told = Arc::clone(&faults);
-    let on_fault: OnFault = Arc::new(move |fault: &DialError| told.lock().unwrap().push(*fault));
+    let on_fault: OnFault = Arc::new(move |fault: &DialError| {
+        told.lock().unwrap().push(*fault);
+        format!("answered for {fault}")
+    });
     let _relay = Relay::start(&path, node("nPI"), Dialer::new(api, port), on_fault).expect("relay");
 
     assert_eq!(through(&path).await, "pong");
     assert_eq!(*count.lock().unwrap(), 1);
 
-    // The computer is tagged now: the next connection is turned away, with the reason in words,
-    // and nothing reaches it.
+    // The computer is tagged now: the next connection is turned away, with the text the caller
+    // wrote for the reason, and nothing reaches it.
     fake.edit(|net| net.peers[0].tags.push("tag:ci".into()));
     let refused = through(&path).await;
     assert!(refused.starts_with("HTTP/1.1 503"), "{refused}");
     assert!(
-        refused.contains("That computer is not one of your own."),
+        refused.contains("answered for the computer is not the user's own"),
         "{refused}"
     );
     assert_eq!(*count.lock().unwrap(), 1);
@@ -84,7 +87,7 @@ async fn a_path_left_by_an_earlier_run_is_replaced() {
     let dir = scratch("relay-stale-path");
     let path = dir.join("pi.sock");
     std::fs::write(&path, "left over").unwrap();
-    let nothing: OnFault = Arc::new(|_| {});
+    let nothing: OnFault = Arc::new(|_| String::new());
     let _relay = Relay::start(&path, node("nPI"), Dialer::new(api, port), nothing).expect("relay");
     assert_eq!(through(&path).await, "pong");
     assert_eq!(*count.lock().unwrap(), 1);

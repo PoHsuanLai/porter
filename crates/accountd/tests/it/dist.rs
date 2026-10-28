@@ -78,6 +78,43 @@ fn the_unit_is_a_sandbox_with_the_network_it_needs_and_no_more() {
     }
 }
 
+/// accountd holds the AI keys as well now, and its sandbox is exactly what it was: it writes the
+/// two state directories and the config directory it already had, nothing for a key (a key travels
+/// on a sealed memfd), and it reads inferd's old store through the person's home, which is
+/// readable. None of the limits is loosened: the same directives, the same values.
+#[test]
+fn holding_the_ai_keys_loosens_no_limit_and_adds_no_path() {
+    let unit = dist("accountd.service");
+    assert_eq!(value(&unit, "RuntimeDirectory"), None, "no place for a key");
+    assert_eq!(value(&unit, "ReadWritePaths"), None);
+    assert_eq!(
+        value(&unit, "StateDirectory"),
+        Some("porter quire/accountd")
+    );
+    assert_eq!(value(&unit, "ConfigurationDirectory"), Some("porter"));
+    for (limit, want) in [
+        ("MemoryDenyWriteExecute", "yes"),
+        ("RestrictNamespaces", "yes"),
+        ("RestrictRealtime", "yes"),
+        ("RestrictSUIDSGID", "yes"),
+        ("LockPersonality", "yes"),
+        ("NoNewPrivileges", "yes"),
+        ("CapabilityBoundingSet", ""),
+        ("AmbientCapabilities", ""),
+        ("UMask", "0077"),
+    ] {
+        assert_eq!(value(&unit, limit), Some(want), "{limit}");
+    }
+    assert_eq!(
+        value(&unit, "IPAddressDeny"),
+        None,
+        "providers need the network, as before"
+    );
+    let sandbox = dist("accountd.service.d/sandbox.conf");
+    assert_eq!(value(&sandbox, "ProtectHome"), Some("read-only"));
+    assert_eq!(value(&sandbox, "ReadWritePaths"), None);
+}
+
 #[test]
 fn the_test_proc_root_feature_is_not_a_default_feature() {
     let manifest: toml::Table = include_str!("../../Cargo.toml").parse().expect("manifest");
@@ -96,16 +133,16 @@ fn the_test_proc_root_feature_is_not_a_default_feature() {
 
 #[test]
 fn the_sample_caller_table_gives_settings_the_sheet_host_and_both_daemons_their_roles() {
+    use porter_callers::CallerRole;
     use porter_core::AppName;
-    use porter_dbus::CallerRole;
-    let table = accountd::table_from_toml(&dist("callers.toml")).expect("the sample reads");
+    let table = porter_callers::table_from_toml(&dist("callers.toml")).expect("the sample reads");
     let app = |name: &str| AppName::parse(name).expect("name");
     // Settings is its unit (sec-3 a): an app scope named `org.quire.Settings` is only an app.
     assert_eq!(table.role_of(&app("org.quire.Settings")), CallerRole::App);
     for (unit, role) in [
         ("org.quire.Settings.service", CallerRole::Settings),
         ("sill.service", CallerRole::SheetHost),
-        ("inferd.service", CallerRole::PorterDaemon),
+        ("inferd.service", CallerRole::AiBroker),
         ("syncd.service", CallerRole::PorterDaemon),
     ] {
         assert_eq!(
@@ -201,10 +238,10 @@ fn nothing_that_ships_names_the_file_key_store() {
 }
 
 #[test]
-fn no_shipped_row_grants_the_agent_launcher_role_and_the_sample_leaves_it_to_inferd() {
-    use porter_dbus::CallerRole;
+fn no_shipped_row_grants_the_agent_launcher_role_and_the_sample_shows_how_a_machine_lists_it() {
+    use porter_callers::CallerRole;
     let shipped = dist("callers.toml");
-    let table = accountd::table_from_toml(&shipped).expect("the sample reads");
+    let table = porter_callers::table_from_toml(&shipped).expect("the sample reads");
     assert!(
         table
             .callers
@@ -212,9 +249,9 @@ fn no_shipped_row_grants_the_agent_launcher_role_and_the_sample_leaves_it_to_inf
             .all(|row| row.role != CallerRole::AgentLauncher),
         "the launcher is listed by the machine that runs it, never by default"
     );
-    // The launcher's row is documented in inferd's table (dist/inferd.toml), which serves it.
+    // The launcher's interface is accountd's now, so its row is documented here, commented out.
     assert!(
-        !shipped.contains("DocketAcp"),
-        "accountd's sample no longer shows the launcher row"
+        shipped.contains("#   role = \"agent_launcher\""),
+        "accountd's sample shows the launcher row"
     );
 }

@@ -1,14 +1,17 @@
 //! A provider that answers from its declaration and mints predictable tokens.
 
-use porter_core::sheet::{SignInFault, SignInInput};
+use porter_capability::{Claim, Offer, Provenance, Subject};
+use porter_core::AccountId;
 use porter_core::{
-    Account, AccountId, AccountLabel, Audience, Claim, Credential, IssuedToken, Offer, Provenance,
-    Restriction, SecretPurpose, SecretText, Subject, TokenKind, UnixSeconds,
+    Account, AccountLabel, Audience, Credential, IssuedToken, Restriction, SecretPurpose,
+    SecretText, TokenKind,
 };
+use porter_ids::UnixSeconds;
 use porter_provider::{
     Presented, Provider, ProviderError, ProviderSession, ProviderSpec, RevokeOutcome, SignIn,
     SignInMode, SignInStart, SignInStep, Signed, parse_provider,
 };
+use porter_sheet::{SignInFault, SignInInput};
 
 /// A provider over one parsed provider file.
 #[derive(Debug, Clone)]
@@ -131,7 +134,7 @@ impl Provider for FakeProvider {
         account: &AccountId,
         presented: Presented,
     ) -> Result<FakeSession, ProviderError> {
-        let needs_secret = porter_service::secret_purpose(self.auth_kind()).is_some();
+        let needs_secret = self.auth_kind().facts().secret.is_some();
         match (needs_secret, presented) {
             (true, Presented::Anonymous) => Err(ProviderError::Unauthorized),
             (_, Presented::Credential(_)) if self.refuses_refresh => {

@@ -18,6 +18,10 @@ pub struct Prop {
     /// its qualified name, so a `resourcetype` reads
     /// `DAV:collection urn:ietf:params:xml:ns:carddav:addressbook`.
     pub value: String,
+    /// The same entries as `value` joins, kept apart: one per element of a property that holds
+    /// elements (an `href` child gives its text as written, so a literal space inside it stays),
+    /// or the property's own text when it has no element, and none when it has neither.
+    pub items: Vec<String>,
     /// The status of the property's `propstat`.
     pub status: PropStatus,
 }
@@ -76,6 +80,25 @@ pub fn parse_status_line(line: &str) -> Option<u16> {
     line.split_whitespace().nth(1)?.parse().ok()
 }
 
+impl Multistatus {
+    /// The value of `name` in the first response that found it, when it is not empty.
+    pub fn first_found(&self, name: &str) -> Option<&str> {
+        self.responses
+            .iter()
+            .find_map(|r| r.found(name))
+            .filter(|v| !v.is_empty())
+    }
+
+    /// The entries of `name` in the first response that found it with a non-empty value
+    /// ([`Prop::items`]).
+    pub fn first_found_items(&self, name: &str) -> Option<&[String]> {
+        self.responses
+            .iter()
+            .find(|r| r.found(name).is_some_and(|v| !v.is_empty()))
+            .and_then(|r| r.found_items(name))
+    }
+}
+
 impl Response {
     /// The first property called `name` (qualified), whatever its status.
     pub fn prop(&self, name: &str) -> Option<&Prop> {
@@ -84,10 +107,19 @@ impl Response {
 
     /// The value of `name` when the server found it.
     pub fn found(&self, name: &str) -> Option<&str> {
+        self.found_prop(name).map(|p| p.value.as_str())
+    }
+
+    /// The entries of `name` when the server found it, each kept whole: an href with a space
+    /// in it is one entry ([`Prop::items`]).
+    pub fn found_items(&self, name: &str) -> Option<&[String]> {
+        self.found_prop(name).map(|p| p.items.as_slice())
+    }
+
+    fn found_prop(&self, name: &str) -> Option<&Prop> {
         self.props
             .iter()
             .find(|p| p.name == name && p.status == PropStatus::Found)
-            .map(|p| p.value.as_str())
     }
 
     /// Whether the response reports the resource as no longer there (a 404 status).
@@ -104,10 +136,14 @@ fn response(node: Node<'_, '_>) -> Response {
             .and_then(|s| parse_status_line(&text(s)))
             .map_or(PropStatus::Found, prop_status);
         for prop in children(propstat, "prop") {
-            props.extend(prop.children().filter(Node::is_element).map(|p| Prop {
-                name: qualify(p.tag_name().namespace(), p.tag_name().name()),
-                value: value(p),
-                status,
+            props.extend(prop.children().filter(Node::is_element).map(|p| {
+                let items = items(p);
+                Prop {
+                    name: qualify(p.tag_name().namespace(), p.tag_name().name()),
+                    value: items.join(" "),
+                    items,
+                    status,
+                }
             }));
         }
     }
@@ -128,8 +164,8 @@ fn prop_status(code: u16) -> PropStatus {
     }
 }
 
-/// A property's value, as [`Prop::value`] describes it.
-fn value(node: Node<'_, '_>) -> String {
+/// A property's entries, as [`Prop::items`] describes them.
+fn items(node: Node<'_, '_>) -> Vec<String> {
     let elements: Vec<String> = node
         .children()
         .filter(Node::is_element)
@@ -139,8 +175,11 @@ fn value(node: Node<'_, '_>) -> String {
         })
         .collect();
     match elements.is_empty() {
-        true => text(node),
-        false => elements.join(" "),
+        false => elements,
+        true => Some(text(node))
+            .filter(|t| !t.is_empty())
+            .into_iter()
+            .collect(),
     }
 }
 

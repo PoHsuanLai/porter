@@ -19,14 +19,18 @@
 //! Drive has no `If-Match` either: a resumable session that replaces a file asks again what the
 //! file is before its last chunk and when it is resumed.
 
-use crate::addr::{FILE_FIELDS, encode};
+use crate::addr::FILE_FIELDS;
 use crate::feed::link;
 use crate::json::{File, GeneratedIds};
-use crate::refuse::{refused, write_error};
+use crate::refuse::write_error;
 use crate::replica::GdriveReplica;
 use crate::write::Target;
-use porter_core::WebUrl;
-use porter_http::{Http, HttpRequest, HttpResponse, Method};
+use porter_http::http::header::CONTENT_TYPE;
+use porter_http::http::{Method, Response};
+use porter_http::{HeaderText, Http, request};
+use porter_ids::WebUrl;
+use porter_ids::percent::encode_unreserved;
+use porter_sync::status::{refused, write_unreached};
 use porter_sync::{
     BaseVersion, Conflict, DriveWrite, Found, Place, PutRefused, RemoteId, RemoteSide,
     RemoteVersion, RetryAfter, Session, Upload, UploadTo, Written,
@@ -66,7 +70,7 @@ impl<H: Http> GdriveReplica<H> {
 
     async fn settled(
         &self,
-        response: HttpResponse,
+        response: Response<Vec<u8>>,
         target: &Target,
         base: &BaseVersion,
     ) -> Result<Written, PutRefused> {
@@ -114,11 +118,12 @@ impl<H: Http> GdriveReplica<H> {
             .addr
             .api("files", &[("fields", FILE_FIELDS)])
             .ok_or(PutRefused::Forbidden)?;
-        let request = HttpRequest::new(Method::Post, url)
-            .with_header("Content-Type", "application/json")
-            .with_body(body);
-        let response = self.write_send(request).await?;
-        if response.status.0 == 409 {
+        let make = request(Method::POST, &url)
+            .header(CONTENT_TYPE, "application/json")
+            .body(body.into_bytes())
+            .map_err(|e| write_unreached(e.into()))?;
+        let response = self.write_send(make).await?;
+        if response.status().as_u16() == 409 {
             return Err(self.made_before(place).await);
         }
         let target = Target::New {
@@ -160,7 +165,7 @@ impl<H: Http> GdriveReplica<H> {
             }
             (false, _) => self.resumable(&upload, &meta).await?,
         };
-        if let (409, UploadTo::New(place)) = (response.status.0, &upload.to) {
+        if let (409, UploadTo::New(place)) = (response.status().as_u16(), &upload.to) {
             return Err(self.made_before(place).await);
         }
         self.settled(response, &target, &upload.base).await
@@ -182,10 +187,12 @@ impl<H: Http> GdriveReplica<H> {
         let Some(url) = link(session.address()).filter(ours) else {
             return Ok(Resumed::Gone);
         };
-        let request = HttpRequest::new(Method::Put, url.clone())
-            .with_header("Content-Range", format!("bytes */{size}"));
-        let response = self.write_send(request).await?;
-        match response.status.0 {
+        let ask = request(Method::PUT, &url)
+            .header("Content-Range", format!("bytes */{size}"))
+            .body(Vec::new())
+            .map_err(|e| write_unreached(e.into()))?;
+        let response = self.write_send(ask).await?;
+        match response.status().as_u16() {
             308 => {
                 let from = response
                     .header("range")
@@ -196,7 +203,7 @@ impl<H: Http> GdriveReplica<H> {
             }
             200 | 201 => Ok(Resumed::Done(response)),
             404 | 410 => Ok(Resumed::Gone),
-            _ => Err(write_error(&response)),
+            _ => Err(write_error(&response, self.clock.now())),
         }
     }
 
@@ -206,24 +213,26 @@ impl<H: Http> GdriveReplica<H> {
         &self,
         upload: &Upload<'_>,
         meta: &str,
-    ) -> Result<Result<WebUrl, HttpResponse>, PutRefused> {
+    ) -> Result<Result<WebUrl, Response<Vec<u8>>>, PutRefused> {
         let pairs = [("uploadType", "resumable"), ("fields", FILE_FIELDS)];
         let start = match &upload.to {
             UploadTo::New(_) => self.addr.upload("files", &pairs),
             UploadTo::Replace(id) => self
                 .addr
-                .upload(&format!("files/{}", encode(&id.0)), &pairs),
+                .upload(&format!("files/{}", encode_unreserved(&id.0)), &pairs),
         };
-        let mut request = HttpRequest::new(Method::Post, start.ok_or(PutRefused::Forbidden)?)
-            .with_header("Content-Type", "application/json; charset=UTF-8")
-            .with_header("X-Upload-Content-Type", "application/octet-stream")
-            .with_header("X-Upload-Content-Length", upload.content.size().to_string())
-            .with_body(meta.as_bytes().to_vec());
+        let mut open = request(Method::POST, &start.ok_or(PutRefused::Forbidden)?)
+            .header(CONTENT_TYPE, "application/json; charset=UTF-8")
+            .header("X-Upload-Content-Type", "application/octet-stream")
+            .header("X-Upload-Content-Length", upload.content.size().to_string());
         if matches!(upload.to, UploadTo::Replace(_)) {
-            request = request.with_header("X-HTTP-Method-Override", "PATCH");
+            open = open.header("X-HTTP-Method-Override", "PATCH");
         }
-        let created = self.write_send(request).await?;
-        if created.status.0 != 200 {
+        let open = open
+            .body(meta.as_bytes().to_vec())
+            .map_err(|e| write_unreached(e.into()))?;
+        let created = self.write_send(open).await?;
+        if created.status().as_u16() != 200 {
             return Ok(Err(created));
         }
         let url = created
@@ -238,7 +247,11 @@ impl<H: Http> GdriveReplica<H> {
     }
 
     /// Sends `upload` in a resumable session, resuming the one it names when Drive still has it.
-    async fn resumable(&self, upload: &Upload<'_>, meta: &str) -> Result<HttpResponse, PutRefused> {
+    async fn resumable(
+        &self,
+        upload: &Upload<'_>,
+        meta: &str,
+    ) -> Result<Response<Vec<u8>>, PutRefused> {
         let total = upload.content.size();
         let resumed = match &upload.resume {
             Some(session) => self.session_at(session, total).await?,
@@ -286,13 +299,14 @@ impl<H: Http> GdriveReplica<H> {
                 upload.progress.session(None);
                 return Err(why);
             }
-            let request = HttpRequest::new(Method::Put, url.clone())
-                .with_header("Content-Type", "application/octet-stream")
-                .with_header("Content-Range", format!("bytes {sent}-{last}/{total}"))
-                .with_body(chunk);
+            let piece = request(Method::PUT, &url)
+                .header(CONTENT_TYPE, "application/octet-stream")
+                .header("Content-Range", format!("bytes {sent}-{last}/{total}"))
+                .body(chunk)
+                .map_err(|e| write_unreached(e.into()))?;
             // Not reached: the session stays, to be resumed.
-            let response = self.write_send(request).await?;
-            match response.status.0 {
+            let response = self.write_send(piece).await?;
+            match response.status().as_u16() {
                 308 => {
                     sent = last + 1;
                     upload.progress.sent(sent);
@@ -319,15 +333,16 @@ impl<H: Http> GdriveReplica<H> {
         id: &RemoteId,
         meta: serde_json::Value,
         parents: &[(&str, &str)],
-    ) -> Result<HttpResponse, PutRefused> {
+    ) -> Result<Response<Vec<u8>>, PutRefused> {
         let mut pairs = vec![("fields", FILE_FIELDS)];
         pairs.extend_from_slice(parents);
         let url = self.addr.file(&id.0, &pairs).ok_or(PutRefused::Forbidden)?;
-        let request = HttpRequest::new(Method::Post, url)
-            .with_header("X-HTTP-Method-Override", "PATCH")
-            .with_header("Content-Type", "application/json")
-            .with_body(meta.to_string());
-        self.write_send(request).await
+        let update = request(Method::POST, &url)
+            .header("X-HTTP-Method-Override", "PATCH")
+            .header(CONTENT_TYPE, "application/json")
+            .body(meta.to_string().into_bytes())
+            .map_err(|e| write_unreached(e.into()))?;
+        self.write_send(update).await
     }
 
     async fn drive_relocate(
@@ -359,7 +374,7 @@ impl<H: Http> GdriveReplica<H> {
         let response = self
             .update_meta(item, serde_json::json!({"trashed": true}), &[])
             .await?;
-        match response.status.0 {
+        match response.status().as_u16() {
             200 => {
                 self.state().folders.remove(item);
                 Ok(())
@@ -390,14 +405,17 @@ impl<H: Http> GdriveReplica<H> {
                 &[("count", &count), ("space", "drive")],
             )
             .ok_or(PutRefused::Forbidden)?;
-        let response = self.write_send(HttpRequest::new(Method::Get, url)).await?;
-        match response.status.0 {
+        let get = request(Method::GET, &url)
+            .body(Vec::new())
+            .map_err(|e| write_unreached(e.into()))?;
+        let response = self.write_send(get).await?;
+        match response.status().as_u16() {
             200 => {
                 let ids: GeneratedIds =
-                    serde_json::from_slice(&response.body).map_err(|_| again())?;
+                    serde_json::from_slice(response.body()).map_err(|_| again())?;
                 Ok(ids.ids.into_iter().map(RemoteId).collect())
             }
-            _ => Err(write_error(&response)),
+            _ => Err(write_error(&response, self.clock.now())),
         }
     }
 }
@@ -407,7 +425,7 @@ enum Resumed {
     /// Drive wants the bytes from here on.
     At(WebUrl, u64),
     /// It had them all: the finished file's answer.
-    Done(HttpResponse),
+    Done(Response<Vec<u8>>),
     /// Drive no longer has it.
     Gone,
 }

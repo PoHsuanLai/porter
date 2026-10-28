@@ -1,15 +1,14 @@
 //! The helper's checks and the fd it hands back, over a socket pair.
 
 use crate::common::FakeMounts;
-use porter_fake::Scratch;
 use porter_mountd::client;
 use porter_mountd::server::{At, Helper, Refusal};
-use porter_mountd::wire::{self, Access, FolderName, Reply, Request};
-use porter_mountd::words;
+use porter_mountd::wire::{self, Access, Code, FolderName, Reply, Request};
 use std::io::{Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
+use test_kit::Scratch;
 
 fn name(text: &str) -> FolderName {
     FolderName::parse(text).expect("name")
@@ -111,7 +110,7 @@ fn a_writable_mount_is_asked_with_its_access() {
 }
 
 #[test]
-fn a_refused_name_is_answered_with_words_and_nothing_is_touched() {
+fn a_refused_name_is_answered_with_a_code_and_nothing_is_touched() {
     let dir = Scratch::new("mountd-names");
     let (cloud, real) = cloud(&dir);
     let helper = Helper::new(cloud, FakeMounts::default());
@@ -131,7 +130,7 @@ fn a_refused_name_is_answered_with_words_and_nothing_is_touched() {
             matches!(outcome, Err(Refusal::Message(_))),
             "{bad:?}: {outcome:?}"
         );
-        assert_eq!(reply, Reply::Refused(words::NOT_HERE.to_owned()));
+        assert_eq!(reply, Reply::Refused(Code::NotHere));
         assert!(fd.is_none());
     }
     assert!(helper.mounts().writers.lock().expect("writers").is_empty());
@@ -150,7 +149,7 @@ fn a_folder_that_leads_out_of_cloud_is_refused() {
     for folder in ["OneDrive", "Google Drive"] {
         let refused = helper.handle(&mount(folder)).expect_err(folder);
         assert!(matches!(refused, Refusal::NotInCloud(_)), "{refused:?}");
-        assert_eq!(refused.words(), words::NOT_HERE);
+        assert_eq!(refused.code(), Code::NotHere);
     }
     assert!(helper.mounts().writers.lock().expect("writers").is_empty());
 }
@@ -164,7 +163,7 @@ fn a_folder_with_files_of_its_own_is_refused() {
     let helper = Helper::new(cloud, FakeMounts::default());
     let refused = helper.handle(&mount("OneDrive")).expect_err("not empty");
     assert!(matches!(refused, Refusal::NotEmpty(_)), "{refused:?}");
-    assert_eq!(refused.words(), words::FOLDER_IN_USE);
+    assert_eq!(refused.code(), Code::FolderInUse);
     assert!(helper.mounts().writers.lock().expect("writers").is_empty());
     // An empty folder is used as it is.
     std::fs::remove_file(real.join("OneDrive/notes.txt")).expect("rm");
@@ -179,7 +178,7 @@ fn one_live_mount_per_name_and_a_stale_one_is_cleared_first() {
     helper.handle(&mount("OneDrive")).expect("first");
     let again = helper.handle(&mount("OneDrive")).expect_err("second");
     assert!(matches!(again, Refusal::AlreadyShown(_)), "{again:?}");
-    assert_eq!(again.words(), words::ALREADY_SHOWN);
+    assert_eq!(again.code(), Code::AlreadyShown);
     // Another name is its own.
     helper.handle(&mount("Google Drive")).expect("another name");
 
@@ -226,7 +225,7 @@ fn a_caller_of_another_uid_is_refused() {
         matches!(outcome, Err(Refusal::Peer(uid)) if uid == me.as_raw()),
         "{outcome:?}"
     );
-    assert_eq!(reply, Reply::Refused(words::NOT_HERE.to_owned()));
+    assert_eq!(reply, Reply::Refused(Code::NotHere));
     assert!(fd.is_none());
     assert!(helper.mounts().writers.lock().expect("writers").is_empty());
 }
@@ -244,7 +243,7 @@ fn a_failed_mount_says_the_drive_cannot_be_shown() {
     );
     let (outcome, reply, fd) = exchange(&helper, &mount("OneDrive").encode());
     assert!(matches!(outcome, Err(Refusal::Mount(..))), "{outcome:?}");
-    assert_eq!(reply, Reply::Refused(words::NOT_HERE.to_owned()));
+    assert_eq!(reply, Reply::Refused(Code::NotHere));
     assert!(fd.is_none());
 }
 

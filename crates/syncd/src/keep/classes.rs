@@ -10,12 +10,15 @@
 //! ([`photos_key`]), so a `Storage` grant of syncd's (the Drive app folder) never reaches them.
 
 use crate::datasets::storage::{drive_need, photos_need, storage_need};
-use porter_core::capability::{Offered, StorageScope};
-use porter_core::consent::{Decision, Grant, GrantKey, Usage};
+use porter_capability::StorageScope;
+use porter_capability::{Capability, CapabilityKind, Offer};
+use porter_core::AccountId;
+use porter_core::{Account, AppId, AppName, DataClass, Family, Isolation, SpaceScope};
 use porter_core::{
-    Account, AccountId, AppId, AppName, Capability, CapabilityKind, DataClass, Family, Isolation,
-    Match, Need, Offer, SpaceScope, matches,
+    GrantKey,
+    consent::{Decision, Grant, Usage},
 };
+use porter_match::{Match, Need, matches};
 
 /// What syncd is allowed to keep of an account.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -116,9 +119,10 @@ fn has_endpoint(account: &Account, family: Family) -> bool {
 /// Whether `account` offers Google Photos uploads (a Photos capability that uploads, and the
 /// upload API's endpoint).
 fn google_photos(account: &Account) -> bool {
-    let uploads = account.capabilities.iter().any(|claim| {
-        matches!(&claim.offer, Offer::Present(Capability::Photos(cap)) if cap.upload == Offered::Present)
-    });
+    let uploads = account
+        .capabilities
+        .iter()
+        .any(|claim| matches!(&claim.offer, Offer::Present(Capability::Photos(cap)) if cap.upload));
     uploads && has_endpoint(account, Family::GooglePhotosUpload)
 }
 
@@ -140,7 +144,7 @@ pub fn sync_offers(account: &Account) -> Vec<SyncClass> {
     match storage {
         Some(cap) if graph => {
             offered.push(SyncClass::Files);
-            if cap.chunked_upload == Offered::Present {
+            if cap.chunked_upload {
                 offered.push(SyncClass::Photos);
             }
         }
@@ -185,8 +189,8 @@ pub fn need_for(account: &Account, class: SyncClass) -> Need {
 mod tests {
     use super::*;
     use porter_core::GrantId;
-    use porter_core::UnixSeconds;
     use porter_core::consent::GrantScope;
+    use porter_ids::UnixSeconds;
 
     fn grant(key: GrantKey, decision: Decision) -> Grant {
         Grant {

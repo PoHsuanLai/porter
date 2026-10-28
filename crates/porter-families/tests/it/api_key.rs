@@ -4,21 +4,21 @@
 //! handed to an app.
 #![cfg(feature = "api_key")]
 
-use porter_core::capability::{Capability, CapabilityKind};
-use porter_core::sheet::{
-    Entry, FieldAnswer, FieldKind, FieldValue, Presence, SignInFault, SignInInput,
-};
+use porter_capability::{Capability, CapabilityKind};
+use porter_capability::{Offer, Provenance};
+use porter_core::AccountId;
 use porter_core::{
-    Account, AccountId, AccountLabel, AccountState, Audience, AuthKind, Credential, EndpointUrl,
-    Offer, Provenance, Restriction, SecretPurpose, SecretText,
+    Account, AccountLabel, AccountState, Audience, AuthKind, Credential, EndpointUrl, Restriction,
+    SecretPurpose, SecretText,
 };
 use porter_fake_servers::{Auth, Call, FakeLlmApi, LlmApiHandle, Running, shipped};
 use porter_families::ApiKeyProvider;
-use porter_http::HyperHttp;
+use porter_http_reqwest::ReqwestHttp;
 use porter_provider::{
     Presented, Provider, ProviderError, ProviderSession, RevokeOutcome, SignIn, SignInMode,
     SignInStart, SignInStep, Signed,
 };
+use porter_sheet::{Entry, FieldAnswer, FieldKind, FieldValue, Presence, SignInFault, SignInInput};
 use std::time::Duration;
 
 const PASTED: &str = "sk-live-pasted-key-0001";
@@ -78,7 +78,7 @@ fn reauth() -> SignInMode {
 
 async fn company(id: &str, auth: Auth) -> (Running<LlmApiHandle>, ApiKeyProvider) {
     let fake = FakeLlmApi::start(auth).await.expect("fake company");
-    let provider = ApiKeyProvider::with_http(fake.point(&shipped::ai(id)), HyperHttp::default());
+    let provider = ApiKeyProvider::with_http(fake.point(&shipped::ai(id)), ReqwestHttp::default());
     (fake, provider)
 }
 
@@ -113,7 +113,7 @@ fn assert_one_llm_claim(signed: &Signed) {
     let own: Vec<_> = signed
         .claims
         .iter()
-        .filter(|claim| claim.subject == porter_core::Subject::Account)
+        .filter(|claim| claim.subject == porter_capability::Subject::Account)
         .collect();
     assert_eq!(own.len(), 1);
     let claim = own[0];
@@ -172,7 +172,7 @@ async fn a_pasted_key_is_asked_for_hidden_checked_the_documented_way_and_reviewe
             panic!("{id}: a review: {review:?}");
         };
         assert_eq!(label.0, shipped::ai(id).label, "{id}");
-        let own = |c: &&porter_core::Claim| c.subject == porter_core::Subject::Account;
+        let own = |c: &&porter_capability::Claim| c.subject == porter_capability::Subject::Account;
         assert_eq!(claims.iter().filter(own).count(), 1, "{id}");
         let signed = signed_of(signin.next(SignInInput::Confirm(Vec::new())).await);
         assert_eq!(key_of(&signed), PASTED, "{id}");
@@ -196,7 +196,7 @@ async fn a_key_in_the_wrong_header_is_refused_by_the_company() {
         porter_core::Family::Messages,
         &fake.api_url(),
     );
-    let provider = ApiKeyProvider::with_http(mismatched, HyperHttp::default());
+    let provider = ApiKeyProvider::with_http(mismatched, ReqwestHttp::default());
     assert_eq!(
         provider
             .discover(&account("anthropic"), &live(PASTED))
@@ -252,7 +252,7 @@ async fn signing_in_again_skips_the_review_and_a_dead_server_is_unreachable() {
     let spec = fake.point(&shipped::ai("openai"));
     drop(fake);
     tokio::time::sleep(Duration::from_millis(50)).await;
-    let provider = ApiKeyProvider::with_http(spec, HyperHttp::default());
+    let provider = ApiKeyProvider::with_http(spec, ReqwestHttp::default());
     let mut signin = provider.sign_in(start(SignInMode::Add)).expect("sign-in");
     signin.next(SignInInput::Start).await;
     assert_eq!(
@@ -271,7 +271,7 @@ async fn discover_checks_the_key_and_a_dead_key_is_unauthorized() {
             .discover(&holder, &live("sk-seeded"))
             .await
             .expect("live");
-        let own = |c: &&porter_core::Claim| c.subject == porter_core::Subject::Account;
+        let own = |c: &&porter_capability::Claim| c.subject == porter_capability::Subject::Account;
         assert_eq!(claims.iter().filter(own).count(), 1, "{id}");
         assert_eq!(claims[0].provenance, Provenance::Probed);
         assert_presented(&fake.calls()[0], *auth, "sk-seeded");
@@ -324,7 +324,7 @@ async fn a_session_never_hands_a_key_to_an_app_and_revoke_names_the_keys_page() 
 async fn a_file_with_no_known_keys_page_has_nothing_to_revoke_with() {
     let mut spec = shipped::ai("openai");
     spec.id = porter_core::ProviderId::parse("someone-else").expect("id");
-    let provider = ApiKeyProvider::with_http(spec, HyperHttp::default());
+    let provider = ApiKeyProvider::with_http(spec, ReqwestHttp::default());
     assert_eq!(
         provider
             .revoke(&account("someone-else"), &live("sk-x"))
@@ -335,7 +335,7 @@ async fn a_file_with_no_known_keys_page_has_nothing_to_revoke_with() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_key_account_holds_a_claim_for_each_agent_program_its_file_names() {
-    use porter_core::{Provenance, Subject};
+    use porter_capability::{Provenance, Subject};
     // (company, the programs its file names)
     const NAMED: &[(&str, &[&str])] = &[
         ("anthropic", &["claude-code"]),
@@ -380,13 +380,13 @@ async fn a_key_account_holds_a_claim_for_each_agent_program_its_file_names() {
 
 #[tokio::test]
 async fn a_server_of_the_persons_own_is_asked_for_its_address_and_an_optional_key() {
-    use porter_core::sheet::{FieldProblem, ProblemKind, form_problem_among};
     use porter_core::{Family, Tls};
+    use porter_sheet::{FieldProblem, ProblemKind, form_problem_among};
     let fake = FakeLlmApi::start(Auth::Bearer).await.expect("fake server");
     fake.seed_key(PASTED);
     let server = fake.api_url();
     let provider =
-        ApiKeyProvider::with_http(shipped::ai("openai-compatible"), HyperHttp::default());
+        ApiKeyProvider::with_http(shipped::ai("openai-compatible"), ReqwestHttp::default());
     let address = |text: &str| FieldAnswer {
         kind: FieldKind::ServerUrl,
         value: FieldValue::Plain(text.to_owned()),
@@ -446,7 +446,7 @@ async fn a_server_of_the_persons_own_is_asked_for_its_address_and_an_optional_ke
     let signed = signed_of(signin.next(SignInInput::Confirm(Vec::new())).await);
     assert_eq!(key_of(&signed), PASTED);
     assert_eq!(signed.endpoints, *endpoints);
-    let own = |c: &&porter_core::Claim| c.subject == porter_core::Subject::Account;
+    let own = |c: &&porter_capability::Claim| c.subject == porter_capability::Subject::Account;
     assert_eq!(signed.claims.iter().filter(own).count(), 1);
     let calls = fake.calls();
     assert_eq!(calls.len(), 1, "{calls:?}");

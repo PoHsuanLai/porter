@@ -11,34 +11,36 @@ use engine_supervisor::{
     SupervisorConfig, UnitSpec,
 };
 use inferd::attached::{Attached, AttachedBook};
-use inferd::audit::Memory;
-use inferd::catalog::{CatalogDirs, read_catalog};
-use inferd::clock::FixedClock;
 use inferd::cloud::Cloud;
 use inferd::cloud::spend::Ledger;
 use inferd::cloud::wire::{Door, Doors};
 use inferd::engines::Engines;
 use inferd::hosts::{HealthProbe, ProcessHost};
-use inferd::local::{EngineConfig, LocalModel, build};
 use inferd::peers::{Caller, Role, TablePeers};
 use inferd::probe::ProbeConfig;
-use inferd::replay::{NamedEngine, Replays};
+use inferd::replay::Replays;
 use inferd::report::{NoReports, Reports};
 use inferd::service::{Inference, serve_on};
 use inferd::settings::{Settings, SpendLine, TailnetServe};
-use inferd::startup::{Level, Log};
 use inferd::supervise::{Ports, Supervised};
 use inferd::tailnet::{BusMachines, Parts, Tailnet};
 use inferd::watch::{Probing, Watch};
 use model_catalog::MiB;
 use model_http::{DerCertificate, TlsRoots};
 use porter_client::{Accounts, DbusTransport};
-use porter_core::{AppId, AppName, Isolation, UnixSeconds};
-use porter_fake::Scratch;
+use porter_core::{AppId, AppName, Isolation};
+use porter_ids::UnixSeconds;
+use porter_ids::clock::FixedClock;
 use porter_infer::{ModelCard, Policy, Slot, TierMap};
+use porter_router::catalog::{CatalogDirs, read_catalog};
+use porter_router::local::NamedEngine;
+use porter_router::local::{EngineConfig, LocalModel, build};
+use porter_router::startup::{Level, Log};
+use porter_turns::audit::Memory;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use test_kit::Scratch;
 
 /// An engine host that starts nothing: it records what it was asked for. An engine never exits by
 /// itself; one that is stopped exits (an eviction or an idle unload completes).
@@ -343,9 +345,8 @@ impl World {
         for model in &mut models {
             if plan.hears.contains(&model.entry.id.0.as_str()) {
                 for capability in &mut model.card.capabilities {
-                    if let porter_core::Capability::Llm(llm) = capability {
-                        llm.features
-                            .insert(porter_core::capability::LlmFeature::AudioIn);
+                    if let porter_capability::Capability::Llm(llm) = capability {
+                        llm.features.insert(porter_capability::LlmFeature::AudioIn);
                     }
                 }
             }
@@ -457,6 +458,8 @@ impl World {
                 )
             }
         };
+        // The rig runs on the real clock, so a running model says since when.
+        let supervised = supervised.dated(std::time::SystemTime::now());
         // The person chose Automatic for text, over everything this world serves: the models
         // here and attached (each catalogue model as `local/<model>`, so a computer added later
         // is in it too), the remote ones, each catalogue model hosted by whichever account
@@ -473,7 +476,7 @@ impl World {
                     model: card.model.clone(),
                 }))
                 .chain(catalog.entries.iter().flat_map(|entry| {
-                    let model = porter_core::ModelId::parse(&entry.id.0).ok();
+                    let model = porter_capability::ModelId::parse(&entry.id.0).ok();
                     [local.clone(), cloud.clone()]
                         .into_iter()
                         .filter_map(move |account| {
@@ -573,7 +576,7 @@ impl World {
         };
         let probing = plan.probe.map(|config| {
             Watch::new(
-                porter_http::HyperHttp::new(),
+                porter_http_reqwest::ReqwestHttp::new(),
                 config,
                 served.clone(),
                 reports,
@@ -614,7 +617,7 @@ impl World {
                     .await
                     .expect("own org.quire.Accounts1");
                 held.object_server()
-                    .at(porter_dbus::TAILNET_PATH, tailscale.object())
+                    .at(porter_dbus::accounts::TAILNET_PATH, tailscale.object())
                     .await
                     .expect("serve the fake Tailnet1");
                 let (guests, said) = porter_tailnet::Guests::open(&state.join("guests.toml"));
@@ -633,6 +636,7 @@ impl World {
                             limits: porter_tailnet::Limits::default(),
                             first_pause: std::time::Duration::from_millis(50),
                             longest_pause: std::time::Duration::from_millis(200),
+                            words: inferd::tailnet::words::refusal,
                         },
                         timing: porter_tailnet::Timing {
                             backstop: std::time::Duration::from_millis(300),

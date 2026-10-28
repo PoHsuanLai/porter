@@ -2,6 +2,7 @@
 //! [`crate::Dialer`]).
 
 use crate::hello::{HELLO_PATH, Hello};
+use crate::refusal::Refusal;
 use http_body_util::{BodyExt, Empty};
 use hyper::body::Bytes;
 use hyper::client::conn::http1;
@@ -12,26 +13,27 @@ use tokio::net::TcpStream;
 /// The most of a hello read.
 const MOST: usize = 64 * 1024;
 
-/// Why a hello was not read. `Display` is the plain sentence.
+/// Why a hello was not read.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum GreetError {
-    /// The computer answered with a reason for turning this one away, in its own words.
-    #[error("{0}")]
-    Refused(String),
+    /// The computer turned this one away: with the reason it gave (its code in the answer's
+    /// body), or `None` for a code this build does not know.
+    #[error("the computer refused: {}", .0.map_or("a reason this build does not know", |r| r.slug()))]
+    Refused(Option<Refusal>),
     /// Something answered that does not lend models.
-    #[error("That computer is not offering its models.")]
+    #[error("the answer is not a lending computer's")]
     NotLending,
     /// The connection broke.
-    #[error("That computer stopped answering.")]
+    #[error("the connection broke")]
     Broken,
 }
 
-/// The words of a refusal body, when it is one.
-fn words_of(body: &[u8]) -> Option<String> {
+/// The refusal a refusal body carries, when it is one: `Some(None)` for a code not known here.
+fn refusal_of(body: &[u8]) -> Option<Option<Refusal>> {
     let value: serde_json::Value = serde_json::from_slice(body).ok()?;
-    let words = value.get("error")?.get("message")?.as_str()?;
-    (!words.is_empty() && words.len() <= 500).then(|| words.to_owned())
+    let code = value.get("error")?.get("code")?.as_str()?;
+    Some(Refusal::from_slug(code))
 }
 
 /// Asks the computer on `stream` for its hello. `host` is what the request names as the host.
@@ -72,6 +74,6 @@ pub async fn greet(stream: TcpStream, host: &str) -> Result<Hello, GreetError> {
     let (status, bytes) = answer?;
     match status {
         StatusCode::OK => Hello::parse(&bytes).ok_or(GreetError::NotLending),
-        _ => Err(words_of(&bytes).map_or(GreetError::NotLending, GreetError::Refused)),
+        _ => Err(refusal_of(&bytes).map_or(GreetError::NotLending, GreetError::Refused)),
     }
 }

@@ -9,10 +9,12 @@ use crate::cloud::models::{known_providers, provider_of};
 use crate::engines::Engines;
 use crate::settings::AgentEndpoint;
 use model_catalog::{ModelEntry, ProviderId, Wire};
-use porter_core::capability::{AgentProgram, AgentProtocol};
+use porter_capability::Locality;
+use porter_capability::{AgentProgram, AgentProtocol};
+use porter_core::AccountId;
+use porter_core::DataClass;
 use porter_core::consent::{Usage, Verdict};
-use porter_core::{AccountId, DataClass, Locality};
-use porter_dbus::EndpointArg;
+use porter_dbus::inference::EndpointArg;
 use porter_infer::ModelRef;
 use std::net::{IpAddr, Ipv4Addr};
 use tokio::net::TcpListener;
@@ -23,7 +25,7 @@ pub struct OpenRequest {
     /// The agent program's id.
     pub program: String,
     /// The route.
-    pub route: porter_dbus::RouteArg,
+    pub route: porter_dbus::inference::RouteArg,
     /// The data class, as a slug.
     pub class: String,
     /// The protocols the program speaks, as slugs.

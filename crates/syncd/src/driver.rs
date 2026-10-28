@@ -4,7 +4,6 @@
 //! daemon's to read, never a test's), a push signal is a `Notify`, the pause switch and the
 //! account's removal come through the hub's [`Handle`].
 
-use crate::clock::Clock;
 use crate::dataset::Dataset;
 use crate::engine::{Engine, Outcome, Report, SyncError};
 use crate::scheduler::{
@@ -13,6 +12,7 @@ use crate::scheduler::{
 use crate::service::{
     Confirm, ConfirmError, Event, Handle, Nudge, Settle, SettleError, StatusSnapshot,
 };
+use porter_ids::clock::Clock;
 use porter_sync::{MassDelete, Quota, Replica, StoredConflict};
 use std::sync::Arc;
 use std::time::Duration;
@@ -132,7 +132,7 @@ impl<R: Replica, D: Dataset, K: Clock> Driver<R, D, K> {
     /// time the computer was awake and the clock does not, so after a suspend a single long
     /// sleep would run late by as long as the computer slept; each step ends by looking at the
     /// clock again. Ends early, `Woken`, when something the scheduler reads changed.
-    async fn sleep_until(&mut self, at: porter_core::UnixSeconds) -> Slept {
+    async fn sleep_until(&mut self, at: porter_ids::UnixSeconds) -> Slept {
         loop {
             let remaining = u64::try_from(at.0.saturating_sub(self.engine_now().0)).unwrap_or(0);
             if remaining == 0 {
@@ -146,7 +146,7 @@ impl<R: Replica, D: Dataset, K: Clock> Driver<R, D, K> {
     }
 
     /// The engine's clock: a cycle's dating and the scheduler's must agree.
-    fn engine_now(&self) -> porter_core::UnixSeconds {
+    fn engine_now(&self) -> porter_ids::UnixSeconds {
         self.engine.now()
     }
 
@@ -243,7 +243,7 @@ impl<R: Replica, D: Dataset, K: Clock> Driver<R, D, K> {
         self.handle.cycle_ended();
     }
 
-    fn next_last(&self, result: &Result<Report, SyncError>, now: porter_core::UnixSeconds) -> Last {
+    fn next_last(&self, result: &Result<Report, SyncError>, now: porter_ids::UnixSeconds) -> Last {
         let failed = |retry_after: u32| {
             let failures = match self.last {
                 Last::Failed { failures, .. } => failures.saturating_add(1),
@@ -304,7 +304,7 @@ impl<R: Replica, D: Dataset, K: Clock> Driver<R, D, K> {
         }
     }
 
-    fn publish(&self, now: porter_core::UnixSeconds) {
+    fn publish(&self, now: porter_ids::UnixSeconds) {
         let journal = self.engine.journal();
         let anchor_age = journal
             .anchor()

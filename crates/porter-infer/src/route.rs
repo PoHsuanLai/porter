@@ -5,7 +5,10 @@
 use crate::error::InferRefusal;
 use crate::policy::{LocalOnly, Policy};
 use crate::spend::SpendVerdict;
-use porter_core::{AccountId, Billing, DataClass, Locality, ModelId};
+use porter_capability::ModelId;
+use porter_capability::{Billing, Locality};
+use porter_core::AccountId;
+use porter_core::DataClass;
 
 /// What routing needs to know about the request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -132,7 +135,7 @@ pub fn route(
 ) -> Result<Chosen, InferRefusal> {
     admit(ask, candidates, policy)?
         .into_iter()
-        .min_by_key(|c| (closeness(&c.locality), c.tier, price_rank(&c.billing)))
+        .min_by_key(|c| (closeness(&c.locality), c.tier, billing_rank(&c.billing)))
         .map(chosen_of)
         .ok_or(InferRefusal::Unavailable)
 }
@@ -159,12 +162,13 @@ pub(crate) fn closeness(locality: &Locality) -> u8 {
     }
 }
 
-/// Free, then plan allowance, then metered by list price.
-pub(crate) fn price_rank(billing: &Billing) -> (u8, u64) {
+/// Free, then plan allowance, then metered. Among metered models none is cheaper: porter keeps no
+/// price, so the order they are listed in decides.
+pub(crate) fn billing_rank(billing: &Billing) -> u8 {
     match billing {
-        Billing::Free => (0, 0),
-        Billing::PlanBudget => (1, 0),
-        Billing::Metered(price) => (2, price.input_per_mtok.0 + price.output_per_mtok.0),
+        Billing::Free => 0,
+        Billing::PlanBudget => 1,
+        Billing::Metered => 2,
     }
 }
 

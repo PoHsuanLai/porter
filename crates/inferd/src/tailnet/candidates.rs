@@ -10,8 +10,8 @@
 //! first asks Tailscale who is at the address (`porter_tailnet::Dialer`).
 
 use super::machines::Machines;
-use porter_core::{MachineOwner, NodeId};
 use porter_tailnet::{Dialer, LentModel, greet};
+use porter_tailscale::{MachineOwner, NodeId};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;

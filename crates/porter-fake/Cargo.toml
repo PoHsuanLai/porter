@@ -10,22 +10,21 @@ publish.workspace = true
 
 [dependencies]
 porter-core = { workspace = true }
-# Only for the `infer` re-exports below.
-porter-infer = { workspace = true, optional = true, features = ["testing"] }
+porter-capability = { workspace = true }
+porter-sheet = { workspace = true }
+porter-wire = { workspace = true }
+porter-ids = { workspace = true }
 porter-provider = { workspace = true }
 porter-secrets = { workspace = true, features = ["testing"] }
 porter-service = { workspace = true }
+porter-service-core = { workspace = true }
 
 [dev-dependencies]
+porter-service-accounts = { workspace = true }
+test-kit = { workspace = true }
 tokio = { workspace = true }
-
-[features]
-# `infer`: `FakeModel`, `FakeInferSession`, `Script` and `ScriptStep` at their old paths. They
-# moved to `porter_infer::testing`; the re-exports are kept for one batch. Default on so a
-# consumer outside porter builds as before; porter's own crates take `default-features = false`
-# (the workspace entry), so porter-core's test graph builds no porter-infer.
-default = ["infer"]
-infer = ["dep:porter-infer"]
+porter-match = { workspace = true }
+serde_json = { workspace = true }
 
 [lints]
 workspace = true

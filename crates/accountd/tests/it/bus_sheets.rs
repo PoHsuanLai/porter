@@ -8,11 +8,12 @@ use crate::common;
 use accountd::BusSheets;
 use common::host::send_input;
 use common::*;
+use porter_callers::CallerRole;
 use porter_core::SecretText;
-use porter_core::sheet::{FieldAnswer, FieldKind, FieldValue, SheetInput, SheetView};
-use porter_core::wire::ParentWindow;
-use porter_dbus::{CallerRole, ManagerProxy, Sheet};
-use porter_service::{SheetFault, SheetLink, SheetOpen, Sheets};
+use porter_dbus::accounts::{ManagerProxy, Sheet};
+use porter_service_core::sheets::{SheetFault, SheetLink, SheetOpen, Sheets};
+use porter_sheet::{FieldAnswer, FieldKind, FieldValue, SheetInput, SheetView};
+use porter_wire::ParentWindow;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -77,9 +78,11 @@ async fn a_forged_input_is_ignored_whoever_sends_it_and_whatever_handle_it_names
     // The real host sends a Dismiss for a handle that is not this sheet's.
     send_input(&rig.host_connection, "accountd-999", &SheetInput::Dismiss).await;
     // And a line that is not an input at all.
-    let emitter =
-        zbus::object_server::SignalEmitter::new(&rig.host_connection, porter_dbus::SHEET_PATH)
-            .expect("emitter");
+    let emitter = zbus::object_server::SignalEmitter::new(
+        &rig.host_connection,
+        porter_dbus::accounts::SHEET_PATH,
+    )
+    .expect("emitter");
     emitter
         .emit(
             "org.quire.AccountsSheet1",
@@ -135,7 +138,7 @@ async fn a_process_that_only_claimed_the_name_is_not_the_host() {
 async fn no_host_on_the_bus_is_no_sheet() {
     let rig = Rig::start_with(Default::default(), SheetHost::quiet()).await;
     rig.host_connection
-        .release_name(porter_dbus::SHEET_BUS)
+        .release_name(porter_dbus::accounts::SHEET_BUS)
         .await
         .expect("release");
     let client = rig.client("org.quire.Photos").await;
@@ -279,7 +282,7 @@ async fn a_second_sheet_of_a_kind_while_one_is_open_is_refused_until_it_ends() {
 
     sheet.closer(Some(path)).expect("closer").close().await;
     let mut asked = None;
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         match ask(client.clone()).await {
             Ok(path) => {

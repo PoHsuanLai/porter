@@ -1,5 +1,8 @@
 use super::*;
-use porter_core::{AccountId, Locality, ModelId, Tokens};
+use porter_capability::Locality;
+use porter_capability::ModelId;
+use porter_core::AccountId;
+use porter_ids::Tokens;
 use porter_infer::{JsonText, ServedBy, TokenUsage, ToolCallId, ToolName};
 
 fn reply(
@@ -15,6 +18,7 @@ fn reply(
             input: Tokens(12),
             output: Tokens(7),
             cached: Tokens(2),
+            charge: None,
         },
         ServedBy {
             account: AccountId::parse("local").expect("id"),

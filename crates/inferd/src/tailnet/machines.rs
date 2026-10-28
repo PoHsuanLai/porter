@@ -3,8 +3,8 @@
 //! account the person added, or is not working: so no computer is looked at, or connected to as a
 //! candidate, while Tailscale is not an account in the accounts.
 
-use porter_core::Machine;
-use porter_dbus::{TailnetProxy, machine_from_dbus};
+use porter_dbus::accounts::{TailnetProxy, machine_from_dbus};
+use porter_tailscale::Machine;
 use std::future::Future;
 use std::pin::Pin;
 

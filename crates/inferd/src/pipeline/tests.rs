@@ -2,29 +2,35 @@
 //! run (a fake `voice_in` model, then a text model answered by the replay engine). No network, no
 //! engine process: the replay engine is a task on a socket in the scratch directory.
 
-use super::*;
 use crate::replay::cassette::{Cassette, TEST_HEADER};
 use crate::replay::engine::serve;
 use crate::replay::model::model;
 use crate::replay::replayer::Replayer;
-use crate::router::Listed;
 use crate::runner::{Pin, Pinned, Turns};
 use crate::supervise::Supervised;
-use crate::testkit::Scratch;
-use porter_core::capability::{LanguageSet, LlmCap, LlmFeature, LlmWire, SpeechCap, SpeechMode};
+use porter_capability::Capability;
+use porter_capability::ModelId;
+use porter_capability::{Billing, Locality, Tier};
+use porter_capability::{LanguageSet, LlmCap, LlmFeature, LlmWire, SpeechCap, SpeechMode};
+use porter_core::AccountId;
+use porter_core::DataClass;
 use porter_core::consent::Usage;
-use porter_core::need::LlmNeed;
-use porter_core::{
-    AccountId, Billing, Capability, DataClass, Locality, ModelId, Need, Tier, Tokens,
-};
+use porter_ids::Tokens;
 use porter_infer::{
     Answer, AudioFrame, AudioRate, AutoPolicy, Base64Bytes, ChatMessage, ChatReply, DescribeImages,
     InferEvent, InferRefusal, InferReply, LangPick, LicenceClass, Modality, ModelCard, ModelError,
     ModelLabel, ModelRef, Pipeline, Policy, Refusal, RequestShape, Role, ShowReason, Slot,
     StageRole, SwapCost, TierMap, TranscribeBegin, TranscribeMode, TranscribeReply,
 };
+use porter_match::LlmNeed;
+use porter_match::Need;
+use porter_router::audio::AudioIn;
+use porter_router::pipeline::{catalogue_of, plan};
+use porter_router::router::Listed;
+use porter_turns::pipeline::{PipelineInput, Transcriber, VecAudio, run_pipeline, unsupported};
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
+use test_kit::Scratch;
 use tokio::net::UnixListener;
 
 fn need() -> Need {
@@ -237,7 +243,7 @@ impl Transcriber for FakeEars {
         sink: &mut S,
     ) -> Result<TranscribeReply, ModelError> {
         let mut frames = 0;
-        while let crate::speech::AudioPull::Frame(_) = audio.next().await {
+        while let porter_router::audio::AudioPull::Frame(_) = audio.next().await {
             frames += 1;
         }
         self.heard

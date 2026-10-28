@@ -3,7 +3,10 @@ use crate::control::StopReason;
 use crate::ids::ToolCallId;
 use crate::reply::{ServedBy, TokenUsage};
 use crate::request::ToolCallPart;
-use porter_core::{AccountId, Locality, ModelId, Tokens};
+use porter_capability::Locality;
+use porter_capability::ModelId;
+use porter_core::AccountId;
+use porter_ids::Tokens;
 
 fn reply(calls: &[(&str, &str)]) -> ChatReply {
     let served = ServedBy {
@@ -15,6 +18,7 @@ fn reply(calls: &[(&str, &str)]) -> ChatReply {
         input: Tokens(1),
         output: Tokens(1),
         cached: Tokens(0),
+        charge: None,
     };
     ChatReply::new("".to_owned(), StopReason::ToolUse, usage, served).with_tool_calls(
         calls

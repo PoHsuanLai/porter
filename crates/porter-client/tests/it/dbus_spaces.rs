@@ -6,7 +6,7 @@
 use crate::common;
 
 use common::accountd::{Daemon, named, photos};
-use porter_client::{DbusTransport, SpacesError};
+use porter_client::{CallFailure, DbusTransport, SpacesError};
 use porter_core::{SpaceChange, SpaceLook, SpaceName};
 
 fn name(text: &str) -> SpaceName {
@@ -38,7 +38,7 @@ async fn an_app_lists_creates_and_hears_of_new_spaces() {
 
     use porter_dbus::BusStream;
     let next = tokio::time::timeout(
-        porter_fake::GENEROUS,
+        test_kit::GENEROUS,
         std::future::poll_fn(|cx| std::pin::Pin::new(&mut changes).poll_next(cx)),
     )
     .await
@@ -55,7 +55,7 @@ async fn too_many_new_spaces_and_a_stranger_are_told_apart() {
         .spaces()
         .await
         .expect("spaces");
-    for n in 0..accountd::CREATES_PER_WINDOW {
+    for n in 0..porter_spaces::CREATES_PER_WINDOW {
         app.create(&name(&format!("Space {n}")), &SpaceLook::default())
             .await
             .expect("create");
@@ -69,5 +69,8 @@ async fn too_many_new_spaces_and_a_stranger_are_told_apart() {
         .spaces()
         .await
         .expect("spaces");
-    assert!(matches!(stranger.list().await, Err(SpacesError::Denied(_))));
+    assert!(matches!(
+        stranger.list().await,
+        Err(SpacesError::Bus(CallFailure::Denied(_)))
+    ));
 }

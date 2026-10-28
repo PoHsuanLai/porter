@@ -3,41 +3,73 @@
 //! as JSON, and the URL pieces a store's ids and query values are written into.
 
 use crate::error::CalendarError;
-use porter_core::WebUrl;
-use porter_http::{Http, HttpRequest, HttpResponse, Method};
+use porter_http::http::header::{HeaderName, HeaderValue, IF_MATCH};
+use porter_http::http::{Method, Request, Response};
+use porter_http::{Http, HttpError, request as builder};
+use porter_ids::WebUrl;
 use serde_json::Value;
 
 /// A request to `url` with `body` as JSON.
-pub(crate) fn request(method: Method, url: WebUrl, body: &Value) -> HttpRequest {
-    HttpRequest::new(method, url)
-        .with_header("Content-Type", "application/json")
-        .with_header("Accept", "application/json")
-        .with_body(body.to_string())
+pub(crate) fn request(
+    method: Method,
+    url: &WebUrl,
+    body: &Value,
+) -> Result<Request<Vec<u8>>, CalendarError> {
+    Ok(builder(method, url)
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json")
+        .body(body.to_string().into_bytes())
+        .map_err(HttpError::from)?)
 }
 
 /// A request to `url` with no body.
-pub(crate) fn bare(method: Method, url: WebUrl) -> HttpRequest {
-    HttpRequest::new(method, url).with_header("Accept", "application/json")
+pub(crate) fn bare(method: Method, url: &WebUrl) -> Result<Request<Vec<u8>>, CalendarError> {
+    Ok(builder(method, url)
+        .header("Accept", "application/json")
+        .body(Vec::new())
+        .map_err(HttpError::from)?)
+}
+
+/// `request` with the header `name: value` added; a value a header cannot carry is never sent.
+pub(crate) fn with_header(
+    mut request: Request<Vec<u8>>,
+    name: HeaderName,
+    value: &str,
+) -> Result<Request<Vec<u8>>, CalendarError> {
+    let value = HeaderValue::from_str(value).map_err(|_| HttpError::Malformed)?;
+    request.headers_mut().insert(name, value);
+    Ok(request)
+}
+
+/// `request` made conditional on the stored version still being `etag` (`If-Match`).
+pub(crate) fn if_match(
+    request: Request<Vec<u8>>,
+    etag: &str,
+) -> Result<Request<Vec<u8>>, CalendarError> {
+    with_header(request, IF_MATCH, etag)
 }
 
 /// Send `request`; a response whose status is not a success is the error it stands for.
 pub(crate) async fn exchange<H: Http>(
     http: &H,
-    request: HttpRequest,
+    request: Request<Vec<u8>>,
     what: &'static str,
-) -> Result<HttpResponse, CalendarError> {
+) -> Result<Response<Vec<u8>>, CalendarError> {
     let response = http.send(request).await?;
-    if response.status.is_success() {
+    if response.status().is_success() {
         Ok(response)
     } else {
-        Err(CalendarError::of_status(response.status.0, what))
+        Err(CalendarError::of_status(response.status().as_u16(), what))
     }
 }
 
 /// Whether a `DELETE` removed something: `true` for a success, `false` for an event that was not
 /// there, the error a status stands for otherwise.
-pub(crate) fn removed(response: &HttpResponse, what: &'static str) -> Result<bool, CalendarError> {
-    match response.status.0 {
+pub(crate) fn removed(
+    response: &Response<Vec<u8>>,
+    what: &'static str,
+) -> Result<bool, CalendarError> {
+    match response.status().as_u16() {
         200..=299 => Ok(true),
         404 | 410 => Ok(false),
         status => Err(CalendarError::of_status(status, what)),
@@ -45,8 +77,8 @@ pub(crate) fn removed(response: &HttpResponse, what: &'static str) -> Result<boo
 }
 
 /// The response's body as JSON.
-pub(crate) fn body(response: &HttpResponse) -> Result<Value, CalendarError> {
-    serde_json::from_slice(&response.body).map_err(|e| CalendarError::Malformed(e.to_string()))
+pub(crate) fn body(response: &Response<Vec<u8>>) -> Result<Value, CalendarError> {
+    serde_json::from_slice(response.body()).map_err(|e| CalendarError::Malformed(e.to_string()))
 }
 
 /// The URL written `text`, or why it is not one.

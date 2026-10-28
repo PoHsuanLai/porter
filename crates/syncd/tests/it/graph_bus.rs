@@ -9,30 +9,40 @@
 //! session, and an expired delta token uploads nothing again.
 
 use crate::common;
+use porter_ids::clock::SystemClock;
 
 use common::bus::PrivateBus;
 use common::hosted::{Link, host};
 use common::{Known, client};
+use porter_callers::CallerRole;
+use porter_capability::StorageScope;
+use porter_capability::{CapabilityKind, Claim, Offer, Provenance, Subject};
 use porter_client::Accounts;
-use porter_core::capability::StorageScope;
-use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
-use porter_core::stream::ByteStream;
 use porter_core::{
-    Account, AccountId, AccountLabel, AccountState, AppName, AuthKind, CapabilityKind, Claim,
-    Credential, DataClass, EndpointUrl, Family, GrantId, LoginName, Offer, Provenance, Restriction,
-    SecretKey, SecretPurpose, SecretText, ServiceEndpoint, SpaceScope, Subject, Tls, UnixSeconds,
+    Account, AccountLabel, AccountState, AppName, AuthKind, Credential, DataClass, EndpointUrl,
+    Family, LoginName, Restriction, SecretKey, SecretPurpose, SecretText, ServiceEndpoint,
+    SpaceScope, Tls,
 };
-use porter_dbus::{CallerRole, STATUS_KEY_QUOTA, SyncProxy};
+use porter_core::{AccountId, GrantId};
+use porter_core::{
+    GrantKey,
+    consent::{Decision, Grant, GrantScope, Usage},
+};
+use porter_dbus::sync::STATUS_KEY_QUOTA;
+use porter_dbus::sync::SyncProxy;
 use porter_fake::FakeProvider;
 use porter_fake_servers::graph::Knobs;
 use porter_fake_servers::{FakeGraph, GraphHandle, Running};
+use porter_http_relay::RelayStream;
+use porter_ids::UnixSeconds;
 use porter_provider::Provider;
 use porter_secrets::{MemorySecrets, Secrets};
-use porter_service::Registry;
+use porter_service_core::registry::Registry;
+use porter_sync::Clock;
 use porter_sync::ConflictRule;
 use std::collections::BTreeSet;
 use std::sync::Arc;
-use storage_graph::{CHUNK_UNIT, Clock, Uploads};
+use storage_graph::{CHUNK_UNIT, Uploads};
 use syncd::clock::Wall;
 use syncd::dataset::MemoryDataset;
 use syncd::driver::Driver;
@@ -42,7 +52,7 @@ use syncd::journal::Journal;
 use syncd::keep::sync_app;
 use syncd::scheduler::{Network, Settings};
 use syncd::service::{Access as Visible, DatasetName, Hub, serve};
-use syncd::webdav::RelayStream;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::{Notify, watch};
 use zbus::zvariant::OwnedValue;
 
@@ -116,7 +126,7 @@ impl Rig {
 }
 
 /// Polls every 20 ms; the limit is idle time (`common::eventually_alive`): the wait ends only
-/// when the rig has done nothing for [`porter_fake::GENEROUS`].
+/// when the rig has done nothing for [`test_kit::GENEROUS`].
 async fn eventually(rig: &Rig, what: &str, check: impl FnMut() -> bool) {
     common::eventually_alive(what, || rig.pulse(), check).await;
 }
@@ -246,7 +256,7 @@ async fn a_folder_syncs_against_graph_through_the_relay_and_status_shows_the_quo
         rig.grant.clone(),
         rig.endpoint.clone(),
         "Photos",
-        Clock::system(),
+        Clock::new(SystemClock),
     )
     .expect("replica")
     .with_uploads(Uploads::new(100, CHUNK_UNIT));
@@ -392,7 +402,7 @@ async fn a_linked_relay_reaches_a_declared_origin_only_adds_no_credential_and_st
             matches!(
                 refused,
                 Err(porter_client::ClientError::Refused(
-                    porter_core::wire::Refusal::EndpointNotGranted
+                    porter_wire::Refusal::EndpointNotGranted
                 ))
             ),
             "{origin}: {:?}",

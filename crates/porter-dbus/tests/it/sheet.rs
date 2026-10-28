@@ -1,18 +1,22 @@
 //! The portal shape of a sheet's answer: the response codes, the results vardict (through the
 //! real `(u, a{sv})` wire encoding), the request path and the handle token.
 
-use porter_core::capability::{Access, Capability, Delta, HashKind, Offered};
-use porter_core::capability::{QuotaReport, StorageCap, StorageScope};
-use porter_core::wire::Refusal;
+use porter_capability::Subject;
+use porter_capability::{Access, Capability, Delta, HashKind};
+use porter_capability::{StorageCap, StorageScope};
+use porter_core::{AccountId, GrantId, ProviderId};
 use porter_core::{
-    AccountId, AccountLabel, AccountsReply, Candidate, EndpointUrl, Family, GrantId, LoginName,
-    ProviderId, Restriction, ServiceEndpoint, Subject, Tls,
+    AccountLabel, Candidate, EndpointUrl, Family, LoginName, Restriction, ServiceEndpoint, Tls,
 };
-use porter_dbus::{
-    Details, ResponseCode, ServiceRoot, SheetKind, account_path, is_handle_token, reply_of,
-    request_namespace, request_namespace_in, request_path, request_path_in, response_of,
-    sender_segment,
+use porter_dbus::Details;
+use porter_dbus::accounts::ServiceRoot;
+use porter_dbus::accounts::account_path;
+use porter_dbus::accounts::sheet::{
+    ResponseCode, SheetKind, is_handle_token, reply_of, request_namespace, request_namespace_in,
+    request_path, request_path_in, response_of, sender_segment,
 };
+use porter_wire::AccountsReply;
+use porter_wire::Refusal;
 use zbus::zvariant::{OwnedValue, Value};
 
 fn candidate() -> Candidate {
@@ -24,11 +28,11 @@ fn candidate() -> Candidate {
         Capability::Storage(StorageCap {
             access: Access::ReadWrite,
             delta: Delta::Poll,
-            quota: QuotaReport::Reported,
+            quota: true,
             scope: StorageScope::AppFolder,
             hashes: HashKind::QuickXor,
-            ranges: Offered::Present,
-            chunked_upload: Offered::Present,
+            ranges: true,
+            chunked_upload: true,
         }),
         Restriction::none(),
         GrantId::parse("grant-1").expect("grant"),
@@ -160,9 +164,9 @@ fn a_chosen_account_carries_its_path_and_label_beside_its_fields() {
 
 #[test]
 fn a_reply_that_does_not_answer_the_sheet_is_other_unavailable() {
-    let response = response_of(SheetKind::AddAccount, &AccountsReply::Revoked);
+    let response = response_of(SheetKind::AddAccount, &AccountsReply::Reauthenticated);
     assert_eq!(response.code, ResponseCode::Other);
-    let (_, back) = crossing(SheetKind::AddAccount, &AccountsReply::Revoked);
+    let (_, back) = crossing(SheetKind::AddAccount, &AccountsReply::Reauthenticated);
     assert_eq!(back, Ok(AccountsReply::Refused(Refusal::Unavailable)));
     let chosen_for_add = crossing(SheetKind::AddAccount, &AccountsReply::Chosen(candidate()));
     assert_eq!(chosen_for_add.0, 2);
@@ -260,7 +264,6 @@ fn sender_names_become_path_segments_as_portals_write_them() {
     // The same caller's namespace under each service's own root.
     for (service, root) in [
         (ServiceRoot::Accounts, "/org/quire/Accounts1/request"),
-        (ServiceRoot::Inference, "/org/quire/Inference1/request"),
         (ServiceRoot::Sync, "/org/quire/Sync1/request"),
     ] {
         assert_eq!(

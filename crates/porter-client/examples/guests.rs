@@ -7,8 +7,9 @@
 //! cargo run -p porter-client --example guests --features dbus -- deny
 //! ```
 
-use porter_client::lending::RowState;
-use porter_client::{Accounts, ClientError, DbusTransport, GuestAnswer, GuestChange};
+use porter_client::{Accounts, ClientError, DbusTransport, GuestChange};
+use porter_tailnet::GuestAnswer;
+use porter_tailnet::RowState;
 
 fn answer_of(word: Option<String>) -> Option<GuestAnswer> {
     GuestAnswer::from_slug(&word?)

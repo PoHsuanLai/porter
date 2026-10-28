@@ -9,18 +9,23 @@ use crate::common;
 use common::bus::PrivateBus;
 use common::inferd::{Behaviour, FakeInferd, Served};
 use common::served::{Gate, Route, Scripted};
-use inferd::session::RouteDecision;
+use porter_capability::CuaEnv;
+use porter_capability::ModelId;
+use porter_capability::{Locality, Tier};
 use porter_client::{Accounts, ClientError, DbusTransport, InferSession};
-use porter_core::capability::CuaEnv;
+use porter_core::AccountId;
+use porter_core::DataClass;
 use porter_core::consent::Usage;
-use porter_core::need::{CuaNeed, DimsNeed, EmbedNeed};
-use porter_core::{AccountId, DataClass, Dims, Locality, ModelId, Need, Tier, Tokens};
+use porter_ids::{Dims, Tokens};
 use porter_infer::testing::{Script, ScriptStep};
 use porter_infer::{
     AttachIndex, ClientFrame, CuaBegin, CuaStepReply, EmbedReply, EmbedRequest, EmbedRole,
     EmbedVector, ImageSource, InferEvent, InferRefusal, InferReply, InferRequest, Readiness,
     RequestKind, ServedBy, TokenUsage,
 };
+use porter_match::Need;
+use porter_match::{CuaNeed, DimsNeed, EmbedNeed};
+use porter_router::session::RouteDecision;
 use std::sync::Arc;
 use tokio::sync::Notify;
 
@@ -44,6 +49,7 @@ fn usage() -> TokenUsage {
         input: Tokens(1),
         output: Tokens(0),
         cached: Tokens(0),
+        charge: None,
     }
 }
 
@@ -75,7 +81,7 @@ async fn rig(route: Route, gate: Gate, scripts: Vec<Script>) -> Rig {
 fn embeddings() -> Need {
     Need::Embeddings(EmbedNeed::new(
         DimsNeed::Exactly(Dims(2)),
-        [porter_core::capability::Modality::Text].into(),
+        [porter_capability::Modality::Text].into(),
     ))
 }
 

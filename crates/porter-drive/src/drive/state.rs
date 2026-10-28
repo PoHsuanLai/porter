@@ -2,6 +2,7 @@
 //! it.
 
 use super::{Drive, Inner, Node, NodeId, NodeKind, held};
+use crate::Reason;
 use crate::listing::Entry;
 
 /// Where an item stands.
@@ -22,7 +23,7 @@ pub enum ItemState {
     /// Two versions of it are kept side by side (the drive's, and this computer's); each names
     /// the other.
     Conflict,
-    /// It could not be downloaded or sent; the words say why.
+    /// It could not be downloaded or sent; the reason says why.
     Error,
 }
 
@@ -33,8 +34,8 @@ pub struct Status {
     pub state: ItemState,
     /// How far a download or upload is, 0 to 1, while it moves.
     pub fraction: Option<f64>,
-    /// What went wrong, when the state is an error.
-    pub words: Option<String>,
+    /// What went wrong, when the state is an error, or why it waits.
+    pub reason: Option<Reason>,
     /// Whether it is kept downloaded, itself or with a folder above it.
     pub kept: bool,
     /// What it is.
@@ -48,7 +49,7 @@ struct Part {
     state: ItemState,
     moved: u64,
     size: u64,
-    words: Option<String>,
+    reason: Option<Reason>,
 }
 
 impl Part {
@@ -57,7 +58,7 @@ impl Part {
             state,
             moved: 0,
             size: 0,
-            words: None,
+            reason: None,
         }
     }
 
@@ -89,9 +90,9 @@ impl Inner {
             return Some(Part::plain(ItemState::Conflict));
         }
         let edit = self.edit(id)?;
-        if let Some(words) = edit.refused {
+        if let Some(reason) = edit.refused {
             return Some(Part {
-                words: Some(words),
+                reason: Some(reason),
                 ..Part::plain(ItemState::Error)
             });
         }
@@ -105,12 +106,12 @@ impl Inner {
                 state: ItemState::Uploading,
                 moved: sent.sent,
                 size: sent.size,
-                words: None,
+                reason: None,
             });
         }
-        let words = held(&self.waiting).get(id).map(|words| (*words).to_owned());
+        let reason = held(&self.waiting).get(id).copied();
         Some(Part {
-            words,
+            reason,
             ..Part::plain(ItemState::Waiting)
         })
     }
@@ -126,12 +127,12 @@ impl Inner {
                 state: ItemState::Downloading,
                 moved: transfer.moved_bytes(),
                 size: transfer.size,
-                words: None,
+                reason: None,
             };
         }
-        if let Some(words) = held(&self.errors).get(&file.id).map(|f| f.words.clone()) {
+        if let Some(reason) = held(&self.errors).get(&file.id).map(|f| f.reason) {
             return Part {
-                words: Some(words),
+                reason: Some(reason),
                 ..Part::plain(ItemState::Error)
             };
         }
@@ -233,7 +234,7 @@ impl Drive {
         if id == NodeId::Top {
             return None;
         }
-        let (state, fraction, words) = match &attrs.kind {
+        let (state, fraction, reason) = match &attrs.kind {
             NodeKind::Folder => {
                 let (state, fraction) = inner.folder_state(&id);
                 (state, fraction, None)
@@ -248,10 +249,10 @@ impl Drive {
                         .change_part(other)
                         .unwrap_or_else(|| Part::plain(ItemState::Waiting)),
                 };
-                (part.state, part.fraction(), part.words)
+                (part.state, part.fraction(), part.reason)
             }
             NodeKind::Online { .. } => match inner.change_part(&id) {
-                Some(part) => (part.state, part.fraction(), part.words),
+                Some(part) => (part.state, part.fraction(), part.reason),
                 None => (ItemState::Cloud, None, None),
             },
         };
@@ -262,7 +263,7 @@ impl Drive {
         Some(Status {
             state,
             fraction,
-            words,
+            reason,
             kept: !matches!(attrs.kind, NodeKind::Online { .. }) && kept(inner, &id),
             kind: attrs.kind,
             other,

@@ -7,16 +7,19 @@ use crate::common;
 
 use common::bus::PrivateBus;
 use common::inferd::{Behaviour, FakeInferd, Seen, slugs};
+use porter_capability::SpeechMode;
+use porter_capability::Tier;
 use porter_client::{
     Accounts, ClientError, DbusTransport, InProcess, NoBroker, SessionHost, TransportError,
 };
-use porter_core::capability::SpeechMode;
 use porter_core::consent::Usage;
-use porter_core::need::SpeechNeed;
-use porter_core::{AppId, AppName, DataClass, Isolation, Need, Permille, Tier};
+use porter_core::{AppId, AppName, DataClass, Isolation};
 use porter_fake::{FakeService, ScriptedSheets, fake_service};
+use porter_ids::Permille;
 use porter_infer::testing::FakeInferSession;
 use porter_infer::{OpenOptions, Readiness, Traceparent};
+use porter_match::Need;
+use porter_match::SpeechNeed;
 use std::sync::{Arc, Mutex};
 
 fn stt() -> Need {

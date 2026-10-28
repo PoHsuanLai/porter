@@ -66,17 +66,17 @@ impl HeldRuntime {
 
     /// Drives `starting` (the daemon's start, which claims its name) for `pause`. If it has not
     /// finished by then it is waiting for the held runtime, so the runtime is released and the
-    /// start driven to its end (at most [`porter_fake::GENEROUS`]). Returns its output.
+    /// start driven to its end (at most [`test_kit::GENEROUS`]). Returns its output.
     ///
     /// # Panics
-    /// The start did not finish within [`porter_fake::GENEROUS`] of the release.
+    /// The start did not finish within [`test_kit::GENEROUS`] of the release.
     pub async fn start<F: Future>(&mut self, starting: F, pause: Duration) -> F::Output {
         let mut starting = pin!(starting);
         if let Ok(done) = tokio::time::timeout(pause, &mut starting).await {
             return done;
         }
         self.release();
-        tokio::time::timeout(porter_fake::GENEROUS, starting)
+        tokio::time::timeout(test_kit::GENEROUS, starting)
             .await
             .expect("the start finishes once the runtime runs")
     }

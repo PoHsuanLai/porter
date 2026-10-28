@@ -1,7 +1,8 @@
 use super::*;
 use engine_supervisor::{GpuAccess, Network, ProgramPath, Sandbox, UnitSpec};
 use model_catalog::MiB;
-use porter_core::{AccountId, ModelId};
+use porter_capability::ModelId;
+use porter_core::AccountId;
 use std::path::PathBuf;
 
 fn id(name: &str) -> EngineId {

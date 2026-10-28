@@ -20,11 +20,3 @@ pub mod fixture;
 pub mod planted;
 pub mod rigfile;
 pub mod servers;
-
-// moved to fake-secret-service; re-export kept for one batch
-#[doc(hidden)]
-pub use fake_secret_service as secrets_service;
-
-// moved to syncd-fakes (`syncd_fakes::storage`); re-export kept for one batch
-#[doc(hidden)]
-pub use syncd_fakes::storage as storage_fake;

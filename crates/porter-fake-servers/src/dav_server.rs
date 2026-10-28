@@ -7,7 +7,7 @@ use crate::net::{Bind, Listener};
 use crate::seen::{Running, Seen, lock};
 use crate::shipped::point;
 use porter_core::Family;
-use porter_fake::{FakeAddress, FakeProtocol, FakeServer};
+use porter_fake::{FakeAddress, FakeServer};
 use porter_provider::ProviderSpec;
 use std::future::Future;
 use std::io;
@@ -37,7 +37,7 @@ pub struct FakeDav {
 impl FakeDav {
     /// Binds a server accepting `user` and `password`, over plain HTTP on loopback.
     pub async fn bind(user: &str, password: &str) -> io::Result<Self> {
-        let listener = Listener::bind(&Bind::Loopback, "dav").await?;
+        let listener = Listener::bind(&Bind::Port(0), "dav").await?;
         let port = crate::net::port_of(listener.address());
         let tree = Tree::with_collections(&[
             ("/dav", Kind::Container),
@@ -131,10 +131,6 @@ impl DavHandle {
 }
 
 impl FakeServer for FakeDav {
-    fn protocol(&self) -> FakeProtocol {
-        FakeProtocol::Dav
-    }
-
     fn address(&self) -> &FakeAddress {
         self.listener.address()
     }

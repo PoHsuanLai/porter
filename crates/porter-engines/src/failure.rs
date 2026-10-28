@@ -1,7 +1,8 @@
-//! Why an install did not happen, in the words a person reads.
+//! Why an install did not happen, as a code; the words for it are the settings page's.
 
 /// Why an install ended without an engine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Failure {
     /// Not enough free space for the download and its unpacking.
     NoSpace,
@@ -51,24 +52,6 @@ impl Failure {
         .into_iter()
         .find(|failure| failure.slug() == text)
     }
-
-    /// The sentence the person reads. No path, no program name, no protocol.
-    pub fn sentence(self) -> &'static str {
-        match self {
-            Self::NoSpace => "There isn't enough free space on this computer to download it.",
-            Self::Offline => {
-                "The download didn't finish. Check your internet connection and try again."
-            }
-            Self::Corrupt => {
-                "What was downloaded wasn't what was expected, so it wasn't installed."
-            }
-            Self::Declined => "It needs an administrator's password to install for all users.",
-            Self::Unsupported => "There is no download of it for this computer.",
-            Self::Package => "This computer's software installer couldn't install it.",
-            Self::Cancelled => "The download was stopped.",
-            Self::Other => "It couldn't be installed.",
-        }
-    }
 }
 
 #[cfg(test)]
@@ -76,7 +59,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_failure_has_a_slug_that_names_it_and_a_sentence_with_no_jargon() {
+    fn every_failure_has_a_slug_that_names_it() {
         for failure in [
             Failure::NoSpace,
             Failure::Offline,
@@ -88,10 +71,6 @@ mod tests {
             Failure::Other,
         ] {
             assert_eq!(Failure::from_slug(failure.slug()), Some(failure));
-            let said = failure.sentence().to_lowercase();
-            for word in ["sha", "http", "tar", "root", "pkexec", "polkit", "/"] {
-                assert!(!said.contains(word), "{said}");
-            }
         }
         assert_eq!(Failure::from_slug("sudo"), None);
     }

@@ -2,8 +2,11 @@
 //! token made into a media item. Pure over any [`Http`]; in syncd the `Http` is a relay that adds
 //! the bearer.
 
-use porter_core::WebUrl;
-use porter_http::{Http, HttpRequest, HttpResponse, Method};
+use porter_http::http::request::Builder;
+use porter_http::http::{Method, Response, StatusCode};
+use porter_http::{HeaderText, Http, request};
+use porter_ids::{UnixSeconds, WebUrl};
+use porter_sync::Clock;
 use serde::Deserialize;
 
 /// What an upload returns, to be made into a media item.
@@ -46,30 +49,14 @@ pub enum ApiError {
     },
 }
 
-/// The media type Google Photos should treat `name`'s bytes as, by extension.
+/// The media type Google Photos should treat `name`'s bytes as, by extension (`mime_guess`'s
+/// table; its HEIC, HEIF and AVIF entries are what Photos takes). Only an image or a video type is
+/// sent as such: any other extension, and none, is `application/octet-stream`.
 pub fn mime_of(name: &str) -> &'static str {
-    let ext = name
-        .rsplit_once('.')
-        .map_or("", |(_, ext)| ext)
-        .to_ascii_lowercase();
-    match ext.as_str() {
-        "jpg" | "jpeg" | "jpe" => "image/jpeg",
-        "png" => "image/png",
-        "gif" => "image/gif",
-        "webp" => "image/webp",
-        "heic" => "image/heic",
-        "heif" => "image/heif",
-        "avif" => "image/avif",
-        "bmp" => "image/bmp",
-        "tif" | "tiff" => "image/tiff",
-        "mp4" | "m4v" => "video/mp4",
-        "mov" => "video/quicktime",
-        "3gp" => "video/3gpp",
-        "avi" => "video/x-msvideo",
-        "mkv" => "video/x-matroska",
-        "webm" => "video/webm",
-        _ => "application/octet-stream",
-    }
+    mime_guess::from_path(name)
+        .first_raw()
+        .filter(|mime| mime.starts_with("image/") || mime.starts_with("video/"))
+        .unwrap_or("application/octet-stream")
 }
 
 #[derive(Deserialize)]
@@ -101,10 +88,10 @@ struct Item {
     id: String,
 }
 
-fn refused(response: &HttpResponse) -> ApiError {
+fn refused(response: &Response<Vec<u8>>, now: UnixSeconds) -> ApiError {
     ApiError::Refused {
-        status: response.status.0,
-        retry_after: response.retry_after_seconds(),
+        status: response.status().as_u16(),
+        retry_after: response.retry_after_seconds(now),
     }
 }
 
@@ -113,12 +100,14 @@ fn refused(response: &HttpResponse) -> ApiError {
 pub struct PhotosApi<H> {
     http: H,
     origin: String,
+    clock: Clock,
 }
 
 impl<H: Http> PhotosApi<H> {
     /// The API served at the origin of `base` (`https://photoslibrary.googleapis.com/v1`),
-    /// reached through `http`.
-    pub fn new(http: H, base: &WebUrl) -> Self {
+    /// reached through `http`; a `Retry-After` date is counted from `clock` where the answer
+    /// has no `Date`.
+    pub fn new(http: H, base: &WebUrl, clock: Clock) -> Self {
         let text = base.as_str();
         let after = text.find("://").map_or(0, |at| at + 3);
         let end = text[after..]
@@ -127,24 +116,28 @@ impl<H: Http> PhotosApi<H> {
         Self {
             http,
             origin: text[..end].to_owned(),
+            clock,
         }
     }
 
-    fn request(&self, path: &str) -> Result<HttpRequest, ApiError> {
+    fn request(&self, path: &str) -> Result<Builder, ApiError> {
         let url = WebUrl::parse(&format!("{}/v1/{path}", self.origin))
             .map_err(|_| ApiError::Unreadable)?;
-        Ok(HttpRequest::new(Method::Post, url))
+        Ok(request(Method::POST, &url).header("Accept", "application/json"))
     }
 
-    async fn send(&self, request: HttpRequest) -> Result<HttpResponse, ApiError> {
+    /// Sends the request `request` builds with `body`. A request that would not build is never
+    /// sent, which is no answer, as a client that refuses it is.
+    async fn send(&self, request: Builder, body: Vec<u8>) -> Result<Response<Vec<u8>>, ApiError> {
+        let request = request.body(body).map_err(|_| ApiError::Unreached)?;
         let response = self
             .http
-            .send(request.with_header("Accept", "application/json"))
+            .send(request)
             .await
             .map_err(|_| ApiError::Unreached)?;
-        match response.status.0 {
-            200 => Ok(response),
-            _ => Err(refused(&response)),
+        match response.status() {
+            StatusCode::OK => Ok(response),
+            _ => Err(refused(&response, self.clock.now())),
         }
     }
 
@@ -153,13 +146,12 @@ impl<H: Http> PhotosApi<H> {
     pub async fn upload(&self, name: &str, bytes: Vec<u8>) -> Result<UploadToken, ApiError> {
         let request = self
             .request("uploads")?
-            .with_header("Content-Type", "application/octet-stream")
-            .with_header("X-Goog-Upload-Content-Type", mime_of(name))
-            .with_header("X-Goog-Upload-Protocol", "raw")
-            .with_header("X-Goog-Upload-File-Name", name)
-            .with_body(bytes);
-        let response = self.send(request).await?;
-        let token = String::from_utf8(response.body).map_err(|_| ApiError::Unreadable)?;
+            .header("Content-Type", "application/octet-stream")
+            .header("X-Goog-Upload-Content-Type", mime_of(name))
+            .header("X-Goog-Upload-Protocol", "raw")
+            .header("X-Goog-Upload-File-Name", name);
+        let response = self.send(request, bytes).await?;
+        let token = String::from_utf8(response.into_body()).map_err(|_| ApiError::Unreadable)?;
         let token = token.trim();
         match token.is_empty() {
             true => Err(ApiError::Unreadable),
@@ -172,11 +164,10 @@ impl<H: Http> PhotosApi<H> {
         let body = serde_json::json!({"album": {"title": title}}).to_string();
         let request = self
             .request("albums")?
-            .with_header("Content-Type", "application/json")
-            .with_body(body);
-        let response = self.send(request).await?;
+            .header("Content-Type", "application/json");
+        let response = self.send(request, body.into_bytes()).await?;
         let album: Album =
-            serde_json::from_slice(&response.body).map_err(|_| ApiError::Unreadable)?;
+            serde_json::from_slice(response.body()).map_err(|_| ApiError::Unreadable)?;
         Ok(AlbumId(album.id))
     }
 
@@ -195,11 +186,10 @@ impl<H: Http> PhotosApi<H> {
         }
         let request = self
             .request("mediaItems:batchCreate")?
-            .with_header("Content-Type", "application/json")
-            .with_body(body.to_string());
-        let response = self.send(request).await?;
+            .header("Content-Type", "application/json");
+        let response = self.send(request, body.to_string().into_bytes()).await?;
         let created: Created =
-            serde_json::from_slice(&response.body).map_err(|_| ApiError::Unreadable)?;
+            serde_json::from_slice(response.body()).map_err(|_| ApiError::Unreadable)?;
         let result = created
             .results
             .into_iter()
@@ -228,6 +218,11 @@ mod tests {
             ("a.b.png", "image/png"),
             ("clip.MOV", "video/quicktime"),
             ("x.heic", "image/heic"),
+            ("x.HEIF", "image/heif"),
+            ("x.avif", "image/avif"),
+            ("a.webp", "image/webp"),
+            ("a.mp4", "video/mp4"),
+            ("a.jpe", "image/jpeg"),
             ("noext", "application/octet-stream"),
             ("notes.txt", "application/octet-stream"),
         ];

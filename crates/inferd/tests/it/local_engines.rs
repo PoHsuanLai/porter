@@ -3,8 +3,6 @@
 
 use crate::hosting::bus::{PrivateBus, within};
 
-use inferd::audit::Memory;
-use inferd::clock::FixedClock;
 use inferd::config::{Dirs, InferdConfig, ProgramSearch};
 use inferd::engines::Engines;
 use inferd::installed::Installed;
@@ -13,12 +11,17 @@ use inferd::service::{Inference, serve_on};
 use inferd::settings::LocalEngines;
 use inferd::settings::{ConfigFile, Reload};
 use inferd::supervise::Supervised;
-use porter_core::{AppId, AppName, Isolation, UnixSeconds};
-use porter_dbus::{EnginePlace, EngineState, InferenceProxy, LocalEngine, local_engine_from_dbus};
+use porter_core::{AppId, AppName, Isolation};
+use porter_dbus::inference::{
+    EnginePlace, EngineState, InferenceProxy, LocalEngine, local_engine_from_dbus,
+};
 use porter_engines::{
     Arch, Artifact, Backend, Delivery, EngineId, Manifest, Record, Roots, Row, Scope, seal_of,
 };
+use porter_ids::UnixSeconds;
+use porter_ids::clock::FixedClock;
 use porter_infer::{Policy, TierMap};
+use porter_turns::audit::Memory;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -86,7 +89,7 @@ fn llama(engines: &[LocalEngine]) -> &LocalEngine {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_program_named_in_the_file_is_found_with_its_path() {
-    let scratch = porter_fake::Scratch::new("le-named");
+    let scratch = test_kit::Scratch::new("le-named");
     let server = scratch.path().join("llama-server");
     std::fs::write(&server, b"").expect("program");
     let file = format!("[engines]\nllama_server = {:?}\n", server.to_string_lossy());
@@ -104,7 +107,7 @@ async fn a_program_named_in_the_file_is_found_with_its_path() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_program_at_a_fixed_path_is_found_when_the_file_names_none() {
-    let scratch = porter_fake::Scratch::new("le-fixed");
+    let scratch = test_kit::Scratch::new("le-fixed");
     let server = scratch.path().join("llama-server");
     std::fs::write(&server, b"").expect("program");
     let engines = asked(
@@ -119,7 +122,7 @@ async fn a_program_at_a_fixed_path_is_found_when_the_file_names_none() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn no_path_or_a_path_that_is_not_there_is_missing() {
-    let scratch = porter_fake::Scratch::new("le-missing");
+    let scratch = test_kit::Scratch::new("le-missing");
     let gone = scratch.path().join("gone");
     let none = asked(Role::Settings, "", vec![gone.clone()])
         .await
@@ -189,7 +192,7 @@ fn error_name(error: &zbus::Error) -> String {
 #[tokio::test(flavor = "multi_thread")]
 async fn an_install_of_ours_says_its_release_and_place_and_a_changed_one_says_so_and_strata_is_pointed_at()
  {
-    let scratch = porter_fake::Scratch::new("le-installed");
+    let scratch = test_kit::Scratch::new("le-installed");
     let roots = Roots::new(scratch.path().join("system"), scratch.path().join("person"));
     let (manifest, program) = made_install(&roots);
     let file = scratch.path().join("inferd.toml");

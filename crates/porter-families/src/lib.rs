@@ -1,70 +1,32 @@
-//! The protocol families as code (porter PLAN G6): one module and one cargo feature per family,
-//! and [`FamilyProvider`], the closed enum that dispatches the `Provider` seam over the ones
-//! built. accountd and an app hosting porter in process (mailo) both build it, so a family is
-//! written once. With no feature on, the set is empty and uninhabited.
+//! The protocol families as code (porter PLAN G6): [`DynProvider`], the object-safe twin of
+//! `Provider`: a family is picked at run time from a provider file, so the host holds
+//! `Box<dyn DynProvider>`, which is itself a `Provider`. accountd and an app hosting porter in
+//! process (mailo) both build it, so a family is written once.
 //!
-//! The `set` feature (every family a daemon maps) adds `set`: which provider files a daemon
-//! serves and the family of each, shared by accountd, inferd and syncd.
-//!
-//! Google is the `google` feature: the owner's own Google Cloud client, a sign-in that says it
-//! needs a client id until one is registered (docs/google.md).
+//! This crate is the registry. The families that have a protocol of their own live in crates of
+//! their own, each a driver over a sans-IO `*-proto` crate: `porter-family-oauth` (over
+//! `oauth-probe-proto`), `porter-family-generic` (over `generic-proto`) and
+//! `porter-family-nextcloud` (over `nextcloud-proto`); what they are written with is
+//! `porter-family-kit`. Here are the small families (an API key, a coding agent that signs
+//! itself in, Tailscale) and, with the `set` feature (every family a daemon maps), `set`: which
+//! provider files a daemon serves and the family of each, shared by accountd, inferd and syncd.
 
 #[cfg(feature = "agent_login")]
 mod agent_login;
 #[cfg(feature = "api_key")]
 mod api_key;
 mod dispatch;
-#[cfg(any(feature = "microsoft", feature = "google"))]
-mod env_common;
-#[cfg(any(feature = "microsoft", feature = "google"))]
-mod extend;
-#[cfg(feature = "generic")]
-mod generic;
-#[cfg(feature = "google")]
-mod google;
-#[cfg(any(feature = "nextcloud", feature = "generic"))]
-mod io;
 #[cfg(feature = "api_key")]
 mod key;
-#[cfg(feature = "microsoft")]
-mod microsoft;
-#[cfg(feature = "nextcloud")]
-mod nextcloud;
-#[cfg(feature = "openrouter")]
-mod openrouter;
-#[cfg(any(feature = "nextcloud", feature = "generic"))]
-mod password;
 #[cfg(feature = "set")]
 pub mod set;
-#[cfg(feature = "openrouter")]
-mod skeleton;
 #[cfg(feature = "tailnet")]
 mod tailnet;
 
 #[cfg(feature = "agent_login")]
-pub use agent_login::{AgentLoginProvider, AgentLoginSession, AgentLoginSignIn};
+pub use agent_login::{AgentLoginFlow, AgentLoginProvider, AgentLoginSession};
 #[cfg(feature = "api_key")]
-pub use api_key::{ApiKeyProvider, ApiKeySession, ApiKeySignIn};
-pub use dispatch::{FamilyProvider, FamilySession, FamilySignIn};
-#[cfg(any(feature = "microsoft", feature = "google"))]
-pub use env_common::ClientFiles;
-#[cfg(feature = "generic")]
-pub use generic::{GenericProvider, GenericSession, GenericSignIn};
-#[cfg(feature = "google")]
-pub use google::{
-    GoogleEnv, GoogleProvider, GoogleSession, GoogleSignIn, ReauthReason, Sensitivity,
-    TESTING_SIGN_IN_SECONDS, on_use_scopes_of, scope_sensitivity, scopes_of, testing_expiry_seam,
-};
-#[cfg(any(feature = "nextcloud", feature = "generic"))]
-pub use io::{Pacing, SharedDns};
-#[cfg(feature = "microsoft")]
-pub use microsoft::{
-    AccountClass, Clock, MicrosoftEnv, MicrosoftProvider, MicrosoftSession, MicrosoftSignIn,
-    Random, classify,
-};
-#[cfg(feature = "nextcloud")]
-pub use nextcloud::{NextcloudProvider, NextcloudSession, NextcloudSignIn};
-#[cfg(feature = "openrouter")]
-pub use openrouter::{OpenRouterProvider, OpenRouterSession, OpenRouterSignIn};
+pub use api_key::{ApiKeyFlow, ApiKeyProvider, ApiKeySession};
+pub use dispatch::{DynProvider, DynSession, DynSignIn};
 #[cfg(feature = "tailnet")]
-pub use tailnet::{TailnetProvider, TailnetSession, TailnetSignIn};
+pub use tailnet::{TailnetFlow, TailnetProvider, TailnetSession};

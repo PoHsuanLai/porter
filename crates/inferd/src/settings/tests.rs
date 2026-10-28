@@ -5,22 +5,26 @@ use super::*;
 use crate::config::InferdConfig;
 use crate::engines::Engines;
 use crate::peers::Role;
-use crate::router::{Decided, Listed, choose};
-use crate::session::SessionSpec;
 use crate::supervise::{Ports, Supervised};
-use crate::testkit::{Recorder, Scratch, models};
+use crate::testkit::{Recorder, models};
 use engine_supervisor::{FakeGpu, FakeReadyProbe, GpuMemory, Probe, SupervisorConfig};
 use model_catalog::MiB;
-use porter_core::capability::{Capability, LlmCap, LlmFeature, LlmWire};
-use porter_core::need::LlmNeed;
-use porter_core::{
-    AccountId, Billing, DataClass, Locality, MicroUsd, ModelId, Need, Permille, Tier, Tokens,
-};
+use porter_capability::ModelId;
+use porter_capability::{Billing, Locality, Tier};
+use porter_capability::{Capability, LlmCap, LlmFeature, LlmWire};
+use porter_core::AccountId;
+use porter_core::DataClass;
+use porter_ids::{Permille, Tokens, TurnCount};
 use porter_infer::{
     AutoEvict, EngineLoad, InferRefusal, LicenceClass, LocalOnly, ModelCard, ModelRef, Pick,
     PickRefusal, Policy, Readiness, ShowReason, Slot, SwapCost, Why,
 };
+use porter_match::LlmNeed;
+use porter_match::Need;
+use porter_router::router::{Decided, Listed, choose};
+use porter_router::session::SessionSpec;
 use std::time::Duration;
+use test_kit::Scratch;
 
 fn config(text: &str) -> InferdConfig {
     InferdConfig::from_toml(text).unwrap_or_else(|e| panic!("{text}: {e}"))
@@ -355,7 +359,7 @@ async fn the_watch_notices_a_change_made_by_someone_else() {
     let show = || engines.settings().auto.show_reason;
     assert_eq!(show(), ShowReason::On);
     std::fs::write(file.path(), "[ai.auto]\nshow_reason = \"off\"\n").expect("write");
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         if show() == ShowReason::Off {
             break;
@@ -372,10 +376,18 @@ fn the_warn_line_is_the_rows_permille() {
         settings(text).spend.cap(
             SpendScope::Account(AccountId::parse("anthropic").expect("id")),
             Period::Daily,
-            MicroUsd(1_000_000),
+            Money::usd(Decimal::ONE),
         )
     };
-    let verdict = |cap: &SpendCap, spent: u64| spend_verdict(cap, MicroUsd(spent), MicroUsd(0));
+    // `spent` in millionths of a dollar.
+    let verdict = |cap: &SpendCap, spent: i64| {
+        let reported = Money::usd(Decimal::new(spent, 6));
+        let total = ChargeTotal {
+            reported,
+            unpriced: TurnCount(0),
+        };
+        spend_verdict(cap, &total)
+    };
     let default = cap("");
     assert_eq!(default.warn_at, Permille(800));
     assert_eq!(verdict(&default, 600_000), SpendVerdict::Within);
@@ -399,7 +411,9 @@ fn the_warn_line_is_the_rows_permille() {
     }
 }
 
-use porter_infer::{SpendCap, SpendVerdict, spend_verdict};
+use model_provider::Money;
+use porter_infer::{ChargeTotal, SpendCap, SpendVerdict, spend_verdict};
+use rust_decimal::Decimal;
 
 fn companion() -> porter_core::AppId {
     porter_core::AppId {
@@ -411,7 +425,7 @@ fn companion() -> porter_core::AppId {
 #[test]
 fn the_cap_rows_are_cents_per_scope_and_period_and_zero_is_no_cap() {
     let through = AccountId::parse("openrouter").expect("id");
-    let caps = |text: &str| -> Vec<(SpendScope, Period, MicroUsd, Permille)> {
+    let caps = |text: &str| -> Vec<(SpendScope, Period, Money, Permille)> {
         settings(text)
             .spend
             .caps_for(&companion(), &through)
@@ -436,17 +450,27 @@ fn the_cap_rows_are_cents_per_scope_and_period_and_zero_is_no_cap() {
             (
                 account.clone(),
                 Period::Daily,
-                MicroUsd(2_500_000),
+                Money::usd(Decimal::new(250, 2)),
                 Permille(500)
             ),
-            (account, Period::Monthly, MicroUsd(10_000), Permille(500)),
+            (
+                account,
+                Period::Monthly,
+                Money::usd(Decimal::new(1, 2)),
+                Permille(500)
+            ),
             (
                 app.clone(),
                 Period::Daily,
-                MicroUsd(100_000_000_000),
+                Money::usd(Decimal::new(10_000_000, 2)),
                 Permille(500)
             ),
-            (app, Period::Monthly, MicroUsd(70_000), Permille(500)),
+            (
+                app,
+                Period::Monthly,
+                Money::usd(Decimal::new(7, 2)),
+                Permille(500)
+            ),
         ]
     );
 }
@@ -657,11 +681,11 @@ fn a_language_model_is_in_the_slots_its_features_put_it_in() {
             .extend([LlmFeature::Vision, LlmFeature::AudioIn]);
     }
     assert_eq!(
-        keys::slots_of(&vision),
+        porter_router::router::slots_of(&vision),
         vec![Slot::Text, Slot::VoiceIn, Slot::ImageIn]
     );
     assert_eq!(
-        keys::slots_of(&card("local", "plain", Locality::OnDevice)),
+        porter_router::router::slots_of(&card("local", "plain", Locality::OnDevice)),
         vec![Slot::Text]
     );
 }
@@ -778,14 +802,14 @@ fn a_helper_pool_is_its_own_and_the_old_key_stays_the_assistants() {
     assert_eq!(bad.rejected, vec!["ai.auto.pool.text.helper.".to_owned()]);
 }
 
-fn length(text: &str) -> crate::local::Lengths {
+fn length(text: &str) -> porter_router::local::Lengths {
     settings(text).lengths
 }
 
 #[test]
 fn the_length_rows_are_automatic_unless_the_person_sets_a_number() {
     use model_provider::Tokens as Count;
-    let automatic = crate::local::Lengths::default();
+    let automatic = porter_router::local::Lengths::default();
     assert_eq!(length(""), automatic);
     assert_eq!(
         length("[ai.length]\nconversation = \"automatic\"\nreply = \"automatic\"\n"),
@@ -814,7 +838,7 @@ fn a_length_out_of_range_or_not_a_number_is_automatic_and_said() {
         let resolved = resolve(&config(&format!("[ai.length]\n{table} = {row}\n")));
         assert_eq!(
             resolved.settings.lengths,
-            crate::local::Lengths::default(),
+            porter_router::local::Lengths::default(),
             "{table} {row}"
         );
         assert_eq!(resolved.rejected, vec![path.to_owned()], "{table} {row}");

@@ -2,9 +2,11 @@
 //! name checks are always on; there is no switch that turns them off. The trusted roots are the
 //! platform's (`rustls-native-certs`), and `webpki-roots` when the platform offers none.
 
-use crate::connect::{Connect, ConnectFault};
+use crate::connect::Connect;
+use crate::fault::RelayFault;
+use porter_core::Tls;
 use porter_core::stream::ByteStream;
-use porter_core::{Origin, Tls};
+use porter_ids::Origin;
 use rustls_pki_types::{CertificateDer, ServerName};
 use std::io;
 use std::net::SocketAddr;
@@ -112,15 +114,15 @@ impl RustlsConnect {
         self
     }
 
-    async fn handshake(&self, stream: TcpStream, host: &str) -> Result<NetStream, ConnectFault> {
-        let name = ServerName::try_from(host.to_owned()).map_err(|_| ConnectFault::Tls)?;
+    async fn handshake(&self, stream: TcpStream, host: &str) -> Result<NetStream, RelayFault> {
+        let name = ServerName::try_from(host.to_owned()).map_err(|_| RelayFault::Tls)?;
         // A server that accepts the connection and never answers the hello is unreachable, not a
         // refused certificate.
         tokio::time::timeout(self.handshake_timeout, self.connector.connect(name, stream))
             .await
-            .map_err(|_| ConnectFault::Unreachable)?
+            .map_err(|_| RelayFault::Unreachable)?
             .map(|tls| NetStream::Tls(Box::new(tls)))
-            .map_err(|_| ConnectFault::Tls)
+            .map_err(|_| RelayFault::Tls)
     }
 }
 
@@ -152,22 +154,22 @@ async fn connect_probed(host: &str, port: u16) -> io::Result<TcpStream> {
 impl Connect for RustlsConnect {
     type Stream = NetStream;
 
-    async fn dial(&self, origin: &Origin, tls: Tls) -> Result<NetStream, ConnectFault> {
+    async fn dial(&self, origin: &Origin, tls: Tls) -> Result<NetStream, RelayFault> {
         let tcp = tokio::time::timeout(DIAL_TIMEOUT, connect_probed(&origin.host, origin.port))
             .await
-            .map_err(|_| ConnectFault::Unreachable)?
-            .map_err(|_| ConnectFault::Unreachable)?;
+            .map_err(|_| RelayFault::Unreachable)?
+            .map_err(|_| RelayFault::Unreachable)?;
         match tls {
             Tls::Implicit => self.handshake(tcp, &origin.host).await,
             Tls::StartTls | Tls::Plain => Ok(NetStream::Plain(tcp)),
         }
     }
 
-    async fn upgrade(&self, stream: NetStream, host: &str) -> Result<NetStream, ConnectFault> {
+    async fn upgrade(&self, stream: NetStream, host: &str) -> Result<NetStream, RelayFault> {
         match stream {
             NetStream::Plain(tcp) => self.handshake(tcp, host).await,
             // Already TLS: a second handshake on it has no meaning.
-            NetStream::Tls(_) => Err(ConnectFault::Tls),
+            NetStream::Tls(_) => Err(RelayFault::Tls),
         }
     }
 }
@@ -175,7 +177,7 @@ impl Connect for RustlsConnect {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_core::UrlScheme;
+    use porter_ids::UrlScheme;
     use tokio::net::TcpListener;
 
     #[test]
@@ -206,10 +208,10 @@ mod tests {
         let started = std::time::Instant::now();
         // The connector gives up by itself: a dial that never returned would be the bug, and the
         // outer wait is only the machine's allowance, not a claim about how fast it is.
-        let got = tokio::time::timeout(porter_fake::GENEROUS, connect.dial(&origin, Tls::Implicit))
+        let got = tokio::time::timeout(test_kit::GENEROUS, connect.dial(&origin, Tls::Implicit))
             .await
             .expect("the connector gave up on the silent server");
-        assert!(matches!(got, Err(ConnectFault::Unreachable)), "{got:?}");
+        assert!(matches!(got, Err(RelayFault::Unreachable)), "{got:?}");
         // It waited for the configured patience (a timer never fires early): the fault came from
         // the handshake timeout, not from an immediate failure.
         assert!(started.elapsed() >= patience);

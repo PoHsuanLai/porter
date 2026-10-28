@@ -15,18 +15,21 @@ use hosting::entries;
 use hosting::rig::{Hosted, Plan, Trust, World};
 use inferd::probe::ProbeConfig;
 use inferd::settings::Settings;
+use porter_capability::LlmFeature;
+use porter_capability::{Locality, Tier};
 use porter_client::InferSession;
-use porter_core::capability::LlmFeature;
 use porter_core::consent::Usage;
-use porter_core::need::LlmNeed;
-use porter_core::{AppId, AppName, DataClass, Isolation, Locality, Need, Tier, Tokens};
-use porter_dbus::InferenceProxy;
+use porter_core::{AppId, AppName, DataClass, Isolation};
+use porter_dbus::inference::InferenceProxy;
 use porter_fake_servers::net::Bind;
 use porter_fake_servers::{FakeModels, ModelDef, ModelsHandle, Running, Wire};
+use porter_ids::Tokens;
 use porter_infer::{
     ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRefusal, InferReply, InferRequest,
     LocalOnly, MessagePart, Policy, Role as ChatRole,
 };
+use porter_match::LlmNeed;
+use porter_match::Need;
 use std::time::Duration;
 
 const MAIL: &str = "org.quire.Mail";
@@ -197,7 +200,7 @@ fn reports(world: &World) -> Vec<(String, String, usize)> {
 #[tokio::test(flavor = "multi_thread")]
 async fn acceptance_6_with_local_only_on_a_mail_summary_runs_on_the_probed_ollama_and_with_it_stopped_is_unavailable_and_never_goes_to_the_cloud()
  {
-    let ollama = fake_ollama(&Bind::Loopback).await;
+    let ollama = fake_ollama(&Bind::Port(0)).await;
     let port = port_of(&ollama);
     let world = world(port, LocalOnly::On).await;
     rescan(&world).await;
@@ -330,7 +333,7 @@ async fn rescan_tells_listeners_the_engines_changed_when_a_runtime_came_up() {
     let _ollama = fake_ollama(&Bind::Port(port)).await;
     rescan(&world).await;
     tokio::time::timeout(
-        porter_fake::GENEROUS,
+        test_kit::GENEROUS,
         std::future::poll_fn(|cx| std::pin::Pin::new(&mut changed).poll_next(cx)),
     )
     .await

@@ -2,6 +2,7 @@
 //! app sees `220 porter ESMTP ready`, then an `EHLO` reply that offers no `AUTH` and no
 //! `STARTTLS`, then a session that is already authenticated.
 
+use crate::auth::{Sasl, pick};
 use crate::fault::RelayFault;
 use porter_core::{RelayAuth, RelayPlan};
 
@@ -107,15 +108,10 @@ impl SmtpAuth {
     pub fn choose(ehlo: &EhloReply, auth: &RelayAuth) -> Result<Self, RelayFault> {
         let mechanisms = ehlo.mechanisms();
         let offered = |name: &str| mechanisms.iter().any(|m| m == name);
-        match auth {
-            RelayAuth::AccessToken(_) if offered("XOAUTH2") => Ok(SmtpAuth::Xoauth2),
-            RelayAuth::Password(_) if offered("PLAIN") => Ok(SmtpAuth::Plain),
-            RelayAuth::AccessToken(_) | RelayAuth::Password(_) | RelayAuth::Anonymous => {
-                Err(RelayFault::Protocol)
-            }
-            // a variant a newer porter adds: refused, never sent as anonymous
-            _ => Err(RelayFault::Protocol),
-        }
+        Ok(match pick(auth, offered("PLAIN"), offered("XOAUTH2"))? {
+            Sasl::Plain => SmtpAuth::Plain,
+            Sasl::Xoauth2 => SmtpAuth::Xoauth2,
+        })
     }
 }
 
@@ -155,24 +151,34 @@ pub enum SmtpPhase {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SmtpRelay {
     /// What it presents and where.
-    pub plan: RelayPlan,
+    pub(crate) plan: RelayPlan,
     /// Where it stands.
-    pub phase: SmtpPhase,
+    pub(crate) phase: SmtpPhase,
     /// Server bytes read and not yet a whole line, until relaying starts.
-    pub buffer: Vec<u8>,
+    pub(crate) buffer: Vec<u8>,
     /// The lines of the server's reply read so far, with their `CRLF`.
-    pub reply: Vec<u8>,
+    pub(crate) reply: Vec<u8>,
     /// The server's latest `EHLO` reply.
-    pub ehlo: Option<EhloReply>,
+    pub(crate) ehlo: Option<EhloReply>,
     /// App bytes not yet a whole command line (or sent before the relay was ready).
-    pub early: Vec<u8>,
+    pub(crate) early: Vec<u8>,
     /// The start of the server's current line, to see a `354` (the go-ahead for a body).
-    pub head: Vec<u8>,
+    pub(crate) head: Vec<u8>,
     /// The last bytes of the body so far, to see its end across reads.
-    pub tail: Vec<u8>,
+    pub(crate) tail: Vec<u8>,
 }
 
 impl SmtpRelay {
+    /// What the relay presents and where.
+    pub fn plan(&self) -> &RelayPlan {
+        &self.plan
+    }
+
+    /// Where the relay stands.
+    pub fn phase(&self) -> &SmtpPhase {
+        &self.phase
+    }
+
     /// A relay at the start of a connection.
     pub fn new(plan: RelayPlan) -> Self {
         Self {

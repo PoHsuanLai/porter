@@ -9,7 +9,10 @@
 //! environment's answers, then builds and runs the daemon, all in the library
 //! (`inferd::daemon`).
 
-use clap::{Parser, Subcommand};
+// The daemon's future holds the service's, whose domain traits each wrap their async bodies.
+#![recursion_limit = "256"]
+
+use clap::Parser;
 use inferd::shutdown::Signals;
 use inferd::{Config, Daemon};
 use std::path::PathBuf;
@@ -22,41 +25,6 @@ struct Args {
     /// The configuration file, instead of `$XDG_CONFIG_HOME/inferd/inferd.toml`.
     #[arg(long, value_name = "FILE")]
     config: Option<PathBuf>,
-
-    #[command(subcommand)]
-    command: Option<Command>,
-}
-
-#[derive(Debug, Subcommand)]
-enum Command {
-    /// Add an AI key from this terminal, for a computer with no sheet host yet
-    ///
-    /// Adds an account for PROVIDER, an AI company's provider file (`anthropic`, `google-ai`,
-    /// `moonshot`, `openai`, `openrouter`): you paste the API key you got from the company, it
-    /// is checked with one call to the company (its models list), and the key is filed in the
-    /// secret store inferd uses. The key is read with echo off and is never printed or logged.
-    ///
-    /// Each --allow gives that app the new account for language models: it records the
-    /// permission an "Allow, always" answer to the app's consent sheet would. You typing this
-    /// command is the consent. It covers every data class unless you narrow it with --class,
-    /// and interactive use only; which classes may leave this computer is still decided by the
-    /// ai.floor.<class> settings.
-    ///
-    /// inferd reads its keys only when it starts, so this command takes the bus name
-    /// org.quire.Inference1 while it runs and stops if the daemon already owns it: stop the unit
-    /// (systemctl --user stop inferd.service), run this, then start the unit again. Checking the
-    /// key needs the network, so the unit's network drop-in must be installed.
-    Add {
-        /// The provider file's id, such as `anthropic` or `openai`
-        provider: String,
-        /// An app to give the account to: `org.quire.Companion`, or `name:flatpak` for a
-        /// sandboxed one (a native app is the default). May be repeated
-        #[arg(long = "allow", value_name = "APP-ID")]
-        allow: Vec<String>,
-        /// Narrow --allow to this data class (`prompt`, `notes`, ...). May be repeated
-        #[arg(long = "class", value_name = "CLASS")]
-        classes: Vec<String>,
-    },
 }
 
 /// The daemon's one log path is standard error, prefixed with its name.
@@ -77,36 +45,6 @@ async fn main() -> ExitCode {
         Ok(config) => config,
         Err(why) => return fail(why),
     };
-    if let Some(Command::Add {
-        provider,
-        allow,
-        classes,
-    }) = &args.command
-    {
-        let done = inferd::keys::add::add_account(
-            &config.dirs,
-            config.keys.clone(),
-            &config.bus,
-            provider,
-            allow,
-            classes,
-        )
-        .await;
-        return match done {
-            Ok(report) => {
-                println!("Added account {}.", report.account.as_str());
-                for (app, class, permit) in &report.permits {
-                    println!(
-                        "Allowed {} for {class:?} (permission {}).",
-                        app.name.as_str(),
-                        permit.as_str()
-                    );
-                }
-                ExitCode::SUCCESS
-            }
-            Err(why) => fail(why),
-        };
-    }
     let daemon = match Daemon::build(config).await {
         Ok(daemon) => daemon,
         Err(why) => return fail(why),

@@ -1,4 +1,4 @@
-//! The issuer's endpoints: authorize, token, revoke and device authorization.
+//! The issuer's endpoints: authorize, token and revoke.
 
 use super::*;
 
@@ -12,7 +12,6 @@ pub(super) fn route(shared: &Shared, request: &Request) -> Response {
         ("GET", "/authorize") => authorize(shared, request),
         ("POST", "/token") => token(shared, request),
         ("POST", "/revoke") => revoke(shared, request),
-        ("POST", "/device") => device(shared, request),
         _ => Response::new(404),
     }
 }
@@ -77,9 +76,9 @@ fn authorize(shared: &Shared, request: &Request) -> Response {
     let state_param = q("state");
     let back = |query: String| {
         let sep = if redirect_uri.contains('?') { '&' } else { '?' };
-        let state = state_param
-            .as_deref()
-            .map_or(String::new(), |s| format!("&state={}", percent_encode(s)));
+        let state = state_param.as_deref().map_or(String::new(), |s| {
+            format!("&state={}", porter_ids::percent::encode_unreserved(s))
+        });
         Response::redirect(&format!("{redirect_uri}{sep}{query}{state}"))
     };
     let valid = q("response_type").as_deref() == Some("code")
@@ -218,7 +217,6 @@ fn token(shared: &Shared, request: &Request) -> Response {
             &client_id,
             &form("scope"),
         ),
-        DEVICE_GRANT => poll_device(&mut state, &form("device_code"), &client_id),
         _ => Err(Refused::from("unsupported_grant_type")),
     };
     let (result, response) = match outcome {
@@ -308,22 +306,6 @@ fn refresh(state: &mut State, presented: &str, client_id: &str, asked: &str) -> 
     Ok((access, refresh, body))
 }
 
-fn poll_device(state: &mut State, device_code: &str, client_id: &str) -> Issued {
-    let device = state.devices.get(device_code).ok_or("invalid_grant")?;
-    if device.client_id != client_id {
-        return Err("invalid_grant".into());
-    }
-    match device.state {
-        DeviceState::Pending => Err("authorization_pending".into()),
-        DeviceState::Denied => Err("access_denied".into()),
-        DeviceState::Approved => {
-            let scope = device.scope.clone();
-            state.devices.remove(device_code);
-            Ok(issue(state, client_id, &scope))
-        }
-    }
-}
-
 fn revoke(shared: &Shared, request: &Request) -> Response {
     let token = request.form_value("token").unwrap_or_default();
     let mut state = lock(&shared.state);
@@ -331,30 +313,6 @@ fn revoke(shared: &Shared, request: &Request) -> Response {
     shared.events.push(IssuerEvent::Revoke { token, known });
     // RFC 7009: an unknown token is not an error.
     Response::new(200)
-}
-
-fn device(shared: &Shared, request: &Request) -> Response {
-    let client_id = request.form_value("client_id").unwrap_or_default();
-    let mut state = lock(&shared.state);
-    let code = next(&mut state, "fake-device");
-    let n = code.rsplit('-').next().unwrap_or("0").to_owned();
-    state.devices.insert(
-        code.clone(),
-        Device {
-            client_id: client_id.clone(),
-            scope: request.form_value("scope").unwrap_or_default(),
-            state: DeviceState::Pending,
-        },
-    );
-    shared.events.push(IssuerEvent::DeviceCode { client_id });
-    Response::json(
-        200,
-        &json!({
-            "device_code": code, "user_code": format!("FAKE-{n:0>4}"),
-            "verification_uri": format!("{}/activate", shared.base),
-            "expires_in": 600, "interval": 1,
-        }),
-    )
 }
 
 /// Notes an issued access token, its client and the scopes it carries.

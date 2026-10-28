@@ -1,17 +1,17 @@
 //! A key handed to a process the launcher spawns (agent-session ask P2, lane p2-handoff): what
 //! `Launcher::issue_credential` returns, how the launcher sets a child up with it, and the
-//! signal that tells the launcher inferd ended it.
+//! signal that tells the launcher accountd ended it.
 //!
-//! **The launcher's duties** (inferd cannot do these for it):
+//! **The launcher's duties** (accountd cannot do these for it):
 //!
 //! - Give the child the key only as [`ChildKey`] says, after `env_clear`: never in the
 //!   environment of the launcher itself, a log line, a command line or a file of its own.
-//! - Watch [`Revocations`]. When inferd ends a credential (the permit was revoked, the account
-//!   removed) it unlinks a tmpfs file, but it cannot reach the child's copy of a memfd or the
-//!   text it already read, so it tells the launcher in a signal and the launcher must end the
-//!   process: ask it to quit, and kill it after a grace period the launcher chooses.
+//! - Watch [`Revocations`]. When accountd ends a credential (the permit was revoked, the account
+//!   removed) it cannot reach the child's copy of the memfd or the text it already read, so it
+//!   tells the launcher in a signal and the launcher must end the process: ask it to quit, and
+//!   kill it after a grace period the launcher chooses.
 //! - Call `Launcher::revoke_credential` when the process exits or is killed, so the credential
-//!   does not outlive it. If the launcher's connection leaves the bus inferd ends all of its
+//!   does not outlive it. If the launcher's connection leaves the bus accountd ends all of its
 //!   credentials, but then nobody is left to kill the children.
 //! - Hand a credential to one child only, and only to the program it was issued for.
 //!
@@ -23,36 +23,30 @@
 //! URL. A memfd keeps the key out of `/proc/<pid>/environ`; delivering it as text in the child's
 //! environment ([`Delivery::Value`]) puts it back there, readable by processes of the same user.
 
+use crate::call_failure::CallFailure;
 use crate::launcher::LauncherError;
-use porter_core::audit::{CredentialEnd, Handoff};
-use porter_core::capability::EnvName;
-use porter_core::{ProcessCredentialId, SecretText};
-use porter_dbus::{BusStream, ProcessCredentialRevoked, ProcessCredentialRevokedStream};
+use porter_capability::EnvName;
+use porter_core::ProcessCredentialId;
+use porter_core::SecretText;
+use porter_core::audit::CredentialEnd;
+use porter_dbus::BusStream;
+use porter_dbus::accounts::{ProcessCredentialRevoked, ProcessCredentialRevokedStream};
+use porter_ids::word::from_word;
 use std::io;
 use std::os::fd::{AsFd, OwnedFd, RawFd};
 use std::os::unix::fs::FileExt;
-use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use zeroize::Zeroizing;
 
-/// Where the key is, for the launcher to pass on.
-#[derive(Debug)]
-pub enum CredentialHandle {
-    /// A sealed memfd, read position at the start; the launcher passes it to the child as an
-    /// inherited descriptor. Read it with `pread` or by opening `/proc/self/fd/<n>`: a plain
-    /// `read` moves the position every holder of the descriptor shares.
-    Memfd(OwnedFd),
-    /// A 0600 file in a 0700 directory under `$XDG_RUNTIME_DIR`, which inferd unlinks when the
-    /// credential ends.
-    TmpfsFile(PathBuf),
-}
-
-/// A credential issued to this launcher for one process.
+/// A credential issued to this launcher for one process: its id, and the sealed memfd that holds
+/// the key, read position at the start. The launcher passes the descriptor to the child as an
+/// inherited one, or reads the key from it ([`ProcessCredential::read_key`]); a plain `read`
+/// moves the position every holder of the descriptor shares, so this reads with `pread`.
 #[derive(Debug)]
 pub struct ProcessCredential {
     id: ProcessCredentialId,
-    handle: CredentialHandle,
+    key: OwnedFd,
 }
 
 /// How the child is told where its key is.
@@ -64,11 +58,10 @@ pub enum Delivery {
     Value,
     /// The variable `<KEY_VAR>_FILE` holds a path to a file with the key, and the key is in no
     /// environment. Only for a program that is known to read such a variable or that is
-    /// started through a wrapper that does; porter declares no program that does. A memfd is
-    /// shown to the child as descriptor `child_fd` (`/proc/self/fd/<child_fd>`); a tmpfs file by
-    /// its path.
+    /// started through a wrapper that does; porter declares no program that does. The memfd is
+    /// shown to the child as descriptor `child_fd` (`/proc/self/fd/<child_fd>`).
     File {
-        /// The descriptor number the child sees the memfd at. Ignored for a tmpfs file.
+        /// The descriptor number the child sees the memfd at.
         child_fd: RawFd,
     },
 }
@@ -87,12 +80,12 @@ pub enum ChildKey {
     File {
         /// `<AgentCap.key_env>_FILE`.
         var: EnvName,
-        /// `/proc/self/fd/<n>` or the tmpfs path.
+        /// `/proc/self/fd/<n>`.
         path: String,
-        /// For a memfd: a duplicate to place at descriptor number `number` in the child (`dup2`
+        /// A duplicate of the memfd to place at descriptor number `number` in the child (`dup2`
         /// in a `pre_exec` hook, or the spawner's descriptor-mapping call), and to close in the
         /// launcher once the child has started.
-        inherit: Option<Inherit>,
+        inherit: Inherit,
     },
 }
 
@@ -109,8 +102,8 @@ pub struct Inherit {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum ChildKeyError {
-    /// The key could not be read back from the descriptor or the file (what the system said;
-    /// `InvalidData` is a file longer than any key).
+    /// The key could not be read back from the descriptor (what the system said; `InvalidData`
+    /// is a key longer than any key).
     #[error("the key could not be read: {0}")]
     Unreadable(io::ErrorKind),
     /// The key is not text.
@@ -122,8 +115,8 @@ pub enum ChildKeyError {
 }
 
 impl ProcessCredential {
-    pub(crate) fn new(id: ProcessCredentialId, handle: CredentialHandle) -> Self {
-        Self { id, handle }
+    pub(crate) fn new(id: ProcessCredentialId, key: OwnedFd) -> Self {
+        Self { id, key }
     }
 
     /// The id to end it by (`Launcher::revoke_credential`) and that `Revocations` names.
@@ -131,26 +124,19 @@ impl ProcessCredential {
         &self.id
     }
 
-    /// The way it was handed over.
-    pub fn handoff(&self) -> Handoff {
-        match self.handle {
-            CredentialHandle::Memfd(_) => Handoff::Memfd,
-            CredentialHandle::TmpfsFile(_) => Handoff::TmpfsFile,
-        }
+    /// The sealed memfd that holds the key.
+    pub fn descriptor(&self) -> &OwnedFd {
+        &self.key
     }
 
-    /// Where the key is.
-    pub fn handle(&self) -> &CredentialHandle {
-        &self.handle
-    }
-
-    /// The key's text, read without moving a shared position.
+    /// The key's text, read without moving the shared position.
     pub fn read_key(&self) -> Result<SecretText, ChildKeyError> {
-        let file = match &self.handle {
-            CredentialHandle::Memfd(fd) => fd.as_fd().try_clone_to_owned().map(std::fs::File::from),
-            CredentialHandle::TmpfsFile(path) => std::fs::File::open(path),
-        }
-        .map_err(|why| ChildKeyError::Unreadable(why.kind()))?;
+        let file = self
+            .key
+            .as_fd()
+            .try_clone_to_owned()
+            .map(std::fs::File::from)
+            .map_err(|why| ChildKeyError::Unreadable(why.kind()))?;
         let bytes = read_all_at(&file).map_err(|why| ChildKeyError::Unreadable(why.kind()))?;
         // `SecretText` wipes its own copy; the buffer is wiped when `bytes` drops.
         std::str::from_utf8(&bytes)
@@ -172,42 +158,30 @@ impl ProcessCredential {
             Delivery::File { child_fd } => {
                 let var = EnvName::parse(&format!("{}_FILE", key_env.as_str()))
                     .map_err(|_| ChildKeyError::NoFileVariable(key_env.as_str().to_owned()))?;
-                match &self.handle {
-                    CredentialHandle::Memfd(fd) => {
-                        let copy = fd
-                            .as_fd()
-                            .try_clone_to_owned()
-                            .map_err(|why| ChildKeyError::Unreadable(why.kind()))?;
-                        Ok(ChildKey::File {
-                            var,
-                            path: format!("/proc/self/fd/{child_fd}"),
-                            inherit: Some(Inherit {
-                                fd: copy,
-                                number: child_fd,
-                            }),
-                        })
-                    }
-                    CredentialHandle::TmpfsFile(path) => Ok(ChildKey::File {
-                        var,
-                        path: path_text(path),
-                        inherit: None,
-                    }),
-                }
+                let copy = self
+                    .key
+                    .as_fd()
+                    .try_clone_to_owned()
+                    .map_err(|why| ChildKeyError::Unreadable(why.kind()))?;
+                Ok(ChildKey::File {
+                    var,
+                    path: format!("/proc/self/fd/{child_fd}"),
+                    inherit: Inherit {
+                        fd: copy,
+                        number: child_fd,
+                    },
+                })
             }
         }
     }
 }
 
-fn path_text(path: &Path) -> String {
-    path.to_string_lossy().into_owned()
-}
-
-/// The most a key file may hold. The buffer is this big (plus one byte, to see a longer file)
+/// The most a key may hold. The buffer is this big (plus one byte, to see a longer file)
 /// from the start, so it never grows, and growing is what would leave a stale copy behind.
 const KEY_LIMIT: usize = 16 * 1024;
 
 /// Every byte of `file`, by `pread` from offset zero, straight into one buffer that is wiped
-/// when it drops: no plain `Vec`, no copy on the stack. A file over [`KEY_LIMIT`] is
+/// when it drops: no plain `Vec`, no copy on the stack. A key over [`KEY_LIMIT`] is
 /// `InvalidData`.
 fn read_all_at(file: &std::fs::File) -> io::Result<Zeroizing<Vec<u8>>> {
     let mut buffer = Zeroizing::new(vec![0u8; KEY_LIMIT + 1]);
@@ -225,7 +199,7 @@ fn read_all_at(file: &std::fs::File) -> io::Result<Zeroizing<Vec<u8>>> {
     Err(io::ErrorKind::InvalidData.into())
 }
 
-/// inferd ended a credential: the launcher must end the process that holds the key.
+/// accountd ended a credential: the launcher must end the process that holds the key.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Revoked {
     /// The credential.
@@ -234,7 +208,7 @@ pub struct Revoked {
     pub reason: CredentialEnd,
 }
 
-/// The stream of [`Revoked`], sent to this launcher alone. An item is an error when inferd sent
+/// The stream of [`Revoked`], sent to this launcher alone. An item is an error when accountd sent
 /// one that is not well formed.
 #[derive(Debug)]
 pub struct Revocations {
@@ -250,8 +224,11 @@ impl Revocations {
         let args = signal.args()?;
         Ok(Revoked {
             id: ProcessCredentialId::parse(&args.id)?,
-            reason: CredentialEnd::from_word(&args.reason).ok_or_else(|| {
-                LauncherError::Malformed(format!("`{}` is not a reason", args.reason))
+            reason: from_word::<CredentialEnd>(&args.reason).ok_or_else(|| {
+                LauncherError::Bus(CallFailure::Malformed(format!(
+                    "`{}` is not a reason",
+                    args.reason
+                )))
             })?,
         })
     }
@@ -270,27 +247,17 @@ impl BusStream for Revocations {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_fake::Scratch;
-    use std::io::Write;
 
-    /// A key file holding `text`, and the directory it is in: bind it while the file is read.
-    fn scratch_file(name: &str, text: &str) -> (Scratch, PathBuf) {
-        let dir = Scratch::new(&format!("client-key-{name}"));
-        let path = dir.join("key");
-        let mut file = std::fs::File::create(&path).expect("create");
-        file.write_all(text.as_bytes()).expect("write");
-        (dir, path)
-    }
-
-    fn credential(handle: CredentialHandle) -> ProcessCredential {
-        ProcessCredential::new(ProcessCredentialId::parse("cred-1").expect("id"), handle)
+    fn credential(text: &str) -> ProcessCredential {
+        ProcessCredential::new(
+            ProcessCredentialId::parse("cred-1").expect("id"),
+            porter_secrets::sealed_key(text).expect("a memfd"),
+        )
     }
 
     #[test]
-    fn a_file_credential_gives_its_text_or_a_path_variable_and_never_an_inherited_descriptor() {
-        let (_dir, path) = scratch_file("text", "sk-test-0123");
-        let credential = credential(CredentialHandle::TmpfsFile(path.clone()));
-        assert_eq!(credential.handoff(), Handoff::TmpfsFile);
+    fn a_credential_gives_its_text_or_a_path_variable_with_a_descriptor_to_inherit() {
+        let credential = credential("sk-test-0123");
         let var = EnvName::parse("ANTHROPIC_API_KEY").expect("var");
         match credential.child_key(&var, Delivery::Value).expect("value") {
             ChildKey::Value { var, value } => {
@@ -303,14 +270,16 @@ mod tests {
             .child_key(&var, Delivery::File { child_fd: 9 })
             .expect("file")
         {
-            ChildKey::File {
-                var,
-                path: shown,
-                inherit,
-            } => {
+            ChildKey::File { var, path, inherit } => {
                 assert_eq!(var.as_str(), "ANTHROPIC_API_KEY_FILE");
-                assert_eq!(shown, path.to_string_lossy());
-                assert!(inherit.is_none());
+                assert_eq!(path, "/proc/self/fd/9");
+                assert_eq!(inherit.number, 9);
+                // The duplicate reads the same key.
+                let again = ProcessCredential::new(
+                    ProcessCredentialId::parse("cred-2").expect("id"),
+                    inherit.fd,
+                );
+                assert_eq!(again.read_key().expect("read").expose(), "sk-test-0123");
             }
             other => panic!("{other:?}"),
         }
@@ -320,38 +289,35 @@ mod tests {
     fn a_variable_too_long_to_take_a_file_suffix_is_refused() {
         let long = "K".repeat(62);
         let var = EnvName::parse(&long).expect("var");
-        let credential = credential(CredentialHandle::TmpfsFile(PathBuf::from("/nowhere")));
         assert!(matches!(
-            credential.child_key(&var, Delivery::File { child_fd: 3 }),
+            credential("k").child_key(&var, Delivery::File { child_fd: 3 }),
             Err(ChildKeyError::NoFileVariable(_))
         ));
     }
 
     #[test]
-    fn a_key_that_is_gone_is_unreadable_not_empty() {
-        let credential = credential(CredentialHandle::TmpfsFile(PathBuf::from(
-            "/nonexistent/porter/key",
-        )));
+    fn a_key_over_the_limit_is_unreadable_and_one_at_the_limit_is_read() {
         assert!(matches!(
-            credential.read_key(),
-            Err(ChildKeyError::Unreadable(io::ErrorKind::NotFound))
+            credential(&"k".repeat(KEY_LIMIT + 1)).read_key(),
+            Err(ChildKeyError::Unreadable(io::ErrorKind::InvalidData))
         ));
+        assert_eq!(
+            credential(&"k".repeat(KEY_LIMIT))
+                .read_key()
+                .expect("read")
+                .expose()
+                .len(),
+            KEY_LIMIT
+        );
     }
 
     #[test]
-    fn a_key_file_over_the_limit_is_unreadable_and_one_at_the_limit_is_read() {
-        let (_dir, path) = scratch_file("limit", &"k".repeat(KEY_LIMIT + 1));
-        let credential = credential(CredentialHandle::TmpfsFile(path.clone()));
-        assert!(matches!(
-            credential.read_key(),
-            Err(ChildKeyError::Unreadable(io::ErrorKind::InvalidData))
-        ));
-        std::fs::write(&path, "k".repeat(KEY_LIMIT)).expect("write");
-        assert_eq!(
-            credential.read_key().expect("read").expose().len(),
-            KEY_LIMIT
-        );
-        std::fs::write(&path, [0xff, 0xfe]).expect("write");
+    fn a_key_that_is_not_text_is_refused() {
+        let memfd =
+            rustix::fs::memfd_create("key", rustix::fs::MemfdFlags::CLOEXEC).expect("memfd");
+        rustix::io::write(&memfd, &[0xff_u8, 0xfe]).expect("written");
+        let credential =
+            ProcessCredential::new(ProcessCredentialId::parse("cred-3").expect("id"), memfd);
         assert!(matches!(credential.read_key(), Err(ChildKeyError::NotText)));
     }
 }

@@ -3,9 +3,8 @@ use crate::step::{Effect, Input, RelayEnd, Relaying, Side};
 use crate::testing::{bytewise, sent, whole};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
-use porter_core::{
-    CapabilityKind, EndpointUrl, Family, LoginName, RelayPlan, SecretText, ServiceEndpoint, Tls,
-};
+use porter_capability::CapabilityKind;
+use porter_core::{EndpointUrl, Family, LoginName, RelayPlan, SecretText, ServiceEndpoint, Tls};
 
 fn caps(lines: &[&str]) -> Vec<String> {
     lines.iter().map(|l| (*l).to_owned()).collect()
@@ -83,6 +82,7 @@ fn relay(tls: Tls, auth: RelayAuth) -> Pop3Relay {
         },
         CapabilityKind::Mail,
         auth,
+        porter_core::Reach::origin(),
     ))
 }
 
@@ -233,7 +233,12 @@ fn a_token_goes_by_xoauth2_and_an_error_challenge_is_answered() {
     let line = sent(&effects, Side::Server);
     let encoded = line.strip_prefix("AUTH XOAUTH2 ").expect("xoauth2");
     let decoded = STANDARD.decode(encoded.trim()).expect("base64");
-    assert_eq!(decoded, b"user=ada\x01auth=Bearer tok-1\x01\x01");
+    assert_eq!(
+        decoded,
+        porter_core::token::xoauth2("ada", "tok-1")
+            .expose()
+            .as_bytes()
+    );
     let (relay, effects) = whole(relay, Side::Server, b"+ eyJzdGF0dXMiOiI0MDEifQ==\r\n");
     assert_eq!(sent(&effects, Side::Server), "\r\n");
     let (_, effects) = whole(relay, Side::Server, b"-ERR invalid token\r\n");

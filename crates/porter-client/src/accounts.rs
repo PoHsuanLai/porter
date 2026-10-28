@@ -1,49 +1,47 @@
 //! `Accounts`: the app's handle on porter.
 
 use crate::authenticated::{AuthenticatedStream, Relayed};
-use crate::env::{ClientEnv, LinkChoice};
-use crate::error::{ClientError, TransportError};
-use crate::found::{ConsentOffer, Found, found};
-use crate::transport::{AnyTransport, Transport};
+use crate::error::ClientError;
+#[cfg(feature = "dbus")]
+use crate::error::TransportError;
+use crate::found::ConsentOffer;
+use crate::transport::Transport;
 #[cfg(feature = "infer")]
-use porter_core::Tier;
-use porter_core::consent::{Grant, Usage};
-use porter_core::lending::{ComputerCandidate, GuestAnswer, GuestRow};
-use porter_core::wire::{ParentWindow, ProviderHint};
-use porter_core::{
-    AccountId, AccountsReply, AccountsRequest, Audience, Candidate, DataClass, EndpointUrl,
-    GrantId, IssuedToken, Need, NodeId,
-};
+use porter_capability::Tier;
+#[cfg(feature = "infer")]
+use porter_core::DataClass;
+use porter_core::ProviderHint;
+use porter_core::{AccountId, GrantId};
+use porter_core::{Candidate, EndpointUrl};
 #[cfg(feature = "infer")]
 use porter_infer::{
     ClientFrame, InferEvent, InferReply, InferRequest, InferSession, OpenOptions, Readiness,
 };
+#[cfg(feature = "infer")]
+use porter_match::Need;
+use porter_tailnet::{ComputerCandidate, GuestAnswer, GuestRow};
+use porter_tailscale::NodeId;
+use porter_wire::ParentWindow;
+use porter_wire::{AccountsReply, AccountsRequest};
 
 /// The app's connection to the account service.
 #[derive(Debug)]
 pub struct Accounts<T> {
-    transport: T,
-}
-
-impl Accounts<AnyTransport> {
-    /// Connects over the first reachable link in `env`, in order (D-Bus on the desktop, the
-    /// latchkey socket elsewhere). A D-Bus link is reachable when the session bus is: the
-    /// daemons are found, and started by bus activation, at the first call, so a machine with
-    /// inferd and no accountd still connects. A socket link is reachable when the agent accepts
-    /// a connection. Without the `dbus` feature a D-Bus link is skipped, and without `socket` a
-    /// socket link is; no reachable link is `TransportError::Unreachable`.
-    pub async fn connect(env: &ClientEnv) -> Result<Self, ClientError> {
-        for link in &env.links {
-            if let Some(transport) = reach(link).await {
-                return Ok(Self { transport });
-            }
-        }
-        Err(TransportError::Unreachable.into())
-    }
+    pub(crate) transport: T,
 }
 
 #[cfg(feature = "dbus")]
 impl Accounts<crate::transport::DbusTransport> {
+    /// Connects over the session bus. The daemons are found, and started by bus activation, at
+    /// the first call, so a machine with inferd and no accountd still connects. No session bus is
+    /// `TransportError::Unreachable`.
+    pub async fn connect() -> Result<Self, ClientError> {
+        crate::transport::DbusTransport::session()
+            .await
+            .map(|transport| Self { transport })
+            .map_err(|_| TransportError::Unreachable.into())
+    }
+
     /// The identities accountd removes, from now on (`Identities::watch_removals`, as accounts
     /// by their object-path segment). An app that keeps something of an identity (a copy of its
     /// sign-in, mirrors) forgets it on each [`crate::RemovedAccount`].
@@ -62,80 +60,10 @@ impl Accounts<crate::transport::DbusTransport> {
     }
 }
 
-#[cfg(feature = "dbus")]
-impl Accounts<AnyTransport> {
-    /// [`Accounts::watch_guests`] over whichever link was found: a link that is not the session
-    /// bus has no guests to watch, so it is `TransportError::Unsupported`.
-    pub async fn watch_guests(&self) -> Result<crate::GuestChanges, ClientError> {
-        match &self.transport {
-            AnyTransport::Dbus(link) => {
-                Ok(crate::GuestChanges::watch(link.connection(), link.inference()).await?)
-            }
-            _ => Err(TransportError::Unsupported.into()),
-        }
-    }
-}
-
-/// The transport for one link, if it is reachable.
-async fn reach(link: &LinkChoice) -> Option<AnyTransport> {
-    match link {
-        #[cfg(feature = "dbus")]
-        LinkChoice::Dbus => crate::transport::DbusTransport::session()
-            .await
-            .ok()
-            .map(AnyTransport::Dbus),
-        #[cfg(not(feature = "dbus"))]
-        LinkChoice::Dbus => None,
-        LinkChoice::Socket(agent) => {
-            let link = crate::transport::SocketTransport::at(agent.clone());
-            link.reachable().await.then_some(AnyTransport::Socket(link))
-        }
-    }
-}
-
 impl<T: Transport> Accounts<T> {
     /// Over a transport the app built (`InProcess` for an app hosting the core).
     pub fn over(transport: T) -> Self {
         Self { transport }
-    }
-
-    /// Whether an account can meet `need` for this app, and which.
-    pub async fn find(
-        &self,
-        need: &Need,
-        class: DataClass,
-        usage: Usage,
-    ) -> Result<Found, ClientError> {
-        let query = AccountsRequest::Query {
-            need: need.clone(),
-            class,
-            usage,
-        };
-        let candidates = match self.transport.call(query).await? {
-            AccountsReply::Candidates(candidates) => candidates,
-            other => return Err(unexpected(other)),
-        };
-        let offer = ConsentOffer {
-            need: need.clone(),
-            class,
-            usage,
-        };
-        if !candidates.is_empty() {
-            return Ok(found(
-                candidates,
-                porter_core::consent::Availability::Granted,
-                offer,
-            ));
-        }
-        let ask = AccountsRequest::Availability {
-            need: need.clone(),
-            class,
-            usage,
-        };
-        match self.transport.call(ask).await? {
-            AccountsReply::Availability(availability) => Ok(found(candidates, availability, offer)),
-            other => Err(unexpected(other)),
-        }
     }
 
     /// Shows the chooser and consent sheet for `offer`; the account the user picked, granted.
@@ -192,22 +120,6 @@ impl<T: Transport> Accounts<T> {
         }
     }
 
-    /// A short-lived token for a granted candidate; ask again when it expires or on a 401.
-    pub async fn token(
-        &self,
-        candidate: &Candidate,
-        audience: &Audience,
-    ) -> Result<IssuedToken, ClientError> {
-        let request = AccountsRequest::IssueToken {
-            grant: candidate.grant.clone(),
-            audience: audience.clone(),
-        };
-        match self.transport.call(request).await? {
-            AccountsReply::Token(token) => Ok(token),
-            other => Err(unexpected(other)),
-        }
-    }
-
     /// A byte stream to `endpoint`, one of the account's servers the candidate listed, already
     /// authenticated by a daemon-side relay: an IMAP, SMTP or HTTP engine speaks its protocol on
     /// it and never holds the password. The IMAP stream starts with a `PREAUTH` greeting, the
@@ -239,28 +151,6 @@ impl<T: Transport> Accounts<T> {
         match self.transport.open_linked(grant, origin).await? {
             Relayed::Stream(stream) => Ok(stream),
             Relayed::Refused(refusal) => Err(ClientError::Refused(refusal)),
-        }
-    }
-
-    /// The app's own grants.
-    pub async fn grants(&self) -> Result<Vec<Grant>, ClientError> {
-        match self.transport.call(AccountsRequest::ListGrants).await? {
-            AccountsReply::Grants(grants) => Ok(grants),
-            other => Err(unexpected(other)),
-        }
-    }
-
-    /// Withdraws one of the app's grants.
-    pub async fn revoke(&self, grant: &GrantId) -> Result<(), ClientError> {
-        match self
-            .transport
-            .call(AccountsRequest::Revoke {
-                grant: grant.clone(),
-            })
-            .await?
-        {
-            AccountsReply::Revoked => Ok(()),
-            other => Err(unexpected(other)),
         }
     }
 

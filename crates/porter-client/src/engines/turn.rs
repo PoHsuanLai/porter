@@ -4,10 +4,10 @@
 
 use super::engine::{Engine, KeyUse};
 use super::keys::KeySource;
-use super::wire::{Temperature, provider};
+use super::wire::provider;
 use model_provider as sp;
 use porter_bridge::{DefaultSampling, Frames, JsonReply, Target, chat_turn_for, task_turn_for};
-use porter_core::Tier;
+use porter_capability::Tier;
 use porter_infer::{
     InferEvent, InferRefusal, InferReply, InferRequest, Knob, ModelError, ServedBy,
 };
@@ -35,26 +35,22 @@ impl Pinned {
     }
 }
 
-/// The turn for a request this host serves, and whether the app chose a sampling; `None` for a
+/// The turn for a request this host serves, and whether the app chose a sampling (`true`); `None` for a
 /// kind of request it does not (embeddings, speech, computer use).
 fn turn_of(
     pinned: &Pinned,
     request: &InferRequest,
     frames: &Frames,
-) -> Option<Result<(sp::TurnRequest, Temperature), porter_bridge::BridgeError>> {
+) -> Option<Result<(sp::TurnRequest, bool), porter_bridge::BridgeError>> {
     let target = pinned.target();
     match request {
         InferRequest::Chat(chat) => {
-            let temperature = match chat.control.sampling {
-                Knob::Set(_) => Temperature::Sent,
-                Knob::Off => Temperature::EngineDefault,
-            };
-            Some(chat_turn_for(&target, chat, frames).map(|turn| (turn, temperature)))
+            let keep_temperature = matches!(chat.control.sampling, Knob::Set(_));
+            Some(chat_turn_for(&target, chat, frames).map(|turn| (turn, keep_temperature)))
         }
-        InferRequest::Task(task) => Some(
-            task_turn_for(&target, task, pinned.tier)
-                .map(|turn| (turn, Temperature::EngineDefault)),
-        ),
+        InferRequest::Task(task) => {
+            Some(task_turn_for(&target, task, pinned.tier).map(|turn| (turn, false)))
+        }
         _ => None,
     }
 }
@@ -68,7 +64,7 @@ pub(crate) async fn reply(
     frames: &Frames,
     events: &UnboundedSender<InferEvent>,
 ) -> InferReply {
-    let (turn, temperature) = match turn_of(pinned, request, frames) {
+    let (turn, keep_temperature) = match turn_of(pinned, request, frames) {
         Some(Ok(built)) => built,
         Some(Err(porter_bridge::BridgeError::Attachment)) => {
             return InferReply::Failed(ModelError::Unreadable);
@@ -82,7 +78,7 @@ pub(crate) async fn reply(
             None => return InferReply::Refused(InferRefusal::NeedsGrant),
         },
     };
-    let provider = provider(&pinned.engine, key.as_ref(), temperature);
+    let provider = provider(&pinned.engine, key.as_ref(), keep_temperature);
     drop(key);
     // The same turn the daemon runs: events streamed as they come, the reply gathered. A host
     // with no engine of its own to tell has nothing to touch, and says nothing of option shares.

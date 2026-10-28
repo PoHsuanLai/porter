@@ -1,7 +1,7 @@
 use super::*;
-use crate::testkit::Scratch;
 use serde_json::json;
 use std::os::unix::fs::MetadataExt;
+use test_kit::Scratch;
 
 #[test]
 fn bodies_are_appended_one_json_line_each_in_a_0600_file() {

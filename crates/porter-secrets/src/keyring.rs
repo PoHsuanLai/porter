@@ -3,9 +3,11 @@
 //! secrets in the Secret Service through oo7; the keyring store there answers only once a
 //! default keyring-core store is set, which is how the tests give it keyring-core's mock.
 //!
-//! Attribution: ported from `mail-runtime/src/secrets.rs` and `secrets/chunks.rs` in mailo
-//! (MIT OR Apache-2.0, same author): the store opened once and kept, the entry-per-credential
-//! layout, and the chunking for Windows' size limit.
+//! Attribution: ported from `mail-runtime/src/secrets.rs` in mailo (MIT OR Apache-2.0, same
+//! author): the store opened once and kept, and the entry-per-credential layout.
+//!
+//! A value too long for one entry of the Windows credential manager is cut into parts by the
+//! keyring-chunked crate, whose heads begin `porter-parts:`.
 //!
 //! Blocking keyring calls run on a dedicated thread and resolve a oneshot, because this crate
 //! may not reach a runtime and a blocking call on an async executor once panicked mailo.
@@ -16,25 +18,35 @@
 //! same way on every platform, so each account also has an index entry `{account}:index` that
 //! lists its purposes, and removing an account reads it.
 
-mod chunks;
 mod thread;
 
 use crate::attributes::attributes;
 use crate::error::SecretsError;
 use crate::namespace::Namespace;
-use crate::secrets::{PutOutcome, Secrets};
-use chunks::{Limit, Slots};
+use crate::secrets::Secrets;
+use keyring_chunked::{ChunkedStore, Limit};
+use keyring_core::api::CredentialStoreApi;
 use keyring_core::{CredentialStore, Error};
-use porter_core::{AccountId, Credential, SecretKey};
+use porter_core::AccountId;
+use porter_core::{Credential, SecretKey};
 use std::sync::Arc;
 use thread::off_thread;
 
 /// How much one entry holds: 2560 bytes of UTF-16 in the Credential Manager. The Keychain has no
 /// limit a credential meets, so there every value is one entry.
 #[cfg(windows)]
-const LIMIT: Limit = Limit::Utf16Units(1280);
+const LIMIT: Limit = Limit::WINDOWS;
 #[cfg(not(windows))]
 const LIMIT: Limit = Limit::None;
+
+/// What the head entry of a value in parts holds before the count. Stored values are JSON,
+/// which begins with `{` or `"`, so none is mistaken for a head.
+const MARK: &str = "porter-parts:";
+
+/// `store`, cutting values over `limit` into parts.
+fn chunked(store: Arc<CredentialStore>, limit: Limit) -> ChunkedStore {
+    ChunkedStore::new(store, MARK, limit).expect("the marker is not empty")
+}
 
 /// The user's platform keyring, filing under [`Namespace::PORTER`].
 /// [`KeyringSecrets::in_namespace`] files under another.
@@ -71,8 +83,7 @@ impl KeyringNamedSecrets {
 /// the platform's, and what the tests do over keyring-core's mock.
 #[derive(Debug, Clone)]
 pub struct StoreSecrets {
-    store: Arc<CredentialStore>,
-    limit: Limit,
+    store: ChunkedStore,
     namespace: Namespace,
 }
 
@@ -81,8 +92,7 @@ impl StoreSecrets {
     /// limit.
     pub fn new(store: Arc<CredentialStore>) -> Self {
         Self {
-            store,
-            limit: LIMIT,
+            store: chunked(store, LIMIT),
             namespace: Namespace::PORTER,
         }
     }
@@ -92,8 +102,7 @@ impl StoreSecrets {
     /// any platform.
     pub fn chunked(store: Arc<CredentialStore>, units: usize) -> Self {
         Self {
-            store,
-            limit: Limit::Utf16Units(units),
+            store: chunked(store, Limit::Utf16Units(units)),
             namespace: Namespace::PORTER,
         }
     }
@@ -164,7 +173,8 @@ fn index_name(account: &AccountId) -> String {
     format!("{account}:index")
 }
 
-impl Slots for StoreSecrets {
+impl StoreSecrets {
+    /// The value in `name`, or `None` when there is no such entry.
     fn read(&self, name: &str) -> Result<Option<String>, SecretsError> {
         let entry = self
             .store
@@ -185,6 +195,7 @@ impl Slots for StoreSecrets {
         entry.set_password(value).map_err(refused)
     }
 
+    /// Remove `name`. An entry that is already gone is not an error.
     fn remove(&self, name: &str) -> Result<(), SecretsError> {
         let entry = self
             .store
@@ -200,7 +211,8 @@ impl Slots for StoreSecrets {
 
 /// The purposes filed for an account; an index that does not read is as good as none.
 fn purposes(store: &StoreSecrets, account: &AccountId) -> Vec<String> {
-    chunks::get(store, &index_name(account))
+    store
+        .read(&index_name(account))
         .ok()
         .flatten()
         .and_then(|json| serde_json::from_str(&json).ok())
@@ -214,17 +226,17 @@ fn write_index(
 ) -> Result<(), SecretsError> {
     let name = index_name(account);
     if purposes.is_empty() {
-        return chunks::forget(store, &name);
+        return store.remove(&name);
     }
     let json = serde_json::to_string(purposes).map_err(|_| SecretsError::Unreadable)?;
-    chunks::put(store, &name, &json, store.limit)
+    store.write(&name, &json)
 }
 
 impl StoreSecrets {
     // JSON rather than a bare string so an OAuth credential keeps its expiry and refresh token.
     fn put_now(&self, key: &SecretKey, value: &Credential) -> Result<(), SecretsError> {
         let encoded = serde_json::to_string(value).map_err(|_| SecretsError::Unreadable)?;
-        chunks::put(self, &entry_name(key), &encoded, self.limit)?;
+        self.write(&entry_name(key), &encoded)?;
         let purpose = attributes(key).purpose;
         let mut listed = purposes(self, &key.account);
         if !listed.contains(&purpose) {
@@ -237,28 +249,24 @@ impl StoreSecrets {
     /// Read, then write, in one thread job. A keyring-core store has no create-if-missing, so
     /// another process (or another `StoreSecrets` on the same store) can file the key between
     /// the two; within one process the mutex below serialises the callers of this method.
-    fn put_if_absent_now(
-        &self,
-        key: &SecretKey,
-        value: &Credential,
-    ) -> Result<PutOutcome, SecretsError> {
+    fn put_if_absent_now(&self, key: &SecretKey, value: &Credential) -> Result<bool, SecretsError> {
         static GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
         let _held = GUARD
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        match chunks::get(self, &entry_name(key))? {
-            Some(_) => Ok(PutOutcome::AlreadyThere),
-            None => self.put_now(key, value).map(|()| PutOutcome::Stored),
+        match self.read(&entry_name(key))? {
+            Some(_) => Ok(false),
+            None => self.put_now(key, value).map(|()| true),
         }
     }
 
     fn get_now(&self, key: &SecretKey) -> Result<Credential, SecretsError> {
-        let stored = chunks::get(self, &entry_name(key))?.ok_or(SecretsError::Missing)?;
+        let stored = self.read(&entry_name(key))?.ok_or(SecretsError::Missing)?;
         serde_json::from_str(&stored).map_err(|_| SecretsError::Unreadable)
     }
 
     fn delete_now(&self, key: &SecretKey) -> Result<(), SecretsError> {
-        chunks::forget(self, &entry_name(key))?;
+        self.remove(&entry_name(key))?;
         let purpose = attributes(key).purpose;
         let mut listed = purposes(self, &key.account);
         if listed.contains(&purpose) {
@@ -270,9 +278,9 @@ impl StoreSecrets {
 
     fn delete_account_now(&self, account: &AccountId) -> Result<(), SecretsError> {
         for purpose in purposes(self, account) {
-            chunks::forget(self, &format!("{account}:{purpose}"))?;
+            self.remove(&format!("{account}:{purpose}"))?;
         }
-        chunks::forget(self, &index_name(account))
+        self.remove(&index_name(account))
     }
 }
 
@@ -286,7 +294,7 @@ impl Secrets for StoreSecrets {
         &self,
         key: &SecretKey,
         value: &Credential,
-    ) -> Result<PutOutcome, SecretsError> {
+    ) -> Result<bool, SecretsError> {
         let (this, key, value) = (self.clone(), key.clone(), value.clone());
         off_thread(move || this.put_if_absent_now(&key, &value)).await?
     }
@@ -320,7 +328,7 @@ impl Secrets for KeyringSecrets {
         &self,
         key: &SecretKey,
         value: &Credential,
-    ) -> Result<PutOutcome, SecretsError> {
+    ) -> Result<bool, SecretsError> {
         resolve(&Namespace::PORTER)?.put_if_absent(key, value).await
     }
 
@@ -346,7 +354,7 @@ impl Secrets for KeyringNamedSecrets {
         &self,
         key: &SecretKey,
         value: &Credential,
-    ) -> Result<PutOutcome, SecretsError> {
+    ) -> Result<bool, SecretsError> {
         resolve(&self.namespace)?.put_if_absent(key, value).await
     }
 

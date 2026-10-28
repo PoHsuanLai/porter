@@ -1,12 +1,12 @@
 //! The consent sheet accounts-ui draws, as values: what it is asked and what it answers.
 
 use super::grant::{GrantScope, Usage};
+use crate::SessionToken;
 use crate::account::AccountLabel;
 use crate::app_id::{AppId, AppLabel};
-use crate::capability::CapabilityKind;
 use crate::data_class::DataClass;
-use crate::id::{AccountId, ProviderId};
-use crate::launcher_session::LauncherSession;
+use crate::{AccountId, ProviderId};
+use porter_capability::CapabilityKind;
 use serde::{Deserialize, Serialize};
 
 /// One consent question: "Photos wants to keep its library in your files", with the fitting
@@ -25,13 +25,11 @@ pub struct ConsentAsk {
     /// The accounts that fit, in the order to show them. Never empty: with no fitting account
     /// the sheet offers "Add Account…" instead, which is a separate request.
     pub accounts: Vec<AccountChoice>,
-    /// The launcher session the request was made inside: when present the sheet may offer "This
-    /// session only" (`GrantScope::Session` with this id) beside Once and Always, and when
-    /// absent it must not (an answer with a session scope is then treated as dismissed). Only
-    /// `Peer.RequestAgentGrant` sets it; `app` is then the agent's `org.quire.Agent.<program>`,
-    /// which the sheet titles itself with.
+    /// The session the request was made inside: when present the sheet may offer "This session
+    /// only" (`GrantScope::Session` with this token) beside Once and Always, and when absent it
+    /// must not (an answer with a session scope is then treated as dismissed).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub session: Option<LauncherSession>,
+    pub session: Option<SessionToken>,
     /// What a person calls `app` ("Claude Code" for `org.quire.Agent.claude-code`), as accountd
     /// resolves it. Absent when accountd has no name for it: the host then names the app as it
     /// can from the id. Filled by accountd on the way to the sheet host, never by the service.
@@ -93,8 +91,8 @@ impl ConsentAsk {
         self
     }
 
-    /// The same question, asked inside this launcher session.
-    pub fn with_session(mut self, session: LauncherSession) -> Self {
+    /// The same question, asked inside this session.
+    pub fn with_session(mut self, session: SessionToken) -> Self {
         self.session = Some(session);
         self
     }

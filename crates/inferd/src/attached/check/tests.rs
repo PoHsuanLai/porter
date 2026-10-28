@@ -1,12 +1,12 @@
 use super::*;
-use crate::attached::config::{Place, Reach};
-use crate::attached::key::{KeyFile, KeyFileProblem};
 use crate::lab::Lab;
-use crate::testkit::Scratch;
 use model_http::Port;
 use porter_fake_servers::net::Bind;
+use porter_router::attached::config::{Place, Reach};
+use porter_router::attached::key::{KeyFile, KeyFileProblem};
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
+use test_kit::Scratch;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 const SERVED: &str = "qwen3-32b";
@@ -53,7 +53,7 @@ async fn an_engine_that_lists_the_served_name_is_ready_over_a_socket_and_over_lo
         probe(&socket_target(on_socket.socket(), None), SERVED).await,
         Ok(())
     );
-    let on_port = Lab::start(&Bind::Loopback, "lab", &["other", SERVED], None).await;
+    let on_port = Lab::start(&Bind::Port(0), "lab", &["other", SERVED], None).await;
     assert_eq!(
         probe(&port_target(on_port.port(), None), SERVED).await,
         Ok(())
@@ -160,7 +160,7 @@ async fn a_key_file_that_is_refused_is_never_sent_and_the_engine_is_not_asked() 
 
 #[tokio::test]
 async fn an_engine_that_does_not_serve_the_name_says_what_it_serves() {
-    let lab = Lab::start(&Bind::Loopback, "lab", &["llama-3-8b", "qwen3-8b"], None).await;
+    let lab = Lab::start(&Bind::Port(0), "lab", &["llama-3-8b", "qwen3-8b"], None).await;
     assert_eq!(
         probe(&port_target(lab.port(), None), SERVED).await,
         Err(NotReady::ModelAbsent {

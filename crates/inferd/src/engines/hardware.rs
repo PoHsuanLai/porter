@@ -5,17 +5,17 @@
 
 use super::{Engines, Offered};
 use crate::failure::{EngineView, Moment};
-use crate::local::LocalModel;
 use crate::peers::Caller;
-use crate::router::Unchosen;
-use crate::router::placed::Allowed;
 use crate::seats::Gate;
-use crate::session::SessionSpec;
-use crate::swap::running_of;
 use engine_supervisor::{EngineId, EngineState};
 use model_catalog::{GpuNeed, MiB};
-use porter_core::Bytes;
+use porter_ids::Bytes;
 use porter_infer::{HardwareFacts, HardwareNote, MemoryFacts, ModelRef, hardware_notes};
+use porter_router::local::LocalModel;
+use porter_router::router::Unchosen;
+use porter_router::router::placed::Allowed;
+use porter_router::session::SessionSpec;
+use porter_router::swap::running_of;
 
 use std::sync::Arc;
 use std::time::Duration;

@@ -1,9 +1,10 @@
 use super::rig::*;
-use porter_core::capability::CapabilityKind as K;
-use porter_core::capability::StorageScope;
-use porter_core::{
-    AbsentReason, AccountId, Credential, Offer, Provenance, SecretText, TokenKind, UnixSeconds,
-};
+use porter_capability::CapabilityKind as K;
+use porter_capability::StorageScope;
+use porter_capability::{AbsentReason, Offer, Provenance};
+use porter_core::AccountId;
+use porter_core::{Credential, SecretText, TokenKind};
+use porter_ids::UnixSeconds;
 use porter_provider::{Presented, Provider, ProviderError, ProviderSession, RevokeOutcome};
 
 fn account() -> AccountId {
@@ -33,7 +34,9 @@ fn seeded(rig: &Rig) -> Presented {
     })
 }
 
-async fn open(rig: &Rig) -> porter_families::MicrosoftSession<Wire> {
+async fn open(
+    rig: &Rig,
+) -> porter_family_oauth::OAuthSession<porter_family_oauth::Microsoft, Wire> {
     rig.provider
         .open(&account(), seeded(rig))
         .await
@@ -56,12 +59,17 @@ async fn tokens_come_per_audience_in_the_form_the_protocol_takes() {
             .expect(audience);
         assert_eq!(token.kind, kind, "{audience}");
         let bearer = match kind {
-            TokenKind::Xoauth2 => token
-                .value
-                .expose()
-                .strip_prefix("user=ada@contoso.onmicrosoft.com\u{1}auth=Bearer ")
-                .and_then(|rest| rest.strip_suffix("\u{1}\u{1}"))
-                .unwrap_or_else(|| panic!("{audience}: not the unencoded SASL string")),
+            TokenKind::Xoauth2 => {
+                let (user, bearer) = porter_core::token::parse_xoauth2(token.value.expose())
+                    .unwrap_or_else(|| panic!("{audience}: not the unencoded SASL string"));
+                assert_eq!(user, "ada@contoso.onmicrosoft.com", "{audience}");
+                assert_eq!(
+                    token.value,
+                    porter_core::token::xoauth2(user, bearer),
+                    "{audience}"
+                );
+                bearer
+            }
             _ => token.value.expose(),
         };
         assert!(rig.issuer.access_is_live(bearer), "{audience}");
@@ -285,13 +293,15 @@ async fn revoking_sends_the_person_to_their_microsoft_account_page() {
 mod service {
     use super::*;
     use porter_core::AccountId as Id;
+    use porter_core::ProviderId;
     use porter_core::{
-        Account, AccountLabel, AccountState, AuthKind, ProviderId, Restriction, SecretKey,
-        SecretPurpose,
+        Account, AccountLabel, AccountState, AuthKind, Restriction, SecretKey, SecretPurpose,
     };
-    use porter_fake::{FixedClock, ScriptedSheets};
+    use porter_fake::ScriptedSheets;
+    use porter_ids::clock::FixedClock;
     use porter_secrets::{MemorySecrets, Secrets, SecretsError};
-    use porter_service::{AccountService, Registry};
+    use porter_service::AccountService;
+    use porter_service_core::registry::Registry;
     use std::sync::Arc;
 
     /// A store the test keeps a handle on after the service has one.
@@ -402,7 +412,7 @@ mod service {
         );
         assert_eq!(
             service.rediscover(&account()).await,
-            Err(porter_core::wire::Refusal::NeedsReauth)
+            Err(porter_wire::Refusal::NeedsReauth)
         );
         assert_eq!(secrets.get(&key).await, Ok(dead));
     }

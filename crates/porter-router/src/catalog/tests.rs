@@ -1,8 +1,8 @@
 use super::*;
-use crate::testkit::Scratch;
 use crate::testkit::entries;
-use porter_core::capability::{CuaBatching, Offered};
+use porter_capability::CuaBatching;
 use std::path::PathBuf;
+use test_kit::Scratch;
 
 fn shipped() -> CatalogDirs {
     CatalogDirs {
@@ -62,7 +62,7 @@ fn holo_is_a_language_model_and_a_computer_use_model() {
     };
     assert_eq!(cua.environments, BTreeSet::from([CuaEnv::Desktop]));
     assert_eq!(cua.batching, CuaBatching::One);
-    assert_eq!(cua.zoom, Offered::Absent);
+    assert!(!cua.zoom);
     // The longest side the entry's pixel cap allows: the side of a square of 16777216 pixels.
     assert_eq!(cua.max_image, Px(4096));
 }

@@ -28,8 +28,14 @@ fn key<'a>(text: &'a str, name: &str) -> Option<&'a str> {
 fn the_activation_file_and_the_unit_name_the_bus_name_and_each_other() {
     let activation = dist("dbus/org.quire.Inference1.service");
     let unit = dist("inferd.service");
-    assert_eq!(key(&activation, "Name"), Some(porter_dbus::INFERENCE_BUS));
-    assert_eq!(key(&unit, "BusName"), Some(porter_dbus::INFERENCE_BUS));
+    assert_eq!(
+        key(&activation, "Name"),
+        Some(porter_dbus::inference::INFERENCE_BUS)
+    );
+    assert_eq!(
+        key(&unit, "BusName"),
+        Some(porter_dbus::inference::INFERENCE_BUS)
+    );
     assert_eq!(key(&activation, "SystemdService"), Some("inferd.service"));
     assert_eq!(key(&activation, "Exec"), key(&unit, "ExecStart"));
     assert_eq!(key(&unit, "Type"), Some("dbus"));
@@ -43,7 +49,7 @@ fn the_shipped_table_names_settings_by_its_unit() {
     let settings: Vec<_> = rows
         .callers
         .iter()
-        .filter(|row| row.role == porter_dbus::CallerRole::Settings)
+        .filter(|row| row.role == porter_callers::CallerRole::Settings)
         .map(|row| (row.unit.as_deref(), row.app.to_string()))
         .collect();
     assert_eq!(
@@ -105,8 +111,9 @@ fn the_unit_gives_engines_the_gpu_and_only_this_computers_own_addresses() {
     assert_eq!(key(&unit, "MemoryDenyWriteExecute"), None);
     assert!(unit.lines().any(|line| line.starts_with("DeviceAllow=")));
     // What inferd writes is created by systemd before the sandbox starts.
-    // The sockets' directory and, inside it, the agents' credential files.
-    assert_eq!(key(&unit, "RuntimeDirectory"), Some("inferd inferd/agent"));
+    // The sockets' directory, and nothing for credentials: the AI keys are accountd's and a key
+    // reaches inferd on a descriptor, never in a file.
+    assert_eq!(key(&unit, "RuntimeDirectory"), Some("inferd"));
     assert_eq!(key(&unit, "RuntimeDirectoryMode"), Some("0700"));
     assert_eq!(key(&unit, "StateDirectory"), Some("quire/inferd"));
     assert_eq!(key(&unit, "ReadWritePaths"), None);
@@ -196,7 +203,7 @@ fn the_agent_launcher_is_listed_by_the_machine_that_runs_it_never_by_default() {
             .rows()
             .callers
             .iter()
-            .all(|row| row.role != porter_dbus::CallerRole::AgentLauncher),
+            .all(|row| row.role != porter_callers::CallerRole::AgentLauncher),
         "no launcher by default"
     );
     // The line the table's comment shows is the one a machine writes, uncommented.
@@ -339,7 +346,7 @@ fn the_schema_holds_the_rows_the_design_names_and_each_is_a_page_row_of_intellig
 
 #[test]
 fn the_structured_rows_keep_the_codes_defaults_and_ranges() {
-    use inferd::structured::limits::{DEPTH, OPEN_LIST, OPEN_TEXT, REPAIR_BUDGET};
+    use porter_turns::structured::limits::{DEPTH, OPEN_LIST, OPEN_TEXT, REPAIR_BUDGET};
     let keys = schema_keys();
     for row in [OPEN_TEXT, OPEN_LIST, DEPTH, REPAIR_BUDGET] {
         let key = keys.iter().find(|k| k.path.0 == row.path).expect(row.path);
@@ -408,7 +415,7 @@ fn the_cap_rows_are_cents_from_zero_and_default_to_no_cap() {
             "{path}"
         );
         assert_eq!(key.default, toml::Value::Integer(0), "{path}");
-        // Zero is no cap, and a number is that many cents in micro-dollars.
+        // Zero is no cap, and a number is that many US cents.
         assert_eq!(
             effect(&file_with(path, toml::Value::Integer(0))).0,
             effect("").0
@@ -416,7 +423,9 @@ fn the_cap_rows_are_cents_from_zero_and_default_to_no_cap() {
     }
     assert_eq!(
         settings::cents_to_limit(250),
-        Some(porter_core::MicroUsd(2_500_000))
+        Some(model_provider::Money::usd(rust_decimal::Decimal::new(
+            250, 2
+        )))
     );
     assert_eq!(settings::cents_to_limit(0), None);
 }
@@ -542,7 +551,10 @@ fn the_shipped_table_names_the_settings_app_and_the_samples_example_rows_are_acc
     // Settings is its unit; an app scope of its name is an app like any other (sec-3).
     let callers = shipped_callers();
     let app = porter_core::AppName::parse("org.quire.Settings").expect("name");
-    assert_eq!(callers.rows().role_of(&app), porter_dbus::CallerRole::App);
+    assert_eq!(
+        callers.rows().role_of(&app),
+        porter_callers::CallerRole::App
+    );
     assert_eq!(
         callers
             .resolve("org.quire.Settings.service")
@@ -609,7 +621,7 @@ fn the_shipped_table_names_docket_acps_programs() {
         .find(|row| row.unit.as_deref() == Some("docket-acp.scope"))
         .expect("a docket-acp.scope row");
     assert_eq!(acp.app.to_string(), "org.quire.Companion");
-    assert_eq!(acp.role, porter_dbus::CallerRole::App);
+    assert_eq!(acp.role, porter_callers::CallerRole::App);
     assert_eq!(
         acp.exe,
         [
@@ -618,4 +630,41 @@ fn the_shipped_table_names_docket_acps_programs() {
             "/opt/quire/releases/*/bin/docket-acp"
         ]
     );
+}
+
+/// Q10: the two shipped caller tables agree. A permit binds to the app a daemon's table names, and
+/// the permits inferd asks accountd about were given to the apps accountd's table named, so every
+/// unit that inferd's `[apps]` lists is the same app, running the same programs, in accountd's.
+#[test]
+fn every_app_inferds_table_names_is_the_same_app_in_accountds() {
+    let inferd = shipped_callers().rows();
+    let accountd =
+        porter_callers::table_from_toml(&dist("callers.toml")).expect("accountd's table reads");
+    let apps: Vec<_> = inferd
+        .callers
+        .iter()
+        .filter(|row| {
+            matches!(
+                row.role,
+                porter_callers::CallerRole::App | porter_callers::CallerRole::Agent
+            )
+        })
+        .collect();
+    assert!(!apps.is_empty(), "the table names apps");
+    for row in apps {
+        let unit = row.unit.as_deref().expect("an app is a unit");
+        let theirs = accountd
+            .callers
+            .iter()
+            .find(|theirs| theirs.unit.as_deref() == Some(unit))
+            .unwrap_or_else(|| panic!("accountd's table does not name {unit}"));
+        assert_eq!(
+            theirs.app, row.app,
+            "{unit} is another app in accountd's table"
+        );
+        assert_eq!(
+            theirs.exe, row.exe,
+            "{unit} runs other programs in accountd's table"
+        );
+    }
 }

@@ -78,34 +78,18 @@ pub struct Tree {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Behaviour {
     /// Whether a change to a file changes the etag of every folder above it (Nextcloud's files).
-    pub etag_propagation: Propagation,
-    /// Whether the server answers the `sync-collection` REPORT (Nextcloud's files do not).
-    pub sync_collection: SyncCollection,
-}
-
-/// Whether folder etags follow their contents.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Propagation {
-    /// A folder's etag changes when anything below it does.
-    Up,
-    /// A folder's etag is its own.
-    Off,
-}
-
-/// Whether the REPORT is served.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SyncCollection {
-    /// Served, at `sync-level` 1 and `infinite`.
-    Served,
-    /// Answered `501 Not Implemented`.
-    NotImplemented,
+    /// When not, a folder's etag is its own.
+    pub propagate_etags: bool,
+    /// Whether the server answers the `sync-collection` REPORT, at `sync-level` 1 and `infinite`
+    /// (Nextcloud's files do not: they answer `501 Not Implemented`).
+    pub serves_sync_collection: bool,
 }
 
 impl Default for Behaviour {
     fn default() -> Self {
         Self {
-            etag_propagation: Propagation::Off,
-            sync_collection: SyncCollection::Served,
+            propagate_etags: false,
+            serves_sync_collection: true,
         }
     }
 }
@@ -113,12 +97,6 @@ impl Default for Behaviour {
 const NAMESPACES: &str = "xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:oc=\"http://owncloud.org/ns\" \
     xmlns:nc=\"http://nextcloud.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" \
     xmlns:card=\"urn:ietf:params:xml:ns:carddav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:ic=\"http://apple.com/ns/ical/\"";
-
-fn escape(text: &str) -> String {
-    text.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-}
 
 fn unescape(text: &str) -> String {
     text.replace("&lt;", "<")
@@ -241,7 +219,7 @@ impl Tree {
 
     /// Under etag propagation, the folders above `path` change with it.
     fn touch_above(&mut self, path: &str) {
-        if self.behaviour.etag_propagation == Propagation::Off {
+        if !self.behaviour.propagate_etags {
             return;
         }
         let seq = self.seq;
@@ -252,8 +230,9 @@ impl Tree {
         }
     }
 
-    /// Creates or replaces the item at `path` (its parent collection must exist).
-    pub fn put(&mut self, path: &str, body: &[u8]) -> Result<PutOutcome, PutError> {
+    /// Creates or replaces the item at `path` (its parent collection must exist); whether it was
+    /// created (not replaced).
+    pub fn put(&mut self, path: &str, body: &[u8]) -> Result<bool, PutError> {
         let parent = self.nodes.get(parent_of(path)).ok_or(PutError::NoParent)?;
         if parent.kind == Kind::Item {
             return Err(PutError::NoParent);
@@ -263,12 +242,9 @@ impl Tree {
             Kind::AddressBook => "text/vcard",
             _ => "application/octet-stream",
         };
-        let outcome = match self.nodes.contains_key(path) {
-            true => PutOutcome::Replaced,
-            false => PutOutcome::Created,
-        };
+        let created = !self.nodes.contains_key(path);
         self.insert(path, Kind::Item, body.to_vec(), content_type);
-        Ok(outcome)
+        Ok(created)
     }
 
     /// Makes a collection (inside a files folder it is a files folder).
@@ -426,7 +402,7 @@ impl Tree {
                 .and_then(|m| m.displayname.as_deref())
                 .unwrap_or_else(|| path.rsplit('/').next().unwrap_or(""));
             out.push_str(&if wants("displayname") {
-                format!("<d:displayname>{}</d:displayname>", escape(name))
+                format!("<d:displayname>{}</d:displayname>", dav_proto::escape(name))
             } else {
                 String::new()
             });
@@ -437,7 +413,7 @@ impl Tree {
             ) {
                 out.push_str(&format!(
                     "<ic:calendar-color>{}</ic:calendar-color>",
-                    escape(color)
+                    dav_proto::escape(color)
                 ));
             }
             if let Some(principal) = &self.principal {
@@ -497,20 +473,20 @@ impl Tree {
         if asked("current-user-principal") {
             out.push_str(&format!(
                 "<d:current-user-principal><d:href>{}/</d:href></d:current-user-principal>",
-                escape(&principal.path)
+                dav_proto::escape(&principal.path)
             ));
         }
         if path == principal.path {
             if asked("calendar-home-set") {
                 out.push_str(&format!(
                     "<cal:calendar-home-set><d:href>{}/</d:href></cal:calendar-home-set>",
-                    escape(&principal.calendar_home)
+                    dav_proto::escape(&principal.calendar_home)
                 ));
             }
             if asked("addressbook-home-set") {
                 out.push_str(&format!(
                     "<card:addressbook-home-set><d:href>{}/</d:href></card:addressbook-home-set>",
-                    escape(&principal.addressbook_home)
+                    dav_proto::escape(&principal.addressbook_home)
                 ));
             }
         }
@@ -521,7 +497,7 @@ impl Tree {
         let slash = if node.kind == Kind::Item { "" } else { "/" };
         format!(
             "<d:response><d:href>{}{slash}</d:href><d:propstat><d:prop>{}</d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>",
-            escape(path),
+            dav_proto::escape(path),
             self.props(path, node, requested)
         )
     }
@@ -531,6 +507,47 @@ impl Tree {
             "<?xml version=\"1.0\" encoding=\"utf-8\"?><d:multistatus {NAMESPACES}>{responses}{trailer}</d:multistatus>"
         );
         Response::new(207).typed("application/xml; charset=utf-8", body)
+    }
+
+    /// The `calendar-query` REPORT (RFC 4791 section 7.8), as far as finding an event by its
+    /// `UID`: the members of the calendar at `path` whose text has a `UID` line containing the
+    /// query's `text-match` (a substring match, as RFC 4791 section 9.7.5 has it), with their
+    /// etag and text. A query with no `text-match` lists every member.
+    fn calendar_query(&self, path: &str, body: &str) -> Response {
+        if !self
+            .nodes
+            .get(path)
+            .is_some_and(|n| matches!(n.kind, Kind::Calendar(_)))
+        {
+            return Response::new(404);
+        }
+        // The element carries a collation attribute, so it is found by its opening tag.
+        let uid = body.find("text-match").and_then(|at| {
+            let open = &body[at..];
+            let start = open.find('>')? + 1;
+            let end = open[start..].find('<')?;
+            Some(unescape(&open[start..start + end]))
+        });
+        let mut out = String::new();
+        for (child_path, child) in self.children(path).filter(|(_, n)| n.kind == Kind::Item) {
+            let text = String::from_utf8_lossy(&child.body);
+            let matches = uid.as_deref().is_none_or(|uid| {
+                text.lines().any(|line| {
+                    line.trim_end_matches('\r')
+                        .strip_prefix("UID:")
+                        .is_some_and(|value| value.contains(uid))
+                })
+            });
+            if matches {
+                out.push_str(&format!(
+                    "<d:response><d:href>{}</d:href><d:propstat><d:prop><d:getetag>&quot;{:x}&quot;</d:getetag><cal:calendar-data>{}</cal:calendar-data></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>",
+                    dav_proto::escape(child_path),
+                    child.changed,
+                    dav_proto::escape(&text)
+                ));
+            }
+        }
+        Self::multistatus(&out, "")
     }
 
     /// PROPFIND at `path` with `Depth` `depth` (`0`, `1`; anything else reads as `1`).
@@ -553,7 +570,7 @@ impl Tree {
         if body.contains("calendar-query") {
             return self.calendar_query(path, body);
         }
-        if self.behaviour.sync_collection == SyncCollection::NotImplemented {
+        if !self.behaviour.serves_sync_collection {
             return Response::new(501);
         }
         if self.nodes.get(path).is_none_or(|n| n.kind == Kind::Item) {
@@ -601,7 +618,7 @@ impl Tree {
             if !self.nodes.contains_key(gone) {
                 out.push_str(&format!(
                     "<d:response><d:href>{}</d:href><d:status>HTTP/1.1 404 Not Found</d:status></d:response>",
-                    escape(gone)
+                    dav_proto::escape(gone)
                 ));
             }
         }
@@ -609,47 +626,6 @@ impl Tree {
             &out,
             &format!("<d:sync-token>{}</d:sync-token>", self.sync_token()),
         )
-    }
-
-    /// The `calendar-query` REPORT (RFC 4791 section 7.8), as far as finding an event by its
-    /// `UID`: the members of the calendar at `path` whose text has a `UID` line containing the
-    /// query's `text-match` (a substring match, as RFC 4791 section 9.7.5 has it), with their
-    /// etag and text. A query with no `text-match` lists every member.
-    fn calendar_query(&self, path: &str, body: &str) -> Response {
-        if !self
-            .nodes
-            .get(path)
-            .is_some_and(|n| matches!(n.kind, Kind::Calendar(_)))
-        {
-            return Response::new(404);
-        }
-        // The element carries a collation attribute, so it is found by its opening tag.
-        let uid = body.find("text-match").and_then(|at| {
-            let open = &body[at..];
-            let start = open.find('>')? + 1;
-            let end = open[start..].find('<')?;
-            Some(unescape(&open[start..start + end]))
-        });
-        let mut out = String::new();
-        for (child_path, child) in self.children(path).filter(|(_, n)| n.kind == Kind::Item) {
-            let text = String::from_utf8_lossy(&child.body);
-            let matches = uid.as_deref().is_none_or(|uid| {
-                text.lines().any(|line| {
-                    line.trim_end_matches('\r')
-                        .strip_prefix("UID:")
-                        .is_some_and(|value| value.contains(uid))
-                })
-            });
-            if matches {
-                out.push_str(&format!(
-                    "<d:response><d:href>{}</d:href><d:propstat><d:prop><d:getetag>&quot;{:x}&quot;</d:getetag><cal:calendar-data>{}</cal:calendar-data></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>",
-                    escape(child_path),
-                    child.changed,
-                    escape(&text)
-                ));
-            }
-        }
-        Self::multistatus(&out, "")
     }
 
     /// `412` when the request's `If-Match` or `If-None-Match` does not hold for the node at
@@ -727,10 +703,10 @@ impl Tree {
             }
         }
         match self.put(path, &request.body) {
-            Ok(outcome) => {
-                let status = match outcome {
-                    PutOutcome::Created => 201,
-                    PutOutcome::Replaced => 204,
+            Ok(created) => {
+                let status = match created {
+                    true => 201,
+                    false => 204,
                 };
                 let tag = self.etag_of(path).unwrap_or_default();
                 Response::new(status).with_header("ETag", &tag)
@@ -742,9 +718,9 @@ impl Tree {
 
     /// Answers a DAV request at `path`.
     pub fn handle(&mut self, request: &Request, path: &str) -> Response {
-        let created = |outcome: Result<PutOutcome, PutError>| match outcome {
-            Ok(PutOutcome::Created) => Response::new(201),
-            Ok(PutOutcome::Replaced) => Response::new(204),
+        let created = |outcome: Result<bool, PutError>| match outcome {
+            Ok(true) => Response::new(201),
+            Ok(false) => Response::new(204),
             Err(PutError::NoParent) => Response::new(409),
             Err(PutError::Exists) => Response::new(405),
         };
@@ -756,7 +732,7 @@ impl Tree {
             ),
             "REPORT" => self.report(path, &request.body_text()),
             "PUT" => self.put_request(request, path),
-            "MKCOL" => created(self.mkcol(path).map(|()| PutOutcome::Created)),
+            "MKCOL" => created(self.mkcol(path).map(|()| true)),
             "DELETE" if self.precondition_failed(request, path) => Response::new(412),
             "DELETE" => match self.delete(path) {
                 true => Response::new(204),
@@ -766,15 +742,6 @@ impl Tree {
             _ => Response::new(405),
         }
     }
-}
-
-/// What a PUT did.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PutOutcome {
-    /// A new item.
-    Created,
-    /// An existing item replaced.
-    Replaced,
 }
 
 /// Why a PUT or MKCOL did nothing.

@@ -6,8 +6,8 @@ pub mod bus;
 pub mod hosted;
 
 use bus::PrivateBus;
+use porter_callers::{Caller, CallerRole, Callers};
 use porter_core::{AppId, AppName, Isolation};
-use porter_dbus::{Caller, CallerRole, Callers};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -119,12 +119,12 @@ pub fn poll_time(ms: u64) -> std::time::Duration {
     std::time::Duration::from_millis(ms) / syncd::scheduler::Settings::quick().time_scale
 }
 
-/// Polls `check` every 20 ms for up to [`porter_fake::GENEROUS`] by the clock (not by counting
+/// Polls `check` every 20 ms for up to [`test_kit::GENEROUS`] by the clock (not by counting
 /// sleeps, which a loaded machine stretches several times over): a passing check returns at
 /// once, and a loaded machine (a load average over a hundred) needs far more than the few
 /// seconds an idle one does.
 pub async fn eventually(what: &str, mut check: impl FnMut() -> bool) {
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         if check() {
             return;
@@ -149,7 +149,7 @@ pub fn pulse(hub: &syncd::service::Hub, requests: usize) -> u64 {
 }
 
 /// Polls `check` every 20 ms like [`eventually`], but the limit is idle time: the wait fails
-/// only when `pulse` (see [`pulse`]) has not changed for [`porter_fake::GENEROUS`], so the time a
+/// only when `pulse` (see [`pulse`]) has not changed for [`test_kit::GENEROUS`], so the time a
 /// scenario takes may grow with the machine's load as long as the daemon keeps working.
 pub async fn eventually_alive(
     what: &str,
@@ -165,7 +165,7 @@ pub async fn until_alive<F: std::future::Future<Output = bool>>(
     mut pulse: impl FnMut() -> u64,
     mut check: impl FnMut() -> F,
 ) {
-    let mut deadline = porter_fake::Deadline::idle(porter_fake::GENEROUS);
+    let mut deadline = test_kit::Deadline::idle(test_kit::GENEROUS);
     let mut seen = pulse();
     loop {
         if check().await {
@@ -187,13 +187,13 @@ pub async fn until_alive<F: std::future::Future<Output = bool>>(
 /// goes on; `None` when the stream ended.
 ///
 /// # Panics
-/// When nothing came and `pulse` stayed the same for [`porter_fake::GENEROUS`].
+/// When nothing came and `pulse` stayed the same for [`test_kit::GENEROUS`].
 pub async fn next_alive<S: zbus::export::futures_core::Stream + Unpin>(
     what: &str,
     mut pulse: impl FnMut() -> u64,
     stream: &mut S,
 ) -> Option<S::Item> {
-    let mut deadline = porter_fake::Deadline::idle(porter_fake::GENEROUS);
+    let mut deadline = test_kit::Deadline::idle(test_kit::GENEROUS);
     let mut seen = pulse();
     loop {
         let next = std::future::poll_fn(|cx| std::pin::Pin::new(&mut *stream).poll_next(cx));

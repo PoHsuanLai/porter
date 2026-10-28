@@ -11,7 +11,7 @@ async fn no_socket_and_no_program_is_not_installed() {
     assert_eq!(api.status().await, Err(TailscaleError::NotInstalled));
     assert_eq!(
         TailscaleError::NotInstalled.to_string(),
-        "Tailscale isn't installed on this computer."
+        "no tailscaled program or socket on this computer"
     );
 }
 
@@ -31,7 +31,7 @@ async fn a_socket_nobody_listens_on_is_not_running() {
     assert!(api.status().await.is_ok());
     fake.stop();
     // Wait until the aborted server has gone, then ask over its leftover socket.
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while api.status().await.is_ok() {
         if deadline.passed() {
             deadline.fail("the stopped fake to refuse connections");
@@ -55,7 +55,7 @@ async fn a_daemon_that_answers_forbidden_is_refused_for_every_question() {
     assert_eq!(api.watch().await.err(), Some(TailscaleError::Refused));
     assert_eq!(
         TailscaleError::Refused.to_string(),
-        "This computer's Tailscale doesn't let your accounts ask it yet."
+        "tailscaled refused this user"
     );
 }
 

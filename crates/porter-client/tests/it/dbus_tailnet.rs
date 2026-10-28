@@ -1,26 +1,31 @@
 //! The person's computers through the client (`DbusTransport::tailnet`), against the real accountd
 //! front end on a private bus following a fake Tailscale on a scratch socket (never the real
 //! one): the typed `Machine`s, the stream of changes, and the refusals read back as
-//! `TailnetError`s. No dictionary is parsed here: that is what the reader is for.
+//! `CallFailure`s. No dictionary is parsed here: that is what the reader is for.
 #![cfg(feature = "dbus")]
 
 use crate::common;
 
 use accountd::{Options, TableCallers, TailnetWatch};
 use common::bus::PrivateBus;
-use porter_client::{DbusTransport, Machine, MachineOwner, TailnetError};
+use porter_callers::{Caller, CallerRole};
+use porter_client::{CallFailure, DbusTransport};
 use porter_core::{
-    Account, AccountId, AccountLabel, AccountState, AppId, AppName, AuthKind, Isolation,
-    ProviderId, Restriction,
+    Account, AccountLabel, AccountState, AppId, AppName, AuthKind, Isolation, Restriction,
 };
-use porter_dbus::{BusStream, Caller, CallerRole};
-use porter_fake::{FixedClock, NOW, Scratch, ScriptedSheets, cloud_provider};
+use porter_core::{AccountId, ProviderId};
+use porter_dbus::BusStream;
+use porter_fake::{NOW, ScriptedSheets, cloud_provider};
 use porter_fake_servers::{Daemon, FakeLocalApi, FakePeer, Network};
+use porter_ids::clock::FixedClock;
 use porter_secrets::MemorySecrets;
-use porter_service::{AccountService, Registry};
+use porter_service::AccountService;
+use porter_service_core::registry::Registry;
 use porter_tailscale::LocalApi;
+use porter_tailscale::{Machine, MachineOwner};
 use std::sync::Arc;
 use std::time::Duration;
+use test_kit::Scratch;
 
 struct World {
     bus: PrivateBus,
@@ -153,7 +158,7 @@ async fn the_terminal_reads_typed_machines_and_hears_of_changes() {
     world.fake.edit(|net| net.peers[0].online = false);
     // A signal that should come is waited for as long as a starved machine needs.
     let told = tokio::time::timeout(
-        porter_fake::GENEROUS,
+        test_kit::GENEROUS,
         std::future::poll_fn(|cx| std::pin::Pin::new(&mut changes).poll_next(cx)),
     )
     .await
@@ -178,13 +183,13 @@ async fn an_app_and_a_stranger_are_refused_with_the_reason_read_back() {
         .tailnet()
         .await
         .expect("tailnet");
-    assert!(matches!(app.machines().await, Err(TailnetError::Denied(_))));
+    assert!(matches!(app.machines().await, Err(CallFailure::Denied(_))));
     let stranger = DbusTransport::over(world.bus.connect().await)
         .tailnet()
         .await
         .expect("tailnet");
     assert!(matches!(
         stranger.machines().await,
-        Err(TailnetError::Denied(_))
+        Err(CallFailure::Denied(_))
     ));
 }

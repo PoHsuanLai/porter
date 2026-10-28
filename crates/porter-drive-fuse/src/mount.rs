@@ -6,7 +6,7 @@ use crate::fs::{DriveFs, Mounted as Served};
 use fuser::{BackgroundSession, Config, MountOption, Session, SessionACL};
 use porter_mountd::client::{self, AskError};
 use porter_mountd::mountinfo;
-use porter_mountd::wire::{Access, FSTYPE, FolderName};
+use porter_mountd::wire::{Access, Code, FSTYPE, FolderName};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
@@ -27,20 +27,9 @@ pub enum MountError {
     /// Mounting failed.
     #[error("mounting failed: {0}")]
     Failed(#[source] std::io::Error),
-    /// porter-mountd refused, with words a person can be shown.
+    /// porter-mountd refused, for this reason.
     #[error("porter-mountd refused: {0}")]
-    Refused(String),
-}
-
-impl MountError {
-    /// What Files shows for it: porter-mountd's words when it refused, else
-    /// [`NO_FILES_HERE`](porter_drive::words::NO_FILES_HERE).
-    pub fn words(&self) -> &str {
-        match self {
-            MountError::Refused(words) => words,
-            _ => porter_drive::words::NO_FILES_HERE,
-        }
-    }
+    Refused(Code),
 }
 
 /// How drives are mounted on this computer.
@@ -48,7 +37,8 @@ impl MountError {
 pub struct Mounter {
     /// The FUSE device.
     pub device: PathBuf,
-    /// The helper that mounts and unmounts, found on `PATH`.
+    /// The helper that mounts and unmounts: its path, or a name the host chose to leave to the
+    /// system to find.
     pub helper: String,
     /// porter-mountd's socket, when the drive is to be mounted through it
     /// (`$XDG_RUNTIME_DIR/porter/mountd.sock`, [`porter_mountd::wire::socket_in`]). It puts the
@@ -57,11 +47,12 @@ pub struct Mounter {
     pub mountd: Option<PathBuf>,
 }
 
-impl Default for Mounter {
-    fn default() -> Self {
+impl Mounter {
+    /// Mounting with `helper` on the usual FUSE device, directly (no porter-mountd).
+    pub fn new(helper: impl Into<String>) -> Self {
         Self {
             device: PathBuf::from("/dev/fuse"),
-            helper: "fusermount3".to_owned(),
+            helper: helper.into(),
             mountd: None,
         }
     }
@@ -122,7 +113,7 @@ impl Mounter {
                     match fd {
                         Ok(fd) => return serve_over(fs, fd, path, through),
                         Err(AskError::Absent) => {}
-                        Err(AskError::Refused(words)) => return Err(MountError::Refused(words)),
+                        Err(AskError::Refused(code)) => return Err(MountError::Refused(code)),
                         Err(AskError::Broken(why)) => return Err(MountError::Failed(why)),
                         Err(why) => return Err(MountError::Failed(std::io::Error::other(why))),
                     }
@@ -133,13 +124,10 @@ impl Mounter {
         self.check()?;
         self.clean(path);
         if let Some(entry) = mountinfo::at(&mountinfo::read(), path) {
-            return Err(MountError::Refused(
-                match entry.fstype == FSTYPE {
-                    true => porter_mountd::words::ALREADY_SHOWN,
-                    false => porter_mountd::words::FOLDER_IN_USE,
-                }
-                .to_owned(),
-            ));
+            return Err(MountError::Refused(match entry.fstype == FSTYPE {
+                true => Code::AlreadyShown,
+                false => Code::FolderInUse,
+            }));
         }
         std::fs::create_dir_all(path).map_err(MountError::Folder)?;
         let mut config = Config::default();
@@ -344,10 +332,10 @@ mod tests {
 
     #[test]
     fn a_computer_with_no_device_or_helper_is_told_apart_and_nothing_is_mounted() {
-        let dir = porter_fake::Scratch::new("drive-fuse-mount");
+        let dir = test_kit::Scratch::new("drive-fuse-mount");
         let none = Mounter {
             device: dir.join("no-fuse"),
-            ..Mounter::default()
+            ..Mounter::new("fusermount3")
         };
         assert!(matches!(none.check(), Err(MountError::NoDevice(_))));
         let no_helper = Mounter {

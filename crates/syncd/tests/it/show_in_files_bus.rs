@@ -16,22 +16,25 @@ use common::hosted::{Hosted, Link, NoDirectory, Service, host_with};
 use common::{Known, client};
 use ds_settings::live::{AnyOwner, LiveClient};
 use ds_settings::schema::KeyPath;
-use porter_core::capability::{CapabilityKind, StorageScope};
-use porter_core::sheet::{ServiceChoice, SheetInput};
+use porter_callers::CallerRole;
+use porter_capability::KindToggle;
+use porter_capability::{CapabilityKind, StorageScope};
+use porter_capability::{Claim, Offer, Provenance, Subject, Toggle};
+use porter_core::AccountId;
 use porter_core::{
-    Account, AccountId, AccountLabel, AccountState, AuthKind, Claim, Credential, EndpointUrl,
-    Family, LoginName, Offer, Provenance, Restriction, SecretKey, SecretPurpose, SecretText,
-    ServiceEndpoint, Subject, Tls, Toggle, UnixSeconds,
+    Account, AccountLabel, AccountState, AuthKind, Credential, EndpointUrl, Family, LoginName,
+    Restriction, SecretKey, SecretPurpose, SecretText, ServiceEndpoint, Tls,
 };
-use porter_dbus::CallerRole;
-use porter_drive::{CacheLimit, FreeSpace, ItemState, words};
+use porter_drive::{CacheLimit, FreeSpace, ItemState, Reason};
 use porter_drive_fuse::{Mounter, mountd};
 use porter_fake::{FakeProvider, ScriptedSheets};
 use porter_fake_servers::{FakeGraph, GraphHandle, Running};
 use porter_families::set::ProviderNames;
+use porter_ids::UnixSeconds;
 use porter_provider::Provider;
 use porter_secrets::{MemorySecrets, Secrets};
-use porter_service::Registry;
+use porter_service_core::registry::Registry;
+use porter_sheet::SheetInput;
 use porter_sync::ItemPath;
 use std::sync::Arc;
 use std::time::Duration;
@@ -44,6 +47,7 @@ use syncd::paths::{AccountDir, Paths};
 use syncd::scheduler::{Network, Settings};
 use syncd::service::{Access, Hub, serve};
 use syncd::settings::{CACHE_LIMIT, FILES_NOT_ON, SETTINGS_PATH, SyncSettings, serve_settings};
+use syncd::words;
 use tokio::sync::watch;
 
 const ACCOUNT: &str = "graph-acct";
@@ -190,6 +194,9 @@ async fn build(
         settings: Settings::quick(),
         network,
         owners: Access::default(),
+        clock: porter_sync::Clock::new(porter_ids::clock::SystemClock),
+        nonce: "t1".to_owned(),
+        millis: Arc::new(syncd::datasets::photos::ManualMillis::at(1_700_000_000_000)),
     };
     let supervisor = StorageSupervisor::new(
         wiring,
@@ -230,7 +237,7 @@ async fn build(
 
 /// Sheets whose one sign-in the person goes through: they review the whole drive and allow it.
 fn agreeing() -> ScriptedSheets {
-    ScriptedSheets::default().conversing([vec![SheetInput::Confirm(vec![ServiceChoice {
+    ScriptedSheets::default().conversing([vec![SheetInput::Confirm(vec![KindToggle {
         kind: CapabilityKind::Storage,
         toggle: Toggle::On,
     }])]])
@@ -258,7 +265,7 @@ fn service(rig: &Rig) -> &Service {
 }
 
 async fn eventually(what: &str, mut check: impl AsyncFnMut() -> bool) {
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         if check().await {
             return;
@@ -605,7 +612,7 @@ async fn next_change_of(changes: &mut ds_settings::live::Changes, row: &KeyPath)
     use zbus::export::futures_core::Stream;
     loop {
         let change = tokio::time::timeout(
-            porter_fake::GENEROUS,
+            test_kit::GENEROUS,
             std::future::poll_fn(|cx| std::pin::Pin::new(&mut *changes).poll_next(cx)),
         )
         .await
@@ -659,7 +666,7 @@ async fn the_keep_row_is_told_of_when_the_drive_stops_fitting_and_again_when_it_
     assert!(drive.drive.short_of_room());
     assert_eq!(
         keep_note(&rig).await.as_deref(),
-        Some(words::NO_ROOM_FOR_ALL)
+        Some(words::reason(Reason::NoRoomForAll))
     );
     assert_eq!(state_at(&drive, "Big.bin"), Some(ItemState::Cloud));
 
@@ -686,7 +693,7 @@ async fn a_computer_that_cannot_show_the_folder_says_so_and_the_drive_still_list
     let drive = shown(&mut rig).await;
     // The folder is mounted off the runtime's thread: its answer comes a moment later.
     eventually("the drive says it is not shown", async || {
-        drive.state().0 == porter_dbus::DriveState::Error
+        drive.state().0 == porter_dbus::sync::DriveState::Error
     })
     .await;
     let (_, said) = drive.state();
@@ -708,10 +715,7 @@ async fn porter_mountd_is_asked_when_it_listens_and_its_words_are_shown() {
         let listener = mountd::server::bind_at(&socket).expect("bind");
         let helper = mountd::server::Helper::new(
             scratch.join("syncd-home/Cloud"),
-            mountd::server::Fusermount {
-                program: scratch.join("no-fusermount3").display().to_string(),
-                ..Default::default()
-            },
+            mountd::server::Fusermount::new(scratch.join("no-fusermount3").display().to_string()),
         );
         std::thread::spawn(move || {
             let (stream, _) = listener.accept().expect("asked");
@@ -720,7 +724,7 @@ async fn porter_mountd_is_asked_when_it_listens_and_its_words_are_shown() {
         DriveMount::Fuse(Mounter {
             device: scratch.join("no-fuse-device"),
             mountd: Some(socket),
-            ..Mounter::default()
+            ..Mounter::new("fusermount3")
         })
     })
     .await;
@@ -728,9 +732,12 @@ async fn porter_mountd_is_asked_when_it_listens_and_its_words_are_shown() {
     let drive = shown(&mut rig).await;
     // The folder is mounted off the runtime's thread: its answer comes a moment later.
     eventually("the drive says it is not shown", async || {
-        drive.state().0 == porter_dbus::DriveState::Error
+        drive.state().0 == porter_dbus::sync::DriveState::Error
     })
     .await;
     let (_, said) = drive.state();
-    assert_eq!(said.as_deref(), Some(mountd::words::FOLDER_IN_USE));
+    assert_eq!(
+        said.as_deref(),
+        Some(syncd::words::refusal(mountd::wire::Code::FolderInUse))
+    );
 }

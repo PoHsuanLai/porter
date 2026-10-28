@@ -2,7 +2,7 @@
 //! vdir, read-only (design/31 §6.2 "PimMirror", PLAN §2 rows Calendar and Contacts, D9).
 //!
 //! The vdir is `$XDG_DATA_HOME/porter/vdir/<account>/<collection>/`, `<account>` being
-//! `porter_core::object_segment(account)`: the segment `AccountRemoved` wipes. A collection holds
+//! `porter_ids::object_segment(account)`: the segment `AccountRemoved` wipes. A collection holds
 //! one file per item, `<uid>.ics` or `<uid>.vcf`, and the files `displayname` and `color`
 //! (vdirsyncer's storage spec, which sill's `calendar.sources = auto` and khal read).
 //!
@@ -10,7 +10,7 @@
 //!   engine never uploads or removes anything for it, so a file edited or deleted locally never
 //!   reaches the server.
 //! - `vdir`: the file rules (names, atomic writes, metadata).
-//! - `discover`: the collections of an account, from the principal and home sets (porter-dav).
+//! - `discover`: the collections of an account, from the principal and home sets (dav-proto's walk).
 //! - `plan`: collection names as directories and dataset slugs.
 //! - `grants`: which granted accounts there are to mirror (a seam over porter-client).
 //! - `source`: where the items come from (CalDAV/CardDAV, Graph calendars, Google's Calendar,
@@ -34,7 +34,7 @@ pub use grants::{AccountdUnavailable, ClientGrants, PimGrants, need_of};
 pub use mirror::PimMirror;
 pub use mirrors::{AccountMirrors, Wiring};
 pub use plan::{Planned, plan};
-pub use relay::{PimDial, pim_http, pim_replica};
+pub use relay::{pim_http, pim_replica};
 pub use supervisor::{PimConfig, PimSupervisor};
 pub use vdir::{COLOR, DISPLAYNAME, Meta, is_complete, items_in};
 

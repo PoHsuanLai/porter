@@ -1,6 +1,6 @@
 //! The relay: one machine driven over two streams and a connector.
 
-use crate::connect::{Connect, ConnectFault};
+use crate::connect::Connect;
 use crate::fault::RelayFault;
 use crate::http1::HttpRelay;
 use crate::imap::ImapRelay;
@@ -29,26 +29,21 @@ pub async fn relay<A: ByteStream, C: Connect>(plan: RelayPlan, app: A, connect: 
     let origin = plan.endpoint.url.origin();
     let server = match connect.dial(&origin, plan.endpoint.tls).await {
         Ok(server) => server,
-        Err(fault) => return RelayEnd::Failed(connect_fault(fault)),
+        Err(fault) => return RelayEnd::Failed(fault),
     };
     let ends = Ends {
         app,
         server: Some(server),
         host: origin.host.clone(),
     };
-    match origin.scheme.protocol() {
-        EndpointProtocol::Imap => run(ImapRelay::new(plan), ends, connect).await,
-        EndpointProtocol::Smtp => run(SmtpRelay::new(plan), ends, connect).await,
-        EndpointProtocol::Http => run(HttpRelay::new(plan), ends, connect).await,
-        EndpointProtocol::Sieve => run(SieveRelay::new(plan), ends, connect).await,
-        EndpointProtocol::Pop3 => run(Pop3Relay::new(plan), ends, connect).await,
-    }
-}
-
-fn connect_fault(fault: ConnectFault) -> RelayFault {
-    match fault {
-        ConnectFault::Unreachable => RelayFault::Unreachable,
-        ConnectFault::Tls => RelayFault::Tls,
+    match EndpointProtocol::of_scheme(origin.scheme) {
+        Some(EndpointProtocol::Imap) => run(ImapRelay::new(plan), ends, connect).await,
+        Some(EndpointProtocol::Smtp) => run(SmtpRelay::new(plan), ends, connect).await,
+        Some(EndpointProtocol::Http) => run(HttpRelay::new(plan), ends, connect).await,
+        Some(EndpointProtocol::Sieve) => run(SieveRelay::new(plan), ends, connect).await,
+        Some(EndpointProtocol::Pop3) => run(Pop3Relay::new(plan), ends, connect).await,
+        // A protocol this build has no machine for is one the server was never spoken to in.
+        Some(_) | None => RelayEnd::Failed(RelayFault::Protocol),
     }
 }
 
@@ -177,7 +172,7 @@ async fn carry_out<A: ByteStream, C: Connect>(
                     ends.server = Some(upgraded);
                     Carried::TlsUp
                 }
-                Err(fault) => Carried::Ended(RelayEnd::Failed(connect_fault(fault))),
+                Err(fault) => Carried::Ended(RelayEnd::Failed(fault)),
             }
         }
         Effect::Close(end) => Carried::Ended(end),

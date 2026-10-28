@@ -1,50 +1,63 @@
-//! What hosted models have cost: a ledger of micro-dollars and tokens per scope (an account, an
-//! app) and period (a calendar day, a calendar month, in UTC), and the verdict the caps
-//! (`ai.spend.*`) give one more request.
+//! What hosted models have been charged: a ledger of the charges providers reported and the tokens
+//! used, per scope (an account, an app) and period (a calendar day, a calendar month, in UTC), and
+//! the verdict the caps (`ai.spend.*`) give one more request.
 //!
-//! The meter counts what a reply's usage says at the price of the reach used (`porter_infer::cost`,
-//! rounded up to a micro-dollar). It keeps only the current day and month, in memory and, when it
-//! was opened on a file, in that file (a small JSON document, written whole through a rename, mode
-//! 0600) so a restart does not reset a cap. The file holds money and counts, never a key or a
-//! prompt.
+//! The meter adds what each reply's usage reports: its tokens, and its charge when the provider
+//! reported one (`TokenUsage::charge`). A reply with no charge is counted as an unpriced turn and
+//! never as money: there is no price table to work one out from and no hold before a turn, so a
+//! cap compares the reported total and can stop the next turn but never the current one. The
+//! ledger keeps only the current day and month, in memory and, when it was opened on a file, in
+//! that file (a small JSON document, written whole through a rename, mode 0600) so a restart does
+//! not reset a cap. The file holds money and counts, never a key or a prompt.
 
 use crate::settings::SpendLine;
-use porter_core::{AccountId, AppId, MicroUsd, PriceTable, Tokens, UnixSeconds};
+use model_provider::Money;
+use porter_core::AccountId;
+use porter_core::AppId;
 use porter_fs::atomic::AtomicWrite;
-use porter_infer::{Period, SpendScope, SpendVerdict, TokenUsage, cost, spend_verdict};
+use porter_ids::UnixSeconds;
+use porter_infer::{ChargeTotal, Period, SpendScope, SpendVerdict, TokenUsage, spend_verdict};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Mutex, PoisonError};
 
-/// What one scope spent in one period.
+/// What one scope was charged in one period.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Spent {
-    /// Micro-dollars.
-    pub micro_usd: u64,
+    /// The charges providers reported, and the turns that reported none.
+    pub charges: ChargeTotal,
     /// Prompt tokens.
     pub tokens_in: u64,
     /// Reply tokens.
     pub tokens_out: u64,
 }
 
+impl Spent {
+    /// Counts one reply.
+    fn count(&mut self, usage: TokenUsage) {
+        self.charges = self.charges.counting(usage.charge);
+        self.tokens_in = self.tokens_in.saturating_add(u64::from(usage.input.0));
+        self.tokens_out = self.tokens_out.saturating_add(u64::from(usage.output.0));
+    }
+}
+
+/// The ledger file's format: version 2 holds the charges providers reported. A file without a
+/// `format` is the one before, read by [`Before`].
+const FORMAT: u32 = 2;
+
 /// The days since 1970-01-01 of `at` (UTC).
 fn day_of(at: UnixSeconds) -> i64 {
     at.0.div_euclid(86_400)
 }
 
-/// The month `at` is in, as months since year 0 (UTC): `year * 12 + month - 1`.
+/// The month `at` is in, as months since year 0 (UTC): `year * 12 + month - 1`. An instant chrono
+/// cannot write (beyond year 262000) is month 0.
 fn month_of(at: UnixSeconds) -> i64 {
-    // Howard Hinnant's civil-from-days: the proleptic Gregorian calendar.
-    let z = day_of(at) + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z.rem_euclid(146_097);
-    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let month = if mp < 10 { mp + 3 } else { mp - 9 };
-    let year = yoe + era * 400 + i64::from(month <= 2);
-    year * 12 + month - 1
+    use chrono::Datelike;
+    chrono::DateTime::from_timestamp(at.0, 0).map_or(0, |day| {
+        i64::from(day.year()) * 12 + i64::from(day.month()) - 1
+    })
 }
 
 /// The index of the period `at` falls in.
@@ -69,13 +82,85 @@ struct Row {
     spent: Spent,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct Document {
+    format: u32,
     rows: Vec<Row>,
     /// Set when the ledger's file could not be read: the day and month it was found in, whose
     /// spend is not known (kept in the file so a restart does not forget it).
     #[serde(default)]
     unknown: Option<Unknown>,
+}
+
+impl Default for Document {
+    fn default() -> Self {
+        Self {
+            format: FORMAT,
+            rows: Vec::new(),
+            unknown: None,
+        }
+    }
+}
+
+/// A ledger file as it was before the meter counted only what providers report. Its dollars were
+/// worked out from a price table, which is not a charge any provider reported, so they are not
+/// read as money: its token counts and its unknown period are kept.
+#[derive(Debug, Deserialize)]
+struct Before {
+    rows: Vec<BeforeRow>,
+    #[serde(default)]
+    unknown: Option<Unknown>,
+}
+
+#[derive(Debug, Deserialize)]
+struct BeforeRow {
+    #[serde(flatten)]
+    key: Key,
+    spent: BeforeSpent,
+}
+
+#[derive(Debug, Deserialize)]
+struct BeforeSpent {
+    tokens_in: u64,
+    tokens_out: u64,
+}
+
+impl Before {
+    fn into_document(self) -> Document {
+        Document {
+            format: FORMAT,
+            rows: self
+                .rows
+                .into_iter()
+                .map(|row| Row {
+                    key: row.key,
+                    spent: Spent {
+                        tokens_in: row.spent.tokens_in,
+                        tokens_out: row.spent.tokens_out,
+                        ..Spent::default()
+                    },
+                })
+                .collect(),
+            unknown: self.unknown,
+        }
+    }
+}
+
+/// What a ledger file holds, and whether it was of the older format.
+fn read_document(text: &str) -> Result<(Document, bool), ()> {
+    let value: serde_json::Value = serde_json::from_str(text).map_err(|_| ())?;
+    match value.get("format") {
+        None => serde_json::from_value::<Before>(value)
+            .map(|before| (before.into_document(), true))
+            .map_err(|_| ()),
+        Some(format) if format.as_u64() == Some(u64::from(FORMAT)) => {
+            serde_json::from_value::<Document>(value)
+                .map(|document| (document, false))
+                .map_err(|_| ())
+        }
+        // A format a later inferd wrote: not guessed at.
+        Some(_) => Err(()),
+    }
 }
 
 /// The day and the month in which the ledger lost what had been spent. A cap of that period
@@ -84,16 +169,6 @@ struct Document {
 struct Unknown {
     day: i64,
     month: i64,
-}
-
-impl Spent {
-    fn of(usage: TokenUsage, cost: MicroUsd) -> Self {
-        Self {
-            micro_usd: cost.0,
-            tokens_in: u64::from(usage.input.0),
-            tokens_out: u64::from(usage.output.0),
-        }
-    }
 }
 
 impl Unknown {
@@ -127,16 +202,6 @@ impl Ledger {
         Self::default()
     }
 
-    /// A ledger kept in `file`, opened at the present time: see [`Ledger::open_at`].
-    pub fn open(file: PathBuf) -> Self {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |since| {
-                i64::try_from(since.as_secs()).unwrap_or(i64::MAX)
-            });
-        Self::open_at(file, UnixSeconds(now))
-    }
-
     /// A ledger kept in `file`: what it holds is read now and every record is written back. A
     /// file that is missing starts it empty. A file that is there and cannot be read is not
     /// quietly forgotten (that would reset every cap to nothing spent): it is moved aside as
@@ -144,17 +209,25 @@ impl Ledger {
     /// of either stops requests until that period ends.
     pub fn open_at(file: PathBuf, now: UnixSeconds) -> Self {
         let read = match std::fs::read_to_string(&file) {
-            Ok(text) => serde_json::from_str::<Document>(&text).map_err(|_| ()),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Document::default()),
+            Ok(text) => read_document(&text),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok((Document::default(), false)),
             Err(_) => Err(()),
         };
-        let (document, lost) = match read {
-            Ok(document) => (document, false),
+        let (document, lost, older) = match read {
+            Ok((document, older)) => (document, false, older),
             Err(()) => {
                 set_aside(&file, now);
-                (Document::default(), true)
+                (Document::default(), true, false)
             }
         };
+        if older {
+            eprintln!(
+                "inferd: spend: {} was written before spending showed only what providers \
+                 report: its token counts are kept and its dollar amounts, which were worked \
+                 out from prices, are not read as charges.",
+                file.display()
+            );
+        }
         // A loss from an earlier run counts while its period lasts.
         let unknown = match lost {
             true => Some(Unknown::at(now)),
@@ -174,9 +247,9 @@ impl Ledger {
             file: Some(file),
             unknown,
         };
-        if lost {
-            // Keep the loss in the file at once: a restart before the first record must not
-            // forget it.
+        if lost || older {
+            // Keep the loss, or the file in its new format, at once: a restart before the first
+            // record must not forget the one or read the other again.
             ledger.save(&ledger.rows.lock().unwrap_or_else(PoisonError::into_inner));
         }
         ledger
@@ -202,38 +275,11 @@ impl Ledger {
             .unwrap_or_default()
     }
 
-    /// Counts one reply: `cost` and `usage` against the app and the account, in the day and the
-    /// month `now` is in; periods that have ended are forgotten.
-    pub fn record(
-        &self,
-        app: &AppId,
-        account: &AccountId,
-        usage: TokenUsage,
-        cost: MicroUsd,
-        now: UnixSeconds,
-    ) {
+    /// Counts one reply: its tokens and its charge (`usage.charge`, or an unpriced turn when it
+    /// has none) against the app and the account, in the day and the month `now` is in; periods
+    /// that have ended are forgotten.
+    pub fn record(&self, app: &AppId, account: &AccountId, usage: TokenUsage, now: UnixSeconds) {
         let mut rows = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
-        self.swap(
-            &mut rows,
-            app,
-            account,
-            Spent::default(),
-            Spent::of(usage, cost),
-            now,
-        );
-    }
-
-    /// Takes `held` off the app's and the account's day and month and puts `counted` on, then
-    /// writes the ledger. Periods that have ended are forgotten.
-    fn swap(
-        &self,
-        rows: &mut HashMap<Key, Spent>,
-        app: &AppId,
-        account: &AccountId,
-        held: Spent,
-        counted: Spent,
-        now: UnixSeconds,
-    ) {
         rows.retain(|key, _| key.bucket >= bucket_of(key.period, now));
         let scopes = [
             SpendScope::App(app.clone()),
@@ -241,60 +287,22 @@ impl Ledger {
         ];
         for scope in scopes {
             for period in [Period::Daily, Period::Monthly] {
-                let spent = rows
-                    .entry(Key {
-                        scope: scope.clone(),
-                        period,
-                        bucket: bucket_of(period, now),
-                    })
-                    .or_default();
-                spent.micro_usd = spent.micro_usd.saturating_sub(held.micro_usd);
-                spent.tokens_in = spent.tokens_in.saturating_sub(held.tokens_in);
-                spent.tokens_out = spent.tokens_out.saturating_sub(held.tokens_out);
-                spent.micro_usd = spent.micro_usd.saturating_add(counted.micro_usd);
-                spent.tokens_in = spent.tokens_in.saturating_add(counted.tokens_in);
-                spent.tokens_out = spent.tokens_out.saturating_add(counted.tokens_out);
+                rows.entry(Key {
+                    scope: scope.clone(),
+                    period,
+                    bucket: bucket_of(period, now),
+                })
+                .or_default()
+                .count(usage);
             }
         }
-        self.save(rows);
-    }
-
-    /// Sets aside the worst a turn may cost, if the caps allow it: the check and the hold are
-    /// one step under the ledger's lock, so turns that start together see each other's holds and
-    /// cannot together pass a cap. `None` when a cap stops it.
-    ///
-    /// The hold counts as spent until the guard is settled, and stays counted if the guard is
-    /// dropped without settling (an error, a client that went away, a task that was aborted).
-    pub fn reserve<'a>(
-        &'a self,
-        line: SpendLine,
-        app: &AppId,
-        account: &AccountId,
-        price: &PriceTable,
-        worst: TokenUsage,
-        now: UnixSeconds,
-    ) -> Option<SpendGuard<'a>> {
-        let held = Spent::of(worst, cost(worst, price));
-        let mut rows = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
-        let stop = self.verdict_in(&rows, line, app, account, MicroUsd(held.micro_usd), now)
-            == SpendVerdict::Stop;
-        if stop {
-            return None;
-        }
-        self.swap(&mut rows, app, account, Spent::default(), held, now);
-        Some(SpendGuard {
-            ledger: self,
-            app: app.clone(),
-            account: account.clone(),
-            price: *price,
-            held,
-            at: now,
-        })
+        self.save(&rows);
     }
 
     fn save(&self, rows: &HashMap<Key, Spent>) {
         let Some(file) = &self.file else { return };
         let document = Document {
+            format: FORMAT,
             rows: rows
                 .iter()
                 .map(|(key, spent)| Row {
@@ -314,30 +322,17 @@ impl Ledger {
         }
     }
 
-    /// What the caps say about one more request by `app` through `account` that would cost about
-    /// `estimate`: the strictest of the caps that bear on it (`Within` when none is set).
+    /// What the caps say about one more request by `app` through `account`: the strictest of the
+    /// caps that bear on it (`Within` when none is set). Each compares what providers have
+    /// reported so far, so it can stop the next request and never the one running.
     pub fn verdict(
         &self,
         line: SpendLine,
         app: &AppId,
         account: &AccountId,
-        estimate: MicroUsd,
         now: UnixSeconds,
     ) -> SpendVerdict {
         let rows = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
-        self.verdict_in(&rows, line, app, account, estimate, now)
-    }
-
-    /// [`Ledger::verdict`] over rows the caller already holds the lock on.
-    fn verdict_in(
-        &self,
-        rows: &HashMap<Key, Spent>,
-        line: SpendLine,
-        app: &AppId,
-        account: &AccountId,
-        estimate: MicroUsd,
-        now: UnixSeconds,
-    ) -> SpendVerdict {
         line.caps_for(app, account)
             .iter()
             .map(|cap| match self.is_unknown(cap.period, now) {
@@ -349,36 +344,65 @@ impl Ledger {
                         period: cap.period,
                         bucket: bucket_of(cap.period, now),
                     };
-                    let spent = rows.get(&key).copied().unwrap_or_default().micro_usd;
-                    spend_verdict(cap, MicroUsd(spent), estimate)
+                    let spent = rows.get(&key).copied().unwrap_or_default().charges;
+                    spend_verdict(cap, &spent)
                 }
             })
             .fold(SpendVerdict::Within, strictest)
     }
 
     /// What `app` used today and this month, by name (the `Usage` dictionary of `Inference1`):
-    /// micro-dollars and tokens for the day, micro-dollars for the month, and each cap that is set.
-    pub fn usage_of(&self, line: SpendLine, app: &AppId, now: UnixSeconds) -> Vec<(String, u64)> {
+    /// tokens for the day, the charges providers reported and the turns that reported none for the
+    /// day and the month, and each cap that is set.
+    pub fn usage_of(
+        &self,
+        line: SpendLine,
+        app: &AppId,
+        now: UnixSeconds,
+    ) -> Vec<(String, UsageValue)> {
         let scope = SpendScope::App(app.clone());
         let day = self.spent(&scope, Period::Daily, now);
         let month = self.spent(&scope, Period::Monthly, now);
         let mut rows = vec![
-            ("tokens_in_day".to_owned(), day.tokens_in),
-            ("tokens_out_day".to_owned(), day.tokens_out),
-            ("spend_day_micro_usd".to_owned(), day.micro_usd),
-            ("spend_month_micro_usd".to_owned(), month.micro_usd),
-        ];
+            ("tokens_in_day", UsageValue::Count(day.tokens_in)),
+            ("tokens_out_day", UsageValue::Count(day.tokens_out)),
+            ("reported_day", UsageValue::Money(day.charges.reported)),
+            ("reported_month", UsageValue::Money(month.charges.reported)),
+            (
+                "unpriced_turns_day",
+                UsageValue::Count(u64::from(day.charges.unpriced.0)),
+            ),
+            (
+                "unpriced_turns_month",
+                UsageValue::Count(u64::from(month.charges.unpriced.0)),
+            ),
+        ]
+        .into_iter()
+        .map(|(name, value)| (name.to_owned(), value))
+        .collect::<Vec<_>>();
         let caps = line.limits.app;
         rows.extend(
-            [
-                ("cap_day_micro_usd", caps.daily),
-                ("cap_month_micro_usd", caps.monthly),
-            ]
-            .into_iter()
-            .filter_map(|(name, limit)| Some((name.to_owned(), limit?.0))),
+            [("cap_day", caps.daily), ("cap_month", caps.monthly)]
+                .into_iter()
+                .filter_map(|(name, limit)| Some((name.to_owned(), UsageValue::Money(limit?)))),
         );
         rows
     }
+}
+
+/// One value of the `Usage` dictionary: a count, or an amount of money in its currency.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UsageValue {
+    /// Tokens or turns.
+    Count(u64),
+    /// A reported total or a cap.
+    Money(Money),
+}
+
+/// An amount as the `Usage` dictionary and the settings rows write it: its decimal digits, a
+/// space and its ISO 4217 code (`0.0095 USD`).
+pub fn written(money: Money) -> String {
+    format!("{} {}", money.amount.normalize(), money.currency.code())
 }
 
 /// Moves a ledger file that could not be read out of the way, to `<name>.corrupt-<seconds>`, so
@@ -407,67 +431,6 @@ fn strictest(a: SpendVerdict, b: SpendVerdict) -> SpendVerdict {
         SpendVerdict::Stop => 2,
     };
     if rank(b) > rank(a) { b } else { a }
-}
-
-/// The worst a hosted turn can use, for the hold before it runs: the prompt at one token to three
-/// bytes (more tokens than text usually has) plus the longest reply the turn may ask for.
-pub fn worst_case(prompt_bytes: usize, max_output: Tokens) -> TokenUsage {
-    TokenUsage {
-        input: Tokens(u32::try_from(prompt_bytes.div_ceil(3)).unwrap_or(u32::MAX)),
-        output: max_output,
-        cached: Tokens(0),
-    }
-}
-
-/// A hold on the ledger for one turn that may bill, taken by [`Ledger::reserve`].
-///
-/// Settle it with what the turn used. A guard that is dropped without settling (the turn failed,
-/// the client went away, the task was aborted) leaves the whole hold counted, since the provider
-/// may have billed for it all.
-#[derive(Debug)]
-pub struct SpendGuard<'a> {
-    ledger: &'a Ledger,
-    app: AppId,
-    account: AccountId,
-    price: PriceTable,
-    held: Spent,
-    at: UnixSeconds,
-}
-
-impl SpendGuard<'_> {
-    /// Replaces the hold with what the turn used. `None` is a turn whose usage is not known (the
-    /// model may have run and no count came, as the provider's report of how the attempt ended
-    /// says): the hold stays as the charge.
-    pub fn settle(self, used: Option<TokenUsage>) {
-        let Some(used) = used else { return };
-        let mut rows = self
-            .ledger
-            .rows
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        let counted = Spent::of(used, cost(used, &self.price));
-        self.ledger.swap(
-            &mut rows,
-            &self.app,
-            &self.account,
-            self.held,
-            counted,
-            self.at,
-        );
-    }
-}
-
-/// The cost of a turn whose size is not known yet, for the check before it starts: a thousand
-/// tokens each way at the reach's price.
-pub fn estimate(price: &PriceTable) -> MicroUsd {
-    cost(
-        TokenUsage {
-            input: Tokens(1_000),
-            output: Tokens(1_000),
-            cached: Tokens(0),
-        },
-        price,
-    )
 }
 
 #[cfg(test)]

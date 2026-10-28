@@ -1,9 +1,12 @@
 use super::rig::*;
-use porter_core::capability::CapabilityKind as K;
-use porter_core::capability::StorageScope;
-use porter_core::{AccountId, Credential, Offer, SecretText, TokenKind, UnixSeconds};
+use porter_capability::CapabilityKind as K;
+use porter_capability::Offer;
+use porter_capability::StorageScope;
+use porter_core::AccountId;
+use porter_core::ReauthReason;
+use porter_core::{Credential, SecretText, TokenKind};
 use porter_fake_servers::IssuerEvent;
-use porter_families::ReauthReason;
+use porter_ids::UnixSeconds;
 use porter_provider::{Presented, Provider, ProviderError, ProviderSession, RevokeOutcome};
 
 const SCOPES: &str = "openid https://www.googleapis.com/auth/userinfo.email \
@@ -40,7 +43,7 @@ fn seeded(rig: &Rig) -> (Presented, String) {
     )
 }
 
-async fn open(rig: &Rig) -> porter_families::GoogleSession<Wire> {
+async fn open(rig: &Rig) -> porter_family_oauth::OAuthSession<porter_family_oauth::Google, Wire> {
     rig.provider
         .open(&account(), seeded(rig).0)
         .await
@@ -213,12 +216,14 @@ async fn mail_audiences_are_only_for_a_persons_own_client() {
     for name in ["imap", "smtp"] {
         let token = session.access_token(&audience(name)).await.expect(name);
         assert_eq!(token.kind, TokenKind::Xoauth2, "{name}");
-        let bearer = token
-            .value
-            .expose()
-            .strip_prefix("user=ada@gmail.com\u{1}auth=Bearer ")
-            .and_then(|rest| rest.strip_suffix("\u{1}\u{1}"))
+        let (user, bearer) = porter_core::token::parse_xoauth2(token.value.expose())
             .unwrap_or_else(|| panic!("{name}: not the unencoded SASL string"));
+        assert_eq!(user, "ada@gmail.com", "{name}");
+        assert_eq!(
+            token.value,
+            porter_core::token::xoauth2(user, bearer),
+            "{name}"
+        );
         assert!(own.google.issuer.access_is_live(bearer));
     }
 }
@@ -279,7 +284,7 @@ async fn a_refresh_google_refuses_needs_reauth_and_an_unreachable_one_does_not()
         Err(ProviderError::Unauthorized)
     );
     // A client whose app is verified: the person or the password ended it, not the seven days.
-    assert_eq!(session.reauth_reason(), Some(ReauthReason::Revoked));
+    assert_eq!(session.reauth_reason(), None);
     // A good refresh clears the reason.
     session
         .access_token(&audience("google_tasks"))
@@ -313,11 +318,7 @@ async fn a_client_in_testing_is_signed_out_after_seven_days_and_the_reason_says_
         Err(ProviderError::Unauthorized)
     );
     let reason = session.reauth_reason().expect("a reason");
-    assert_eq!(reason, ReauthReason::TestingExpiry);
-    assert_eq!(
-        reason.plain(),
-        "Google signs this app out every 7 days until it is verified."
-    );
+    assert_eq!(reason, ReauthReason::TestingAppExpired);
 }
 
 #[tokio::test]
@@ -333,7 +334,7 @@ async fn a_young_sign_in_refused_is_not_blamed_on_the_seven_days() {
             .await
             .is_err()
     );
-    assert_eq!(session.reauth_reason(), Some(ReauthReason::Revoked));
+    assert_eq!(session.reauth_reason(), None);
 }
 
 #[tokio::test]

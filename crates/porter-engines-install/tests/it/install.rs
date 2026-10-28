@@ -3,10 +3,10 @@ use porter_engines::{
     EngineId, Failure, Finder, Manifest, Place, Record, Scope, Verdict, Verifier, seal_of,
 };
 use porter_engines_install::{CancelToken, InstallError, Installer, Meter};
-use porter_fake::Scratch;
 use porter_fake_servers::start_artifacts;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
+use test_kit::Scratch;
 
 fn held(_: &Path) -> bool {
     true

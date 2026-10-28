@@ -7,7 +7,7 @@ use super::{Shared, denied};
 use crate::http::{Hit, Request, Response, serve};
 use crate::net::{Bind, Listener};
 use crate::seen::{Running, Seen, lock};
-use porter_fake::{FakeAddress, FakeProtocol, FakeServer};
+use porter_fake::{FakeAddress, FakeServer};
 use porter_provider::ProviderSpec;
 use std::future::Future;
 use std::io;
@@ -63,10 +63,6 @@ fn answer(shared: &Shared, request: &Request) -> Response {
 }
 
 impl FakeServer for MediaServer {
-    fn protocol(&self) -> FakeProtocol {
-        FakeProtocol::Google
-    }
-
     fn address(&self) -> &FakeAddress {
         self.listener.address()
     }
@@ -93,7 +89,7 @@ impl super::GoogleHandle {
     /// Starts a second origin that serves the picked items' bytes at `/dl/<id>` and wants the
     /// account's bearer, and points the picked items' `baseUrl`s at it.
     pub async fn serve_media(&self) -> io::Result<Running<MediaOrigin>> {
-        let listener = Listener::bind(&Bind::Loopback, "google-media").await?;
+        let listener = Listener::bind(&Bind::Port(0), "google-media").await?;
         let base = format!(
             "http://127.0.0.1:{}",
             crate::net::port_of(listener.address())

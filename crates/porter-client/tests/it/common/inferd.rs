@@ -3,11 +3,14 @@
 //! ride on them), plays them into a scripted `FakeInferSession` and writes its events back as
 //! frames. How it misbehaves is a `Behaviour`, so the client's error paths run too.
 
-use porter_core::wire::{FrameRead, decode_frame, encode_frame};
-use porter_core::{DataClass, Need, Tier};
-use porter_dbus::{Details, NeedArg, need_from_dbus};
+use porter_capability::Tier;
+use porter_core::DataClass;
+use porter_dbus::Details;
+use porter_dbus::inference::{NeedArg, need_from_dbus};
 use porter_infer::testing::{FakeInferSession, Script};
 use porter_infer::{ClientFrame, InferEvent, InferRefusal, InferReply, InferSession};
+use porter_match::Need;
+use porter_wire::{decode_frame, encode_frame};
 use rustix::net::{RecvAncillaryBuffer, RecvAncillaryMessage, RecvFlags, recvmsg};
 use std::io::IoSliceMut;
 use std::mem::MaybeUninit;
@@ -97,11 +100,11 @@ impl FakeInferd {
     pub async fn serve(self, connection: &zbus::Connection) {
         connection
             .object_server()
-            .at(porter_dbus::INFERENCE_PATH, self)
+            .at(porter_dbus::inference::INFERENCE_PATH, self)
             .await
             .expect("serve the object");
         connection
-            .request_name(porter_dbus::INFERENCE_BUS)
+            .request_name(porter_dbus::inference::INFERENCE_BUS)
             .await
             .expect("own the name");
     }
@@ -126,8 +129,8 @@ impl FakeInferd {
             need,
             class,
             tier,
-            traceparent: text(porter_dbus::OPTION_TRACEPARENT),
-            usage: text(porter_dbus::OPTION_USAGE),
+            traceparent: text(porter_dbus::inference::OPTION_TRACEPARENT),
+            usage: text(porter_dbus::inference::OPTION_USAGE),
         });
         Ok(self.prepare.lock().expect("lock").clone())
     }
@@ -140,17 +143,17 @@ impl FakeInferd {
         options: Details,
     ) -> fdo::Result<OwnedFd> {
         let need = need_from_dbus(need).map_err(|e| fdo::Error::InvalidArgs(e.to_string()))?;
-        let spec = inferd::session::SessionSpec {
+        let spec = porter_router::session::SessionSpec {
             need: need.clone(),
             class: parse_slug(&class)?,
             tier: parse_slug(&tier)?,
             usage: porter_core::consent::Usage::Interactive,
         };
         let traceparent = options
-            .get(porter_dbus::OPTION_TRACEPARENT)
+            .get(porter_dbus::inference::OPTION_TRACEPARENT)
             .and_then(|v| String::try_from(v.try_clone().ok()?).ok());
         let usage = options
-            .get(porter_dbus::OPTION_USAGE)
+            .get(porter_dbus::inference::OPTION_USAGE)
             .and_then(|v| String::try_from(v.try_clone().ok()?).ok());
         self.seen.lock().expect("lock").opens.push(Opened {
             need,
@@ -167,7 +170,7 @@ impl FakeInferd {
             Behaviour::Served(served) => {
                 let served = served.clone();
                 tokio::spawn(async move {
-                    let seams = inferd::serve::Seams {
+                    let seams = porter_router::seams::Seams {
                         router: served.route,
                         engines: served.gate,
                         runner: served.runner,
@@ -273,7 +276,7 @@ async fn serve_session(mut stream: UnixStream, behaviour: Behaviour, seen: Arc<M
     let mut session = FakeInferSession::scripted(scripts);
     let mut buffer = Vec::new();
     loop {
-        while let Ok(FrameRead::Complete(envelope, used)) = decode_frame::<ClientFrame>(&buffer) {
+        while let Ok(Some((envelope, used))) = decode_frame::<ClientFrame>(&buffer) {
             buffer.drain(..used);
             seen.lock()
                 .expect("lock")

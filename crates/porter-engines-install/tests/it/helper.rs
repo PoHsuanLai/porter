@@ -2,10 +2,10 @@ use crate::support::{fetcher, fixture, roots, row};
 use porter_engines::{Arch, Backend, EngineId, Failure, Manifest, OsRelease, Scope};
 use porter_engines_install::CancelToken;
 use porter_engines_install::helper::{Helper, Report, Request};
-use porter_fake::Scratch;
 use porter_fake_servers::start_artifacts;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
+use test_kit::Scratch;
 
 fn request(engine: EngineId) -> Request {
     Request {

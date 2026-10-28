@@ -1,17 +1,21 @@
 //! The app-facing API (design/31 §5.1). An app asks for a capability, never a brand. The
-//! account calls below (`find`, `request_grant`, tokens, relays) are answered by a service the
+//! account calls below (`find`, `request_grant`, relays) are answered by a service the
 //! app hosts in process ([`InProcess`]); over the buses accountd and inferd keep what they hold
 //! and the app asks them for an identity or a key permit:
 //!
 //! ```no_run
-//! use porter_client::{Accounts, ClientError, Found, Transport};
+//! # #[cfg(feature = "in-process")]
+//! # mod example {
+//! use porter_client::{Accounts, ClientError, Found, HostedCore, InProcess};
 //! use porter_core::consent::Usage;
-//! use porter_core::wire::ParentWindow;
-//! use porter_core::{Candidate, DataClass, Need};
+//! use porter_wire::ParentWindow;
+//! use porter_core::{Candidate, DataClass};
+//! use porter_match::Need;
 //!
-//! // `accounts` is `Accounts::connect(&env)` (D-Bus or the socket) or `Accounts::over(transport)`.
-//! async fn photos_account<T: Transport>(
-//!     accounts: &Accounts<T>,
+//! // `accounts` is `Accounts::over(InProcess::new(service, app))`: `find` is offered only
+//! // where the service is hosted.
+//! async fn photos_account<C: HostedCore>(
+//!     accounts: &Accounts<InProcess<C>>,
 //!     need: &Need,
 //!     window: &ParentWindow,
 //! ) -> Result<Option<Candidate>, ClientError> {
@@ -23,19 +27,18 @@
 //!         Found::None(_why) => None, // EmptyState + "Add Account…"
 //!     })
 //! }
+//! # }
+//! # fn main() {}
 //! ```
 //!
-//! Transport-agnostic behind [`Transport`]: D-Bus to accountd (feature `dbus`), the latchkey
-//! socket where D-Bus is absent (feature `socket`), or [`InProcess`] where the app hosts the core
-//! itself (feature `in-process`).
+//! Transport-agnostic behind [`Transport`]: D-Bus to accountd (feature `dbus`), or [`InProcess`]
+//! where the app hosts the core itself (feature `in-process`).
 //!
-//! Features (design/36 §1): the accounts core builds with `--no-default-features`, which reaches
+//! Features (design/36 §1): no feature is on by default, and the accounts core with none reaches
 //! no zbus, no porter-infer and no stoker. Inference (sessions, `prepare`, `infer`, `Need::Llm`
-//! paths) is the default feature `infer`; an accounts-only consumer says
-//! `default-features = false, features = ["socket"]`. `InProcess` and the account service it
-//! hosts (porter-service, porter-secrets, porter-provider) are the default feature `in-process`;
-//! a bus-only consumer says `default-features = false, features = ["dbus"]` and reaches none of
-//! them.
+//! paths) is the feature `infer`. `InProcess` and the account service it hosts (porter-service,
+//! porter-secrets, porter-provider) are the feature `in-process`; a bus-only consumer says
+//! `features = ["dbus"]` and reaches none of them.
 //!
 //! Settings' switch "Let my other computers use this computer's models" has a file to install
 //! besides the setting: feature `lending` has `TailnetLending` (`enable`, `disable`, `state`),
@@ -45,7 +48,8 @@
 //!
 //! ```ignore
 //! // Features `lending` and `dbus`.
-//! let config = LendingConfig::from_env().ok_or("no home folder")?;
+//! let config = LendingConfig::from_lookup(|name| std::env::var_os(name))
+//!     .ok_or("no home folder")?;
 //! let lending = TailnetLending::new(config, SessionUnits::session().await?);
 //! match lending.state() {
 //!     LendingState::Installed => { /* the switch shows "on" */ }
@@ -73,8 +77,12 @@
 mod abandon;
 mod accounts;
 #[cfg(feature = "dbus")]
+mod ai_accounts;
+#[cfg(feature = "dbus")]
 mod ai_keys;
 mod authenticated;
+#[cfg(feature = "dbus")]
+mod call_failure;
 #[cfg(feature = "infer")]
 mod computers;
 #[cfg(feature = "dbus")]
@@ -83,8 +91,9 @@ pub mod credential;
 mod destination;
 #[cfg(feature = "engines")]
 pub mod engines;
-mod env;
 mod error;
+#[cfg(feature = "in-process")]
+mod find;
 mod found;
 #[cfg(feature = "dbus")]
 mod guests;
@@ -105,18 +114,20 @@ mod transport;
 
 pub use accounts::Accounts;
 #[cfg(feature = "dbus")]
+pub use ai_accounts::{AiAccounts, AiAccountsError, Changes};
+#[cfg(feature = "dbus")]
 pub use ai_keys::{AiKeys, AiKeysError};
 pub use authenticated::{AuthenticatedStream, Relayed};
+#[cfg(feature = "dbus")]
+pub use call_failure::CallFailure;
 #[cfg(feature = "infer")]
 pub use computers::{ComputerReach, NewComputer, NewComputerModel};
 #[cfg(feature = "dbus")]
 pub use credential::{
-    ChildKey, ChildKeyError, CredentialHandle, Delivery, Inherit, ProcessCredential, Revocations,
-    Revoked,
+    ChildKey, ChildKeyError, Delivery, Inherit, ProcessCredential, Revocations, Revoked,
 };
 #[cfg(feature = "dbus")]
 pub use destination::Destination;
-pub use env::{ClientEnv, LinkChoice, Place, START_WAIT, SocketAgent, StartAgent};
 /// The refusal [`ClientError::InferRefused`] carries when there is no `infer` feature: a type with
 /// no values (with the feature it is porter-infer's own).
 #[cfg(not(feature = "infer"))]
@@ -129,16 +140,6 @@ pub use guests::{GuestChange, GuestChanges};
 pub use identities::{Identities, IdentitiesError, IdentityRemovals, Picked};
 #[cfg(feature = "dbus")]
 pub use launcher::{AskKind, KeyCandidate, Launcher, LauncherError, LauncherRequest, Requests};
-pub use porter_core::lending;
-/// The computers that ask to use this one's models, and the ones that could be added, from
-/// porter-core: what `Accounts::guests` and `Accounts::candidates` return and
-/// `Accounts::answer_guest` takes, so Settings and the shell parse no vardict. The module
-/// (`porter_client::lending`) also holds `Approval`, `RowState`, `GuestAsk` and
-/// `CandidateModel`.
-pub use porter_core::lending::{ComputerCandidate, GuestAnswer, GuestRow};
-/// A computer on the person's Tailscale network, whose it is, and its stable id, from
-/// porter-core: what `Tailnet::machines` returns, so a terminal or Settings parses no vardict.
-pub use porter_core::{Machine, MachineLink, MachineOwner, MachineSsh, NodeId};
 /// The client's side of one `Open` fd, from porter-infer.
 #[cfg(feature = "infer")]
 pub use porter_infer::{
@@ -155,20 +156,20 @@ pub use removals::{Removals, RemovedAccount};
 #[cfg(feature = "dbus")]
 pub use spaces::{SpaceChanges, Spaces, SpacesError};
 #[cfg(feature = "dbus")]
-pub use tailnet::{MachineChanges, Tailnet, TailnetError};
+pub use tailnet::{MachineChanges, Tailnet};
 #[cfg(all(feature = "lending", feature = "dbus"))]
 pub use tailnet_lending::SessionUnits;
 #[cfg(feature = "lending")]
 pub use tailnet_lending::{
     INFERD_UNIT, LendingConfig, LendingError, LendingState, SHIPPED_NAME, TailnetLending,
-    UnitFailure, UnitManager, UnitName,
+    UnitFailure, UnitManager,
 };
-#[cfg(feature = "infer")]
-pub use transport::{AnySession, InProcessSession, SessionHost, SocketSession};
-pub use transport::{AnyTransport, NoBroker, SocketTransport, Transport};
 #[cfg(all(feature = "dbus", feature = "infer"))]
 pub use transport::{DbusSession, MAX_ATTACHMENTS};
 #[cfg(feature = "dbus")]
 pub use transport::{DbusTransport, Rows};
 #[cfg(feature = "in-process")]
 pub use transport::{HostedCore, InProcess};
+#[cfg(feature = "infer")]
+pub use transport::{InProcessSession, SessionHost};
+pub use transport::{NoBroker, Transport};

@@ -10,25 +10,25 @@
 //!   is at most one a second.
 
 use crate::callers::Callers;
-use crate::core::{Core, Host, Standing};
 use crate::errors::RefusedError;
+use crate::host::Host;
+use crate::state::{Core, Standing};
 use crate::tailnet::machines;
-use porter_dbus::{CallerRole, Details, TAILNET_PATH, machine_to_dbus};
+use porter_callers::CallerRole;
+use porter_dbus::accounts::TAILNET_PATH;
+use porter_dbus::accounts::{TailnetServed, TailnetServer, machine_to_dbus};
+use porter_dbus::{Call, Details};
 use std::sync::Arc;
-use zbus::message::Header;
 use zbus::names::BusName;
 use zbus::object_server::SignalEmitter;
 
 /// Whether a role may read the person's computers: the shell, Settings, the terminal, and the
-/// AI broker (`PorterDaemon`), which looks for the computers that lend their models and asks
+/// AI broker (`AiBroker`), which looks for the computers that lend their models and asks
 /// nothing of Tailscale itself for that list.
 pub(crate) fn may_read(role: CallerRole) -> bool {
     matches!(
         role,
-        CallerRole::SheetHost
-            | CallerRole::Settings
-            | CallerRole::Terminal
-            | CallerRole::PorterDaemon
+        CallerRole::SheetHost | CallerRole::Settings | CallerRole::Terminal | CallerRole::AiBroker
     )
 }
 
@@ -42,11 +42,12 @@ impl<H, C> TailnetObject<H, C> {
     }
 }
 
-#[zbus::interface(name = "org.quire.Tailnet1")]
-impl<H: Host, C: Callers> TailnetObject<H, C> {
+impl<H: Host, C: Callers> TailnetServer for TailnetObject<H, C> {
+    type Error = RefusedError;
+
     async fn machines(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
     ) -> Result<Vec<(String, Details)>, RefusedError> {
         let caller = self.0.identify(&header, Standing::Machines).await?;
         if !may_read(caller.role) {
@@ -63,9 +64,6 @@ impl<H: Host, C: Callers> TailnetObject<H, C> {
             .map(machine_to_dbus)
             .collect())
     }
-
-    #[zbus(signal)]
-    async fn changed(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
 }
 
 /// Tells every connection that may read the computers, and has called accountd, that they
@@ -79,6 +77,6 @@ pub(crate) async fn announce<H: Host, C: Callers>(core: &Arc<Core<H, C>>) {
             continue;
         };
         let emitter = emitter.set_destination(destination);
-        let _ = TailnetObject::<H, C>::changed(&emitter).await;
+        let _ = TailnetServed::<TailnetObject<H, C>>::changed(&emitter).await;
     }
 }

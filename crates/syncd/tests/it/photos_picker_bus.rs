@@ -11,7 +11,7 @@ use google_rig::{
     PICKER_BEARER, Rig, SECRET_ACCESS, SECRET_REFRESH, SEGMENT, client_of, rig, rig_picker_only,
     serve_picker,
 };
-use porter_dbus::{
+use porter_dbus::sync::{
     PICKER_ERROR_NO_SUCH_SESSION, PICKER_ERROR_NOT_YET, PICKER_PICKED, PICKER_WAITING,
     PhotosPickerProxy,
 };
@@ -171,7 +171,7 @@ async fn only_the_photos_app_may_call_and_every_bad_word_or_missing_picker_is_a_
         &rig.bus,
         &rig.known,
         "org.quire.Settings",
-        porter_dbus::CallerRole::Settings,
+        porter_callers::CallerRole::Settings,
     )
     .await;
     let refused = PhotosPickerProxy::new(&settings)
@@ -216,7 +216,7 @@ async fn only_the_photos_app_may_call_and_every_bad_word_or_missing_picker_is_a_
     // Dropping the fake asks its tasks to stop; a connection syncd keeps open may still be served
     // for a moment after (a poll then said "waiting", rel-13 follow-up), so ask until it is down.
     drop(rig.google);
-    let deadline = tokio::time::Instant::now() + porter_fake::GENEROUS;
+    let deadline = tokio::time::Instant::now() + test_kit::GENEROUS;
     let refused = loop {
         match picker.poll(SEGMENT, &session).await {
             Err(refused) => break refused,

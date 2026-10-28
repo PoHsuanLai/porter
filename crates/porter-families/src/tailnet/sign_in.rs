@@ -1,4 +1,4 @@
-//! The Tailscale sign-in: ask Tailscale who is signed in, and
+//! The Tailscale sign-in flow: ask Tailscale who is signed in, and
 //!
 //! - signed in: show the account (the review of a new one) and finish;
 //! - signed out: ask Tailscale to start its own sign-in, hand the person its page to open, and
@@ -8,10 +8,12 @@
 //! The page is Tailscale's (`https://login.tailscale.com/...`); porter opens nothing itself and
 //! takes no password, key or code.
 
-use porter_core::sheet::{SignInFault, SignInInput};
-use porter_core::{AccountLabel, Restriction, WebUrl};
+use porter_core::{AccountLabel, Restriction};
+use porter_family_kit::{Flow, Move};
 use porter_http::{SharedSleep, Sleep};
-use porter_provider::{SignIn, SignInStep, Signed};
+use porter_ids::WebUrl;
+use porter_provider::{SignInStep, Signed};
+use porter_sheet::{SignInFault, SignInInput};
 use porter_tailscale::{LocalApi, Standing, Status, TailscaleError};
 use std::time::Duration;
 
@@ -24,27 +26,20 @@ const SIGN_IN_LIMIT: Duration = Duration::from_secs(5 * 60);
 /// How many looks Tailscale gets to leave "starting" or to give its page, a look each.
 const SETTLE_LOOKS: u32 = 8;
 
+/// The Tailscale sign-in flow.
 #[derive(Debug)]
-enum State {
-    Fresh,
-    /// The person is signing in on Tailscale's page.
-    Waiting {
-        waited: Duration,
-    },
-    /// Shown, waiting for the person's confirmation.
-    Reviewing(Box<Signed>),
-    Ended,
-}
-
-/// The Tailscale sign-in conversation.
-#[derive(Debug)]
-pub struct TailnetSignIn {
+pub struct TailnetFlow {
     api: LocalApi,
     sleep: SharedSleep,
     /// Whether a new account is shown for review first (adding), or the sign-in just ends
     /// (signing in again).
     review: bool,
-    state: State,
+}
+
+/// The person is signing in on Tailscale's page.
+#[derive(Debug)]
+pub struct Waiting {
+    waited: Duration,
 }
 
 /// The sheet's word for why Tailscale could not be asked.
@@ -58,19 +53,9 @@ fn fault_of(error: TailscaleError) -> SignInFault {
     }
 }
 
-impl TailnetSignIn {
+impl TailnetFlow {
     pub(super) fn new(api: LocalApi, sleep: SharedSleep, review: bool) -> Self {
-        Self {
-            api,
-            sleep,
-            review,
-            state: State::Fresh,
-        }
-    }
-
-    fn failed(&mut self, fault: SignInFault) -> SignInStep {
-        self.state = State::Ended;
-        SignInStep::Failed(fault)
+        Self { api, sleep, review }
     }
 
     /// Tailscale's status once it has left "starting" (a few looks at most), or why not.
@@ -99,44 +84,21 @@ impl TailnetSignIn {
     }
 
     /// Somebody is signed in: review the account (adding) or finish (signing in again).
-    fn signed_in(&mut self, status: &Status) -> SignInStep {
+    fn signed_in(&self, status: &Status) -> Move<Waiting> {
         let Some(label) = status.label() else {
-            return self.failed(SignInFault::Unreadable);
+            return Move::Fail(SignInFault::Unreadable);
         };
         let signed = Self::signed(label.clone());
         match self.review {
-            true => {
-                self.state = State::Reviewing(Box::new(signed));
-                SignInStep::Review {
-                    claims: Vec::new(),
-                    endpoints: Vec::new(),
-                    restriction: Restriction::none(),
-                    label: AccountLabel(label),
-                }
-            }
-            false => {
-                self.state = State::Ended;
-                SignInStep::Done(signed)
-            }
-        }
-    }
-
-    async fn start(&mut self) -> SignInStep {
-        let status = match self.settled().await {
-            Ok(status) => status,
-            Err(error) => return self.failed(fault_of(error)),
-        };
-        match status.standing() {
-            Standing::Ready => self.signed_in(&status),
-            Standing::SignedOut => self.ask_for_the_page().await,
-            Standing::Down | Standing::Changing => self.failed(SignInFault::NotRunning),
+            true => Move::Review(signed),
+            false => Move::Done(signed),
         }
     }
 
     /// Nobody is signed in: Tailscale is asked to start its own sign-in, and gives the page.
-    async fn ask_for_the_page(&mut self) -> SignInStep {
+    async fn ask_for_the_page(&self) -> Move<Waiting> {
         if let Err(error) = self.api.start_login().await {
-            return self.failed(fault_of(error));
+            return Move::Fail(fault_of(error));
         }
         for look in 0..SETTLE_LOOKS {
             match self.api.status().await {
@@ -146,54 +108,66 @@ impl TailnetSignIn {
                         .as_deref()
                         .and_then(|u| WebUrl::parse(u).ok())
                     {
-                        self.state = State::Waiting {
+                        let waiting = Waiting {
                             waited: Duration::ZERO,
                         };
-                        return SignInStep::OpenBrowser { url };
+                        return Move::Next(SignInStep::OpenBrowser { url }, waiting);
                     }
                     if status.standing() == Standing::Ready {
                         return self.signed_in(&status);
                     }
                 }
-                Err(error) => return self.failed(fault_of(error)),
+                Err(error) => return Move::Fail(fault_of(error)),
             }
             if look + 1 < SETTLE_LOOKS {
                 self.sleep.sleep(LOOK_EVERY / 4).await;
             }
         }
         // No page came: the person opens the Tailscale app themselves.
-        self.failed(SignInFault::SignedOut)
+        Move::Fail(SignInFault::SignedOut)
     }
 
-    async fn poll(&mut self, waited: Duration) -> SignInStep {
+    async fn poll(&self, waited: Duration) -> Move<Waiting> {
         if waited >= SIGN_IN_LIMIT {
-            return self.failed(SignInFault::TimedOut);
+            return Move::Fail(SignInFault::TimedOut);
         }
         self.sleep.sleep(LOOK_EVERY).await;
         match self.api.status().await {
             Ok(status) if status.standing() == Standing::Ready => self.signed_in(&status),
             // Still signed out, or starting up after the sign-in: go on waiting.
             Ok(status) if matches!(status.standing(), Standing::SignedOut | Standing::Changing) => {
-                self.state = State::Waiting {
+                let waiting = Waiting {
                     waited: waited + LOOK_EVERY,
                 };
-                SignInStep::Waiting
+                Move::Next(SignInStep::Waiting, waiting)
             }
-            Ok(_) => self.failed(SignInFault::NotRunning),
-            Err(error) => self.failed(fault_of(error)),
+            Ok(_) => Move::Fail(SignInFault::NotRunning),
+            Err(error) => Move::Fail(fault_of(error)),
         }
     }
 }
 
-impl SignIn for TailnetSignIn {
-    async fn next(&mut self, input: SignInInput) -> SignInStep {
-        let state = std::mem::replace(&mut self.state, State::Ended);
-        match (state, input) {
-            (_, SignInInput::Cancel) => SignInStep::Failed(SignInFault::Cancelled),
-            (_, SignInInput::Start) => self.start().await,
-            (State::Waiting { waited }, SignInInput::Poll) => self.poll(waited).await,
-            (State::Reviewing(signed), SignInInput::Confirm(_)) => SignInStep::Done(*signed),
-            _ => self.failed(SignInFault::Unreadable),
+impl Flow for TailnetFlow {
+    type Mid = Waiting;
+
+    async fn start(&mut self) -> Move<Waiting> {
+        let status = match self.settled().await {
+            Ok(status) => status,
+            Err(error) => return Move::Fail(fault_of(error)),
+        };
+        match status.standing() {
+            Standing::Ready => self.signed_in(&status),
+            Standing::SignedOut => self.ask_for_the_page().await,
+            Standing::Down | Standing::Changing => Move::Fail(SignInFault::NotRunning),
+            // A standing this build does not know is not one to sign in on.
+            _ => Move::Fail(SignInFault::NotRunning),
+        }
+    }
+
+    async fn resume(&mut self, waiting: Waiting, input: SignInInput) -> Move<Waiting> {
+        match input {
+            SignInInput::Poll => self.poll(waiting.waited).await,
+            _ => Move::Fail(SignInFault::Unreadable),
         }
     }
 }

@@ -106,15 +106,8 @@ impl Reset for QuickXorHash {
 mod tests {
     use super::*;
 
-    fn bytes(hex: &str) -> Vec<u8> {
-        (0..hex.len())
-            .step_by(2)
-            .map(|at| u8::from_str_radix(&hex[at..at + 2], 16).expect("hex"))
-            .collect()
-    }
-
-    fn hex(bytes: &[u8]) -> String {
-        bytes.iter().map(|b| format!("{b:02x}")).collect()
+    fn bytes(text: &str) -> Vec<u8> {
+        hex::decode(text).expect("hex")
     }
 
     /// Inputs and outputs of the reference implementation, as rclone's tests of its port list
@@ -151,7 +144,7 @@ mod tests {
         for (input, output) in VECTORS {
             let input = bytes(input);
             assert_eq!(
-                hex(&QuickXorHash::digest(&input)),
+                hex::encode(QuickXorHash::digest(&input)),
                 *output,
                 "{} bytes",
                 input.len()
@@ -162,7 +155,7 @@ mod tests {
                     Digest::update(&mut pieces, piece);
                 }
                 assert_eq!(
-                    hex(&pieces.finalize()),
+                    hex::encode(pieces.finalize()),
                     *output,
                     "{} bytes by {size}",
                     input.len()

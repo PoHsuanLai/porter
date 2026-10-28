@@ -11,6 +11,7 @@ use tar::{Archive, Entry, EntryType};
 
 /// Why an archive was not unpacked.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum ExtractError {
     /// The archive could not be read: missing, not gzip, not tar, or cut short.
     #[error("the archive could not be unpacked")]
@@ -194,8 +195,8 @@ mod tests {
     use super::*;
     use flate2::Compression;
     use flate2::write::GzEncoder;
-    use porter_fake::Scratch;
     use tar::{Builder, Header};
+    use test_kit::Scratch;
 
     /// One entry of a test archive, written as is: the name is not checked, so an archive can
     /// hold what a well-behaved `tar` never writes.

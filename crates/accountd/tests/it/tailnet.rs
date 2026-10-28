@@ -11,26 +11,29 @@ use accountd::{BusSheets, Options, TableCallers, TailnetWatch, serve_with};
 use common::bus::PrivateBus;
 use common::host::{HostLog, SheetHost, send_input};
 use common::{Shared, caller, error_name, eventually};
-use porter_core::sheet::{SheetInput, SheetView, SignInFault};
-use porter_core::{
-    Account, AccountLabel, AccountState, AuthKind, Machine, MachineOwner, ProviderId, Restriction,
-};
-use porter_dbus::{
-    BusStream, CallerRole, ManagerProxy, Sheet, SpacesProxy, TailnetProxy, machine_from_dbus,
-};
-use porter_fake::{Deadline, FixedClock, MemoryStore, RecordingAudit, Scratch};
+use porter_callers::CallerRole;
+use porter_core::ProviderId;
+use porter_core::{Account, AccountLabel, AccountState, AuthKind, Restriction};
+use porter_dbus::BusStream;
+use porter_dbus::accounts::{ManagerProxy, Sheet, SpacesProxy, TailnetProxy, machine_from_dbus};
+use porter_fake::{MemoryStore, RecordingAudit};
 use porter_fake_servers::{Daemon, FakeLocalApi, FakePeer, Network};
-use porter_families::{FamilyProvider, TailnetProvider};
+use porter_families::{DynProvider, TailnetProvider};
 use porter_http::{SharedSleep, Sleep};
-use porter_service::{AccountService, Registry};
+use porter_ids::clock::FixedClock;
+use porter_service::AccountService;
+use porter_service_core::registry::Registry;
+use porter_sheet::{SheetInput, SheetView, SignInFault};
 use porter_tailscale::LocalApi;
+use porter_tailscale::{Machine, MachineOwner};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use test_kit::{Deadline, Scratch};
 
 const LOGIN_PAGE: &str = "https://login.tailscale.com/a/0123456789abcdef";
 
 type Svc = AccountService<
-    FamilyProvider,
+    Box<dyn DynProvider>,
     Shared,
     BusSheets<TableCallers>,
     FixedClock,
@@ -136,7 +139,7 @@ impl World {
             .into_iter()
             .find(|s| s.id.as_str() == "tailscale")
             .expect("tailscale ships");
-        let providers = vec![FamilyProvider::Tailnet(TailnetProvider::new(
+        let providers = vec![DynProvider::boxed(TailnetProvider::new(
             spec,
             scene.api.clone(),
             SharedSleep::new(Quick),
@@ -149,14 +152,14 @@ impl World {
         let host_connection = bus.connect().await;
         host_connection
             .object_server()
-            .at(porter_dbus::SHEET_PATH, host)
+            .at(porter_dbus::accounts::SHEET_PATH, host)
             .await
             .expect("host object");
         porter_dbus::serve_ready(&host_connection)
             .await
             .expect("the host takes calls");
         host_connection
-            .request_name(porter_dbus::SHEET_BUS)
+            .request_name(porter_dbus::accounts::SHEET_BUS)
             .await
             .expect("host name");
         callers.introduce_as(
@@ -308,10 +311,10 @@ async fn read(connection: &zbus::Connection) -> Result<Vec<Machine>, zbus::Error
 
 /// Waits for the next `Changed`, as long as a starved machine needs (`Deadline::generous`): a
 /// signal that should come is waited for, never raced against a short timer.
-async fn told(stream: &mut porter_dbus::TailnetChangedStream, what: &str) {
+async fn told(stream: &mut porter_dbus::accounts::TailnetChangedStream, what: &str) {
     let deadline = Deadline::generous();
     let next = std::future::poll_fn(|cx| std::pin::Pin::new(&mut *stream).poll_next(cx));
-    match tokio::time::timeout(porter_fake::GENEROUS, next).await {
+    match tokio::time::timeout(test_kit::GENEROUS, next).await {
         Ok(Some(_)) => {}
         _ => deadline.fail(what),
     }
@@ -322,7 +325,10 @@ async fn told(stream: &mut porter_dbus::TailnetChangedStream, what: &str) {
 /// should fail on a starved machine, never fails when it should pass. The windows used are
 /// several times the coalescing window of the tests (300 ms), the time a second signal for the
 /// same burst would come in.
-async fn quiet_for(stream: &mut porter_dbus::TailnetChangedStream, window: Duration) -> bool {
+async fn quiet_for(
+    stream: &mut porter_dbus::accounts::TailnetChangedStream,
+    window: Duration,
+) -> bool {
     tokio::time::timeout(
         window,
         std::future::poll_fn(|cx| std::pin::Pin::new(&mut *stream).poll_next(cx)),
@@ -749,10 +755,10 @@ async fn who_may_read_the_computers() {
         common::ACCESS_DENIED,
         "step 2: a stranger"
     );
-    // Step 3, the AI broker: inferd (`PorterDaemon`) gets the same list as the shell, to find
+    // Step 3, the AI broker: inferd (`AiBroker`) gets the same list as the shell, to find
     // the computers that lend its models.
     let rows = world
-        .machines_as(CallerRole::PorterDaemon)
+        .machines_as(CallerRole::AiBroker)
         .await
         .expect("step 3: the broker reads the computers");
     assert_eq!(rows.len(), 4, "step 3: the broker's list");

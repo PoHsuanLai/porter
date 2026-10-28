@@ -1,27 +1,29 @@
 //! accountd's calls over the bus: the two sheet methods it still has, `AddAccount` and
 //! `Reauthenticate`. accountd keeps identities and nothing grant-keyed, so finding, choosing,
-//! tokens, grants and relays are not on the bus; a request for one of them is
+//! grants and relays are not on the bus; a request for one of them is
 //! [`TransportError::Unsupported`], as for any carrier that has no such call. A refusal comes back
 //! as the error `org.quire.Accounts1.Error.<Refusal>` and is returned as
 //! `AccountsReply::Refused`, as the in-process carrier does.
 //!
 //! The sheet methods return a Request object whose `Response` signal carries the answer
-//! (`porter_dbus::reply_of` reads it: code 0 the answer, 1 `Dismissed`, 2 the refusal named in
+//! (`porter_dbus::accounts::sheet::reply_of` reads it: code 0 the answer, 1 `Dismissed`, 2 the refusal named in
 //! the results). The signal may be sent before the method's reply arrives, so the listener is
-//! subscribed first (`porter_dbus::Sheet`), and the call that waits closes the sheet if it is
+//! subscribed first (`porter_dbus::accounts::Sheet`), and the call that waits closes the sheet if it is
 //! dropped.
 
 use super::dbus::bus_error;
 use crate::Destination;
 use crate::abandon::Abandon;
 use crate::error::TransportError;
-use porter_core::wire::{ParentWindow, ProviderHint};
-use porter_core::{AccountsReply, AccountsRequest};
+use porter_core::ProviderHint;
+use porter_dbus::accounts::account_path;
+use porter_dbus::accounts::refusal_of;
+use porter_dbus::accounts::sheet::{SheetKind, reply_of};
+use porter_dbus::accounts::{AccountProxy, ManagerProxy, Sheet, SheetError};
 use porter_dbus::zvariant::OwnedObjectPath;
-use porter_dbus::{
-    AccountProxy, BusConnection, BusError, Details, ManagerProxy, Sheet, SheetError, SheetKind,
-    account_path, refusal_of, reply_of,
-};
+use porter_dbus::{BusConnection, BusError, Details};
+use porter_wire::ParentWindow;
+use porter_wire::{AccountsReply, AccountsRequest};
 
 /// A failed call: the refusal accountd gave, or a failure of the bus.
 fn refused(error: &BusError) -> Result<AccountsReply, TransportError> {
@@ -85,6 +87,8 @@ fn wire(window: &ParentWindow) -> String {
     match window {
         ParentWindow::Unparented => String::new(),
         ParentWindow::Handle(handle) => handle.clone(),
+        // A parent this build does not know is no parent.
+        _ => String::new(),
     }
 }
 
@@ -103,6 +107,8 @@ fn sheet_error(error: SheetError) -> TransportError {
         SheetError::Unreadable => {
             TransportError::Malformed("a Response that is not (u, a{sv})".to_owned())
         }
+        // a failure a later porter-dbus adds
+        _ => TransportError::Malformed("a sheet failure this client does not know".to_owned()),
     }
 }
 

@@ -2,8 +2,10 @@
 //! directory, and the keyring store over keyring-core's mock. Nothing here touches the user's
 //! keyring: the Secret Service is never opened.
 
-use porter_core::{AccountId, CapabilityKind, Credential, SecretKey, SecretPurpose, SecretText};
-use porter_secrets::{MemorySecrets, Namespace, PutOutcome, Secrets, SecretsError, StoreSecrets};
+use porter_capability::CapabilityKind;
+use porter_core::AccountId;
+use porter_core::{Credential, SecretKey, SecretPurpose, SecretText};
+use porter_secrets::{MemorySecrets, Namespace, Secrets, SecretsError, StoreSecrets};
 use std::sync::Arc;
 
 fn key(account: &str, purpose: SecretPurpose) -> SecretKey {
@@ -54,11 +56,11 @@ async fn contract<F: Fixture>(fixture: F) {
     let fresh = key("fresh", SecretPurpose::Password);
     assert_eq!(
         store.put_if_absent(&fresh, &password("first")).await,
-        Ok(PutOutcome::Stored)
+        Ok(true)
     );
     assert_eq!(
         store.put_if_absent(&fresh, &password("second")).await,
-        Ok(PutOutcome::AlreadyThere)
+        Ok(false)
     );
     assert_eq!(store.get(&fresh).await, Ok(password("first")));
     // Present under another purpose or account is not present under this one.
@@ -67,13 +69,13 @@ async fn contract<F: Fixture>(fixture: F) {
         store
             .put_if_absent(&sibling, &Credential::ApiKey(SecretText::new("k2")))
             .await,
-        Ok(PutOutcome::Stored)
+        Ok(true)
     );
     // After a delete it is absent again.
     store.delete(&fresh).await.expect("delete");
     assert_eq!(
         store.put_if_absent(&fresh, &password("third")).await,
-        Ok(PutOutcome::Stored)
+        Ok(true)
     );
     assert_eq!(store.get(&fresh).await, Ok(password("third")));
     // Two racing callers: exactly one stores.
@@ -84,14 +86,7 @@ async fn contract<F: Fixture>(fixture: F) {
         store.put_if_absent(&raced, &two)
     );
     let outcomes = [a.expect("a"), b.expect("b")];
-    assert_eq!(
-        outcomes
-            .iter()
-            .filter(|o| **o == PutOutcome::Stored)
-            .count(),
-        1,
-        "{outcomes:?}"
-    );
+    assert_eq!(outcomes.iter().filter(|o| **o).count(), 1, "{outcomes:?}");
     store.delete_account(&fresh.account).await.expect("wipe");
     store.delete_account(&raced.account).await.expect("wipe");
 
@@ -102,7 +97,7 @@ async fn contract<F: Fixture>(fixture: F) {
             Credential::OAuth {
                 access: SecretText::new("a"),
                 refresh: SecretText::new("r"),
-                expires_at: porter_core::UnixSeconds(9),
+                expires_at: porter_ids::UnixSeconds(9),
                 granted: Default::default(),
             },
         ),
@@ -218,7 +213,7 @@ mod file_store {
 
     #[tokio::test]
     async fn the_test_key_file_keeps_the_contract() {
-        let dir = porter_fake::Scratch::new("contract-file");
+        let dir = test_kit::Scratch::new("contract-file");
         let store = FileSecrets::open(dir.join("keys.json")).expect("opens");
         contract(File(store)).await;
     }
@@ -275,10 +270,7 @@ async fn namespaces_keep_their_items_apart() {
     let filed = key("cloud", SecretPurpose::Password);
     porter.put(&filed, &password("a")).await.expect("put");
     assert_eq!(mailo.get(&filed).await, Err(SecretsError::Missing));
-    assert_eq!(
-        mailo.put_if_absent(&filed, &password("b")).await,
-        Ok(PutOutcome::Stored)
-    );
+    assert_eq!(mailo.put_if_absent(&filed, &password("b")).await, Ok(true));
     assert_eq!(porter.get(&filed).await, Ok(password("a")));
     assert_eq!(mailo.get(&filed).await, Ok(password("b")));
     let entry = |service: &str| {
@@ -311,12 +303,12 @@ async fn the_platform_store_is_the_default_store_once_one_is_set() {
     // put_if_absent is forwarded to the store's own, not left to the default body.
     assert_eq!(
         KeyringSecrets.put_if_absent(&filed, &password("q")).await,
-        Ok(PutOutcome::AlreadyThere)
+        Ok(false)
     );
     let fresh = key("forwarded", SecretPurpose::Password);
     assert_eq!(
         KeyringSecrets.put_if_absent(&fresh, &password("a")).await,
-        Ok(PutOutcome::Stored)
+        Ok(true)
     );
     KeyringSecrets
         .delete_account(&fresh.account)
@@ -341,7 +333,7 @@ mod oo7_file {
         store: Oo7KeyringSecrets,
         shared: Shared,
         /// Last, so the directory goes after the keyring that is in it.
-        _scratch: porter_fake::Scratch,
+        _scratch: test_kit::Scratch,
     }
 
     impl Fixture for File {
@@ -362,7 +354,7 @@ mod oo7_file {
 
     /// oo7's file backend at a path in the temp directory, opened with a test secret.
     async fn scratch(name: &str) -> File {
-        let dir = porter_fake::Scratch::new("oo7-file");
+        let dir = test_kit::Scratch::new("oo7-file");
         let path = dir.join(format!("{name}.keyring"));
         let unlocked = oo7::file::UnlockedKeyring::load(&path, oo7::Secret::text("test-secret"))
             .await
@@ -420,6 +412,50 @@ async fn a_large_secret_is_filed_in_numbered_parts_and_leaves_none_behind() {
     assert_eq!(store.get(&big).await, Ok(password("s")));
 }
 
+/// Entries as porter-secrets' own chunking wrote them before keyring-chunked: a head
+/// `porter-parts:<count>` and the parts `#1`, `#2`, ... They still read, and deleting the key
+/// removes every one.
+#[tokio::test]
+async fn a_credential_filed_in_parts_before_keyring_chunked_still_reads() {
+    let mock: Arc<keyring_core::CredentialStore> = keyring_core::mock::Store::new().expect("mock");
+    let name = r#"old:{"kind":"password"}"#;
+    let filed = [
+        (name.to_owned(), "porter-parts:3"),
+        (format!("{name}#1"), r#"{"kind":"passwo"#),
+        (format!("{name}#2"), r#"rd","v":"correct horse "#),
+        (format!("{name}#3"), r#"battery staple"}"#),
+    ];
+    for (user, value) in &filed {
+        mock.build("porter", user, None)
+            .expect("entry")
+            .set_password(value)
+            .expect("planted");
+    }
+    let old = key("old", SecretPurpose::Password);
+    for store in [
+        StoreSecrets::new(mock.clone()),
+        StoreSecrets::chunked(mock.clone(), 256),
+    ] {
+        assert_eq!(
+            store.get(&old).await,
+            Ok(password("correct horse battery staple"))
+        );
+    }
+    StoreSecrets::new(mock.clone())
+        .delete(&old)
+        .await
+        .expect("delete");
+    for (user, _) in &filed {
+        let entry = mock.build("porter", user, None).expect("entry");
+        assert!(
+            entry
+                .get_password()
+                .is_err_and(|e| matches!(e, keyring_core::Error::NoEntry)),
+            "{user}"
+        );
+    }
+}
+
 /// A store that knows only `get` and `put`, as one written before `put_if_absent` existed.
 struct Plain(MemorySecrets, std::sync::atomic::AtomicBool);
 
@@ -445,14 +481,8 @@ impl Secrets for Plain {
 async fn the_default_put_if_absent_reads_then_writes_and_a_locked_read_writes_nothing() {
     let store = Plain(MemorySecrets::default(), false.into());
     let k = key("plain", SecretPurpose::Password);
-    assert_eq!(
-        store.put_if_absent(&k, &password("one")).await,
-        Ok(PutOutcome::Stored)
-    );
-    assert_eq!(
-        store.put_if_absent(&k, &password("two")).await,
-        Ok(PutOutcome::AlreadyThere)
-    );
+    assert_eq!(store.put_if_absent(&k, &password("one")).await, Ok(true));
+    assert_eq!(store.put_if_absent(&k, &password("two")).await, Ok(false));
     assert_eq!(store.get(&k).await, Ok(password("one")));
     let other = key("plain2", SecretPurpose::Password);
     store.1.store(true, std::sync::atomic::Ordering::SeqCst);

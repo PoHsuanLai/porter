@@ -3,11 +3,13 @@
 //! its journal and read back by path and id, a pass cut short and resumed, a restart that keeps
 //! the tree, a folder moved, an anchor that expired, and access not given yet.
 
-use porter_core::capability::StorageCap;
-use porter_core::{UnixSeconds, WebUrl};
-use porter_fake::Scratch;
+use porter_capability::StorageCap;
 use porter_fake_servers::{FakeGoogle, FakeGraph};
-use porter_http::{Header, Http, HttpError, HttpRequest, HttpResponse, HyperHttp};
+use porter_http::http::header::{AUTHORIZATION, HeaderValue};
+use porter_http::http::{Request, Response};
+use porter_http::{Http, HttpError};
+use porter_http_reqwest::ReqwestHttp;
+use porter_ids::{UnixSeconds, WebUrl};
 use porter_sync::{
     Blob, ByteRange, ChangePage, Cursor, Folders, ItemKind, ItemPath, PutItem, PutRefused, Quota,
     RemoteId, RemoteVersion, Replica, ReplicaError, RetryAfter,
@@ -15,22 +17,23 @@ use porter_sync::{
 use std::future::Future;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use syncd::datasets::drive::{DriveJournal, DriveReplica, Listed, list_once};
+use test_kit::Scratch;
 
 const TOKEN: &str = "ey.fake-access-token";
 const NOW: UnixSeconds = UnixSeconds(1_000);
 
 /// Adds the bearer to every request, as the relay does on the far side.
 #[derive(Debug)]
-struct Bearer(HyperHttp);
+struct Bearer(ReqwestHttp);
 
 impl Http for Bearer {
     fn send(
         &self,
-        mut request: HttpRequest,
-    ) -> impl Future<Output = Result<HttpResponse, HttpError>> + Send {
-        request
-            .headers
-            .push(Header::new("Authorization", format!("Bearer {TOKEN}")));
+        mut request: Request<Vec<u8>>,
+    ) -> impl Future<Output = Result<Response<Vec<u8>>, HttpError>> + Send {
+        let mut value = HeaderValue::from_str(&format!("Bearer {TOKEN}")).expect("a value");
+        value.set_sensitive(true);
+        request.headers_mut().insert(AUTHORIZATION, value);
         self.0.send(request)
     }
 }
@@ -40,7 +43,7 @@ impl Http for Bearer {
 struct NotGranted;
 
 impl Http for NotGranted {
-    async fn send(&self, _: HttpRequest) -> Result<HttpResponse, HttpError> {
+    async fn send(&self, _: Request<Vec<u8>>) -> Result<Response<Vec<u8>>, HttpError> {
         Err(HttpError::NotGranted)
     }
 }
@@ -51,10 +54,10 @@ type Google = storage_gdrive::GdriveReplica<Bearer>;
 fn graph(base: &str, page: usize, folders: Folders) -> Graph {
     let base = WebUrl::parse(base).expect("url");
     storage_graph::GraphReplica::new(
-        Bearer(HyperHttp::new()),
+        Bearer(ReqwestHttp::new()),
         &base,
         "",
-        storage_graph::Clock::fixed(NOW),
+        porter_sync::Clock::fixed(NOW),
     )
     .with_root(storage_graph::Root::Drive)
     .with_page(page)
@@ -64,10 +67,10 @@ fn graph(base: &str, page: usize, folders: Folders) -> Graph {
 fn google(base: &str, page: usize, folders: Folders) -> Google {
     let base = WebUrl::parse(base).expect("url");
     storage_gdrive::GdriveReplica::new(
-        Bearer(HyperHttp::new()),
+        Bearer(ReqwestHttp::new()),
         &base,
         "",
-        storage_gdrive::Clock::fixed(NOW),
+        porter_sync::Clock::fixed(NOW),
     )
     .with_root(storage_gdrive::Root::Drive)
     .with_page(page)
@@ -329,7 +332,7 @@ async fn access_not_given_yet_is_its_own_state_and_lists_nothing() {
     let journal = DriveJournal::open(&scratch.path().join("storage_drive.sqlite")).expect("open");
     let base = WebUrl::parse("https://graph.example.test").expect("url");
     let replica =
-        storage_graph::GraphReplica::new(NotGranted, &base, "", storage_graph::Clock::fixed(NOW))
+        storage_graph::GraphReplica::new(NotGranted, &base, "", porter_sync::Clock::fixed(NOW))
             .with_root(storage_graph::Root::Drive);
     let pass = list_once(&journal, &replica).await.expect("pass");
     assert_eq!((pass.outcome, pass.pages), (Listed::NeedsConsent, 0));

@@ -126,7 +126,7 @@ pub fn choices(
             company: company.clone(),
             available: reach,
             hint: hint_of(&entry.label),
-            takes: Takes::of(&crate::catalog::capabilities_of(entry)),
+            takes: Takes::of(&porter_router::catalog::capabilities_of(entry)),
         };
         match grouped.iter_mut().find(|(name, _)| *name == company) {
             Some((_, group)) => group.push(choice),

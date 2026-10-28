@@ -5,9 +5,13 @@ use cua_action::{
     Button, ClickCount, Coord, CuaAction, DeviceSize, PixelFormat, Point, Scale120, Size, Target,
     WindowSpace,
 };
-use porter_core::capability::{CuaEnv, LanguageTag};
+use porter_capability::Locality;
+use porter_capability::ModelId;
+use porter_capability::{CuaEnv, LanguageTag};
+use porter_core::AccountId;
+use porter_core::DataClass;
 use porter_core::consent::Usage;
-use porter_core::{AccountId, Count, DataClass, Locality, ModelId, Permille, Tokens};
+use porter_ids::{Count, Permille, Tokens};
 use porter_infer::*;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -88,6 +92,7 @@ fn usage() -> TokenUsage {
         input: Tokens(10),
         output: Tokens(5),
         cached: Tokens(0),
+        charge: None,
     }
 }
 
@@ -296,7 +301,7 @@ fn picker_data_round_trips_with_plain_slugs() {
     let map = TierMap {
         rows: vec![TierRow {
             kind: Slot::VoiceIn,
-            tier: porter_core::Tier::Balanced,
+            tier: porter_capability::Tier::Balanced,
             model: model.clone(),
         }],
         autos: vec![],
@@ -338,11 +343,11 @@ fn picker_data_round_trips_with_plain_slugs() {
         label: "Nemotron streaming".into(),
         kind: Slot::VoiceIn,
         locality: Locality::OnDevice,
-        billing: porter_core::Billing::Free,
+        billing: porter_capability::Billing::Free,
         readiness: Readiness::Loadable,
         fit: Fit::Fits,
         licence: LicenceClass::Open,
-        chosen_for: [porter_core::Tier::Balanced].into(),
+        chosen_for: [porter_capability::Tier::Balanced].into(),
     });
 }
 
@@ -457,6 +462,8 @@ fn every_data_class_has_a_floor_decision() {
         | DataClass::Voice
         | DataClass::Prompt
         | DataClass::Public => (),
+        // A class added later is named in the lists above when it is added.
+        _ => (),
     };
     total(DataClass::Voice);
 }
@@ -508,7 +515,7 @@ fn a_frame_names_how_many_descriptors_ride_with_it() {
                     role: Role::User,
                     parts,
                 }],
-                porter_core::Tier::Fast,
+                porter_capability::Tier::Fast,
                 DataClass::Public,
                 Usage::Interactive,
             )

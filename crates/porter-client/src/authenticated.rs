@@ -5,7 +5,7 @@
 //! in-memory duplex.
 
 use porter_core::stream::DuplexEnd;
-use porter_core::wire::Refusal;
+use porter_wire::Refusal;
 #[cfg(unix)]
 use std::os::fd::OwnedFd;
 

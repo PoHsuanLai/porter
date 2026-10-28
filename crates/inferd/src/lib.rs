@@ -7,11 +7,9 @@
 //!
 //! The logic of routing and the session machine is not here: it is the library `porter-router`
 //! (the router, the plan, the catalogue, the local model book, the attached engines as values, the
-//! session machine and the seams). `router`, `swap`, `catalog`, `local`, `session` and `startup`
-//! below are those modules, re-exported at their old paths. Running turns is not here either: it
-//! is the library `porter-turns` (a local model's chat, embedding and computer-use turns, the
-//! structured-reply check, the audit trail, the stages of a pipeline); `bridge`, `tee`, `cua_step`,
-//! `cua_run` and `audit` are those modules, re-exported. inferd keeps the bus objects, the process
+//! session machine and the seams). Running turns is not here either: it is the library
+//! `porter-turns` (a local model's chat, embedding and computer-use turns, the structured-reply
+//! check, the audit trail, the stages of a pipeline). inferd keeps the bus objects, the process
 //! hosts, the settings wiring and the start-up.
 //!
 //! The daemon as one call is `daemon`: [`Config`] (typed; [`Config::from_env`] is the one place
@@ -22,7 +20,7 @@ pub mod admit;
 pub mod agent;
 pub mod attached;
 pub mod auto;
-pub mod clock;
+pub mod broker;
 pub mod cloud;
 pub mod config;
 pub mod daemon;
@@ -30,8 +28,7 @@ pub mod engines;
 pub mod failure;
 pub mod hosts;
 pub mod installed;
-pub mod keys;
-pub mod launcher;
+pub mod old_keys;
 pub mod peers;
 pub mod pipeline;
 pub mod probe;
@@ -45,6 +42,7 @@ pub mod service;
 pub mod settings;
 pub mod shutdown;
 pub mod speech;
+pub mod spend_rows;
 pub mod structured;
 pub mod supervise;
 pub mod tailnet;
@@ -52,30 +50,6 @@ pub mod toolproof;
 pub mod watch;
 
 pub use daemon::{Config, Daemon, StartError, StopError};
-
-/// The catalogue, moved to `porter_router::catalog`.
-pub use porter_router::catalog;
-/// The local model book, moved to `porter_router::local`.
-pub use porter_router::local;
-/// The router, moved to `porter_router::router`.
-pub use porter_router::router;
-/// The session machine, moved to `porter_router::session`.
-pub use porter_router::session;
-/// Why an engine did not start, moved to `porter_router::startup`.
-pub use porter_router::startup;
-/// What loading a model would take, moved to `porter_router::swap`.
-pub use porter_router::swap;
-
-/// The audit trail of finished turns, moved to `porter_turns::audit`.
-pub use porter_turns::audit;
-/// Porter's requests as stoker's turns, moved to `porter_turns::bridge`.
-pub use porter_turns::bridge;
-/// A computer-use run, moved to `porter_turns::cua_run`.
-pub use porter_turns::cua_run;
-/// One computer-use step, moved to `porter_turns::cua_step`.
-pub use porter_turns::cua_step;
-/// A turn sink that shows the thinking, moved to `porter_turns::tee`.
-pub use porter_turns::tee;
 
 /// The catalog entries the hosted tests use, shared with the unit tests.
 #[cfg(test)]

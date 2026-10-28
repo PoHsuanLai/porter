@@ -1,17 +1,24 @@
 use super::rig::*;
-use porter_core::capability::CapabilityKind as K;
-use porter_core::sheet::{ServiceChoice, SignInFault, SignInInput};
-use porter_core::{
-    AbsentReason, Count, Credential, Family, LimitReason, Offer, Provenance, SecretPurpose, Toggle,
-    TokenLifetime, Verification,
-};
+use porter_capability::CapabilityKind as K;
+use porter_capability::KindToggle;
+use porter_capability::{AbsentReason, Offer, Provenance, Toggle};
+use porter_core::{Credential, Family, LimitReason, SecretPurpose, TokenLifetime, Verification};
 use porter_fake_servers::{Consent, IssuerEvent, TokenResult};
+use porter_ids::Count;
 use porter_provider::{
     ConsentHistory, LoginHint, Provider, SignIn, SignInMode, SignInStart, SignInStep,
 };
+use porter_sheet::{SignInFault, SignInInput};
 
 /// Signs in by loopback up to the review, with the browser answering.
-async fn to_review(rig: &Rig) -> (porter_families::GoogleSignIn<Wire>, SignInStep) {
+async fn to_review(
+    rig: &Rig,
+) -> (
+    porter_family_kit::Conversation<
+        porter_family_oauth::BrowserFlow<porter_family_oauth::Google, Wire>,
+    >,
+    SignInStep,
+) {
     to_review_from(rig, start()).await
 }
 
@@ -19,7 +26,12 @@ async fn to_review(rig: &Rig) -> (porter_families::GoogleSignIn<Wire>, SignInSte
 async fn to_review_from(
     rig: &Rig,
     begun: SignInStart,
-) -> (porter_families::GoogleSignIn<Wire>, SignInStep) {
+) -> (
+    porter_family_kit::Conversation<
+        porter_family_oauth::BrowserFlow<porter_family_oauth::Google, Wire>,
+    >,
+    SignInStep,
+) {
     let mut signin = rig.provider.sign_in(begun).expect("sign in");
     let SignInStep::OpenBrowser { url } = signin.next(SignInInput::Start).await else {
         panic!("expected the browser")
@@ -31,7 +43,12 @@ async fn to_review_from(
     (signin, step)
 }
 
-fn review(step: SignInStep) -> (Vec<porter_core::Claim>, Vec<porter_core::ServiceEndpoint>) {
+fn review(
+    step: SignInStep,
+) -> (
+    Vec<porter_capability::Claim>,
+    Vec<porter_core::ServiceEndpoint>,
+) {
     let SignInStep::Review {
         claims, endpoints, ..
     } = step
@@ -41,7 +58,7 @@ fn review(step: SignInStep) -> (Vec<porter_core::Claim>, Vec<porter_core::Servic
     (claims, endpoints)
 }
 
-fn offer_of(claims: &[porter_core::Claim], kind: K) -> &Offer {
+fn offer_of(claims: &[porter_capability::Claim], kind: K) -> &Offer {
     &claims
         .iter()
         .find(|c| c.offer.kind() == kind)
@@ -144,7 +161,7 @@ async fn a_loopback_sign_in_reviews_what_google_allows_then_hands_over_the_crede
         signin.next(SignInInput::Poll).await,
         SignInStep::Review { .. }
     ));
-    let choices = vec![ServiceChoice {
+    let choices = vec![KindToggle {
         kind: K::Tasks,
         toggle: Toggle::Off,
     }];
@@ -254,7 +271,7 @@ async fn a_persons_own_client_also_asks_gmail_and_gets_imap_and_smtp_endpoints()
     };
     assert!(matches!(
         offer_of(&claims, K::Mail),
-        Offer::Present(porter_core::capability::Capability::Mail(_))
+        Offer::Present(porter_capability::Capability::Mail(_))
     ));
     let mail: Vec<(Family, String)> = endpoints
         .iter()
@@ -386,14 +403,12 @@ const PICKER_SCOPE: &str = "https://www.googleapis.com/auth/photospicker.mediait
 
 /// What a sign-in where the person unticked `unticked` offers of Photos: whether it uploads,
 /// what it reads, and the Photos endpoints it holds.
-async fn photos_after_unticking(
-    unticked: &[&str],
-) -> (porter_core::capability::PhotosCap, Vec<Family>) {
+async fn photos_after_unticking(unticked: &[&str]) -> (porter_capability::PhotosCap, Vec<Family>) {
     let rig = Rig::new(PLAIN).await;
     rig.google.issuer.untick(unticked);
     let (_, step) = to_review(&rig).await;
     let (claims, endpoints) = review(step);
-    let Offer::Present(porter_core::capability::Capability::Photos(photos)) =
+    let Offer::Present(porter_capability::Capability::Photos(photos)) =
         offer_of(&claims, K::Photos).clone()
     else {
         panic!("Photos should be present")
@@ -408,9 +423,9 @@ async fn photos_after_unticking(
 
 #[tokio::test]
 async fn a_person_who_grants_only_the_picker_gets_no_upload_to_offer() {
-    use porter_core::capability::{Albums, LibraryRead, Offered};
+    use porter_capability::{Albums, LibraryRead};
     let (photos, families) = photos_after_unticking(&[UPLOAD_SCOPE]).await;
-    assert_eq!(photos.upload, Offered::Absent);
+    assert!(!photos.upload);
     assert_eq!(photos.albums, Albums::None);
     assert_eq!(photos.library_read, LibraryRead::PickerOnly);
     assert_eq!(families, [Family::GooglePhotosPicker]);
@@ -418,9 +433,9 @@ async fn a_person_who_grants_only_the_picker_gets_no_upload_to_offer() {
 
 #[tokio::test]
 async fn a_person_who_grants_only_the_upload_gets_no_picker_to_offer() {
-    use porter_core::capability::{Albums, LibraryRead, Offered};
+    use porter_capability::{Albums, LibraryRead};
     let (photos, families) = photos_after_unticking(&[PICKER_SCOPE]).await;
-    assert_eq!(photos.upload, Offered::Present);
+    assert!(photos.upload);
     assert_eq!(photos.albums, Albums::AppCreated);
     assert_eq!(photos.library_read, LibraryRead::None);
     assert_eq!(families, [Family::GooglePhotosUpload]);
@@ -428,9 +443,8 @@ async fn a_person_who_grants_only_the_upload_gets_no_picker_to_offer() {
 
 #[tokio::test]
 async fn both_photos_scopes_offer_both_and_neither_turns_photos_off() {
-    use porter_core::capability::Offered;
     let (photos, families) = photos_after_unticking(&[]).await;
-    assert_eq!(photos.upload, Offered::Present);
+    assert!(photos.upload);
     assert_eq!(
         families,
         [Family::GooglePhotosUpload, Family::GooglePhotosPicker]
@@ -478,7 +492,7 @@ async fn asking_for_the_whole_drive_asks_it_alone_and_records_it_with_the_rest()
     assert_eq!(kinds, [K::Storage]);
     assert_eq!(endpoints.len(), stored.len());
     assert!(endpoints.iter().all(|e| e.login.0 == "ada@gmail.com"));
-    let choices = vec![ServiceChoice {
+    let choices = vec![KindToggle {
         kind: K::Storage,
         toggle: Toggle::On,
     }];

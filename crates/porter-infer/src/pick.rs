@@ -11,7 +11,7 @@
 //!   and says why ([`Declined`]); there is no fallback.
 //! * Automatic orders what is left by: nearer first (this computer, the network, the cloud, so it
 //!   chooses the cloud only when `admit` allows it and nothing nearer can serve), then models
-//!   already loaded, then the cheaper swap, then the lower price, then a model another helper is
+//!   already loaded, then the cheaper swap, then free before a plan's allowance before metered, then a model another helper is
 //!   already using (fewer swaps), then the catalogue's order. It
 //!   may unload one idle engine to load another, only when `ai.auto.allow_evict` says
 //!   [`AutoEvict::IdleOnly`]; an engine in a turn is never a victim.
@@ -21,7 +21,7 @@ use crate::choice::{LicenceClass, ModelRef};
 use crate::error::InferRefusal;
 use crate::policy::Policy;
 use crate::readiness::Readiness;
-use crate::route::{Chosen, RouteAsk, RouteCandidate, admit, chosen_of, closeness, price_rank};
+use crate::route::{Chosen, RouteAsk, RouteCandidate, admit, billing_rank, chosen_of, closeness};
 use serde::{Deserialize, Serialize};
 
 /// What Automatic does (`ai.auto.mode`). One value in P0; the enum leaves room for more.
@@ -81,6 +81,7 @@ impl AutoEvict {
 /// an eviction is announced whatever this says (a swap is never hidden).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum ShowReason {
     /// Only an eviction is announced.
     Off,
@@ -440,9 +441,9 @@ fn eligible(candidate: &PickCandidate, rules: PickPolicy<'_>) -> bool {
     can_answer && open_licence && swap_allowed
 }
 
-/// The ordering key of Automatic: nearer, then loaded, then the cheaper swap, then the lower
-/// price, then the catalogue's order. Smaller is first.
-type Key = (u8, u8, (u8, u16), (u8, u64), u8, u32);
+/// The ordering key of Automatic: nearer, then loaded, then the cheaper swap, then free before a
+/// plan's allowance before metered, then the catalogue's order. Smaller is first.
+type Key = (u8, u8, (u8, u16), u8, u8, u32);
 
 fn key(candidate: &PickCandidate) -> Key {
     let warmth = match candidate.readiness {
@@ -465,7 +466,7 @@ fn key(candidate: &PickCandidate) -> Key {
         closeness(&candidate.route.locality),
         warmth,
         swap,
-        price_rank(&candidate.route.billing),
+        billing_rank(&candidate.route.billing),
         match candidate.sharing {
             Sharing::HeldByHelper => 0,
             Sharing::Alone => 1,

@@ -14,6 +14,7 @@ use super::source::{
 use super::{Meta, PimKind};
 use crate::clock::Wall;
 use crate::dataset::{DatasetError, DatasetId};
+use crate::datasets::photos::Millis;
 use crate::driver::Driver;
 use crate::engine::Engine;
 use crate::journal::{Journal, JournalError};
@@ -22,6 +23,7 @@ use crate::scheduler::{Network, Settings};
 use crate::service::{Access, DatasetName, Hub};
 use porter_client::{Accounts, Transport};
 use porter_core::Candidate;
+use porter_sync::Clock;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -44,6 +46,13 @@ pub struct Wiring<T> {
     pub network: watch::Receiver<Network>,
     /// The apps that see the datasets in `Sync1` besides Settings and the porter daemons.
     pub owners: Access,
+    /// The clock the replicas date tombstones with: the daemon's.
+    pub clock: Clock,
+    /// What tells this run's feed anchors from an earlier run's, and this run's new devices from
+    /// every other: it differs between two runs of the daemon (letters and digits only).
+    pub nonce: String,
+    /// The wall clock in milliseconds, for the hybrid clocks of Photos.
+    pub millis: Arc<dyn Millis>,
 }
 
 /// Why an account's collections could not be refreshed.
@@ -152,23 +161,33 @@ impl AccountMirrors {
         let grant = candidate.grant.clone();
         match chosen {
             Chosen::Dav => {
-                let source = DavSource::new(accounts, grant, endpoint);
+                let source = DavSource::new(
+                    accounts,
+                    grant,
+                    endpoint,
+                    wiring.clock.clone(),
+                    wiring.nonce.clone(),
+                );
                 self.refresh_with(wiring, source).await
             }
             Chosen::GraphCalendar => {
-                let source = GraphCalendarSource::new(accounts, grant, endpoint)?;
+                let source =
+                    GraphCalendarSource::new(accounts, grant, endpoint, wiring.clock.clone())?;
                 self.refresh_with(wiring, source).await
             }
             Chosen::GoogleCalendar => {
-                let source = GoogleCalendarSource::new(accounts, grant, endpoint)?;
+                let source =
+                    GoogleCalendarSource::new(accounts, grant, endpoint, wiring.clock.clone())?;
                 self.refresh_with(wiring, source).await
             }
             Chosen::GooglePeople => {
-                let source = GooglePeopleSource::new(accounts, grant, endpoint)?;
+                let source =
+                    GooglePeopleSource::new(accounts, grant, endpoint, wiring.clock.clone())?;
                 self.refresh_with(wiring, source).await
             }
             Chosen::GoogleTasks => {
-                let source = GoogleTasksSource::new(accounts, grant, endpoint)?;
+                let source =
+                    GoogleTasksSource::new(accounts, grant, endpoint, wiring.clock.clone())?;
                 self.refresh_with(wiring, source).await
             }
         }

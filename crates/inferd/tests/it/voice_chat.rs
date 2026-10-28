@@ -10,15 +10,18 @@ use engine_supervisor::SupervisorConfig;
 use hosting::engine::{Chat, Script};
 use hosting::entries;
 use hosting::rig::{Plan, SpeechPlan, World};
+use porter_capability::LlmFeature;
+use porter_capability::Tier;
 use porter_client::{DbusSession, InferSession};
-use porter_core::capability::LlmFeature;
+use porter_core::DataClass;
 use porter_core::consent::Usage;
-use porter_core::need::LlmNeed;
-use porter_core::{DataClass, Need, Tier, Tokens};
+use porter_ids::Tokens;
 use porter_infer::{
     AudioFrame, AudioRate, Base64Bytes, ChatMessage, ChatRequest, ClientFrame, InferEvent,
     InferReply, InferRequest, LangPick, Role, StageRole, TranscribeBegin, TranscribeMode,
 };
+use porter_match::LlmNeed;
+use porter_match::Need;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -119,7 +122,7 @@ async fn say(session: &mut DbusSession, frames: u64) {
 }
 
 async fn next(session: &mut DbusSession) -> InferEvent {
-    tokio::time::timeout(porter_fake::GENEROUS, session.next())
+    tokio::time::timeout(test_kit::GENEROUS, session.next())
         .await
         .expect("an event in time")
         .expect("an event")
@@ -308,7 +311,7 @@ async fn cancel_during_hear_stops_both_stages() {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     };
-    tokio::time::timeout(porter_fake::GENEROUS, waited)
+    tokio::time::timeout(test_kit::GENEROUS, waited)
         .await
         .expect("the host was given the whole utterance");
 

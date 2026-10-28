@@ -3,15 +3,17 @@
 //! ask `Identities1` for "Continue as" and keep their own sign-ins.
 
 use crate::callers::Callers;
-use crate::core::{Core, Host, Standing, hint, window};
 use crate::errors::RefusedError;
-use porter_core::AccountsRequest;
-use porter_core::wire::Refusal;
-use porter_dbus::{CallerRole, Details, SheetKind, account_path};
+use crate::host::Host;
+use crate::state::{Core, Standing, hint, window};
+use porter_callers::CallerRole;
+use porter_dbus::accounts::ManagerServer;
+use porter_dbus::accounts::account_path;
+use porter_dbus::accounts::sheet::SheetKind;
+use porter_dbus::{Call, Details};
+use porter_wire::AccountsRequest;
+use porter_wire::Refusal;
 use std::sync::Arc;
-use zbus::message::Header;
-use zbus::object_server::SignalEmitter;
-use zbus::zvariant::ObjectPath;
 use zbus::zvariant::OwnedObjectPath;
 
 /// The manager object at the accountd path.
@@ -24,11 +26,12 @@ impl<H, C> Manager<H, C> {
     }
 }
 
-#[zbus::interface(name = "org.quire.Accounts1.Manager")]
-impl<H: Host, C: Callers> Manager<H, C> {
+impl<H: Host, C: Callers> ManagerServer for Manager<H, C> {
+    type Error = RefusedError;
+
     async fn add_account(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         provider_hint: String,
         parent_window: String,
         options: Details,
@@ -47,7 +50,7 @@ impl<H: Host, C: Callers> Manager<H, C> {
     /// every account.
     async fn needing_reauth(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
     ) -> Result<Vec<(OwnedObjectPath, String)>, RefusedError> {
         let caller = self.0.identify(&header, Standing::Any).await?;
         if caller.role != CallerRole::SheetHost {
@@ -66,22 +69,4 @@ impl<H: Host, C: Callers> Manager<H, C> {
             })
             .collect()
     }
-
-    #[zbus(signal)]
-    pub(crate) async fn account_added(
-        emitter: &SignalEmitter<'_>,
-        account: ObjectPath<'_>,
-    ) -> zbus::Result<()>;
-
-    #[zbus(signal)]
-    pub(crate) async fn account_removed(
-        emitter: &SignalEmitter<'_>,
-        account: ObjectPath<'_>,
-    ) -> zbus::Result<()>;
-
-    #[zbus(signal)]
-    pub(crate) async fn needs_reauth(
-        emitter: &SignalEmitter<'_>,
-        account: ObjectPath<'_>,
-    ) -> zbus::Result<()>;
 }

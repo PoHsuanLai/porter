@@ -5,7 +5,7 @@
 //! trailing slash on a folder), so every href is decoded and encoded again the one way before it
 //! is compared or kept.
 
-use porter_core::WebUrl;
+use porter_ids::WebUrl;
 use porter_sync::{ItemPath, RemoteId};
 
 /// The dataset's folder on the server.
@@ -108,39 +108,12 @@ fn canonical(path: &str) -> String {
 
 /// Percent-encodes everything but unreserved characters and `/`.
 pub fn encode(text: &str) -> String {
-    text.bytes()
-        .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' => {
-                char::from(b).to_string()
-            }
-            _ => format!("%{b:02X}"),
-        })
-        .collect()
+    porter_ids::percent::encode_path(text)
 }
 
-/// Percent-decodes; a stray `%` stays as written.
+/// Percent-decodes; a stray `%` stays as written and `+` stays a plus.
 pub fn decode(text: &str) -> String {
-    let bytes = text.as_bytes();
-    let hex = |b: u8| char::from(b).to_digit(16);
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut at = 0;
-    while at < bytes.len() {
-        let pair = bytes
-            .get(at + 1)
-            .zip(bytes.get(at + 2))
-            .and_then(|(hi, lo)| u8::try_from(hex(*hi)? * 16 + hex(*lo)?).ok());
-        match (bytes[at], pair) {
-            (b'%', Some(byte)) => {
-                out.push(byte);
-                at += 3;
-            }
-            (byte, _) => {
-                out.push(byte);
-                at += 1;
-            }
-        }
-    }
-    String::from_utf8_lossy(&out).into_owned()
+    porter_ids::percent::decode(text)
 }
 
 #[cfg(test)]

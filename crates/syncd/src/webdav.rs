@@ -6,162 +6,14 @@
 //! and reaches that endpoint's origin only. [`webdav_replica`] builds the replica of a dataset's
 //! folder under that endpoint over them.
 
-use porter_client::{Accounts, AuthenticatedStream, ClientError, Transport};
-use porter_core::stream::{ByteStream, DuplexEnd};
-use porter_core::wire::Refusal;
-use porter_core::{EndpointUrl, GrantId, WebUrl};
-use std::future::Future;
-use std::io;
+use porter_client::{Accounts, Transport};
+use porter_core::EndpointUrl;
+use porter_core::GrantId;
+use porter_http_relay::{RelayDial, RelayHttp, RelayLimits};
+use porter_ids::WebUrl;
+use porter_sync::Clock;
 use std::sync::Arc;
-use std::time::Duration;
-use storage_webdav::{Clock, Dial, StreamHttp, StreamLimits, WebDavReplica};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::UnixStream;
-
-/// How long a relay may stay silent, once a request is waiting on it, before the exchange fails:
-/// the wait for a response head, and the wait between two chunks of a body. A server that stops
-/// answering (a half-open connection the far end never closes) would otherwise stall the
-/// dataset forever.
-pub const RELAY_IDLE: Duration = Duration::from_secs(60);
-
-/// The most written under one idle time.
-const WRITE_PIECE: usize = 64 * 1024;
-
-/// The app's end of a relay, as a byte stream. Every read and every write gives up with
-/// [`io::ErrorKind::TimedOut`] after the stream's idle time, which `storage-webdav` reports as
-/// `HttpError::TimedOut` (and never retries on a new connection).
-#[derive(Debug)]
-pub struct RelayStream {
-    end: End,
-    idle: Duration,
-}
-
-#[derive(Debug)]
-enum End {
-    /// The descriptor of a Unix stream socket.
-    Unix(UnixStream),
-    /// An in-memory duplex (an app hosting accountd's core in process).
-    Memory(DuplexEnd),
-}
-
-impl RelayStream {
-    /// The stream an accepted relay is.
-    pub fn from_relay(stream: AuthenticatedStream) -> io::Result<Self> {
-        let end = match stream {
-            AuthenticatedStream::Fd(fd) => {
-                let std_stream = std::os::unix::net::UnixStream::from(fd);
-                std_stream.set_nonblocking(true)?;
-                End::Unix(UnixStream::from_std(std_stream)?)
-            }
-            AuthenticatedStream::Memory(end) => End::Memory(end),
-        };
-        Ok(Self {
-            end,
-            idle: RELAY_IDLE,
-        })
-    }
-
-    /// The same stream giving up after `idle` of silence instead of [`RELAY_IDLE`].
-    #[must_use]
-    pub fn with_idle(mut self, idle: Duration) -> Self {
-        self.idle = idle;
-        self
-    }
-
-    /// A stream over an in-memory end the caller holds (a test's end of
-    /// [`porter_core::stream::duplex`]: no kernel I/O, so a paused clock is safe with it).
-    pub fn from_memory(end: DuplexEnd) -> Self {
-        Self {
-            end: End::Memory(end),
-            idle: RELAY_IDLE,
-        }
-    }
-
-    /// A stream over a Unix socket the caller holds (a test's end of a socket pair).
-    pub fn from_unix(stream: UnixStream) -> Self {
-        Self {
-            end: End::Unix(stream),
-            idle: RELAY_IDLE,
-        }
-    }
-}
-
-/// `work`, or a timed-out error once `idle` has passed.
-async fn within<T>(idle: Duration, work: impl Future<Output = io::Result<T>>) -> io::Result<T> {
-    tokio::time::timeout(idle, work)
-        .await
-        .unwrap_or_else(|_| Err(io::ErrorKind::TimedOut.into()))
-}
-
-impl ByteStream for RelayStream {
-    async fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        match &mut self.end {
-            End::Unix(stream) => within(self.idle, stream.read(buf)).await,
-            End::Memory(end) => within(self.idle, end.read(buf)).await,
-        }
-    }
-
-    async fn write_all(&mut self, bytes: &[u8]) -> io::Result<()> {
-        // The idle time is per piece, so a large upload on a slow link is not cut short while
-        // the far end keeps taking it.
-        for piece in bytes.chunks(WRITE_PIECE) {
-            match &mut self.end {
-                End::Unix(stream) => within(self.idle, stream.write_all(piece)).await?,
-                End::Memory(end) => within(self.idle, end.write_all(piece)).await?,
-            }
-        }
-        Ok(())
-    }
-
-    async fn shutdown(&mut self) -> io::Result<()> {
-        match &mut self.end {
-            End::Unix(stream) => within(self.idle, stream.shutdown()).await,
-            End::Memory(end) => within(self.idle, end.shutdown()).await,
-        }
-    }
-}
-
-/// Why a relay could not be had, as the replica's client takes it: access the account has not
-/// given yet (`NeedsConsent`, a whole drive before the person turned it on) is its own error, so
-/// the dataset says so instead of retrying; anything else is a connection that did not open.
-pub(crate) fn dial_error(error: ClientError) -> porter_http::HttpError {
-    match error {
-        ClientError::Refused(Refusal::NeedsConsent) => porter_http::HttpError::NotGranted,
-        _ => porter_http::HttpError::Unreachable,
-    }
-}
-
-/// Opens relays to one endpoint of one grant.
-#[derive(Debug)]
-pub struct RelayDial<T> {
-    accounts: Arc<Accounts<T>>,
-    grant: GrantId,
-    endpoint: EndpointUrl,
-}
-
-impl<T> RelayDial<T> {
-    /// Relays to `endpoint` under `grant`, opened through `accounts`.
-    pub fn new(accounts: Arc<Accounts<T>>, grant: GrantId, endpoint: EndpointUrl) -> Self {
-        Self {
-            accounts,
-            grant,
-            endpoint,
-        }
-    }
-}
-
-impl<T: Transport> Dial for RelayDial<T> {
-    type Stream = RelayStream;
-
-    async fn dial(&self) -> Result<RelayStream, porter_http::HttpError> {
-        let stream = self
-            .accounts
-            .open_authenticated(&self.grant, &self.endpoint)
-            .await
-            .map_err(dial_error)?;
-        RelayStream::from_relay(stream).map_err(|_| porter_http::HttpError::Unreachable)
-    }
-}
+use storage_webdav::WebDavReplica;
 
 /// Why a replica could not be built.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -179,7 +31,8 @@ pub fn webdav_replica<T: Transport>(
     endpoint: EndpointUrl,
     folder: &str,
     clock: Clock,
-) -> Result<WebDavReplica<StreamHttp<RelayDial<T>>>, BuildError> {
+    nonce: &str,
+) -> Result<WebDavReplica<RelayHttp<RelayDial<T>>>, BuildError> {
     let base = WebUrl::try_from(&endpoint).map_err(|_| BuildError::NotWeb)?;
     let url = WebUrl::parse(&format!(
         "{}/{}/",
@@ -187,34 +40,11 @@ pub fn webdav_replica<T: Transport>(
         folder.trim_matches('/')
     ))
     .map_err(|_| BuildError::NotWeb)?;
-    let dial = RelayDial {
-        accounts,
-        grant,
-        endpoint,
-    };
+    let dial = RelayDial::authenticated(accounts, grant, endpoint);
     Ok(WebDavReplica::new(
-        StreamHttp::new(dial, StreamLimits::default()),
+        RelayHttp::new(dial, RelayLimits::default()),
         &url,
         clock,
+        nonce,
     ))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn access_not_given_reaches_the_replica_as_its_own_error() {
-        assert_eq!(
-            dial_error(ClientError::Refused(Refusal::NeedsConsent)),
-            porter_http::HttpError::NotGranted
-        );
-        for other in [Refusal::NeedsReauth, Refusal::Denied, Refusal::UnknownGrant] {
-            assert_eq!(
-                dial_error(ClientError::Refused(other)),
-                porter_http::HttpError::Unreachable,
-                "{other:?}"
-            );
-        }
-    }
 }

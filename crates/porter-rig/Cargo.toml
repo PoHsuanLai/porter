@@ -21,14 +21,19 @@ name = "porter-rig-secrets"
 path = "src/bin/porter-rig-secrets.rs"
 
 [dependencies]
+test-kit = { workspace = true }
 fake-secret-service = { workspace = true }
 porter-core = { workspace = true }
-porter-client = { workspace = true, features = ["dbus", "in-process"] }
-porter-dbus = { workspace = true, features = ["test-proc-root"] }
+porter-match = { workspace = true }
+porter-capability = { workspace = true }
+porter-wire = { workspace = true }
+porter-ids = { workspace = true }
+porter-client = { workspace = true, features = ["dbus", "in-process", "infer"] }
+porter-callers = { workspace = true, features = ["test-proc-root"] }
+porter-dbus = { workspace = true }
 porter-fake = { workspace = true }
 porter-fake-servers = { workspace = true }
 porter-infer = { workspace = true }
-syncd-fakes = { workspace = true }
 clap = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -41,6 +46,7 @@ accountd = { path = "../accountd" }
 porter-provider = { workspace = true }
 porter-secrets = { workspace = true, features = ["oo7"] }
 porter-service = { workspace = true }
+porter-service-core = { workspace = true }
 porter-sync = { workspace = true }
 rustix = { workspace = true }
 syncd = { path = "../syncd", features = ["testing"] }

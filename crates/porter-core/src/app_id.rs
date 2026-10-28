@@ -2,7 +2,6 @@
 
 use crate::error::CoreError;
 use serde::{Deserialize, Serialize};
-use std::fmt;
 
 /// A reverse-DNS application name (`org.quire.Photos`), as Flatpak and desktop files write it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -30,31 +29,9 @@ impl AppName {
             })
         }
     }
-
-    /// The name's text.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
 }
 
-impl TryFrom<String> for AppName {
-    type Error = CoreError;
-    fn try_from(text: String) -> Result<Self, CoreError> {
-        Self::parse(&text)
-    }
-}
-
-impl From<AppName> for String {
-    fn from(name: AppName) -> String {
-        name.0
-    }
-}
-
-impl fmt::Display for AppName {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
+porter_ids::string_newtype!(AppName, CoreError);
 
 /// What a person reads for an app ("Claude Code"), as accountd resolves it (its caller table, the
 /// app's desktop entry, the agent's provider file): free text, never the bus id. A sheet that
@@ -67,6 +44,7 @@ pub struct AppLabel(pub String);
 /// How far the daemon can trust the name, which Settings shows beside every grant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum Isolation {
     /// A Flatpak sandbox: the name comes from the sandbox's own metadata for the caller's pid.
     Flatpak,

@@ -13,7 +13,7 @@
 //! opened for this; a cache that cannot be read stops the removal.
 
 use crate::paths::{AccountDir, Paths};
-use porter_dbus::DriveState;
+use porter_dbus::sync::DriveState;
 use porter_drive::{Changed, Drive, DriveConfig, NodeId};
 use porter_drive_fuse::Mounted;
 use std::collections::BTreeMap;
@@ -380,19 +380,21 @@ impl DriveSet {
         let journal = super::journal_path(paths, account);
         let into = not_uploaded(&path);
         let to = into.clone();
-        let count = tokio::task::spawn_blocking(move || {
-            let drive = match drive {
-                Some(drive) => drive,
-                None => {
-                    let listing = super::DriveJournal::open(&journal).map_err(|e| e.to_string())?;
-                    Drive::open(DriveConfig::new(cache), Arc::new(listing), Arc::new(Away))
-                        .map_err(|e| e.to_string())?
-                }
-            };
-            drive.keep_unsent(&to).map_err(|e| e.to_string())
-        })
-        .await
-        .map_err(|why| why.to_string())??;
+        // Opened here, not in the blocking task: opening waits for the cache's lock on the
+        // runtime, yielding to it.
+        let drive = match drive {
+            Some(drive) => drive,
+            None => {
+                let listing = super::DriveJournal::open(&journal).map_err(|e| e.to_string())?;
+                Drive::open(DriveConfig::new(cache), Arc::new(listing), Arc::new(Away))
+                    .await
+                    .map_err(|e| e.to_string())?
+            }
+        };
+        let count =
+            tokio::task::spawn_blocking(move || drive.keep_unsent(&to).map_err(|e| e.to_string()))
+                .await
+                .map_err(|why| why.to_string())??;
         Ok(vec![Kept { count, path: into }])
     }
 
@@ -514,7 +516,7 @@ mod tests {
 
     #[tokio::test]
     async fn changes_missed_tell_of_every_tracked_item_again() {
-        let dir = porter_fake::Scratch::new("drive-files");
+        let dir = test_kit::Scratch::new("drive-files");
         let listing = Arc::new(MemoryListing::default());
         let source = Arc::new(MemorySource::default());
         listing.file("a", None, "a.bin", 4, "1");
@@ -525,6 +527,7 @@ mod tests {
             listing.clone(),
             source.clone(),
         )
+        .await
         .expect("drive");
         let a = NodeId::Remote(RemoteId("a".into()));
         drive.open_file(&a).expect("open");
@@ -552,7 +555,7 @@ mod tests {
 
     #[tokio::test]
     async fn keeping_a_drive_whole_outlasts_a_restart_and_goes_with_its_account() {
-        let dir = porter_fake::Scratch::new("drive-files-keep-all");
+        let dir = test_kit::Scratch::new("drive-files-keep-all");
         let settings = dir.join("syncd.toml");
         let listing = Arc::new(MemoryListing::default());
         let source = Arc::new(MemorySource::default());
@@ -563,6 +566,7 @@ mod tests {
             listing.clone(),
             source.clone(),
         )
+        .await
         .expect("drive");
         let live = Arc::new(LiveDrive::new(
             "one".into(),
@@ -592,7 +596,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_pause_outlasts_a_restart_and_a_drive_let_go_writes_out_what_it_did_not_send() {
-        let dir = porter_fake::Scratch::new("drive-files-pause");
+        let dir = test_kit::Scratch::new("drive-files-pause");
         let settings = dir.join("syncd.toml");
         let listing = Arc::new(MemoryListing::default());
         let source = Arc::new(MemorySource::default());
@@ -608,6 +612,7 @@ mod tests {
             source.clone(),
             sink.clone(),
         )
+        .await
         .expect("drive");
         let folder = dir.join("Cloud").join("OneDrive");
         let live = Arc::new(LiveDrive::new(
@@ -695,7 +700,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_folder_that_cannot_be_taken_away_stops_the_removal_before_anything_is_kept() {
-        let dir = porter_fake::Scratch::new("drive-files-stuck");
+        let dir = test_kit::Scratch::new("drive-files-stuck");
         let listing = Arc::new(MemoryListing::default());
         let source = Arc::new(MemorySource::default());
         let sink = Arc::new(porter_drive::testing::MemorySink::new(
@@ -705,6 +710,7 @@ mod tests {
         ));
         let drive =
             Drive::open_writable(DriveConfig::new(dir.join("cache")), listing, source, sink)
+                .await
                 .expect("drive");
         drive.set_paused(true);
         let (_, handle) = drive.create(&NodeId::Top, "new.txt").expect("create");
@@ -735,7 +741,7 @@ mod tests {
         );
     }
 
-    fn paths(dir: &porter_fake::Scratch) -> Paths {
+    fn paths(dir: &test_kit::Scratch) -> Paths {
         Paths {
             journals: dir.join("state/porter/sync"),
             mirrors: dir.join("data/porter/vdir"),
@@ -749,7 +755,7 @@ mod tests {
 
     #[tokio::test]
     async fn what_a_drive_not_shown_did_not_send_is_kept_when_its_account_goes() {
-        let dir = porter_fake::Scratch::new("drive-files-not-shown");
+        let dir = test_kit::Scratch::new("drive-files-not-shown");
         let paths = paths(&dir);
         let account = AccountDir::parse("one").expect("account");
         super::super::note_folder(&paths, &account, "OneDrive").expect("noted");
@@ -771,6 +777,7 @@ mod tests {
                 source,
                 sink,
             )
+            .await
             .expect("drive");
             drive.set_paused(true);
             let (_, handle) = drive.create(&NodeId::Top, "offline.txt").expect("create");

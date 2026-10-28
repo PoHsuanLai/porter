@@ -12,13 +12,15 @@ use crate::dataset::fingerprint;
 use crate::datasets::pim::PimKind;
 use crate::datasets::pim::discover::{DiscoverError, Found};
 use porter_client::{Accounts, Transport};
-use porter_core::{Bytes, EndpointUrl, GrantId, WebUrl};
+use porter_core::EndpointUrl;
+use porter_core::GrantId;
+use porter_ids::{Bytes, WebUrl};
+use porter_sync::{Clock, DELETED};
 use porter_sync::{
     ItemKind, More, RemoteId, RemoteItem, RemoteVersion, ReplicaError, RetryAfter, Tombstone,
 };
 use serde::Deserialize;
 use std::sync::Arc;
-use storage_webdav::{Clock, DELETED};
 
 /// The fields asked for: what the converter carries, and the metadata that says "deleted".
 const FIELDS: &str =
@@ -45,6 +47,7 @@ struct Connections {
 #[derive(Debug)]
 pub struct GooglePeopleSource<T: Transport> {
     api: Arc<Api<T>>,
+    clock: Clock,
 }
 
 impl<T: Transport> GooglePeopleSource<T> {
@@ -53,9 +56,11 @@ impl<T: Transport> GooglePeopleSource<T> {
         accounts: Arc<Accounts<T>>,
         grant: GrantId,
         endpoint: EndpointUrl,
+        clock: Clock,
     ) -> Result<Self, DiscoverError> {
         Ok(Self {
             api: Arc::new(Api::new(accounts, grant, endpoint)?),
+            clock,
         })
     }
 }
@@ -84,7 +89,7 @@ impl<T: Transport + 'static> PimSource for GooglePeopleSource<T> {
     fn feed(&self, _found: &Found) -> GooglePeopleFeed<T> {
         GooglePeopleFeed {
             api: Arc::clone(&self.api),
-            clock: Clock::system(),
+            clock: self.clock.clone(),
         }
     }
 }
@@ -142,16 +147,16 @@ impl<T: Transport + 'static> Feed for GooglePeopleFeed<T> {
             .api
             .read(&self.api.url("/people/me/connections", &query))
             .await?;
-        match (response.status.0, resuming) {
+        match (response.status().as_u16(), resuming) {
             (200, _) => {}
             (400, true)
-                if String::from_utf8_lossy(&response.body).contains("EXPIRED_SYNC_TOKEN") =>
+                if String::from_utf8_lossy(response.body()).contains("EXPIRED_SYNC_TOKEN") =>
             {
                 return Err(ReplicaError::AnchorExpired);
             }
-            _ => return Err(read_error(&response)),
+            _ => return Err(read_error(&response, self.clock.now())),
         }
-        let listing: Connections = serde_json::from_slice(&response.body)
+        let listing: Connections = serde_json::from_slice(response.body())
             .map_err(|_| ReplicaError::Transient(RetryAfter(30)))?;
         let (next, more) = match (listing.next_page, listing.next_sync) {
             (Some(page), _) if !page.is_empty() => (SyncCursor::Paging { page, sync }, More::More),
@@ -187,10 +192,10 @@ impl<T: Transport + 'static> Feed for GooglePeopleFeed<T> {
             .api
             .read(&self.api.url(&path, &[("personFields", FIELDS)]))
             .await?;
-        if response.status.0 != 200 {
-            return Err(read_error(&response));
+        if response.status().as_u16() != 200 {
+            return Err(read_error(&response, self.clock.now()));
         }
-        let person: Person = serde_json::from_slice(&response.body)
+        let person: Person = serde_json::from_slice(response.body())
             .map_err(|_| ReplicaError::Transient(RetryAfter(30)))?;
         match person.is_deleted() {
             true => Err(ReplicaError::Gone),

@@ -1,39 +1,43 @@
 //! Recorded multistatus fixtures (the shapes Nextcloud and Sabre-based servers answer) through
 //! the replica, with a scripted HTTP seam in place of a server: no network, no socket.
 
-use porter_core::{Bytes, UnixSeconds, WebUrl};
-use porter_http::{Header, Http, HttpError, HttpRequest, HttpResponse, Status};
+use porter_http::http::{Request, Response};
+use porter_http::{Http, HttpError};
+use porter_ids::{Bytes, UnixSeconds, WebUrl};
+use porter_sync::Clock;
 use porter_sync::{
     Change, Cursor, Quota, RemoteId, RemoteVersion, Replica, ReplicaError, RetryAfter,
 };
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
-use storage_webdav::{Clock, WebDavReplica};
+use storage_webdav::WebDavReplica;
 
 fn fixture(name: &str) -> Vec<u8> {
     let path = format!("{}/tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"));
     std::fs::read(&path).unwrap_or_else(|e| panic!("{path}: {e}"))
 }
 
-fn answer(status: u16, body: Vec<u8>) -> HttpResponse {
-    HttpResponse {
-        status: Status(status),
-        headers: vec![Header::new("Content-Type", "application/xml")],
-        body,
-    }
+fn answer(status: u16, body: Vec<u8>) -> Response<Vec<u8>> {
+    Response::builder()
+        .status(status)
+        .header("Content-Type", "application/xml")
+        .body(body)
+        .expect("response")
 }
+
+type Answers = Arc<Mutex<BTreeMap<String, Vec<Response<Vec<u8>>>>>>;
 
 /// Answers by `METHOD target`, in the order given for a key and then the last one again;
 /// remembers what it was sent.
 #[derive(Debug, Clone, Default)]
 struct Script {
-    answers: Arc<Mutex<BTreeMap<String, Vec<HttpResponse>>>>,
-    sent: Arc<Mutex<Vec<HttpRequest>>>,
+    answers: Answers,
+    sent: Arc<Mutex<Vec<Request<Vec<u8>>>>>,
 }
 
 impl Script {
-    fn on(self, key: &str, response: HttpResponse) -> Self {
+    fn on(self, key: &str, response: Response<Vec<u8>>) -> Self {
         self.answers
             .lock()
             .expect("lock")
@@ -43,7 +47,7 @@ impl Script {
         self
     }
 
-    fn sent(&self) -> Vec<HttpRequest> {
+    fn sent(&self) -> Vec<Request<Vec<u8>>> {
         self.sent.lock().expect("lock").clone()
     }
 }
@@ -51,9 +55,9 @@ impl Script {
 impl Http for Script {
     fn send(
         &self,
-        request: HttpRequest,
-    ) -> impl Future<Output = Result<HttpResponse, HttpError>> + Send {
-        let key = format!("{} {}", request.method.token(), request.url.path());
+        request: Request<Vec<u8>>,
+    ) -> impl Future<Output = Result<Response<Vec<u8>>, HttpError>> + Send {
+        let key = format!("{} {}", request.method(), request.uri().path());
         self.sent.lock().expect("lock").push(request);
         let found = self
             .answers
@@ -71,7 +75,7 @@ impl Http for Script {
 fn replica(script: Script) -> WebDavReplica<Script> {
     let folder =
         WebUrl::parse("https://cloud.example.org/remote.php/dav/files/alice/Photos/").expect("url");
-    WebDavReplica::new(script, &folder, Clock::fixed(UnixSeconds(5)))
+    WebDavReplica::new(script, &folder, Clock::fixed(UnixSeconds(5)), "n1")
 }
 
 const FOLDER: &str = "/remote.php/dav/files/alice/Photos/";
@@ -143,7 +147,7 @@ async fn a_sabre_sync_report_gives_changes_removals_and_the_next_token() {
     // expired and the engine lists again.
     assert_eq!(page, Err(ReplicaError::AnchorExpired));
     let sent = script.sent();
-    let body = String::from_utf8(sent[0].body.clone()).expect("utf8");
+    let body = String::from_utf8(sent[0].body().clone()).expect("utf8");
     assert!(body.contains("http://sabre.test/sync/41"), "{body}");
     assert!(body.contains("infinite"));
 }
@@ -200,7 +204,7 @@ async fn a_truncated_report_continues_from_its_token_instead_of_expiring() {
     );
     let sent = script.sent();
     assert_eq!(sent.len(), 2);
-    let body = String::from_utf8(sent[1].body.clone()).expect("utf8");
+    let body = String::from_utf8(sent[1].body().clone()).expect("utf8");
     assert!(body.contains("http://sabre.test/sync/7"), "{body}");
 }
 
@@ -260,11 +264,11 @@ async fn fetch_and_write_statuses_map_to_the_contract() {
         replica(past_end).fetch(&id, span).await,
         Ok(porter_sync::Blob(vec![]))
     );
-    let busy = HttpResponse {
-        status: Status(503),
-        headers: vec![Header::new("Retry-After", "17")],
-        body: vec![],
-    };
+    let busy = Response::builder()
+        .status(503)
+        .header("Retry-After", "17")
+        .body(vec![])
+        .expect("response");
     let script = Script::default()
         .on(&key("GET"), busy.clone())
         .on(&key("PUT"), busy);

@@ -4,28 +4,18 @@
 //! it, and only the issuer's own refusal is a reason to sign in again.
 
 use crate::exchange::{ExchangeFault, refresh};
-use porter_core::{Credential, GrantedScopes, UnixSeconds};
+use porter_core::{Credential, GrantedScopes};
 use porter_http::Http;
+use porter_ids::UnixSeconds;
 use porter_provider::{ClientEntry, IssuerEndpoints};
 
 /// How long before expiry a token counts as due.
 pub const RENEW_MARGIN_SECONDS: i64 = 60;
 
-/// Whether a token needs renewing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Renewal {
-    /// Good for longer than the margin.
-    Fresh,
-    /// Expired or about to.
-    Due,
-}
-
-/// Whether a token that expires at `expires` needs renewing at `now`.
-pub fn renewal(expires: UnixSeconds, now: UnixSeconds) -> Renewal {
-    match expires.0 - now.0 > RENEW_MARGIN_SECONDS {
-        true => Renewal::Fresh,
-        false => Renewal::Due,
-    }
+/// Whether a token that expires at `expires` needs renewing at `now`: it is expired or about to
+/// be, within [`RENEW_MARGIN_SECONDS`].
+pub fn is_due(expires: UnixSeconds, now: UnixSeconds) -> bool {
+    expires.0 - now.0 <= RENEW_MARGIN_SECONDS
 }
 
 /// What renewing a credential came to.
@@ -59,7 +49,7 @@ pub async fn renew<H: Http>(
     else {
         return RenewOutcome::Fresh;
     };
-    if renewal(*expires_at, now) == Renewal::Fresh {
+    if !is_due(*expires_at, now) {
         return RenewOutcome::Fresh;
     }
     match refresh(http, endpoints, client, presented, now).await {
@@ -81,16 +71,16 @@ mod tests {
 
     #[test]
     fn a_token_is_due_inside_the_margin() {
-        const CASES: &[(&str, i64, Renewal)] = &[
-            ("an hour left", 3600, Renewal::Fresh),
-            ("just outside the margin", 61, Renewal::Fresh),
-            ("on the margin", 60, Renewal::Due),
-            ("expiring", 1, Renewal::Due),
-            ("expired", -5, Renewal::Due),
+        const CASES: &[(&str, i64, bool)] = &[
+            ("an hour left", 3600, false),
+            ("just outside the margin", 61, false),
+            ("on the margin", 60, true),
+            ("expiring", 1, true),
+            ("expired", -5, true),
         ];
         for (name, left, want) in CASES {
             assert_eq!(
-                renewal(UnixSeconds(1_000 + left), UnixSeconds(1_000)),
+                is_due(UnixSeconds(1_000 + left), UnixSeconds(1_000)),
                 *want,
                 "{name}"
             );
@@ -121,7 +111,9 @@ mod tests {
         }
     }
 
-    async fn renewed(answer: Result<porter_http::HttpResponse, HttpError>) -> RenewOutcome {
+    async fn renewed(
+        answer: Result<porter_http::http::Response<Vec<u8>>, HttpError>,
+    ) -> RenewOutcome {
         let http = Scripted::new(vec![answer]);
         renew(
             &http,

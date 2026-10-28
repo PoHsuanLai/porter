@@ -1,7 +1,7 @@
 //! What a read fetches and a write sends.
 
 use crate::item::{ContentHash, ItemPath, RemoteId};
-use porter_core::Bytes;
+use porter_ids::Bytes;
 
 /// Item content. Not stored or sent as a value of ours, so it has no serde.
 #[derive(Debug, Clone, PartialEq, Eq)]

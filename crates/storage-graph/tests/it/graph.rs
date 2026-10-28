@@ -6,14 +6,16 @@
 use crate::common;
 
 use common::{Replica, Server, TOKEN, TcpDial};
-use porter_core::{Bytes, WebUrl};
 use porter_fake_servers::graph::{CHUNK_UNIT, Knobs};
 use porter_fake_servers::{GraphHandle, Hit};
+use porter_http_relay::{RelayHttp, RelayLimits};
+use porter_ids::{Bytes, WebUrl};
+use porter_sync::Clock;
 use porter_sync::{
     BaseVersion, Blob, ByteRange, Change, Conflict, Cursor, ItemPath, PutItem, PutRefused,
     PutTarget, RemoteId, RemoteSide, RemoteVersion, Replica as _, ReplicaError, RetryAfter,
 };
-use storage_graph::{Clock, GraphReplica, StreamHttp, StreamLimits, Uploads};
+use storage_graph::{GraphReplica, Uploads};
 
 fn new_item(path: &str, bytes: &[u8]) -> PutItem {
     PutItem {
@@ -272,7 +274,7 @@ async fn a_remote_edit_between_the_listing_and_the_write_is_a_conflict_never_an_
         Err(PutRefused::Conflict(Conflict {
             item: id.clone(),
             base: BaseVersion::At(now),
-            remote: RemoteSide::Deleted(RemoteVersion(storage_graph::DELETED.into())),
+            remote: RemoteSide::Deleted(RemoteVersion(porter_sync::DELETED.into())),
         }))
     );
 }
@@ -402,7 +404,7 @@ async fn throttling_is_a_transient_with_the_wait_the_server_named() {
 async fn without_the_relays_bearer_every_request_is_refused_and_the_replica_never_adds_one() {
     let server = Server::start().await;
     let bare = GraphReplica::new(
-        StreamHttp::new(TcpDial(server.port), StreamLimits::default()),
+        RelayHttp::new(TcpDial(server.port), RelayLimits::default()),
         &server.base,
         "",
         Clock::fixed(common::NOW),
@@ -437,15 +439,15 @@ async fn without_the_relays_bearer_every_request_is_refused_and_the_replica_neve
 
 #[tokio::test]
 async fn the_features_say_what_the_replica_does() {
-    use porter_core::capability::{Access, Delta, HashKind, Offered, QuotaReport, StorageScope};
+    use porter_capability::{Access, Delta, HashKind, StorageScope};
     let server = Server::start().await;
     let features = server.replica("", 50, Uploads::default()).features();
     assert_eq!(features.access, Access::ReadWrite);
     assert_eq!(features.delta, Delta::Poll);
-    assert_eq!(features.quota, QuotaReport::Reported);
+    assert!(features.quota);
     assert_eq!(features.scope, StorageScope::AppFolder);
     assert_eq!(features.hashes, HashKind::QuickXor);
-    assert_eq!(features.ranges, Offered::Present);
-    assert_eq!(features.chunked_upload, Offered::Present);
+    assert!(features.ranges);
+    assert!(features.chunked_upload);
     let _ = WebUrl::parse("http://127.0.0.1:1").expect("url");
 }

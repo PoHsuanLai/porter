@@ -3,6 +3,7 @@
 mod acceptance;
 mod account_objects;
 mod binary;
+mod broker;
 mod bus_sheets;
 mod common;
 mod daemon;
@@ -11,6 +12,13 @@ mod file_keys;
 mod google;
 mod identities;
 mod install;
+mod keys;
+mod launcher_credential;
+mod launcher_login;
+mod launcher_register;
+mod launcher_rig;
+mod launcher_session;
+mod old_keys;
 mod roles;
 mod scenario_fixes;
 mod settings;
@@ -22,7 +30,7 @@ mod tailnet;
 
 #[test]
 fn every_module_is_declared() {
-    porter_fake::guard::every_module_is_declared(
+    test_kit::guard::every_module_is_declared(
         env!("CARGO_MANIFEST_DIR"),
         "tests/it",
         include_str!("main.rs"),
