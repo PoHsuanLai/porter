@@ -500,7 +500,7 @@ async fn a_sign_in_again_that_ends_without_signing_in_is_said_on_its_row() {
     // sheet that says so.
     let rig = Rig::start_over(
         Default::default(),
-        SheetHost::answering(porter_core::sheet::SheetInput::Dismiss),
+        SheetHost::answering(porter_sheet::SheetInput::Dismiss),
         vec![porter_fake::cloud_provider(), porter_fake::llm_provider()],
     )
     .await;

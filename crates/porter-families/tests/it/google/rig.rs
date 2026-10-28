@@ -3,7 +3,6 @@
 //! URL the family builds to the loopback fake it names.
 
 use porter_core::Audience;
-use porter_core::sheet::SignInInput;
 use porter_fake_servers::browser::split_loopback;
 use porter_fake_servers::http::{Scheme, send};
 use porter_fake_servers::{Google, shipped};
@@ -16,6 +15,7 @@ use porter_provider::{
     ClientChannel, ClientEntry, ClientId, ClientsFile, Issuer, ProviderSpec, SignIn, SignInMode,
     SignInStart, SignInStep,
 };
+use porter_sheet::SignInInput;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;

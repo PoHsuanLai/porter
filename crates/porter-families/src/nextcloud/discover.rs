@@ -10,7 +10,6 @@ use dav_proto::names::{
 };
 use dav_proto::{Depth, parse_multistatus};
 use porter_core::capability::CapabilityKind;
-use porter_core::sheet::SignInFault;
 use porter_core::{Claim, EndpointUrl, Family, LoginName, SecretText, ServiceEndpoint};
 use porter_dav::{Home, home_set, propfind};
 use porter_discover::parse_ocs_capabilities;
@@ -18,6 +17,7 @@ use porter_http::http::header::{ACCEPT, AUTHORIZATION};
 use porter_http::http::request::Builder;
 use porter_http::http::{Method, Request, Response};
 use porter_http::{Http, HttpError, SensitiveHeader, request_to, web_url};
+use porter_sheet::SignInFault;
 
 /// Who is signed in, and where.
 #[derive(Debug, Clone)]

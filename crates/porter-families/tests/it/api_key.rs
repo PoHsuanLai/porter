@@ -6,9 +6,6 @@
 
 use porter_core::AccountId;
 use porter_core::capability::{Capability, CapabilityKind};
-use porter_core::sheet::{
-    Entry, FieldAnswer, FieldKind, FieldValue, Presence, SignInFault, SignInInput,
-};
 use porter_core::{
     Account, AccountLabel, AccountState, Audience, AuthKind, Credential, EndpointUrl, Offer,
     Provenance, Restriction, SecretPurpose, SecretText,
@@ -20,6 +17,7 @@ use porter_provider::{
     Presented, Provider, ProviderError, ProviderSession, RevokeOutcome, SignIn, SignInMode,
     SignInStart, SignInStep, Signed,
 };
+use porter_sheet::{Entry, FieldAnswer, FieldKind, FieldValue, Presence, SignInFault, SignInInput};
 use std::time::Duration;
 
 const PASTED: &str = "sk-live-pasted-key-0001";
@@ -381,8 +379,8 @@ async fn a_key_account_holds_a_claim_for_each_agent_program_its_file_names() {
 
 #[tokio::test]
 async fn a_server_of_the_persons_own_is_asked_for_its_address_and_an_optional_key() {
-    use porter_core::sheet::{FieldProblem, ProblemKind, form_problem_among};
     use porter_core::{Family, Tls};
+    use porter_sheet::{FieldProblem, ProblemKind, form_problem_among};
     let fake = FakeLlmApi::start(Auth::Bearer).await.expect("fake server");
     fake.seed_key(PASTED);
     let server = fake.api_url();

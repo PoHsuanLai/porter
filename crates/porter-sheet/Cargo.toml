@@ -1,0 +1,23 @@
+[package]
+name = "porter-sheet"
+description = "The add-account and sign-in sheet as values: views, inputs, progress and the pure stage machine, the hand-typed mail server form, and the words the sheet shows."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+porter-core = { workspace = true }
+porter-ids = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+serde_json = { workspace = true }
+test-kit = { workspace = true }
+
+[lints]
+workspace = true

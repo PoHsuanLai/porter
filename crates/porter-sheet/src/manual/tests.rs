@@ -463,7 +463,7 @@ fn choices_are_the_values_a_host_offers() {
 
 #[test]
 fn an_old_sign_in_view_still_reads() {
-    use crate::sheet::view::SignInView;
+    use crate::view::SignInView;
     // The JSON of a view written before the server form: only the first six kinds, a problem
     // with the two kinds it had.
     let old = r#"{"provider":"generic-imap","fields":[
@@ -497,7 +497,7 @@ fn an_old_sign_in_view_still_reads() {
 
 #[test]
 fn an_ai_servers_address_is_marked_when_it_cannot_be_right() {
-    use crate::tailnet::{MachineOwner, NodeId};
+    use porter_core::{MachineOwner, NodeId};
     let form = vec![
         FieldSpec {
             kind: FieldKind::ServerUrl,
@@ -545,4 +545,36 @@ fn an_ai_servers_address_is_marked_when_it_cannot_be_right() {
             "{text}"
         );
     }
+}
+
+#[test]
+fn only_a_computer_of_mine_is_one_of_mine_by_name_network_name_or_address() {
+    use porter_core::NodeId;
+    let machine = |name: &str, address: &str, owner| {
+        Machine::new(
+            NodeId::parse("nTEST1").expect("node id"),
+            name.to_owned(),
+            format!("{name}.tail1.ts.net"),
+            owner,
+        )
+        .with_addresses(vec![address.parse().expect("address")])
+    };
+    let all = [
+        machine("studio", "100.64.0.7", MachineOwner::Mine),
+        machine("friend", "100.64.0.8", MachineOwner::Shared),
+        machine("gpu-box", "100.64.0.9", MachineOwner::Tagged),
+    ];
+    for host in ["studio", "Studio", "studio.tail1.ts.net", "100.64.0.7"] {
+        assert!(is_one_of_mine(&all, host), "{host}");
+    }
+    for host in [
+        "friend",
+        "gpu-box.tail1.ts.net",
+        "100.64.0.8",
+        "100.64.0.99",
+        "llm.example.test",
+    ] {
+        assert!(!is_one_of_mine(&all, host), "{host}");
+    }
+    assert!(!is_one_of_mine(&[], "studio"));
 }

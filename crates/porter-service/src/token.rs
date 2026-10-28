@@ -1,9 +1,9 @@
 //! `IssueToken`: which secret an account presents, and minting a short-lived token from it.
 
-use porter_core::sheet::SignInFault;
 use porter_core::{AuthKind, SecretPurpose};
 use porter_provider::ProviderError;
 use porter_secrets::SecretsError;
+use porter_sheet::SignInFault;
 use porter_wire::Refusal;
 
 /// The secret an account of `auth` presents to its provider, or `None` for kinds with none.

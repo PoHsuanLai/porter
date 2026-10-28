@@ -12,11 +12,11 @@ use ds_settings::schema::{
     LiveAction, Page, Section, WordLabels,
 };
 use porter_core::AccountId;
-use porter_core::sheet::ProviderGroup;
 use porter_core::{Account, AccountState, AppName, AuthKind};
 use porter_families::set::ProviderNames;
 use porter_provider::Issuer;
 use porter_service::Registry;
+use porter_sheet::ProviderGroup;
 use porter_sheets::AppNames;
 use std::collections::BTreeMap;
 
@@ -235,7 +235,7 @@ fn account_keys(
         .unwrap_or_else(|| account.provider.as_str());
     let group_words: Vec<(&str, &str)> = ProviderGroup::ALL
         .iter()
-        .map(|group| (group.slug(), group.display_name()))
+        .map(|group| (group.slug(), porter_sheet::words::group_heading(*group)))
         .collect();
     let mut keys = vec![
         spec(

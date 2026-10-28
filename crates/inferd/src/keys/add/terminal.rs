@@ -8,12 +8,12 @@
 
 use porter_core::AccountId;
 use porter_core::consent::{ConsentAnswer, ConsentAsk, GrantScope};
-use porter_core::sheet::{
+use porter_core::{SecretText, Toggle};
+use porter_service::{SheetFault, SheetLink, SheetOpen, Sheets};
+use porter_sheet::{
     Entry, FieldAnswer, FieldKind, FieldSpec, FieldValue, Presence, ServiceChoice, ServiceState,
     SheetInput, SheetView, refit,
 };
-use porter_core::{SecretText, Toggle};
-use porter_service::{SheetFault, SheetLink, SheetOpen, Sheets};
 use porter_wire::ParentWindow;
 use std::io::{BufRead, IsTerminal, Write};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -239,7 +239,7 @@ impl<T: Terminal> TerminalLink<T> {
             .ok_or(SheetFault::Closed)
     }
 
-    async fn fields(&self, view: porter_core::sheet::SignInView) -> Result<SheetInput, SheetFault> {
+    async fn fields(&self, view: porter_sheet::SignInView) -> Result<SheetInput, SheetFault> {
         let mut answers: Vec<FieldAnswer> = Vec::new();
         let mut fields = view.fields;
         let mut at = 0;
@@ -271,7 +271,7 @@ impl<T: Terminal> TerminalLink<T> {
         Ok(SheetInput::Submit(answers))
     }
 
-    async fn review(&self, view: porter_core::sheet::ReviewView) -> Result<SheetInput, SheetFault> {
+    async fn review(&self, view: porter_sheet::ReviewView) -> Result<SheetInput, SheetFault> {
         let typed = self
             .ask("Add this account? [Y/n]".to_owned(), Echo::On)
             .await?;

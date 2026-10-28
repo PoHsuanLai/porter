@@ -4,14 +4,14 @@
 //! keeps: it is never drawn, never sent to a sheet and never serialised.
 
 use porter_core::AccountId;
-use porter_core::sheet::{
-    FieldSpec, Progress, Review, ServiceRow, ServiceState, SignInFault, SignInInput, UserCode,
-};
 use porter_core::{
     AccountLabel, CapabilityKind, Claim, Credential, EndpointUrl, Offer, Restriction,
     SecretPurpose, ServiceEndpoint, Toggle,
 };
 use porter_ids::WebUrl;
+use porter_sheet::{
+    FieldSpec, Progress, Review, ServiceRow, ServiceState, SignInFault, SignInInput, UserCode,
+};
 use std::future::Future;
 
 /// Why the sign-in was started.
@@ -255,7 +255,9 @@ fn service_row(claim: &Claim, restriction: &Restriction) -> ServiceRow {
             .find(|limit| limit.kind == kind)
             .map(|limit| limit.reason),
         access: match &claim.offer {
-            Offer::Present(capability) => capability.access_words().map(str::to_owned),
+            Offer::Present(capability) => {
+                porter_sheet::words::access_words(capability).map(str::to_owned)
+            }
             Offer::Absent { .. } => None,
         },
     }

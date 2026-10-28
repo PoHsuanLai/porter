@@ -7,7 +7,6 @@ use crate::password::{authorize, basic, endpoint, fault_of, join};
 use dav_proto::Depth;
 use dav_proto::names::CURRENT_USER_PRINCIPAL;
 use porter_core::capability::CapabilityKind;
-use porter_core::sheet::SignInFault;
 use porter_core::{
     AbsentReason, Claim, EndpointUrl, Family, LoginName, Offer, Provenance, SecretText,
     ServiceEndpoint, Subject,
@@ -17,6 +16,7 @@ use porter_discover::well_known_found;
 use porter_http::http::Method;
 use porter_http::{Http, request_to, web_url};
 use porter_provider::ProviderSpec;
+use porter_sheet::SignInFault;
 
 /// The two DAV services a generic server may offer, and the family of each.
 const SERVICES: [(CapabilityKind, Family, &str); 2] = [

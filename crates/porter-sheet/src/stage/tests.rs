@@ -1,9 +1,9 @@
 use super::*;
-use crate::account::AccountLabel;
-use crate::capability::CapabilityKind;
-use crate::effective::Toggle;
-use crate::sheet::fields::{Entry, FieldKind, FieldSpec, Presence};
-use crate::sheet::progress::{ServiceRow, ServiceState};
+use crate::fields::{Entry, FieldKind, FieldSpec, Presence};
+use crate::progress::{ServiceRow, ServiceState};
+use porter_core::AccountLabel;
+use porter_core::Toggle;
+use porter_core::capability::CapabilityKind;
 
 fn provider(text: &str) -> ProviderId {
     ProviderId::parse(text).expect("provider id")
@@ -14,8 +14,8 @@ fn rows() -> Vec<ProviderRow> {
         id: provider("nextcloud"),
         label: "Nextcloud".into(),
         mark: "nextcloud".into(),
-        kind: crate::sheet::view::RowKind::Provider,
-        auth: crate::sheet::view::ProviderKind::Service,
+        kind: crate::view::RowKind::Provider,
+        auth: crate::view::ProviderKind::Service,
         mark_face: None,
         group: None,
     }]
@@ -178,8 +178,8 @@ fn every_stage_has_its_view() {
 #[test]
 fn the_review_names_the_app_to_allow_when_a_chooser_started_the_sheet() {
     let app = AppId {
-        name: crate::AppName::parse("org.quire.Mail").expect("name"),
-        isolation: crate::Isolation::Flatpak,
+        name: porter_core::AppName::parse("org.quire.Mail").expect("name"),
+        isolation: porter_core::Isolation::Flatpak,
     };
     let sheet = Sheet {
         purpose: Purpose::Add {
@@ -218,14 +218,14 @@ fn every_view_of_an_agent_provider_carries_its_display_name_and_kind() {
         id: provider("claude-code"),
         label: "Claude Code".into(),
         mark: "claude-code".into(),
-        kind: crate::sheet::view::RowKind::Provider,
-        auth: crate::sheet::view::ProviderKind::AgentLogin,
+        kind: crate::view::RowKind::Provider,
+        auth: crate::view::ProviderKind::AgentLogin,
         mark_face: None,
         group: None,
     };
     let sheet = Sheet {
         purpose: Purpose::Reauthenticate {
-            account: crate::AccountId::parse("claude-code").expect("id"),
+            account: porter_core::AccountId::parse("claude-code").expect("id"),
             provider: agent.id.clone(),
         },
         stage: Stage::Working(agent.id.clone()),

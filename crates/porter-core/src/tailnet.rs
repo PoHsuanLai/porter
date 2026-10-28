@@ -231,56 +231,9 @@ impl Machine {
     }
 }
 
-/// Whether `host` (a name or an address as written in a URL) is one of the person's own
-/// computers among `machines`: a machine whose owner is [`MachineOwner::Mine`], matched by its
-/// name, its network name or one of its addresses, in any letter case. Another person's computer
-/// and a tagged server are not.
-pub(crate) fn is_one_of_mine(machines: &[Machine], host: &str) -> bool {
-    let address: Option<IpAddr> = host.parse().ok();
-    machines
-        .iter()
-        .filter(|machine| machine.owner == MachineOwner::Mine)
-        .any(|machine| {
-            host.eq_ignore_ascii_case(&machine.name)
-                || host.eq_ignore_ascii_case(&machine.dns)
-                || address.is_some_and(|ip| machine.addresses.contains(&ip))
-        })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn only_a_computer_of_mine_is_one_of_mine_by_name_network_name_or_address() {
-        let machine = |name: &str, address: &str, owner| {
-            Machine::new(
-                NodeId::parse("nTEST1").expect("node id"),
-                name.to_owned(),
-                format!("{name}.tail1.ts.net"),
-                owner,
-            )
-            .with_addresses(vec![address.parse().expect("address")])
-        };
-        let all = [
-            machine("studio", "100.64.0.7", MachineOwner::Mine),
-            machine("friend", "100.64.0.8", MachineOwner::Shared),
-            machine("gpu-box", "100.64.0.9", MachineOwner::Tagged),
-        ];
-        for host in ["studio", "Studio", "studio.tail1.ts.net", "100.64.0.7"] {
-            assert!(is_one_of_mine(&all, host), "{host}");
-        }
-        for host in [
-            "friend",
-            "gpu-box.tail1.ts.net",
-            "100.64.0.8",
-            "100.64.0.99",
-            "llm.example.test",
-        ] {
-            assert!(!is_one_of_mine(&all, host), "{host}");
-        }
-        assert!(!is_one_of_mine(&[], "studio"));
-    }
 
     #[test]
     fn node_ids_are_short_plain_words() {

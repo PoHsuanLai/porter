@@ -12,7 +12,6 @@
 
 use crate::paths::{PROC_GATE, Paths};
 use crate::{FileAudit, Options, SheetsDesk, load_callers, serve_with};
-use porter_core::sheet::ProviderGroup;
 use porter_daemon::ProcRoot;
 use porter_daemon::xdg::PathError;
 use porter_dbus::BusTarget;
@@ -22,6 +21,7 @@ use porter_ids::clock::SystemClock;
 use porter_secrets::Namespace;
 use porter_secrets::keysel::{Chosen, KeysRefusal, Selection, select};
 use porter_service::{AccountService, Registry};
+use porter_sheet::ProviderGroup;
 use porter_sheets::{AppNames, BusSheets};
 use porter_store::FileStore;
 use std::future::Future;

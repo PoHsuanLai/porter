@@ -2,7 +2,6 @@
 //! `Http` that sends issuer URLs over the loopback and Graph URLs to the in-process table.
 
 use porter_core::Audience;
-use porter_core::sheet::SignInInput;
 use porter_fake_servers::browser::split_loopback;
 use porter_fake_servers::http::{Scheme, send};
 use porter_fake_servers::{FakeIssuer, IssuerHandle, Running, shipped};
@@ -15,6 +14,7 @@ use porter_provider::{
     ClientChannel, ClientEntry, ClientId, ClientsFile, Issuer, ProviderSpec, SignIn, SignInMode,
     SignInStart, SignInStep,
 };
+use porter_sheet::SignInInput;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};

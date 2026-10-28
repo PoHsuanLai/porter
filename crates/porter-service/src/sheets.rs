@@ -4,7 +4,7 @@
 //! (sill draws), an app hosting porter in process draws it itself, tests script it.
 
 use porter_core::consent::{ConsentAnswer, ConsentAsk};
-use porter_core::sheet::{SheetInput, SheetView};
+use porter_sheet::{SheetInput, SheetView};
 use porter_wire::ParentWindow;
 use std::future::Future;
 

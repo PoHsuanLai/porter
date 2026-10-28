@@ -1,5 +1,5 @@
 use super::*;
-use porter_core::sheet::ProviderKind;
+use porter_sheet::ProviderKind;
 
 fn row(id: &str, label: &str, kind: RowKind) -> ProviderRow {
     ProviderRow {

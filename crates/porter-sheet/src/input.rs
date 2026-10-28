@@ -4,8 +4,8 @@
 
 use super::fields::FieldAnswer;
 use super::progress::ServiceChoice;
-use crate::ProviderId;
-use crate::consent::ConsentAnswer;
+use porter_core::ProviderId;
+use porter_core::consent::ConsentAnswer;
 use serde::{Deserialize, Serialize};
 
 /// One thing the person did. It may carry secret text (a typed password), the one place

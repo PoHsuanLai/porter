@@ -194,7 +194,6 @@ async fn an_app_adds_an_account_through_a_family_is_granted_it_and_signs_it_in_a
     use porter_core::ProviderId;
     use porter_core::capability::{Access, Delta};
     use porter_core::need::PimNeed;
-    use porter_core::sheet::{FieldAnswer, FieldKind, FieldValue, ServiceChoice, SheetInput};
     use porter_core::{SecretText, Toggle};
     use porter_fake::NOW;
     use porter_fake_servers::{FakeDav, FakeDns};
@@ -205,6 +204,7 @@ async fn an_app_adds_an_account_through_a_family_is_granted_it_and_signs_it_in_a
     use porter_provider::parse_provider;
     use porter_secrets::MemorySecrets;
     use porter_service::{AccountService, Registry};
+    use porter_sheet::{FieldAnswer, FieldKind, FieldValue, ServiceChoice, SheetInput};
 
     let dav = FakeDav::start("bob", "hunter2").await.expect("dav");
     let spec =
@@ -313,7 +313,6 @@ async fn an_app_adds_an_account_through_a_family_is_granted_it_and_signs_it_in_a
 #[tokio::test]
 async fn adding_an_account_that_is_already_here_tells_the_app_which_one_it_is() {
     use porter_core::ProviderId;
-    use porter_core::sheet::{FieldAnswer, FieldKind, FieldValue, ServiceChoice, SheetInput};
     use porter_core::{SecretText, Toggle};
     use porter_fake::NOW;
     use porter_fake_servers::{FakeDav, FakeDns};
@@ -324,6 +323,7 @@ async fn adding_an_account_that_is_already_here_tells_the_app_which_one_it_is() 
     use porter_provider::parse_provider;
     use porter_secrets::MemorySecrets;
     use porter_service::{AccountService, Registry};
+    use porter_sheet::{FieldAnswer, FieldKind, FieldValue, ServiceChoice, SheetInput};
 
     let dav = FakeDav::start("bob", "hunter2").await.expect("dav");
     let spec =
@@ -404,7 +404,6 @@ async fn a_typed_pop3_server_is_added_through_the_sheet_and_found_by_a_mail_need
     use porter_core::ProviderId;
     use porter_core::capability::Offered;
     use porter_core::need::MailNeed;
-    use porter_core::sheet::{FieldAnswer, FieldKind, FieldValue, ServiceChoice, SheetInput};
     use porter_core::{Family, SecretText, Toggle};
     use porter_fake::NOW;
     use porter_fake_servers::net::{Bind, port_of};
@@ -415,6 +414,7 @@ async fn a_typed_pop3_server_is_added_through_the_sheet_and_found_by_a_mail_need
     use porter_provider::parse_provider;
     use porter_secrets::MemorySecrets;
     use porter_service::{AccountService, Registry};
+    use porter_sheet::{FieldAnswer, FieldKind, FieldValue, ServiceChoice, SheetInput};
 
     // The password is tried at the POP3 server before the review, so one is running.
     let pop3 = FakePop3::start(

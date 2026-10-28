@@ -9,7 +9,6 @@ use common::mail::{MailWorld, Wire};
 use common::{Fakes, Place, all_on, drive, plain, secret};
 use porter_core::AccountId;
 use porter_core::capability::CapabilityKind;
-use porter_core::sheet::{FieldAnswer, FieldKind, SignInFault, SignInInput};
 use porter_core::{Credential, Family, Offer, SecretPurpose, SecretText, Tls};
 use porter_discover::{MxRecord, SrvRecord};
 use porter_fake::FakeServer;
@@ -24,6 +23,7 @@ use porter_provider::{
     Presented, Provider, ProviderError, ProviderSession, ProviderSpec, SignInMode, SignInStart,
     SignInStep, Signed, parse_provider,
 };
+use porter_sheet::{FieldAnswer, FieldKind, SignInFault, SignInInput};
 
 fn spec(text: &str) -> ProviderSpec {
     parse_provider(text).expect("the shipped file")

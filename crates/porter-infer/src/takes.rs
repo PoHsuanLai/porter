@@ -84,17 +84,6 @@ impl Takes {
         }
     }
 
-    /// The words beside the model in a list; none when nothing says.
-    pub fn words(self) -> Option<&'static str> {
-        match self {
-            Takes::Unknown => None,
-            Takes::TextOnly => Some("Text only"),
-            Takes::TextAndImages => Some("Reads text and images"),
-            Takes::TextAndAudio => Some("Reads text, hears audio"),
-            Takes::TextImagesAndAudio => Some("Reads text and images, hears audio"),
-        }
-    }
-
     /// The name on the bus (the serde form).
     pub fn slug(self) -> &'static str {
         match self {
@@ -206,6 +195,5 @@ mod tests {
             );
         }
         assert_eq!(Takes::from_slug("video"), Takes::Unknown);
-        assert_eq!(Takes::Unknown.words(), None);
     }
 }

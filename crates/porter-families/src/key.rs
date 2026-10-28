@@ -12,7 +12,6 @@
 use porter_core::AccountId;
 use porter_core::Capability;
 use porter_core::capability::CapabilityKind;
-use porter_core::sheet::SignInFault;
 use porter_core::{
     AccountLabel, Audience, Claim, Credential, EndpointUrl, Family, IssuedToken, Offer, Provenance,
     Restriction, SecretPurpose, SecretText, ServiceEndpoint, Subject,
@@ -24,6 +23,7 @@ use porter_http::{Http, SensitiveHeader, request_to};
 use porter_provider::{
     Presented, ProviderError, ProviderSession, ProviderSpec, SignInStep, Signed,
 };
+use porter_sheet::SignInFault;
 
 /// The key a presented credential holds, or `Unauthorized` when the account has none.
 pub(crate) fn key_of(presented: &Presented) -> Result<&SecretText, ProviderError> {

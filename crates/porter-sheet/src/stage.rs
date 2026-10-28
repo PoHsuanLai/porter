@@ -7,11 +7,11 @@
 use super::input::SheetInput;
 use super::progress::{Progress, Review, ServiceChoice, SignInFault, SignInInput, UserCode};
 use super::view::{FieldProblem, ProviderRow, ReviewView, SheetView, SignInView};
-use crate::ProviderHint;
-use crate::app_id::AppId;
-use crate::endpoint::EndpointUrl;
-use crate::tailnet::Machine;
-use crate::{AccountId, ProviderId};
+use porter_core::AppId;
+use porter_core::EndpointUrl;
+use porter_core::Machine;
+use porter_core::ProviderHint;
+use porter_core::{AccountId, ProviderId};
 use porter_ids::WebUrl;
 
 /// What the sheet was opened for.

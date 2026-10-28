@@ -365,7 +365,7 @@ fn with_group(word: &str, text: String) -> String {
 
 #[test]
 fn a_group_word_in_the_file_gives_the_spec_and_the_row_that_group() {
-    use porter_core::sheet::ProviderGroup;
+    use porter_sheet::ProviderGroup;
     let plain = || file(r#"kind = "password""#, r#"kind = "fixed""#, &[STORAGE_ROW]);
     for (word, group) in [
         ("internet", ProviderGroup::Internet),
@@ -385,7 +385,7 @@ fn a_group_word_in_the_file_gives_the_spec_and_the_row_that_group() {
 
 #[test]
 fn a_file_without_a_group_gets_one_from_its_sign_in_and_its_services() {
-    use porter_core::sheet::ProviderGroup;
+    use porter_sheet::ProviderGroup;
     let agent_login = file(r#"kind = "agent_login""#, r#"kind = "fixed""#, &[AGENT_ROW]);
     let key_ai = file(
         r#"kind = "api_key""#,

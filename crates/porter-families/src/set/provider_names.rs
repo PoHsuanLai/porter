@@ -6,8 +6,8 @@
 
 use porter_core::Account;
 use porter_core::ProviderId;
-use porter_core::sheet::ProviderGroup;
 use porter_provider::ProviderSpec;
+use porter_sheet::ProviderGroup;
 use std::collections::BTreeMap;
 
 /// The label and group of each loaded provider.

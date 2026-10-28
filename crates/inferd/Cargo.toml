@@ -20,6 +20,7 @@ test-keys = ["porter-secrets/test-keys"]
 
 [dependencies]
 porter-core = { workspace = true }
+porter-sheet = { workspace = true }
 porter-wire = { workspace = true }
 porter-ids = { workspace = true }
 porter-daemon = { workspace = true, features = ["watch"] }

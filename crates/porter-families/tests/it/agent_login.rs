@@ -4,7 +4,6 @@
 
 use porter_core::AccountId;
 use porter_core::capability::{Capability, CapabilityKind};
-use porter_core::sheet::{SignInFault, SignInInput};
 use porter_core::{
     Account, AccountLabel, AccountState, Audience, AuthKind, Credential, Offer, Provenance,
     Restriction, SecretText, Subject,
@@ -14,6 +13,7 @@ use porter_provider::{
     Presented, Provider, ProviderError, ProviderSession, RevokeOutcome, SignIn, SignInMode,
     SignInStart, SignInStep, parse_provider,
 };
+use porter_sheet::{SignInFault, SignInInput};
 
 fn provider(id: &str) -> AgentLoginProvider {
     let text = porter_provider::SHIPPED_FILES

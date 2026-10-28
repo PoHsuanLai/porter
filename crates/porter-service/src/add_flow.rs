@@ -1,5 +1,5 @@
 //! Driving a provider's sign-in through the sheet (porter PLAN G4, G5, §2.4): the host half of
-//! the conversation. The sheet's pure machine (`porter_core::sheet::step`) says what to draw,
+//! the conversation. The sheet's pure machine (`porter_sheet::step`) says what to draw,
 //! what to tell the sign-in and when to store; this loop carries those out, and reports what the
 //! person did and what the sign-in said back to the machine.
 //!
@@ -14,10 +14,6 @@ use crate::race::{Raced, race};
 use crate::sheets::{SheetFault, SheetLink, SheetOpen, Sheets};
 use crate::token::refusal_of;
 use porter_core::ProviderHint;
-use porter_core::sheet::{
-    Progress, ProviderRow, Purpose, RowKind, Sheet, SheetEffect, SheetEnd, SheetEvent, SignInFault,
-    SignInInput, Stage, step,
-};
 use porter_core::store::RegistryStore;
 use porter_core::{AccountId, ProviderId};
 use porter_core::{AppId, AuthKind, CapabilityKind, Need, ServiceEndpoint};
@@ -27,6 +23,10 @@ use porter_provider::{
     SignInMode, SignInStart, SignInStep, Signed,
 };
 use porter_secrets::Secrets;
+use porter_sheet::{
+    Progress, ProviderRow, Purpose, RowKind, Sheet, SheetEffect, SheetEnd, SheetEvent, SignInFault,
+    SignInInput, Stage, step,
+};
 use porter_wire::AccountsReply;
 use porter_wire::{ParentWindow, Refusal};
 use std::collections::VecDeque;
@@ -573,7 +573,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         job: &Job,
         sheet: &Sheet,
         run: &mut Run<P::SignIn>,
-        choices: &[porter_core::sheet::ServiceChoice],
+        choices: &[porter_sheet::ServiceChoice],
     ) -> SheetEvent {
         let Some(signed) = run.signed.take() else {
             return SheetEvent::StoreFailed;
@@ -655,7 +655,7 @@ fn left(fault: SheetFault) -> Refusal {
 }
 
 /// What the person did, as an event; a sheet that closed or went away is the person leaving.
-fn person(input: Result<porter_core::sheet::SheetInput, SheetFault>) -> SheetEvent {
+fn person(input: Result<porter_sheet::SheetInput, SheetFault>) -> SheetEvent {
     match input {
         Ok(input) => SheetEvent::Input(input),
         Err(SheetFault::Closed | SheetFault::Unavailable) => SheetEvent::Left,

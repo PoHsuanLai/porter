@@ -6,9 +6,9 @@ use crate::common;
 
 use common::*;
 use ds_settings::live::Changes;
-use porter_core::sheet::SheetInput;
 use porter_dbus::callers::CallerRole;
 use porter_dbus::{AccountProxy, Details, Sheet};
+use porter_sheet::SheetInput;
 use std::time::Duration;
 use zbus::export::futures_core::Stream;
 use zbus::zvariant::ObjectPath;

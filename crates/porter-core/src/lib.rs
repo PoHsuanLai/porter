@@ -34,7 +34,6 @@ mod provider_hint;
 mod restriction;
 pub mod scope;
 mod secret;
-pub mod sheet;
 mod space;
 mod space_record;
 pub mod store;

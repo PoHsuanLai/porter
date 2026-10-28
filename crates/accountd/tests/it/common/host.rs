@@ -1,7 +1,7 @@
 //! A sheet host written by hand: the `org.quire.AccountsSheet1` interface on the private bus,
 //! recording what accountd opened, updated and closed, and answering from a script.
 
-use porter_core::sheet::SheetInput;
+use porter_sheet::SheetInput;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 use zbus::Connection;

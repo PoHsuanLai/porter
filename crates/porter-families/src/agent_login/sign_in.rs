@@ -4,8 +4,8 @@
 
 use porter_core::AccountLabel;
 use porter_core::Restriction;
-use porter_core::sheet::{SignInFault, SignInInput};
 use porter_provider::{ProviderSpec, SignIn, SignInStep, Signed};
+use porter_sheet::{SignInFault, SignInInput};
 
 #[derive(Debug)]
 enum State {

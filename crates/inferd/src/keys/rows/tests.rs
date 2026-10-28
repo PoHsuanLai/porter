@@ -123,7 +123,7 @@ fn a_permit_names_its_app_and_its_service_in_rows_of_their_own() {
             .0
             .get(&slug(&CapabilityKind::Llm))
             .map(String::as_str),
-        Some(CapabilityKind::Llm.display_name())
+        Some(porter_sheet::words::service_name(CapabilityKind::Llm))
     );
 }
 

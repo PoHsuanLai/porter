@@ -4,6 +4,7 @@ members = [
   "crates/porter-ids",
   "crates/porter-core",
   "crates/porter-wire",
+  "crates/porter-sheet",
   "crates/porter-fs",
   "crates/quickxorhash",
   "crates/windows-zones",
@@ -64,6 +65,7 @@ publish = false
 porter-ids      = { path = "crates/porter-ids" }
 porter-core     = { path = "crates/porter-core" }
 porter-wire     = { path = "crates/porter-wire" }
+porter-sheet    = { path = "crates/porter-sheet" }
 porter-fs        = { path = "crates/porter-fs" }
 quickxorhash    = { path = "crates/quickxorhash" }
 windows-zones   = { path = "crates/windows-zones" }

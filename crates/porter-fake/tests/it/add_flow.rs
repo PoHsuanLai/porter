@@ -8,10 +8,6 @@ use porter_core::capability::{
     Access, Capability, Delta, LabelModel, MailCap, MailTransport, Offered,
 };
 use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
-use porter_core::sheet::{
-    Entry, FieldAnswer, FieldKind, FieldSpec, FieldValue, Presence, ServiceChoice, SheetInput,
-    SheetView, SignInFault, SignInInput, UserCode,
-};
 use porter_core::{
     Account, AccountLabel, AccountState, AppId, AppName, AuthKind, Claim, Credential, DataClass,
     EndpointUrl, Family, Isolation, LoginName, Offer, Provenance, Restriction, SecretKey,
@@ -29,6 +25,10 @@ use porter_secrets::{MemorySecrets, Secrets, SecretsError};
 use porter_service::audit::AuditEvent;
 use porter_service::{
     AccountService, Registry, SheetFault, SheetLink, SheetOpen, Sheets, SignInAs,
+};
+use porter_sheet::{
+    Entry, FieldAnswer, FieldKind, FieldSpec, FieldValue, Presence, ServiceChoice, SheetInput,
+    SheetView, SignInFault, SignInInput, UserCode,
 };
 use porter_wire::{AccountsReply, AccountsRequest};
 use porter_wire::{ParentWindow, Refusal};

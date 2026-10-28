@@ -3,12 +3,12 @@
 
 use porter_core::AccountId;
 use porter_core::capability::StorageScope;
-use porter_core::sheet::SignInInput;
 use porter_core::{Account, Audience, CapabilityKind, Claim, Credential, IssuedToken};
 use porter_provider::{
     Presented, Provider, ProviderError, ProviderSession, ProviderSpec, Readiness, RevokeOutcome,
     SignIn, SignInStart, SignInStep,
 };
+use porter_sheet::SignInInput;
 
 /// Expands `$body` once per built family, binding the variant's payload to `$p`.
 macro_rules! each_family {

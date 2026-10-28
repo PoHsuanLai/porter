@@ -472,7 +472,7 @@ v = { access = "read_write", send = "present", delta = "poll", transport = "imap
 
 #[test]
 fn the_generic_files_make_generic_rows_and_every_other_file_a_provider_row() {
-    use porter_core::sheet::RowKind;
+    use porter_sheet::RowKind;
     let rows: Vec<_> = shipped().iter().map(|(_, spec)| spec.sheet_row()).collect();
     let generic: Vec<_> = rows
         .iter()
@@ -610,7 +610,7 @@ fn a_key_provider_names_the_agent_programs_that_may_use_its_key() {
 
 #[test]
 fn the_four_agent_files_make_agent_login_rows_named_by_their_labels() {
-    use porter_core::sheet::ProviderKind;
+    use porter_sheet::ProviderKind;
     let rows: Vec<_> = shipped().iter().map(|(_, spec)| spec.sheet_row()).collect();
     let mut agents: Vec<_> = rows
         .iter()
@@ -690,7 +690,7 @@ fn the_shipped_files_carry_the_agreed_faces_and_the_named_mark_providers_carry_n
 
 #[test]
 fn every_shipped_file_names_its_group_and_it_is_the_expected_one() {
-    use porter_core::sheet::ProviderGroup::{Agent, Intelligence, Internet};
+    use porter_sheet::ProviderGroup::{Agent, Intelligence, Internet};
     let expected = [
         ("acp-agent", Agent),
         ("claude-code", Agent),

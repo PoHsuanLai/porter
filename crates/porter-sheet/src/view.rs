@@ -5,10 +5,10 @@ use super::fields::{FieldKind, FieldSpec};
 use super::group::ProviderGroup;
 use super::mark::MarkFace;
 use super::progress::{Review, SignInFault, UserCode};
-use crate::ProviderId;
-use crate::app_id::{AppId, AppLabel};
-use crate::consent::ConsentAsk;
-use crate::endpoint::EndpointUrl;
+use porter_core::EndpointUrl;
+use porter_core::ProviderId;
+use porter_core::consent::ConsentAsk;
+use porter_core::{AppId, AppLabel};
 use porter_ids::WebUrl;
 use serde::{Deserialize, Serialize};
 

@@ -4,19 +4,17 @@
 //! a password goes to the sign-in and nowhere else), restated over porter's stages.
 
 use super::*;
-use crate::ProviderHint;
-use crate::account::AccountLabel;
-use crate::capability::CapabilityKind;
-use crate::effective::Toggle;
-use crate::secret::SecretText;
-use crate::sheet::fields::{Entry, FieldAnswer, FieldKind, FieldSpec, FieldValue, Presence};
-use crate::sheet::input::SheetInput;
-use crate::sheet::progress::{
+use crate::fields::{Entry, FieldAnswer, FieldKind, FieldSpec, FieldValue, Presence};
+use crate::input::SheetInput;
+use crate::progress::{
     Progress, Review, ServiceChoice, ServiceRow, ServiceState, SignInFault, SignInInput, UserCode,
 };
-use crate::sheet::view::{
-    FieldProblem, ProblemKind, ProviderKind, ProviderRow, RowKind, SheetView,
-};
+use crate::view::{FieldProblem, ProblemKind, ProviderKind, ProviderRow, RowKind, SheetView};
+use porter_core::AccountLabel;
+use porter_core::ProviderHint;
+use porter_core::SecretText;
+use porter_core::Toggle;
+use porter_core::capability::CapabilityKind;
 use proptest::prelude::*;
 
 const SECRET: &str = "hunter2-correct-horse";
@@ -516,9 +514,9 @@ fn a_sign_in_that_fails_after_confirm_stores_nothing() {
 
 #[test]
 fn add_and_allow_stores_the_same_way_and_the_view_names_the_app() {
-    let app = crate::AppId {
-        name: crate::AppName::parse("org.quire.Mail").expect("name"),
-        isolation: crate::Isolation::Flatpak,
+    let app = porter_core::AppId {
+        name: porter_core::AppName::parse("org.quire.Mail").expect("name"),
+        isolation: porter_core::Isolation::Flatpak,
     };
     let purpose = Purpose::Add {
         hint: ProviderHint::Any,
@@ -738,7 +736,9 @@ fn every_stage_can_be_dismissed_and_a_running_sign_in_is_cancelled() {
 #[test]
 fn a_consent_answer_is_not_the_machines_input() {
     for (name, stage) in every_stage() {
-        let event = input(SheetInput::Answer(crate::consent::ConsentAnswer::Deny));
+        let event = input(SheetInput::Answer(
+            porter_core::consent::ConsentAnswer::Deny,
+        ));
         let (after, effects) = run(at(add(), stage.clone()), event);
         assert_eq!((after, effects), (stage, vec![]), "{name}");
     }

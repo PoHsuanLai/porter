@@ -4,7 +4,7 @@
 //! (`group = "internet" | "intelligence" | "agent"`); a file that does not gets the one
 //! [`ProviderGroup::fallback`] decides from how its accounts sign in and what they do.
 
-use crate::{AuthKind, CapabilityKind};
+use porter_core::{AuthKind, CapabilityKind};
 use serde::{Deserialize, Serialize};
 
 /// The group a provider's accounts belong to.
@@ -33,15 +33,6 @@ impl ProviderGroup {
             ProviderGroup::Internet => "internet",
             ProviderGroup::Intelligence => "intelligence",
             ProviderGroup::Agent => "agent",
-        }
-    }
-
-    /// The group as a person reads it, the heading of its part of the page.
-    pub fn display_name(self) -> &'static str {
-        match self {
-            ProviderGroup::Internet => "Internet Accounts",
-            ProviderGroup::Intelligence => "Intelligence",
-            ProviderGroup::Agent => "Assistants",
         }
     }
 
@@ -76,7 +67,7 @@ mod tests {
         ];
         for (group, slug, heading) in table {
             assert_eq!(group.slug(), slug);
-            assert_eq!(group.display_name(), heading);
+            assert_eq!(crate::words::group_heading(group), heading);
             assert_eq!(
                 serde_json::to_string(&group).expect("json"),
                 format!("\"{slug}\"")

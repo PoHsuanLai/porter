@@ -1,6 +1,6 @@
 use super::*;
 use porter_core::ProviderId;
-use porter_core::sheet::{Protocol, SignInView, manual_form};
+use porter_sheet::{Protocol, SignInView, manual_form};
 use std::collections::VecDeque;
 
 /// A terminal that answers from a script and records what it was asked.

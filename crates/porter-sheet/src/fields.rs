@@ -1,6 +1,6 @@
 //! The fields a sign-in asks for. A field is a kind, not a label: the UI words it.
 
-use crate::secret::SecretText;
+use porter_core::SecretText;
 use serde::{Deserialize, Serialize};
 
 /// What a field is for.
@@ -122,7 +122,7 @@ pub enum FieldValue {
     /// Text that is not a secret.
     Plain(String),
     /// A password, a key or a token.
-    Secret(#[serde(serialize_with = "crate::write_secret")] SecretText),
+    Secret(#[serde(serialize_with = "porter_core::write_secret")] SecretText),
 }
 
 /// One field's answer.

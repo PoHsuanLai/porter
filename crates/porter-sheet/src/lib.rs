@@ -1,8 +1,12 @@
 //! The accounts sheet as values (design/31 §5.6, porter PLAN G5): what the host draws
 //! (`SheetView`), what the person does (`SheetInput`), what a sign-in says as it goes
 //! (`Progress`) and the pure machine between them (`step`). Nothing here draws, reads a
-//! secret store or talks to a provider; labels a person reads belong to the UI that draws a
-//! view (quire's `ds-shell::accounts`, mapped from these values in sill and mailo).
+//! secret store or talks to a provider.
+//!
+//! The words a person reads for these values are this crate's declared vocabulary, in [`words`]:
+//! free functions over the typed values of the lower crates (a service's name, a group's heading,
+//! what a whole store's access says), so no value type of porter carries a label. An app that
+//! words them itself takes the typed values and ignores `words`.
 //!
 //! A view and an input cross the bus as JSON (`org.quire.AccountsSheet1`). An input may carry
 //! secret text from the sheet into the daemon (a typed password); nothing on that interface
@@ -16,6 +20,7 @@ mod mark;
 mod progress;
 mod stage;
 mod view;
+pub mod words;
 
 pub use fields::{Entry, FieldAnswer, FieldKind, FieldSpec, FieldValue, Presence, first_missing};
 pub use group::ProviderGroup;

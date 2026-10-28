@@ -1,7 +1,6 @@
 //! A provider that answers from its declaration and mints predictable tokens.
 
 use porter_core::AccountId;
-use porter_core::sheet::{SignInFault, SignInInput};
 use porter_core::{
     Account, AccountLabel, Audience, Claim, Credential, IssuedToken, Offer, Provenance,
     Restriction, SecretPurpose, SecretText, Subject, TokenKind,
@@ -11,6 +10,7 @@ use porter_provider::{
     Presented, Provider, ProviderError, ProviderSession, ProviderSpec, RevokeOutcome, SignIn,
     SignInMode, SignInStart, SignInStep, Signed, parse_provider,
 };
+use porter_sheet::{SignInFault, SignInInput};
 
 /// A provider over one parsed provider file.
 #[derive(Debug, Clone)]

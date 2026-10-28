@@ -5,14 +5,12 @@
 #[cfg(feature = "generic")]
 pub mod mail;
 
-use porter_core::sheet::{
-    FieldAnswer, FieldKind, FieldValue, ServiceChoice, SheetInput, SheetView,
-};
 use porter_core::{SecretText, Toggle};
 use porter_http::http::{Request, Response};
 use porter_http::{Http, HttpError};
 use porter_http_reqwest::ReqwestHttp;
 use porter_provider::{SignIn, SignInStep};
+use porter_sheet::{FieldAnswer, FieldKind, FieldValue, ServiceChoice, SheetInput, SheetView};
 use std::sync::{Arc, Mutex};
 
 /// One place a name is served: `host`'s paths under `prefix` go to `port` on loopback.
@@ -112,9 +110,9 @@ pub fn all_on(kinds: impl IntoIterator<Item = porter_core::CapabilityKind>) -> V
 /// every step in order.
 pub async fn drive<S: SignIn>(
     signin: &mut S,
-    mut answer: impl FnMut(&SignInStep) -> porter_core::sheet::SignInInput,
+    mut answer: impl FnMut(&SignInStep) -> porter_sheet::SignInInput,
 ) -> Vec<SignInStep> {
-    use porter_core::sheet::SignInInput;
+    use porter_sheet::SignInInput;
     let mut steps = Vec::new();
     let mut input = SignInInput::Start;
     for _ in 0..500 {

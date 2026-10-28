@@ -6,7 +6,6 @@ use crate::common;
 
 use common::{Fakes, all_on, plain};
 use porter_core::capability::CapabilityKind;
-use porter_core::sheet::{FieldKind, SignInFault, SignInInput};
 use porter_core::{
     Account, AccountLabel, AccountState, AuthKind, Credential, EndpointUrl, Family, LoginName,
     Offer, Restriction, SecretPurpose, SecretText, ServiceEndpoint, Tls,
@@ -23,6 +22,7 @@ use porter_provider::{
     Presented, Provider, ProviderError, ProviderSession, RevokeOutcome, SignInMode, SignInStart,
     SignInStep, Signed,
 };
+use porter_sheet::{FieldKind, SignInFault, SignInInput};
 use std::time::Duration;
 
 struct World {

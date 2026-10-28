@@ -21,11 +21,12 @@ use super::fields::{
     Entry, FieldAnswer, FieldKind, FieldSpec, FieldValue, Presence, first_missing,
 };
 use super::view::{FieldProblem, ProblemKind};
-use crate::secret::SecretText;
-use crate::tailnet::{Machine, is_one_of_mine};
-use crate::{endpoint::EndpointUrl, endpoint::server_address, endpoint::server_address_shape};
+use porter_core::SecretText;
+use porter_core::{EndpointUrl, server_address, server_address_shape};
+use porter_core::{Machine, MachineOwner};
 use porter_ids::UrlScheme;
 use serde::{Deserialize, Serialize};
+use std::net::IpAddr;
 
 /// How a mail server speaks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -556,6 +557,22 @@ fn server_problem(
         None => server_address_shape(&typed).is_ok(),
     };
     (!fine).then(|| invalid(FieldKind::ServerUrl))
+}
+
+/// Whether `host` (a name or an address as written in a URL) is one of the person's own
+/// computers among `machines`: a machine whose owner is [`MachineOwner::Mine`], matched by its
+/// name, its network name or one of its addresses, in any letter case. Another person's computer
+/// and a tagged server are not.
+fn is_one_of_mine(machines: &[Machine], host: &str) -> bool {
+    let address: Option<IpAddr> = host.parse().ok();
+    machines
+        .iter()
+        .filter(|machine| machine.owner == MachineOwner::Mine)
+        .any(|machine| {
+            host.eq_ignore_ascii_case(&machine.name)
+                || host.eq_ignore_ascii_case(&machine.dns)
+                || address.is_some_and(|ip| machine.addresses.contains(&ip))
+        })
 }
 
 #[cfg(test)]

@@ -15,7 +15,6 @@ use super::scopes::{Granted, IDENTITY, on_use_scopes_of, scopes_for};
 use super::{Apis, apis_of};
 use crate::extend::{answered_as, asked_claims};
 use porter_core::capability::{Capability, CapabilityKind};
-use porter_core::sheet::{SignInFault, SignInInput};
 use porter_core::{
     AccountLabel, Claim, Credential, EndpointUrl, Family, Limit, LimitReason, LoginName, Offer,
     Restriction, SecretPurpose, ServiceEndpoint, TenantConsent, Tls, TokenLifetime, Verification,
@@ -30,6 +29,7 @@ use porter_provider::{
     ClientEntry, Issuer, IssuerEndpoints, ProviderSpec, SignIn, SignInMode, SignInStart,
     SignInStep, Signed,
 };
+use porter_sheet::{SignInFault, SignInInput};
 use tokio::task::JoinHandle;
 
 /// Google's cap on the users of an app in testing.

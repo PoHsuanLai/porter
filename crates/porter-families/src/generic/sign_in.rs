@@ -7,15 +7,15 @@ use super::mail::{self, Looked, Vouched};
 use super::{dav, jmap};
 use crate::io::{Io, SharedDns};
 use crate::password::{parse_server, password_for, plain, text_of, typed_password};
-use porter_core::sheet::{
-    FieldAnswer, FieldKind, FieldSpec, Manual, Protocol, SignInFault, SignInInput, manual_form,
-    parse_manual,
-};
 use porter_core::{
     AccountLabel, Claim, Credential, Family, LoginName, Restriction, SecretPurpose, SecretText,
     ServiceEndpoint,
 };
 use porter_provider::{ProviderSet, ProviderSpec, SignIn, SignInMode, SignInStep, Signed};
+use porter_sheet::{
+    FieldAnswer, FieldKind, FieldSpec, Manual, Protocol, SignInFault, SignInInput, manual_form,
+    parse_manual,
+};
 
 /// Which kind of generic account this is, from its provider file's discovery.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

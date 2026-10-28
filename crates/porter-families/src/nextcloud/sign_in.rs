@@ -6,10 +6,10 @@ use super::flow::{Granted, Polled, Started, poll, start};
 use super::known::server_of;
 use crate::io::Io;
 use crate::password::{parse_server, plain, text_of};
-use porter_core::sheet::{FieldKind, SignInFault, SignInInput};
 use porter_core::{AccountLabel, Credential, EndpointUrl, Restriction, SecretPurpose};
 use porter_http::Sleep;
 use porter_provider::{SignIn, SignInMode, SignInStep, Signed};
+use porter_sheet::{FieldKind, SignInFault, SignInInput};
 use std::time::Duration;
 
 /// How many polls in a row may fail to reach the server before the flow is given up.

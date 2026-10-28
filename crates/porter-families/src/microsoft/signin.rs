@@ -15,7 +15,6 @@ use super::scopes::{GRAPH_DEFAULT, extend_scopes, graph_only, scopes_for};
 use super::{graph_origin, imap_origin};
 use crate::extend::{answered_as, asked_claims};
 use porter_core::capability::{Capability, CapabilityKind, Offered};
-use porter_core::sheet::{SignInFault, SignInInput};
 use porter_core::{
     AccountLabel, Credential, EndpointUrl, Family, GrantedScopes, LoginName, Offer, Restriction,
     SecretPurpose, ServiceEndpoint, TenantConsent, Tls,
@@ -31,6 +30,7 @@ use porter_provider::{
     ClientEntry, Issuer, IssuerEndpoints, ProviderSpec, SignIn, SignInMode, SignInStart,
     SignInStep, Signed,
 };
+use porter_sheet::{SignInFault, SignInInput};
 use tokio::task::JoinHandle;
 
 /// Exchange Online's SMTP submission server, which the file has no row for.

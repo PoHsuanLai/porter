@@ -57,6 +57,7 @@ zbus = { workspace = true }
 # The daemons the bus tests start (Linux only, as the transport is). They bring
 # peephole (who is calling, through pidfds) and the Secret Service store, which build only there;
 # the portable build (macOS, Windows) tests the pure and in-process paths without them.
+porter-sheet = { workspace = true }
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 accountd = { path = "../accountd" }
 inferd = { path = "../inferd" }

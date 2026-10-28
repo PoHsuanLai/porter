@@ -12,9 +12,9 @@
 use porter_core::stream::ByteStream;
 use porter_core::{
     CapabilityKind, Credential, EndpointProtocol, Reach, RelayAuth, RelayPlan, ServiceEndpoint,
-    sheet::SignInFault,
 };
 use porter_proxy::{Connect, RelayEnd, RelayFault, RustlsConnect, relay};
+use porter_sheet::SignInFault;
 use std::future::Future;
 use std::io;
 use std::pin::Pin;

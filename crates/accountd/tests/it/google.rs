@@ -13,7 +13,6 @@ use common::bus::PrivateBus;
 use common::host::{HostLog, SheetHost, send_input};
 use common::{Shared, Tap, caller, contains};
 use porter_core::capability::CapabilityKind;
-use porter_core::sheet::{SheetInput, SheetView};
 use porter_core::{AccountId, ProviderId};
 use porter_core::{AccountState, Credential, Offer, SecretKey, SecretPurpose, TokenLifetime};
 use porter_dbus::callers::CallerRole;
@@ -27,6 +26,7 @@ use porter_oauth::{AppReview, ClientRegistry, ClientTraits, MailRights};
 use porter_provider::{ClientChannel, ClientEntry, ClientId, ClientsFile, Issuer};
 use porter_secrets::Secrets;
 use porter_service::{AccountService, Registry};
+use porter_sheet::{SheetInput, SheetView};
 use std::sync::Arc;
 use std::time::Duration;
 

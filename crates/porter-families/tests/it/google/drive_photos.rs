@@ -5,12 +5,12 @@
 
 use super::rig::*;
 use porter_core::AccountId;
-use porter_core::sheet::SignInInput;
 use porter_core::{Credential, SecretText};
 use porter_http::Http;
 use porter_http::http::Method;
 use porter_ids::UnixSeconds;
 use porter_provider::{Presented, Provider, ProviderSession, SignIn, SignInStep};
+use porter_sheet::SignInInput;
 
 fn account() -> AccountId {
     AccountId::parse("22222222-2222-4222-8222-222222222222").expect("account id")

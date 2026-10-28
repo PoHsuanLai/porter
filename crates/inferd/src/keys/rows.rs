@@ -16,7 +16,6 @@ use ds_settings::schema::{
     LiveAction, Page, Section, WordLabels,
 };
 use porter_core::consent::{Decision, Grant, GrantScope};
-use porter_core::sheet::ProviderGroup;
 use porter_core::{
     Account, AccountState, AgentState, AppId, AppName, AuthKind, CapabilityKind, Isolation,
     LoginOutcome, Offer, Toggle,
@@ -25,6 +24,7 @@ use porter_core::{AccountId, GrantId};
 use porter_families::set::ProviderNames;
 use porter_ids::MicroUsd;
 use porter_service::{Launchers as LaunchersSeam, LoginEnd, Registry, program_of};
+use porter_sheet::ProviderGroup;
 use porter_sheets::AppNames;
 use porter_wire::AccountsReply;
 use porter_wire::ParentWindow;
@@ -210,7 +210,7 @@ fn grant_label(grant: &Grant, names: &AppNames) -> String {
     format!(
         "{} {can} use {}{lasting}",
         names.title_of(&grant.key.app.name).0,
-        grant.key.kind.display_name()
+        porter_sheet::words::service_name(grant.key.kind)
     )
 }
 
@@ -275,7 +275,7 @@ fn account_keys(
         .unwrap_or_else(|| account.provider.as_str());
     let group_words: Vec<(&str, &str)> = ProviderGroup::ALL
         .iter()
-        .map(|group| (group.slug(), group.display_name()))
+        .map(|group| (group.slug(), porter_sheet::words::group_heading(*group)))
         .collect();
     let fixed = |key: Key, label: &str, word: &str| {
         spec(
@@ -335,7 +335,7 @@ fn account_keys(
         keys.push(spec(
             &Key::Service(id.clone(), kind),
             section,
-            kind.display_name().to_owned(),
+            porter_sheet::words::service_name(kind).to_owned(),
             "Whether apps may use this service of the account.",
             KeyKind::Toggle {
                 variants: ["on".to_owned(), "off".to_owned()],
@@ -380,7 +380,7 @@ fn account_keys(
             section,
             "Service",
             &service,
-            &[(&service, grant.key.kind.display_name())],
+            &[(&service, porter_sheet::words::service_name(grant.key.kind))],
         ));
     }
     // A program on this computer costs nothing: only an account reached over the network spends.
