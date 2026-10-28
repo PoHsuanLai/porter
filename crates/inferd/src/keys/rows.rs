@@ -310,7 +310,7 @@ fn account_keys(
         fixed(
             Key::SignIn(id.clone()),
             "Signs in",
-            account.auth.sign_in_way().slug(),
+            account.auth.facts().way.slug(),
         ),
         readout(
             &Key::Provider(id.clone()),
@@ -738,7 +738,7 @@ impl<H: KeyHost, L: LaunchersSeam + Clone + 'static> AccountRows<H, L> {
             Key::State(id) => text(state_slug(account(&id)?.state)),
             Key::Label(id) => text(&account(&id)?.label.0),
             Key::Place(id) => text(place_slug(account(&id)?)),
-            Key::SignIn(id) => text(account(&id)?.auth.sign_in_way().slug()),
+            Key::SignIn(id) => text(account(&id)?.auth.facts().way.slug()),
             Key::Provider(id) => text(account(&id)?.provider.as_str()),
             Key::Group(id) => text(self.providers.group_of(account(&id)?).slug()),
             Key::Since(_, grant) => registry

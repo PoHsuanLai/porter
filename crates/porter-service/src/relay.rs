@@ -8,7 +8,7 @@ use crate::audit::{AuditEvent, AuditSink};
 use crate::ctx::Ctx;
 use crate::reach::{Declared, declared_endpoint, reach_for};
 use crate::sheets::Sheets;
-use crate::token::{secret_purpose, secrets_refusal};
+use crate::token::secrets_refusal;
 use porter_capability::CapabilityKind;
 use porter_capability::StorageScope;
 use porter_core::GrantId;
@@ -57,7 +57,7 @@ where
         endpoint: &ServiceEndpoint,
         (kind, reach): (CapabilityKind, StorageScope),
     ) -> Result<RelayPlan, Refusal> {
-        let auth = match secret_purpose(account.auth) {
+        let auth = match account.auth.facts().secret {
             Some(SecretPurpose::Password) => self.password_for(account, endpoint, kind).await?,
             Some(SecretPurpose::OAuthRefresh) => {
                 self.token_for(account, endpoint, (kind, reach)).await?

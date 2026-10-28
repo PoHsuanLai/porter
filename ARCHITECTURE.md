@@ -223,7 +223,7 @@ reaches `reqwest`, `hyper` and `tokio` (porter-http-reqwest); `tailnet` reaches 
 | what a failed request is told as, and which one moves to another instance | `inferd::failure` (pure); `inferd::runner` places and tries it, `inferd::serve::guarded` is a session's failure boundary |
 | inference in an app with no inferd | `porter-client::engines` (`EngineHost`: the app's table and policy, `porter_infer::admit` for the hard rules, the app's `KeySource`) |
 | provider file format | `porter-provider::spec` + `parse` |
-| which secret an auth kind presents | `porter-service::secret_purpose` |
+| the facts of an auth kind (how it signs in again, its identity kind, the secret it presents, its first state) | `porter_core::AuthKind::facts` |
 | the account registry and candidates | `porter-service::registry` |
 | the registry file (`registry.json`, its atomic save and `.bak`) | `porter-store::FileStore` (the directory is a path the host names) |
 | the keyring namespace (the `service` attribute) | `porter-secrets::Namespace` |
@@ -446,7 +446,7 @@ parses it. No code unless it needs a new family, issuer or discovery kind.
 goes through `porter_http::Http`); its variant in `FamilyProvider` (`dispatch.rs`); a conformance
 test against a recorded fake (`FakeServer`).
 
-**Add an auth kind**: its `AuthKind` variant; its row in `secret_purpose`; its sign-in steps in
+**Add an auth kind**: its `AuthKind` variant; its row in `AuthKind::facts`; its sign-in steps in
 the family's `SignIn`, and the `Progress` and `SheetView` states they need in `porter-sheet`.
 
 **Add an accountd request**: the variant in `AccountsRequest` and its reply in `AccountsReply`

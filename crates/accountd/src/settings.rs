@@ -153,7 +153,7 @@ impl<H: Host, C> AccountsSettings<H, C> {
                 .map(toml::Value::String)
                 .ok_or_else(unknown),
             Key::Place(id) => text(crate::settings_keys::place_slug(account(&id)?)),
-            Key::SignIn(id) => text(account(&id)?.auth.sign_in_way().slug()),
+            Key::SignIn(id) => text(account(&id)?.auth.facts().way.slug()),
             Key::Provider(id) => text(account(&id)?.provider.as_str()),
             Key::Group(id) => text(self.0.provider_names.group_of(account(&id)?).slug()),
             Key::UsedBy(id, n) => view

@@ -33,7 +33,7 @@ pub mod token;
 
 pub use account::{Account, AccountLabel, AccountState, AgentState};
 pub use app_id::{AppId, AppLabel, AppName, Isolation};
-pub use auth_kind::{AuthKind, SignInWay};
+pub use auth_kind::{AuthFacts, AuthKind, SignInWay};
 pub use candidate::Candidate;
 pub use data_class::DataClass;
 pub use endpoint::{

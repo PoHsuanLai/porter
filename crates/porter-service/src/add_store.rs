@@ -85,17 +85,6 @@ pub(crate) fn fresh_id(
         .unwrap_or_else(|| unreachable!("the suffixes are unbounded and each id is well formed"))
 }
 
-/// The state a new account starts in: working, except an agent that signs itself in, which is
-/// waiting for the agent to say it is (`Peer.SetAgentState`); porter has no way to know. (A
-/// Tailscale account is added only after Tailscale answered signed in, so it starts working;
-/// accountd's watch of Tailscale moves it from there.)
-fn first_state(auth: AuthKind) -> AccountState {
-    match auth {
-        AuthKind::AgentLogin => AccountState::NeedsLogin,
-        _ => AccountState::Ok,
-    }
-}
-
 /// The logins an account's endpoints are for. An endpoint with an empty login name has none (the
 /// address of a server of the person's own, which takes a key and no login).
 fn logins(endpoints: &[porter_core::ServiceEndpoint]) -> HashSet<&LoginName> {
@@ -240,7 +229,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                     id: reservation.id.clone(),
                     provider: spec.id.clone(),
                     label: signed.label.clone(),
-                    state: first_state(spec.auth.kind),
+                    state: spec.auth.kind.facts().first_state,
                     auth: spec.auth.kind,
                     capabilities: effective(&signed.claims, &off),
                     restriction: signed.restriction.clone(),

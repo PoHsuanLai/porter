@@ -134,7 +134,7 @@ impl Provider for FakeProvider {
         account: &AccountId,
         presented: Presented,
     ) -> Result<FakeSession, ProviderError> {
-        let needs_secret = porter_service::secret_purpose(self.auth_kind()).is_some();
+        let needs_secret = self.auth_kind().facts().secret.is_some();
         match (needs_secret, presented) {
             (true, Presented::Anonymous) => Err(ProviderError::Unauthorized),
             (_, Presented::Credential(_)) if self.refuses_refresh => {

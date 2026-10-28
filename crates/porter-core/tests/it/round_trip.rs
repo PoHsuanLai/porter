@@ -791,7 +791,7 @@ fn every_auth_kind_has_one_way_to_sign_in_again_and_its_slug_is_its_serde_form()
         (AuthKind::LocalRuntime, SignInWay::Nothing),
     ];
     for (kind, way) in table {
-        assert_eq!(kind.sign_in_way(), way, "{kind:?}");
+        assert_eq!(kind.facts().way, way, "{kind:?}");
         assert_eq!(json(&way), format!("\"{}\"", way.slug()), "{way:?}");
     }
 }

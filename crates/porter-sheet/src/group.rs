@@ -5,7 +5,7 @@
 //! [`ProviderGroup::fallback`] decides from how its accounts sign in and what they do.
 
 use porter_capability::CapabilityKind;
-use porter_core::AuthKind;
+use porter_core::{AuthKind, SignInWay};
 use serde::{Deserialize, Serialize};
 
 /// The group a provider's accounts belong to.
@@ -46,11 +46,13 @@ impl ProviderGroup {
     pub fn fallback(auth: AuthKind, kinds: &[CapabilityKind]) -> Self {
         let ai = |kind: &CapabilityKind| kind.is_ai() || *kind == CapabilityKind::Agent;
         let only_ai = !kinds.is_empty() && kinds.iter().all(ai);
-        match auth {
-            AuthKind::AgentLogin => ProviderGroup::Agent,
-            AuthKind::LocalRuntime => ProviderGroup::Intelligence,
-            _ if only_ai => ProviderGroup::Intelligence,
-            _ => ProviderGroup::Internet,
+        let facts = auth.facts();
+        if facts.way == SignInWay::Agent {
+            ProviderGroup::Agent
+        } else if facts.probed || only_ai {
+            ProviderGroup::Intelligence
+        } else {
+            ProviderGroup::Internet
         }
     }
 }

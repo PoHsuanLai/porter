@@ -8,7 +8,6 @@ use crate::AccountId;
 use crate::account::Account;
 use crate::auth_kind::AuthKind;
 use crate::consent::Grant;
-use crate::identities::IdentityKind;
 use porter_capability::Toggle;
 use porter_capability::{CapabilityKind, VocabVersion};
 use serde::{Deserialize, Serialize};
@@ -117,7 +116,7 @@ const MIGRATIONS: &[(VocabVersion, Migration)] = &[];
 /// and it keeps a copy of the old file first.
 pub fn prune_to_identities(persisted: &mut Persisted) {
     persisted.accounts.retain(|account| {
-        IdentityKind::of(account.auth).is_some()
+        account.auth.facts().identity.is_some()
             || matches!(account.auth, AuthKind::LoginFlowV2 | AuthKind::OwnProgram)
     });
     persisted.grants.clear();

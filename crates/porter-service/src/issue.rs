@@ -6,7 +6,7 @@ use crate::audience::covers;
 use crate::audit::{AuditEvent, AuditSink};
 use crate::ctx::Ctx;
 use crate::sheets::Sheets;
-use crate::token::{provider_refusal, secret_purpose, secrets_refusal};
+use crate::token::{provider_refusal, secrets_refusal};
 use porter_capability::CapabilityKind;
 use porter_capability::StorageScope;
 use porter_core::consent::GrantScope;
@@ -191,7 +191,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             .issue_for(
                 &account,
                 provider,
-                secret_purpose(account.auth),
+                account.auth.facts().secret,
                 audience,
                 (kind, reach),
             )

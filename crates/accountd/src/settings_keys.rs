@@ -264,9 +264,9 @@ fn account_keys(
             "Signs in".to_owned(),
             "",
             KeyKind::Fixed {
-                variant: account.auth.sign_in_way().slug().to_owned(),
+                variant: account.auth.facts().way.slug().to_owned(),
             },
-            toml::Value::String(account.auth.sign_in_way().slug().to_owned()),
+            toml::Value::String(account.auth.facts().way.slug().to_owned()),
         ),
         readout(
             &Key::Provider(id.clone()),

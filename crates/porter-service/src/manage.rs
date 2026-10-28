@@ -6,7 +6,6 @@ use crate::audit::AuditEvent;
 use crate::audit::AuditSink;
 use crate::ctx::Ctx;
 use crate::sheets::Sheets;
-use crate::token::secret_purpose;
 use porter_capability::{
     AbsentReason, CapabilityKind, Claim, Offer, Provenance, Subject, Toggle, effective,
 };
@@ -50,7 +49,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
     /// What the account presents to its provider: its stored credential, or nothing for a
     /// provider that needs none.
     async fn presented(&self, account: &porter_core::Account) -> Result<Presented, SecretsError> {
-        match secret_purpose(account.auth) {
+        match account.auth.facts().secret {
             None => Ok(Presented::Anonymous),
             Some(purpose) => {
                 let key = SecretKey {
@@ -93,7 +92,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             Ok(session) => session,
             Err(error) => return Err(self.refused_refresh(&account.id, error).await),
         };
-        if let (Some(renewed), Some(purpose)) = (session.renewed(), secret_purpose(account.auth)) {
+        if let (Some(renewed), Some(purpose)) = (session.renewed(), account.auth.facts().secret) {
             let key = SecretKey {
                 account: account.id.clone(),
                 purpose,
