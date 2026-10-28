@@ -76,7 +76,7 @@ pub use google::{Google, GoogleState};
 #[cfg(any(feature = "nextcloud", feature = "generic"))]
 pub use io::{Pacing, SharedDns};
 #[cfg(feature = "oauth")]
-pub use microsoft::{Microsoft, is_personal};
+pub use microsoft::Microsoft;
 #[cfg(feature = "nextcloud")]
 pub use nextcloud::{NextcloudFlow, NextcloudProvider, NextcloudSession};
 #[cfg(feature = "oauth")]

@@ -1,48 +1,14 @@
-//! What a Google token shows: who the account is, and which of its services answer. One small
-//! read per service that has one; a service whose scope the person unticked is absent without
-//! asking, and Photos, which has no read that is not the person's whole library, is shown by the
-//! scope alone.
-//!
-//! A 403 is one of three things, told apart by what Google writes in the error: the API is not
-//! switched on in the owner's Cloud project (`UnverifiedBuild`: the build cannot use it, and the
-//! owner can fix it), a Workspace administrator turned the service off (`TenantConsent`), or a
-//! personal account that has no such service (`ProviderOffersNone`).
+//! What a Google token shows, asked: one small read per service that has one (the paths are
+//! Google's `probe` rows of `issuers.toml`). What each answer means, and which services need no
+//! read, is oauth-probe-proto's.
 
 use super::apis_of;
 use super::scopes::Granted;
-use crate::oauth::{fault, get};
-use porter_capability::{AbsentReason, Claim, Offer, Provenance, Subject};
-use porter_capability::{Capability, CapabilityKind};
-use porter_core::Family;
+use crate::oauth::{failure, get};
+use oauth_probe_proto::google;
+use porter_capability::{CapabilityKind, Claim};
 use porter_http::Http;
-use porter_http::http::Response;
-use porter_provider::{ProviderError, ProviderSpec};
-
-/// Whether an address is a consumer's (no administrator to blame for a refusal).
-fn is_personal(address: &str) -> bool {
-    let domain = address.rsplit_once('@').map_or("", |(_, d)| d);
-    matches!(
-        domain.trim().to_ascii_lowercase().as_str(),
-        "gmail.com" | "googlemail.com"
-    )
-}
-
-/// The path (with its query) whose answer shows a service is reachable.
-fn probe_path(kind: CapabilityKind) -> Option<(Family, &'static str)> {
-    match kind {
-        CapabilityKind::Calendar => Some((
-            Family::GoogleCalendar,
-            "/users/me/calendarList?maxResults=1",
-        )),
-        CapabilityKind::Contacts => Some((Family::GooglePeople, "/contactGroups?pageSize=1")),
-        CapabilityKind::Tasks => Some((Family::GoogleTasks, "/users/@me/lists?maxResults=1")),
-        CapabilityKind::Storage => Some((
-            Family::GoogleDrive,
-            "/files?spaces=appDataFolder&pageSize=1&fields=files(id)",
-        )),
-        _ => None,
-    }
-}
+use porter_provider::{Issuer, ProviderError, ProviderSpec};
 
 /// Probes the account behind `token` for every kind `spec` declares.
 pub(super) async fn probe<H: Http>(
@@ -55,14 +21,10 @@ pub(super) async fn probe<H: Http>(
     let mut claims = Vec::new();
     // An on-use row (the whole of Drive) is not the account's until it is asked for.
     for kind in spec.sign_in_kinds() {
-        let Some(declared) = spec
-            .sign_in_rows()
-            .find(|row| row.capability.kind() == kind)
-            .map(|row| &row.capability)
-        else {
+        if spec.sign_in_rows().all(|row| row.capability.kind() != kind) {
             continue;
-        };
-        claims.push(claim_for(http, (spec, address, token), (granted, byo), kind, declared).await?);
+        }
+        claims.push(claim_for(http, (spec, address, token), (granted, byo), kind).await?);
     }
     Ok(claims)
 }
@@ -72,105 +34,25 @@ async fn claim_for<H: Http>(
     (spec, address, token): (&ProviderSpec, &str, &str),
     (granted, byo): (&Granted, bool),
     kind: CapabilityKind,
-    declared: &Capability,
 ) -> Result<Claim, ProviderError> {
-    let claim = |offer, provenance| Claim {
-        subject: Subject::Account,
-        offer,
-        provenance,
-    };
-    let absent = |reason| Offer::Absent { kind, reason };
-    let present = || Offer::Present(granted.narrow(declared));
-    if kind == CapabilityKind::Mail && !byo {
-        // The restricted scope was never asked: this build cannot read mail (R2).
-        return Ok(claim(
-            absent(AbsentReason::UnverifiedBuild),
-            Provenance::Declared,
-        ));
+    let declared = spec
+        .sign_in_rows()
+        .find(|row| row.capability.kind() == kind)
+        .map(|row| granted.narrow(&row.capability))
+        .ok_or(ProviderError::Unreadable)?;
+    let row = Issuer::Google.data().probe(kind);
+    if let Some(claim) =
+        google::settled(kind, (byo, granted.covers(kind), row.is_some()), &declared)
+    {
+        return Ok(claim);
     }
-    if !granted.covers(kind) {
-        return Ok(claim(
-            absent(AbsentReason::TurnedOff),
-            Provenance::Discovered,
-        ));
-    }
-    let Some((family, path)) = probe_path(kind) else {
-        // Mail is IMAP and Photos has no cheap read: the token's grant is what shows them.
-        return Ok(claim(present(), Provenance::Discovered));
-    };
-    let base = apis_of(spec).base(family);
+    let row = row.ok_or(ProviderError::Unreadable)?;
+    let base = apis_of(spec).base(row.family);
     let answer = get(
         http,
-        &format!("{}{path}", base.as_str().trim_end_matches('/')),
+        &format!("{}{}", base.as_str().trim_end_matches('/'), row.path),
         token,
     )
     .await?;
-    Ok(match answer.status().as_u16() {
-        200..=299 => claim(present(), Provenance::Probed),
-        403 => claim(absent(refusal_reason(&answer, address)), Provenance::Probed),
-        404 => claim(absent(AbsentReason::NotOnServer), Provenance::Probed),
-        status => return Err(fault(status)),
-    })
-}
-
-/// Why Google said 403, from what it wrote.
-fn refusal_reason(answer: &Response<Vec<u8>>, address: &str) -> AbsentReason {
-    let body = String::from_utf8_lossy(answer.body());
-    if body.contains("accessNotConfigured") || body.contains("SERVICE_DISABLED") {
-        return AbsentReason::UnverifiedBuild;
-    }
-    match is_personal(address) {
-        true => AbsentReason::ProviderOffersNone,
-        false => AbsentReason::TenantConsent,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_403_is_told_apart_by_what_google_wrote_and_who_asked() {
-        let body = |text: &str| -> Response<Vec<u8>> {
-            porter_http::http::Response::builder()
-                .status(403)
-                .body(text.as_bytes().to_vec())
-                .expect("response")
-        };
-        const CASES: &[(&str, &str, &str, AbsentReason)] = &[
-            (
-                "api off",
-                r#"{"error":{"errors":[{"reason":"accessNotConfigured"}]}}"#,
-                "ada@gmail.com",
-                AbsentReason::UnverifiedBuild,
-            ),
-            (
-                "api off (v2 error)",
-                r#"{"error":{"details":[{"reason":"SERVICE_DISABLED"}]}}"#,
-                "ada@firm.example",
-                AbsentReason::UnverifiedBuild,
-            ),
-            (
-                "workspace admin",
-                r#"{"error":{"message":"Forbidden"}}"#,
-                "ada@firm.example",
-                AbsentReason::TenantConsent,
-            ),
-            (
-                "personal account",
-                r#"{"error":{"message":"Forbidden"}}"#,
-                "ada@GMail.com",
-                AbsentReason::ProviderOffersNone,
-            ),
-            (
-                "googlemail",
-                "{}",
-                "ada@googlemail.com",
-                AbsentReason::ProviderOffersNone,
-            ),
-        ];
-        for (name, text, address, want) in CASES {
-            assert_eq!(refusal_reason(&body(text), address), *want, "{name}");
-        }
-    }
+    google::verdict(kind, &declared, address, &answer).map_err(failure)
 }

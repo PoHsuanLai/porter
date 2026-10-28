@@ -2265,6 +2265,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "oauth-probe-proto"
+version = "0.1.0"
+dependencies = [
+ "http",
+ "porter-capability",
+ "porter-ids",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "objc2-core-foundation"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2755,6 +2766,7 @@ dependencies = [
  "dav-proto",
  "generic-proto",
  "nextcloud-proto",
+ "oauth-probe-proto",
  "porter-capability",
  "porter-core",
  "porter-discover",

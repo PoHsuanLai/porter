@@ -1,11 +1,10 @@
 //! Reading an account from its issuer's API with a bearer token: who it is (OpenID Connect's
 //! userinfo), and what a non-success status means for the account.
 
+use oauth_probe_proto::{Failure, bearer_get};
 use porter_core::EndpointUrl;
-use porter_http::http::header::{ACCEPT, AUTHORIZATION};
-use porter_http::http::{Method, Response};
-use porter_http::{Http, SensitiveHeader, request};
-use porter_ids::WebUrl;
+use porter_http::Http;
+use porter_http::http::Response;
 use porter_provider::ProviderError;
 use serde::Deserialize;
 
@@ -42,18 +41,21 @@ pub(crate) fn fault(status: u16) -> ProviderError {
     }
 }
 
+/// What a failed read means for the account.
+pub(crate) fn failure(failure: Failure) -> ProviderError {
+    match failure {
+        Failure::Status(status) => fault(status),
+        _ => ProviderError::Unreadable,
+    }
+}
+
 /// A JSON `GET` of `url` with `token` as the bearer.
 pub(crate) async fn get<H: Http>(
     http: &H,
     url: &str,
     token: &str,
 ) -> Result<Response<Vec<u8>>, ProviderError> {
-    let url = WebUrl::parse(url).map_err(|_| ProviderError::Unreadable)?;
-    let request = request(Method::GET, &url)
-        .sensitive_header(AUTHORIZATION, &format!("Bearer {token}"))
-        .header(ACCEPT, "application/json")
-        .body(Vec::new())
-        .map_err(|_| ProviderError::Unreachable)?;
+    let request = bearer_get(url, token).map_err(failure)?;
     http.send(request)
         .await
         .map_err(|_| ProviderError::Unreachable)

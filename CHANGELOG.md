@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### The OAuth probes
+
+- New crate oauth-probe-proto: the bearer read and the readings of Google's and Graph's answers as
+  claims. Which path shows which service is a `[[<issuer>.probe]]` row of `issuers.toml`
+  (`IssuerData::probe`, `ProbeRow`). `porter_families::is_personal` is
+  `oauth_probe_proto::microsoft::is_personal`.
+
 ### generic-proto
 
 - New crate generic-proto: the typed and file-named mail servers (`typed`, `fixed`, `domain_of`),

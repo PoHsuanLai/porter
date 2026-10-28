@@ -46,6 +46,19 @@ pub struct ApiRow {
     pub url: EndpointUrl,
 }
 
+/// A read that shows a service is reachable with a token: the path (with its query) under the
+/// API's base, whose answer says whether the account has the service.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProbeRow {
+    /// The service.
+    pub kind: CapabilityKind,
+    /// The API it is read from.
+    pub family: Family,
+    /// The path, with its query, under the API's base.
+    pub path: String,
+}
+
 /// How an issuer treats a scope: what its consent screen and verification ask of the client. The
 /// data lists the first two; every other scope is restricted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -90,6 +103,8 @@ pub struct IssuerData {
     scope: Vec<ScopeRow>,
     #[serde(default)]
     api: Vec<ApiRow>,
+    #[serde(default)]
+    probe: Vec<ProbeRow>,
     #[serde(default)]
     class: Classes,
 }
@@ -193,6 +208,11 @@ impl IssuerData {
             .map(|row| row.url.clone())
     }
 
+    /// The read that shows the account has the service `kind`, for a kind with a cheap one.
+    pub fn probe(&self, kind: CapabilityKind) -> Option<&ProbeRow> {
+        self.probe.iter().find(|row| row.kind == kind)
+    }
+
     /// How the issuer classes `scope`; a scope its data does not name is taken as the most
     /// demanding.
     pub fn class_of(&self, scope: &str) -> ScopeClass {
@@ -265,6 +285,35 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn a_probe_reads_a_service_the_issuer_signs_in_for_from_an_api_it_has() {
+        for issuer in ALL {
+            let data = issuer.data();
+            for row in &data.probe {
+                assert!(row.path.starts_with('/'), "{issuer:?}: {}", row.path);
+                assert!(
+                    data.rows_of(row.kind, Ask::SignIn).next().is_some(),
+                    "{issuer:?}: {:?} is probed and never asked",
+                    row.kind
+                );
+                assert!(
+                    data.api(row.family).is_some(),
+                    "{issuer:?}: {:?} reads from {:?}, which has no base",
+                    row.kind,
+                    row.family
+                );
+            }
+        }
+        assert_eq!(
+            Issuer::Google
+                .data()
+                .probe(K::Calendar)
+                .map(|r| r.path.as_str()),
+            Some("/users/me/calendarList?maxResults=1")
+        );
+        assert!(Issuer::Google.data().probe(K::Mail).is_none());
     }
 
     #[test]

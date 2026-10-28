@@ -23,7 +23,7 @@ pub use session::OAuthSession;
 pub use standard::Standard;
 
 pub(crate) use flow::{exchange_fault, provider_fault};
-pub(crate) use identity::{fault, get, userinfo_address};
+pub(crate) use identity::{failure, get, userinfo_address};
 
 use crate::conversation::Conversation;
 use porter_capability::Claim;
