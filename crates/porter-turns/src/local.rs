@@ -46,7 +46,7 @@ impl sp::Sleeper for TokioSleep {
 }
 
 /// Three attempts, a quarter of a second doubling to four seconds (porter-bridge's, shared with
-/// porter-client's in-process engines).
+/// inferd-client's in-process engines).
 pub const RETRY: sp::RetryPolicy = porter_bridge::ENGINE_RETRY;
 
 /// An engine on a local socket answers its first byte after the prompt is read, which for an

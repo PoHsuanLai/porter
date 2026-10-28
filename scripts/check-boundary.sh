@@ -378,6 +378,70 @@ for edge in "${EDGES[@]}"; do
   fi
 done
 
+# HIDDEN CRATES: the bus and the service are a daemon's, and a client's transport's. Each crate
+# below may be depended on (normal or build edge) only by the crates named, so an app-facing
+# crate (porter-client, the families, the drive crates, ...) can never come to name one. The
+# transport crates are the only client-side names: porter-client-dbus holds the bus, and
+# porter-client-inproc the service. porter-rig (test tooling) and inferd-client (the inference
+# half, until the steward lane takes it) use porter-dbus's inference and sync groups; their rows
+# go with them.
+HIDDEN=(
+  "porter-dbus: accountd inferd inferd-client porter-client-dbus porter-rig porter-sheets syncd syncd-fakes"
+  "porter-callers: accountd inferd inferd-client porter-rig porter-sheets syncd"
+  "porter-service-core: accountd porter-client-inproc porter-fake porter-identities porter-service porter-service-accounts porter-service-grants porter-settings porter-sheets syncd"
+  "porter-service-accounts: accountd porter-client-inproc porter-service porter-service-grants syncd"
+  "porter-service-grants: porter-client-inproc porter-service"
+  "porter-service: accountd porter-client-inproc porter-fake syncd"
+  "porter-identities: accountd"
+  "porter-spaces: accountd"
+  "porter-settings: accountd inferd"
+  "porter-store: accountd inferd syncd"
+  "porter-sheets: accountd syncd"
+)
+for row in "${HIDDEN[@]}"; do
+  hidden="${row%%:*}"
+  read -r -a allowed <<<"${row#*:}"
+  users=$(cargo tree --workspace -i "$hidden" --depth 1 -e normal,build --prefix none 2>/dev/null \
+    | awk '{print $1}' | grep -vx "$hidden" | sort -u | tr '\n' ' ')
+  want=$(printf '%s\n' "${allowed[@]}" | sort -u | tr '\n' ' ')
+  if [ "$users" != "$want" ]; then
+    echo "HIDDEN: $hidden is depended on by [${users% }], only [${want% }] may"
+    fail=1
+  else
+    echo "hidden holds: $hidden is named by [${users% }] alone"
+  fi
+done
+
+# CLIENT TESTS: a client crate builds, and is semver-checked, without building a daemon. No
+# `[dev-dependencies]` section (target-specific ones too) of a porter-client* crate names a daemon
+# or a service crate; the tests that need accountd are accountd's (crates/accountd/tests/it/client).
+client_dev=""
+for manifest in crates/porter-client*/Cargo.toml; do
+  named=$(awk '/^\[/ { dev = ($0 ~ /dev-dependencies\]$/) } dev && /^(accountd|inferd|syncd|porter-service[a-z-]*)[ .=]/ { print $1 }' "$manifest")
+  if [ -n "$named" ]; then
+    client_dev="$client_dev$manifest: $(echo $named)"$'\n'
+  fi
+done
+if [ -n "$client_dev" ]; then
+  printf '%s' "$client_dev"
+  echo "LEAK: a porter-client* crate has a daemon or a service crate as a dev-dependency"
+  fail=1
+else
+  echo "boundary holds: no porter-client* crate has a daemon or a service crate as a dev-dependency"
+fi
+
+# `porter_dbus::accounts` is named only where accountd's interfaces are served or called: the
+# daemons, the sheet crate, the bus transport of the client, the test tooling and the fakes.
+accounts_users=$(grep -rlE --include='*.rs' 'porter_dbus::(accounts|\{[^}]*accounts)' crates \
+  | grep -vE '^crates/(accountd|syncd|inferd|porter-sheets|porter-client-dbus|syncd-fakes|porter-rig|porter-dbus|inferd-client)/' || true)
+if [ -n "$accounts_users" ]; then
+  echo "$accounts_users"
+  echo "LEAK: porter_dbus::accounts is named outside the daemons and the client's bus transport"
+  fail=1
+else
+  echo "boundary holds: porter_dbus::accounts is named by the daemons and the client's bus transport alone"
+fi
+
 # accountd's test-only knob (`ACCOUNTD_PROC_ROOT`, feature `test-proc-root`) is never on in a
 # default build: the features cargo resolves for accountd without any flag must not name it.
 if cargo tree -p accountd --depth 0 -f '{p} {f}' 2>/dev/null | grep -q 'test-proc-root'; then

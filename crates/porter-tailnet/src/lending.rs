@@ -2,7 +2,7 @@
 //! `org.quire.Inference1` hands them to Settings and the shell: who is asking, what the person
 //! answered, and which computers could be added. Pure data, no files and no sockets: the one
 //! program that keeps the answers is `porter-tailnet`, and the client reads them through
-//! `porter-client`. They live here so a client that only talks to the bus builds none of the
+//! `inferd-client`. They live here so a client that only talks to the bus builds none of the
 //! lending computer's own dependencies.
 
 use porter_ids::UnixSeconds;

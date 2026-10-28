@@ -25,6 +25,27 @@
 - `EngineConfig::program` is public and `EngineConfig::named_path` is new; `LocalModel::unit_with`
   returns an `Option`.
 
+### Every domain of accountd is a client of `Porter<T>`
+
+- `porter.identities()`, `spaces()`, `tailnet()`, `ai_keys()`, `ai_accounts()` and `launcher()` over `Bus`, and the
+  shell's view of the accounts on `accounts()` (`needing_reauth`, `view`, `reauthenticate_shown`, `watch`, with
+  `AccountRef`). They are the old `Identities`, `Spaces`, `Tailnet`, `AiKeys`, `AiAccounts` and `Launcher` without
+  `connect(&BusConnection)`: they take a `Porter<Bus>` (`Bus::over(connection)`). `Spaces` gains `register`, `rename`,
+  `set_look` and `remove`.
+- Every watch is a `Changes<T>` (a `Stream` of `Result<T, Malformed>`, with `next`), replacing `SpaceChanges`,
+  `MachineChanges`, `IdentityRemovals`, `Changes` (AI accounts), `Requests` and `Revocations`; an item is
+  `Err(Malformed::Signal)` for a signal that is not well formed. `Spaces::watch` gives
+  `Changes<(DesktopSpace, SpaceChange)>`; no domain has an alias.
+- Errors carry no text: `CallFailure` and its three `String` variants are `LinkError`; each domain's error has
+  `Link(LinkError)` where it had `Bus(CallFailure)`. A sheet already open for the app is `AccountsError::Busy`,
+  where detent searched an error's text for `LimitsExceeded`; an object the daemon does not serve (an account that is
+  not there) is `LinkError::Invalid`.
+- `porter-client` reaches no zbus, no `porter-dbus` and no service crate, and the bus tests of the client are accountd's
+  (`crates/accountd/tests/it/client`); check-boundary.sh has a table of the
+  crates that may depend on `porter-dbus`, `porter-callers`, the `porter-service*` crates, `porter-identities`,
+  `porter-spaces`, `porter-settings`, `porter-store` and `porter-sheets`, and fails on any other, and on
+  `porter_dbus::accounts` named outside the daemons and `porter-client-dbus`.
+
 ### `Porter`: one handle over a transport
 
 - `porter_client::Porter<T>` is the app's handle: `porter.accounts()` (`add`, `reauthenticate`) over any transport that

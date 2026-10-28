@@ -3,7 +3,7 @@
 #
 # The workspace gate builds `--workspace --all-features`, which unifies every feature into one
 # build and so never sees the build a consumer makes on its own. docket builds inferd that way
-# (`cargo install --git porter`, -D warnings): porter-client with `dbus` and `infer` (now inferd-client's `dbus`) and no
+# (`cargo install --git porter`, -D warnings): the client with `dbus` and `infer` (now inferd-client's `dbus`) and no
 # other feature once left two framed.rs methods unused, and the gate passed (porter 5bdda62;
 # fixed in b12886e). Each set below is checked here, alone, so the same break fails this script.
 #

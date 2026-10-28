@@ -3,7 +3,7 @@
 //! `InferEvent`, `ProviderError` to `ModelError`, `StopReason` both ways. `request` is the way
 //! in and `reply` the way out; the mapping of the served name to a `ModelId` is here.
 //!
-//! Moved out of inferd so that the process that hosts the engines itself (porter-client's
+//! Moved out of inferd so that the process that hosts the engines itself (inferd-client's
 //! `engines` feature, an app with no inferd) speaks to them with the same mapping the daemon
 //! does. Pure: no runtime, no socket.
 

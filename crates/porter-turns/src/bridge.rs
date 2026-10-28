@@ -1,7 +1,7 @@
 //! The seam between porter's wire types and stoker's provider types (`model-provider`):
 //! `ChatRequest` to `TurnRequest`, `ToolCallPart` to `ToolCall`, stoker's `TurnEvent` to
 //! `InferEvent`, `ProviderError` to `ModelError`, `StopReason` both ways. The mapping itself is
-//! `porter-bridge` (shared with porter-client's in-process engine host); what stays here is the
+//! `porter-bridge` (shared with inferd-client's in-process engine host); what stays here is the
 //! half that reads inferd's own model book (`local`): the turn target of a `LocalModel`, and the
 //! embedding limits of its entry.
 

@@ -1,6 +1,6 @@
 [package]
 name = "porter-bridge"
-description = "The one mapping between porter's wire types (porter-infer) and stoker's provider types (model-provider): a chat, task or embedding request as a turn, a turn's events and end as porter's, a provider error as a ModelError. Pure: no runtime, no socket, no HTTP. inferd and porter-client's in-process engine host share it."
+description = "The one mapping between porter's wire types (porter-infer) and stoker's provider types (model-provider): a chat, task or embedding request as a turn, a turn's events and end as porter's, a provider error as a ModelError. Pure: no runtime, no socket, no HTTP. inferd and inferd-client's in-process engine host share it."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

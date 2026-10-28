@@ -1,4 +1,4 @@
-//! The client side of one `Open` fd: frames out, events in. `porter-client` re-exports it and
+//! The client side of one `Open` fd: frames out, events in. `inferd-client` re-exports it and
 //! each transport supplies its own session; `porter-fake` supplies a scripted one.
 
 use crate::event::{ClientFrame, InferEvent};
