@@ -4,7 +4,7 @@
 use porter_core::consent::Usage;
 use porter_core::token::Audience;
 use porter_core::{AccountId, GrantId};
-use porter_core::{DataClass, EndpointUrl, ProviderHint};
+use porter_core::{DataClass, ProviderHint};
 use porter_match::Need;
 use serde::{Deserialize, Serialize};
 
@@ -69,26 +69,6 @@ pub enum AccountsRequest {
         grant: GrantId,
         /// The service it is for.
         audience: Audience,
-    },
-    /// A descriptor to a daemon-side relay that authenticates to one endpoint of a granted
-    /// account, for the password protocols, so the password never leaves the daemon
-    /// (`Tokens.OpenAuthenticated`). The descriptor is out of band; the reply is
-    /// `AccountsReply::Authenticated`.
-    OpenAuthenticated {
-        /// The grant.
-        grant: GrantId,
-        /// One of the account's endpoints for the grant's kind, as the candidate listed it.
-        endpoint: EndpointUrl,
-    },
-    /// A descriptor to a relay that adds no credential, to an origin the account's provider file
-    /// declares as one its pre-authenticated links may point at (`linked_origins`), under a
-    /// grant that holds an endpoint of that family (`Tokens.OpenLinked`). The descriptor is out
-    /// of band; the reply is `AccountsReply::Authenticated`.
-    OpenLinked {
-        /// The grant.
-        grant: GrantId,
-        /// The origin (`https://host[:port]`, no path), as the link named it.
-        origin: EndpointUrl,
     },
 }
 

@@ -33,10 +33,6 @@ pub enum AccountsReply {
     Revoked,
     /// For `IssueToken`.
     Token(IssuedToken),
-    /// For `OpenAuthenticated`: the relay is running and its descriptor travels beside this
-    /// reply, out of band (a D-Bus `h`, an `SCM_RIGHTS` descriptor on the socket frame, an
-    /// in-memory duplex in process). The reply itself carries no value.
-    Authenticated,
     /// The request was refused, and why.
     Refused(Refusal),
 }

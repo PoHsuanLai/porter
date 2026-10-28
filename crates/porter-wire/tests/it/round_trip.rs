@@ -8,8 +8,8 @@ use porter_capability::{
 use porter_core::token::Audience;
 use porter_core::{AccountId, GrantId, ProviderId};
 use porter_core::{
-    AccountLabel, AppId, AppName, Candidate, DataClass, EndpointUrl, Isolation, IssuedToken,
-    ProviderHint, Restriction, SecretText, SpaceId, SpaceScope, TokenKind,
+    AccountLabel, AppId, AppName, Candidate, DataClass, Isolation, IssuedToken, ProviderHint,
+    Restriction, SecretText, SpaceId, SpaceScope, TokenKind,
 };
 use porter_core::{
     GrantKey,
@@ -38,10 +38,6 @@ fn account_id(s: &str) -> AccountId {
 
 fn grant_id(s: &str) -> GrantId {
     GrantId::parse(s).expect("grant id")
-}
-
-fn url() -> EndpointUrl {
-    EndpointUrl::parse("imaps://imap.example.org").expect("url")
 }
 
 fn storage() -> Capability {
@@ -135,14 +131,6 @@ fn every_request_and_reply_round_trips() {
             grant: grant_id("g1"),
             audience: Audience("imap".into()),
         },
-        AccountsRequest::OpenAuthenticated {
-            grant: grant_id("g1"),
-            endpoint: url(),
-        },
-        AccountsRequest::OpenLinked {
-            grant: grant_id("g1"),
-            origin: url(),
-        },
     ];
     requests.iter().for_each(round_trip);
     let replies = vec![
@@ -159,7 +147,6 @@ fn every_request_and_reply_round_trips() {
             SecretText::new("t"),
             UnixSeconds(1),
         )),
-        AccountsReply::Authenticated,
         AccountsReply::Refused(Refusal::AudienceNotGranted),
         AccountsReply::Refused(Refusal::EndpointNotGranted),
     ];
@@ -167,25 +154,7 @@ fn every_request_and_reply_round_trips() {
 }
 
 #[test]
-fn new_wire_requests_keep_their_slugs() {
-    assert_eq!(
-        json(&AccountsRequest::OpenAuthenticated {
-            grant: grant_id("g1"),
-            endpoint: url(),
-        }),
-        r#"{"kind":"open_authenticated","v":{"grant":"g1","endpoint":"imaps://imap.example.org"}}"#
-    );
-    assert_eq!(
-        json(&AccountsRequest::OpenLinked {
-            grant: grant_id("g1"),
-            origin: url(),
-        }),
-        r#"{"kind":"open_linked","v":{"grant":"g1","origin":"imaps://imap.example.org"}}"#
-    );
-    assert_eq!(
-        json(&AccountsReply::Authenticated),
-        r#"{"kind":"authenticated"}"#
-    );
+fn a_refusal_keeps_its_slug() {
     assert_eq!(
         json(&AccountsReply::Refused(Refusal::EndpointNotGranted)),
         r#"{"kind":"refused","v":"endpoint_not_granted"}"#

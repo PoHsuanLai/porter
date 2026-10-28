@@ -89,9 +89,9 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         self.ctx.lock().clone()
     }
 
-    /// Answers `request` from `caller`. `OpenAuthenticated` carries a descriptor the transport
-    /// makes, so it is answered by [`AccountService::open_authenticated`] and is `Unavailable`
-    /// here.
+    /// Answers `request` from `caller`. A relay carries a descriptor the transport makes, so it is
+    /// not a request: it is [`AccountService::open_authenticated`] and
+    /// [`AccountService::open_linked`].
     pub async fn handle(&self, caller: &AppId, request: AccountsRequest) -> AccountsReply {
         match request {
             AccountsRequest::Query { need, class, usage } => {
@@ -120,9 +120,6 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             AccountsRequest::Revoke { grant } => self.ctx.revoke(caller, &grant).await,
             AccountsRequest::IssueToken { grant, audience } => {
                 self.ctx.issue_token(caller, &grant, &audience).await
-            }
-            AccountsRequest::OpenAuthenticated { .. } | AccountsRequest::OpenLinked { .. } => {
-                AccountsReply::Refused(Refusal::Unavailable)
             }
             // a variant a newer porter adds: refused as unavailable
             _ => AccountsReply::Refused(Refusal::Unavailable),
