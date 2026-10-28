@@ -4,7 +4,8 @@ use super::dbus::{DbusTransport, Rows, bus_error, slug};
 use super::dbus_session::DbusSession;
 use crate::error::TransportError;
 use porter_capability::ModelId;
-use porter_core::{DataClass, Tier};
+use porter_capability::Tier;
+use porter_core::DataClass;
 use porter_dbus::names::{
     OPTION_ASKER, OPTION_MODEL, OPTION_PLACE_MODELS, OPTION_PLACES, OPTION_TRACEPARENT,
     OPTION_USAGE, PLACE_KEY_ENGINES, PLACE_KEY_KIND, PLACE_KEY_MODELS, PLACE_KEY_NAME,

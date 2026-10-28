@@ -21,12 +21,14 @@ use super::broker::SessionHost;
 use crate::authenticated::{AuthenticatedStream, Relayed};
 use crate::error::TransportError;
 use crate::relays::{NoRelays, RelayHost};
+#[cfg(feature = "infer")]
+use porter_capability::Tier;
+#[cfg(feature = "infer")]
+use porter_core::DataClass;
 use porter_core::GrantId;
 use porter_core::store::RegistryStore;
 use porter_core::stream::duplex;
 use porter_core::{AppId, EndpointUrl, RelayPlan};
-#[cfg(feature = "infer")]
-use porter_core::{DataClass, Tier};
 use porter_ids::clock::Clock;
 #[cfg(feature = "infer")]
 use porter_infer::{OpenOptions, Readiness};

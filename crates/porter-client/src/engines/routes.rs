@@ -5,7 +5,8 @@
 
 use super::engine::{Engine, EngineError, EngineId, KeyUse};
 use super::keys::KeySource;
-use porter_core::{Billing, DataClass, Tier};
+use porter_capability::{Billing, Tier};
+use porter_core::DataClass;
 use porter_infer::{
     InferRefusal, Permit, Policy, RouteAsk, RouteCandidate, Slot, SpendVerdict, admit,
 };

@@ -12,9 +12,7 @@ use common::bus::PrivateBus;
 use common::host::{HostLog, SheetHost, send_input};
 use common::{Shared, caller, error_name, eventually};
 use porter_core::ProviderId;
-use porter_core::{
-    Account, AccountLabel, AccountState, AuthKind, Machine, MachineOwner, Restriction,
-};
+use porter_core::{Account, AccountLabel, AccountState, AuthKind, Restriction};
 use porter_dbus::callers::CallerRole;
 use porter_dbus::{BusStream, ManagerProxy, Sheet, SpacesProxy, TailnetProxy, machine_from_dbus};
 use porter_fake::{MemoryStore, RecordingAudit};
@@ -25,6 +23,7 @@ use porter_ids::clock::FixedClock;
 use porter_service::{AccountService, Registry};
 use porter_sheet::{SheetInput, SheetView, SignInFault};
 use porter_tailscale::LocalApi;
+use porter_tailscale::{Machine, MachineOwner};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use test_kit::{Deadline, Scratch};

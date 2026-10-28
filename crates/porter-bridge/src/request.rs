@@ -422,7 +422,7 @@ fn task_instruction(task: pi::Task) -> Result<&'static str, BridgeError> {
 pub fn task_turn_for(
     target: &Target,
     request: &pi::TaskRequest,
-    tier: porter_core::Tier,
+    tier: porter_capability::Tier,
 ) -> Result<sp::TurnRequest, BridgeError> {
     let chat = pi::ChatRequest::new(
         vec![

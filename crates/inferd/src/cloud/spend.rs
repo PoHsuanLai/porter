@@ -9,8 +9,9 @@
 //! prompt.
 
 use crate::settings::SpendLine;
+use porter_capability::PriceTable;
 use porter_core::AccountId;
-use porter_core::{AppId, PriceTable};
+use porter_core::AppId;
 use porter_fs::atomic::AtomicWrite;
 use porter_ids::{MicroUsd, Tokens, UnixSeconds};
 use porter_infer::{Period, SpendScope, SpendVerdict, TokenUsage, cost, spend_verdict};

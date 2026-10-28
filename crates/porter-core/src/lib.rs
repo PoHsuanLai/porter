@@ -4,8 +4,6 @@
 //! percent-encoding in `porter-ids`, the capability vocabulary in `porter-capability`.
 
 mod account;
-mod agent_login;
-mod ai_props;
 mod app_id;
 pub mod audit;
 mod auth_kind;
@@ -20,7 +18,6 @@ mod identities;
 mod identity;
 mod ids;
 mod launcher_session;
-pub mod lending;
 mod process_credential;
 mod protocol;
 mod provider_hint;
@@ -31,12 +28,9 @@ mod space;
 mod space_record;
 pub mod store;
 pub mod stream;
-mod tailnet;
 pub mod token;
 
 pub use account::{Account, AccountLabel, AccountState, AgentState};
-pub use agent_login::{LoginFault, LoginOutcome, LoginRequestId};
-pub use ai_props::{Billing, Locality, PriceTable, Region, Tier};
 pub use app_id::{AppId, AppLabel, AppName, Isolation};
 pub use auth_kind::{AuthKind, SignInWay};
 pub use candidate::Candidate;
@@ -69,5 +63,4 @@ pub use space_record::{
     DesktopSpaceRecord, SPACE_LOOK_MAX_BYTES, SPACE_NAME_MAX_CHARS, SpaceChange, SpaceLook,
     SpaceName,
 };
-pub use tailnet::{Machine, MachineLink, MachineOwner, MachineSsh, NodeId};
 pub use token::{Audience, IssuedToken, TokenKind};

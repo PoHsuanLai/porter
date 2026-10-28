@@ -84,7 +84,7 @@ async fn a_servers_models_are_listed_for_the_account_and_a_turn_reaches_it() {
     assert_eq!(served.model.as_str(), "llama-3.2-3b");
     assert!(matches!(
         served.locality,
-        porter_core::Locality::Cloud { .. }
+        porter_capability::Locality::Cloud { .. }
     ));
     let InferReply::Chat(reply) = finished(&events) else {
         panic!("a chat reply, got {events:?}");

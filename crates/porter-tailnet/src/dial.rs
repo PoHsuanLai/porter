@@ -7,8 +7,8 @@
 //! network address: it goes out on the network or not at all. This is done for every
 //! connection, not once.
 
-use porter_core::{MachineOwner, NodeId};
 use porter_tailscale::{LocalApi, Standing, TailscaleError, UserId, WhoIs};
+use porter_tailscale::{MachineOwner, NodeId};
 use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 use tokio::net::{TcpSocket, TcpStream};

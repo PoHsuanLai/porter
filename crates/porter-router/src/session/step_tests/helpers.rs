@@ -5,9 +5,10 @@ pub(super) use crate::session::{
 };
 use porter_capability::ModelId;
 use porter_capability::{CuaEnv, LanguageTag, SpeechMode};
+use porter_capability::{Locality, Tier};
 use porter_core::AccountId;
+use porter_core::DataClass;
 use porter_core::consent::Usage;
-use porter_core::{DataClass, Locality, Tier};
 use porter_ids::Tokens;
 use porter_infer::{
     AudioFrame, AudioRate, Base64Bytes, ClientFrame, CuaBegin, CuaStepReply, InferEvent,

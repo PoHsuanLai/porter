@@ -9,7 +9,8 @@
 
 use super::{Decided, Listed, Unchosen, choose, chosen_for, fits};
 use porter_capability::ModelId;
-use porter_core::{DataClass, Tier};
+use porter_capability::Tier;
+use porter_core::DataClass;
 use porter_infer::{
     AutoPolicy, InferRefusal, NoPlaceReason, PickRefusal, PlaceId, PlaceRefusal, Policy, RouteAsk,
     RouteCandidate, TierChoice, TierMap, admit,

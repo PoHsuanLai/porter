@@ -139,8 +139,9 @@ fn the_generic_files_declare_what_the_generic_family_finds() {
 
 #[test]
 fn the_openai_compatible_file_is_a_pasted_key_with_no_server_so_the_sign_in_asks() {
+    use porter_capability::Locality;
     use porter_capability::{Capability, CapabilityKind as K};
-    use porter_core::{AuthKind, Family, Locality};
+    use porter_core::{AuthKind, Family};
     use porter_provider::Discovery;
     let spec = shipped_spec("openai-compatible");
     assert_eq!((spec.auth.kind, spec.auth.issuer), (AuthKind::ApiKey, None));
@@ -182,7 +183,8 @@ fn the_nextcloud_file_names_the_login_flow_and_no_server() {
 #[test]
 fn the_ai_company_files_declare_a_cloud_llm_row_behind_a_pasted_key() {
     use porter_capability::CapabilityKind as K;
-    use porter_core::{AuthKind, Family, Locality};
+    use porter_capability::Locality;
+    use porter_core::{AuthKind, Family};
     use porter_provider::Discovery;
     for (id, label, family, endpoint) in [
         (

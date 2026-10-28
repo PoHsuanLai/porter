@@ -5,10 +5,11 @@
 //! was. The trait keeps the bus object free of those six parameters, and lets a test host stand in
 //! for the service.
 
+use porter_core::LauncherSession;
 use porter_core::consent::Usage;
 use porter_core::store::RegistryStore;
 use porter_core::{AccountId, GrantId};
-use porter_core::{AgentState, AppId, DataClass, LauncherSession, SecretText};
+use porter_core::{AgentState, AppId, DataClass, SecretText};
 use porter_ids::clock::Clock;
 use porter_match::Need;
 use porter_provider::Provider;

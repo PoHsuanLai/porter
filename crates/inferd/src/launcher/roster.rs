@@ -16,8 +16,10 @@
 
 use super::errors::RefusedError;
 use porter_capability::AgentProgram;
+use porter_capability::LoginRequestId;
 use porter_core::AccountId;
-use porter_core::{AppId, LauncherSession, LoginRequestId};
+use porter_core::AppId;
+use porter_core::LauncherSession;
 use porter_dbus::LauncherFault;
 use porter_dbus::names::INFERENCE_PATH;
 use porter_ids::UnixSeconds;
@@ -583,7 +585,7 @@ impl SignOutNews {
 
     /// What an end of a logout request is to the pane.
     pub fn of(end: LoginEnd) -> Self {
-        use porter_core::LoginOutcome;
+        use porter_capability::LoginOutcome;
         match end {
             LoginEnd::Reported(LoginOutcome::Ready) => SignOutNews::Done,
             LoginEnd::Reported(LoginOutcome::Failed(_)) => SignOutNews::Failed,

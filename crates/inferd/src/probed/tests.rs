@@ -3,7 +3,8 @@ use crate::engines::Engines;
 use crate::probe::testing::{chat, found};
 use porter_capability::LlmFeature;
 use porter_capability::ModelId;
-use porter_core::{DataClass, Locality, Tier};
+use porter_capability::{Locality, Tier};
+use porter_core::DataClass;
 use porter_ids::Tokens;
 use porter_infer::{
     AutoMode, AutoRow, InferRefusal, LocalOnly, ModelRef, Policy, Slot, TierMap, TierRow,

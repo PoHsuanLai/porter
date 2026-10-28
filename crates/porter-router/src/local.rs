@@ -19,9 +19,9 @@ use model_http::{AuthHeader, HostName, HttpEndpoint, HttpTarget, Port, Proxy, Ti
 use model_openai_compat::Flavor;
 use model_provider::{Caps, EmbedCaps, ModelName, Tokens};
 use porter_capability::ModelId;
+use porter_capability::{Billing, Locality};
 use porter_capability::{Capability, Offer};
 use porter_core::AccountId;
-use porter_core::{Billing, Locality};
 use porter_infer::{ModelCard, ModelRef};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

@@ -1,10 +1,10 @@
 use super::*;
+use porter_capability::Billing;
 use porter_capability::ModelId;
 use porter_capability::{
     Capability, CuaBatching, CuaCap, CuaEnv, LlmCap, LlmFeature, LlmWire, Offered,
 };
 use porter_core::AccountId;
-use porter_core::Billing;
 use porter_ids::{Px, Tokens};
 use porter_infer::{AutoMode, AutoRow, Declined, DeclinedBecause, LocalOnly, TierRow};
 use porter_match::{CuaNeed, LlmNeed};

@@ -8,12 +8,13 @@ use crate::common;
 use common::bus::PrivateBus;
 use common::inferd::{Behaviour, FakeInferd, Seen, slugs};
 use porter_capability::ModelId;
+use porter_capability::Tier;
 use porter_client::{
     Accounts, ClientError, DbusSession, DbusTransport, InferSession, SessionError, TransportError,
 };
 use porter_core::AccountId;
+use porter_core::DataClass;
 use porter_core::consent::Usage;
-use porter_core::{DataClass, Tier};
 use porter_ids::{Dims, Permille, Tokens};
 use porter_infer::testing::{Script, ScriptStep};
 use porter_infer::{
@@ -44,7 +45,7 @@ fn served() -> ServedBy {
     ServedBy {
         account: AccountId::parse("local").expect("id"),
         model: ModelId::parse("echo").expect("id"),
-        locality: porter_core::Locality::OnDevice,
+        locality: porter_capability::Locality::OnDevice,
     }
 }
 

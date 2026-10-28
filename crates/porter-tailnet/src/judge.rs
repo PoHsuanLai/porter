@@ -20,7 +20,7 @@
 use crate::guests::{Guests, State};
 use crate::identity::Identity;
 use crate::refusal::Refusal;
-use porter_core::{MachineOwner, NodeId};
+use porter_tailscale::{MachineOwner, NodeId};
 use porter_tailscale::{TailscaleError, WhoIs};
 use std::net::IpAddr;
 

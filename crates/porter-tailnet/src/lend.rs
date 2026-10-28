@@ -20,7 +20,7 @@ use crate::judge::{Welcome, judge};
 use crate::observe::Seen;
 use crate::refusal::Refusal;
 use crate::{PORT, is_network_address};
-use porter_core::NodeId;
+use porter_tailscale::NodeId;
 use porter_tailscale::{LocalApi, TailscaleError};
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;

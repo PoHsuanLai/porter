@@ -1,7 +1,7 @@
 use super::*;
+use porter_capability::Locality;
 use porter_capability::ModelId;
 use porter_core::AccountId;
-use porter_core::Locality;
 
 fn served() -> pi::ServedBy {
     pi::ServedBy {

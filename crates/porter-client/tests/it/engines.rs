@@ -2,12 +2,13 @@
 //! loopback (no network, no real model).
 #![cfg(feature = "engines")]
 
+use porter_capability::{Locality, Tier};
 use porter_client::engines::{
     Dialect, Engine, EngineHost, EngineId, EngineUrl, KeySource, NoKeys, Route,
 };
 use porter_client::{InferRefusal, InferSession, OpenOptions, Policy, SessionHost, Slot};
 use porter_core::AccountId;
-use porter_core::{AppId, AppName, DataClass, Isolation, Locality, SecretText, Tier};
+use porter_core::{AppId, AppName, DataClass, Isolation, SecretText};
 use porter_fake_servers::{FakeModels, ModelDef, ModelsHandle, Running, Wire};
 use porter_ids::Tokens;
 use porter_infer::{

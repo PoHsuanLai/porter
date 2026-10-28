@@ -4,12 +4,12 @@ use super::common::{
     Addresses, addresses, ask, config, connect_from, fake, free_port, listening_at, network,
     observed, wait,
 };
-use porter_core::NodeId;
 use porter_fake_servers::Daemon;
 use porter_ids::UnixSeconds;
 use porter_tailnet::{
     Config, Footing, GuestAnswer, Guests, Lending, Limits, Refusal, Visit, Visits, lend,
 };
+use porter_tailscale::NodeId;
 use std::future::Future;
 use std::net::{IpAddr, SocketAddr};
 use std::pin::Pin;

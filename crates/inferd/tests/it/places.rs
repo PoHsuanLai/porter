@@ -12,8 +12,9 @@ use hosting::rig::{Hosted, Plan, Trust, World};
 use inferd::attached::{Attached, Place, Reach};
 use inferd::peers::{Caller, Role};
 use porter_capability::ModelId;
+use porter_capability::Tier;
 use porter_client::{ClientError, TransportError};
-use porter_core::{AppId, AppName, DataClass, Isolation, Tier};
+use porter_core::{AppId, AppName, DataClass, Isolation};
 use porter_infer::{ComputerName, PlaceKind, PlaceRow, PlaceState, Takes};
 
 fn app(name: &str) -> AppId {

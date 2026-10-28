@@ -497,7 +497,7 @@ fn an_old_sign_in_view_still_reads() {
 
 #[test]
 fn an_ai_servers_address_is_marked_when_it_cannot_be_right() {
-    use porter_core::{MachineOwner, NodeId};
+    use porter_tailscale::{MachineOwner, NodeId};
     let form = vec![
         FieldSpec {
             kind: FieldKind::ServerUrl,
@@ -549,7 +549,7 @@ fn an_ai_servers_address_is_marked_when_it_cannot_be_right() {
 
 #[test]
 fn only_a_computer_of_mine_is_one_of_mine_by_name_network_name_or_address() {
-    use porter_core::NodeId;
+    use porter_tailscale::NodeId;
     let machine = |name: &str, address: &str, owner| {
         Machine::new(
             NodeId::parse("nTEST1").expect("node id"),

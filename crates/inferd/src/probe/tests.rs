@@ -1,9 +1,9 @@
 use super::names::{Listing, id_of, pair};
 use super::testing::{chat, embedding, found};
 use super::*;
+use porter_capability::Locality;
 use porter_capability::{Capability, LlmFeature, LlmWire};
 use porter_core::AccountId;
-use porter_core::Locality;
 use porter_fake_servers::{FakeModels, ModelDef, Wire};
 use porter_http_reqwest::ReqwestHttp;
 use serde_json::json;
@@ -166,7 +166,7 @@ fn a_probed_chat_model_is_an_on_device_free_card_on_the_runtimes_account() {
         .remove(0);
     assert_eq!(local.card.account, AccountId::parse("ollama").expect("id"));
     assert_eq!(local.card.locality, Locality::OnDevice);
-    assert_eq!(local.card.billing, porter_core::Billing::Free);
+    assert_eq!(local.card.billing, porter_capability::Billing::Free);
     assert_eq!(local.name.0, "llama3.2:3b");
     assert_eq!(local.loopback, Some(model_http::Port(11_434)));
     assert_eq!(local.weights(), porter_router::local::Weights::Present);

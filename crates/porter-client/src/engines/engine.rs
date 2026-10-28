@@ -172,7 +172,7 @@ pub struct Engine {
     /// The name in the request's `model` field, as the server knows it (`llama3.2:3b`).
     pub served_name: String,
     /// Where the model runs. Decides which data classes may go to it (the policy's floors).
-    pub locality: porter_core::Locality,
+    pub locality: porter_capability::Locality,
     /// Where the server is.
     pub url: EngineUrl,
     /// How it is spoken to.
@@ -192,7 +192,7 @@ impl Engine {
         account: AccountId,
         served_name: &str,
         url: EngineUrl,
-        locality: porter_core::Locality,
+        locality: porter_capability::Locality,
         dialect: Dialect,
         max_output: Tokens,
     ) -> Result<Self, EngineError> {

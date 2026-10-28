@@ -9,8 +9,10 @@ use crate::common;
 use common::bus::PrivateBus;
 use common::fake_inferd::{FakeInferd, Sheets};
 use porter_capability::AgentProgram;
+use porter_capability::LoginOutcome;
 use porter_client::{AskKind, Launcher, LauncherError};
-use porter_core::{DataClass, LauncherSession, LoginOutcome};
+use porter_core::DataClass;
+use porter_core::LauncherSession;
 use porter_dbus::BusStream;
 use porter_wire::Refusal;
 

@@ -2,7 +2,7 @@
 //! session ask P2). accountd makes it; the launcher names it to end the credential and is told it
 //! when accountd ends one. It is not a secret and it is never derived from one.
 
-use crate::error::CoreError;
+use porter_ids::IdError;
 use porter_ids::is_id;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -15,13 +15,10 @@ pub struct ProcessCredentialId(Box<str>);
 
 impl ProcessCredentialId {
     /// The id written as `text`.
-    pub fn parse(text: &str) -> Result<Self, CoreError> {
+    pub fn parse(text: &str) -> Result<Self, IdError> {
         match is_id(text) {
             true => Ok(Self(text.into())),
-            false => Err(CoreError::MalformedId {
-                what: "process credential id",
-                text: text.to_owned(),
-            }),
+            false => Err(IdError::malformed("process credential id", text)),
         }
     }
 
@@ -32,8 +29,8 @@ impl ProcessCredentialId {
 }
 
 impl TryFrom<String> for ProcessCredentialId {
-    type Error = CoreError;
-    fn try_from(text: String) -> Result<Self, CoreError> {
+    type Error = IdError;
+    fn try_from(text: String) -> Result<Self, IdError> {
         Self::parse(&text)
     }
 }

@@ -11,10 +11,11 @@ use common::inferd::{Behaviour, FakeInferd, Served};
 use common::served::{Gate, Route, Scripted};
 use porter_capability::CuaEnv;
 use porter_capability::ModelId;
+use porter_capability::{Locality, Tier};
 use porter_client::{Accounts, ClientError, DbusTransport, InferSession};
 use porter_core::AccountId;
+use porter_core::DataClass;
 use porter_core::consent::Usage;
-use porter_core::{DataClass, Locality, Tier};
 use porter_ids::{Dims, Tokens};
 use porter_infer::testing::{Script, ScriptStep};
 use porter_infer::{

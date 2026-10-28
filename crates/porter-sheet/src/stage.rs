@@ -9,10 +9,10 @@ use super::progress::{Progress, Review, ServiceChoice, SignInFault, SignInInput,
 use super::view::{FieldProblem, ProviderRow, ReviewView, SheetView, SignInView};
 use porter_core::AppId;
 use porter_core::EndpointUrl;
-use porter_core::Machine;
 use porter_core::ProviderHint;
 use porter_core::{AccountId, ProviderId};
 use porter_ids::WebUrl;
+use porter_tailscale::Machine;
 
 /// What the sheet was opened for.
 #[derive(Debug, Clone, PartialEq, Eq)]

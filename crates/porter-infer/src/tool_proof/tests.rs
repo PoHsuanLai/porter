@@ -3,9 +3,9 @@ use crate::control::StopReason;
 use crate::ids::ToolCallId;
 use crate::reply::{ServedBy, TokenUsage};
 use crate::request::ToolCallPart;
+use porter_capability::Locality;
 use porter_capability::ModelId;
 use porter_core::AccountId;
-use porter_core::Locality;
 use porter_ids::Tokens;
 
 fn reply(calls: &[(&str, &str)]) -> ChatReply {

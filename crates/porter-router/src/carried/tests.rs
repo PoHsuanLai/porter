@@ -1,8 +1,9 @@
 use super::*;
 use porter_capability::ModelId;
+use porter_capability::{Locality, Tier};
 use porter_core::AccountId;
+use porter_core::DataClass;
 use porter_core::consent::Usage;
-use porter_core::{DataClass, Locality, Tier};
 use porter_infer::{
     AttachIndex, Base64Bytes, ChatMessage, ChatRequest, CuaBegin, CuaStepRequest, FrameImage,
     FrameLayout, ImagePart, ImageSource, LangPick, MediaKind, Role, ServedBy, SpeakReply,

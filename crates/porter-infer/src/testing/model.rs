@@ -6,8 +6,8 @@ use crate::{
 };
 use porter_capability::Capability;
 use porter_capability::ModelId;
+use porter_capability::{Billing, Locality};
 use porter_core::AccountId;
-use porter_core::{Billing, Locality};
 use porter_ids::Tokens;
 
 /// An on-device model of the fake runtime.

@@ -300,7 +300,7 @@ pub fn parse(body: &[u8], class: DataClass) -> Result<Parsed, Unmapped> {
                     .and_then(Value::as_array)
                     .ok_or_else(|| Unmapped::of("a request with no messages"))?,
             )?,
-            porter_core::Tier::Balanced,
+            porter_capability::Tier::Balanced,
             class,
             Usage::Interactive,
         )

@@ -7,7 +7,7 @@
 
 use crate::error::TailscaleError;
 use crate::status::{User, UserId};
-use porter_core::{MachineOwner, NodeId};
+use crate::{MachineOwner, NodeId};
 use serde::Deserialize;
 use std::net::IpAddr;
 

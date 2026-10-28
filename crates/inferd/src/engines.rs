@@ -18,9 +18,10 @@ use crate::toolproof::{ToolProofs, asks_for_tools};
 use engine_supervisor::{EngineId, EngineState, MonoMs};
 use model_catalog::Licence;
 use porter_capability::SpeechMode;
+use porter_capability::{Locality, Tier};
 use porter_core::AccountId;
 use porter_core::consent::{Availability, Usage};
-use porter_core::{AppId, DataClass, Locality, Tier};
+use porter_core::{AppId, DataClass};
 use porter_ids::MicroUsd;
 use porter_infer::{
     Asker, InferRefusal, LicenceClass, ModelCard, ModelRef, Period, Permit, PickRefusal,

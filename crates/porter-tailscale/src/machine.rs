@@ -3,7 +3,7 @@
 //! across renames and address changes. Pure data; the one program that reads Tailscale is
 //! `porter-tailscale`.
 
-use crate::error::CoreError;
+use porter_ids::IdError;
 use porter_ids::UnixSeconds;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -22,7 +22,7 @@ pub struct NodeId(Box<str>);
 
 impl NodeId {
     /// The node id written as `text`: 1 to 64 letters, digits, `-` or `_`.
-    pub fn parse(text: &str) -> Result<Self, CoreError> {
+    pub fn parse(text: &str) -> Result<Self, IdError> {
         let good = !text.is_empty()
             && text.len() <= NODE_ID_MAX
             && text
@@ -30,10 +30,10 @@ impl NodeId {
                 .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
         match good {
             true => Ok(Self(text.into())),
-            false => Err(CoreError::MalformedId {
-                what: "node id",
-                text: text.chars().take(80).collect(),
-            }),
+            false => Err(IdError::malformed(
+                "node id",
+                &text.chars().take(80).collect::<String>(),
+            )),
         }
     }
 
@@ -44,8 +44,8 @@ impl NodeId {
 }
 
 impl TryFrom<String> for NodeId {
-    type Error = CoreError;
-    fn try_from(text: String) -> Result<Self, CoreError> {
+    type Error = IdError;
+    fn try_from(text: String) -> Result<Self, IdError> {
         Self::parse(&text)
     }
 }

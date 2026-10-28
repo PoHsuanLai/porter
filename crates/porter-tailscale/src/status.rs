@@ -7,7 +7,7 @@
 
 use crate::error::TailscaleError;
 use crate::time::unix_seconds;
-use porter_core::{Machine, MachineLink, MachineOwner, NodeId};
+use crate::{Machine, MachineLink, MachineOwner, NodeId};
 use porter_ids::UnixSeconds;
 use serde::Deserialize;
 use std::collections::BTreeMap;

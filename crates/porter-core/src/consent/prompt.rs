@@ -1,10 +1,10 @@
 //! The consent sheet accounts-ui draws, as values: what it is asked and what it answers.
 
 use super::grant::{GrantScope, Usage};
+use crate::LauncherSession;
 use crate::account::AccountLabel;
 use crate::app_id::{AppId, AppLabel};
 use crate::data_class::DataClass;
-use crate::launcher_session::LauncherSession;
 use crate::{AccountId, ProviderId};
 use porter_capability::CapabilityKind;
 use serde::{Deserialize, Serialize};

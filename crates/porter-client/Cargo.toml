@@ -10,6 +10,8 @@ publish.workspace = true
 
 [dependencies]
 porter-core = { workspace = true }
+porter-tailnet = { workspace = true }
+porter-tailscale = { workspace = true }
 porter-match = { workspace = true }
 porter-capability = { workspace = true }
 porter-wire = { workspace = true }

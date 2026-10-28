@@ -10,7 +10,7 @@
 //! the person's own word given ahead of time in Settings ([`Guests::set`]); it is never asked
 //! about. A computer of the person's own that they have not answered about yet is asked about
 //! once, the first time it wants to use a model ([`Guests::ask`]). Everything is kept by
-//! Tailscale's stable computer id ([`porter_core::NodeId`]), never by name or address.
+//! Tailscale's stable computer id ([`porter_tailscale::NodeId`]), never by name or address.
 //!
 //! The pure parts, [`judge`], [`Guests`], [`Hello`] and [`Refusal`], reach no socket. With the
 //! `io` feature the crate also holds the rest of the work:
@@ -32,6 +32,7 @@ mod guests;
 mod hello;
 mod identity;
 mod judge;
+mod lending;
 mod refusal;
 
 #[cfg(feature = "io")]
@@ -45,10 +46,13 @@ mod observe;
 #[cfg(feature = "io")]
 mod relay;
 
-pub use guests::{Ask, AskOutcome, Guest, GuestAnswer, GuestError, GuestEvent, Guests, State};
-pub use hello::{Approval, HELLO_PATH, Hello, LentModel};
+pub use guests::{Ask, AskOutcome, Guest, GuestError, GuestEvent, Guests, State};
+pub use hello::{HELLO_PATH, Hello, LentModel};
 pub use identity::Identity;
 pub use judge::{Footing, Peer, Welcome, judge};
+pub use lending::{
+    Approval, CandidateModel, ComputerCandidate, GuestAnswer, GuestAsk, GuestRow, RowState,
+};
 pub use refusal::Refusal;
 
 #[cfg(feature = "io")]

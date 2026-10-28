@@ -1,9 +1,9 @@
 //! A local path that leads to one of the persons's computers, checked on every connection.
 
 use super::common::{addresses, fake, free_port, network, scratch};
-use porter_core::NodeId;
 use porter_fake_servers::Daemon;
 use porter_tailnet::{DialError, Dialer, OnFault, Relay};
+use porter_tailscale::NodeId;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use test_kit::GENEROUS;

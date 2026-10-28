@@ -10,9 +10,10 @@ use crate::testkit::{Recorder, Scratch, models};
 use engine_supervisor::{FakeGpu, FakeReadyProbe, GpuMemory, Probe, SupervisorConfig};
 use model_catalog::MiB;
 use porter_capability::ModelId;
+use porter_capability::{Billing, Locality, Tier};
 use porter_capability::{Capability, LlmCap, LlmFeature, LlmWire};
 use porter_core::AccountId;
-use porter_core::{Billing, DataClass, Locality, Tier};
+use porter_core::DataClass;
 use porter_ids::{MicroUsd, Permille, Tokens};
 use porter_infer::{
     AutoEvict, EngineLoad, InferRefusal, LicenceClass, LocalOnly, ModelCard, ModelRef, Pick,

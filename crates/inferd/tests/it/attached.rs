@@ -13,9 +13,10 @@ use inferd::attached::{Attached, KeyFileProblem, NotReady, Place, Reach};
 use inferd::settings::{MyNetwork, Settings};
 use porter_capability::LlmFeature;
 use porter_capability::ModelId;
+use porter_capability::{Locality, Tier};
 use porter_client::InferSession;
+use porter_core::DataClass;
 use porter_core::consent::Usage;
-use porter_core::{DataClass, Locality, Tier};
 use porter_fake_servers::net::Bind;
 use porter_ids::Tokens;
 use porter_infer::{
@@ -442,7 +443,7 @@ async fn this_device_takes_on_device_only_data_and_my_network_does_not_unless_th
     let listed = world.served.listed();
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].card.locality, Locality::LocalNetwork);
-    assert_eq!(listed[0].card.billing, porter_core::Billing::Free);
+    assert_eq!(listed[0].card.billing, porter_capability::Billing::Free);
     assert_eq!(listed[0].spend, porter_infer::SpendVerdict::Within);
     assert_eq!(listed[0].permission, porter_infer::Permit::Granted);
 

@@ -75,7 +75,7 @@ pub fn fault(fault: &DialError) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_core::MachineOwner;
+    use porter_tailscale::MachineOwner;
 
     /// Words a person reads never include a program name or a term of the network's plumbing.
     const JARGON: [&str; 16] = [

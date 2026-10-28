@@ -1,7 +1,8 @@
 use super::*;
+use porter_capability::Locality;
 use porter_capability::ModelId;
 use porter_core::AccountId;
-use porter_core::{AppName, Isolation, Locality};
+use porter_core::{AppName, Isolation};
 use porter_ids::clock::FixedClock;
 use porter_ids::{Count, UnixSeconds};
 use porter_infer::{ChatReply, EmbedReply, InferRefusal, ModelError, StopReason, Why};
@@ -50,7 +51,7 @@ fn spec() -> SessionSpec {
     SessionSpec {
         need: porter_match::Need::Llm(porter_match::LlmNeed::new(Default::default(), Tokens(1))),
         class: porter_core::DataClass::Notes,
-        tier: porter_core::Tier::Fast,
+        tier: porter_capability::Tier::Fast,
         usage: porter_core::consent::Usage::Interactive,
     }
 }

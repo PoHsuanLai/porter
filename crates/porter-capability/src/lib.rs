@@ -3,7 +3,9 @@
 //! person's switches are applied ([`effective`]). Pure values; no I/O.
 
 mod agent;
+mod agent_login;
 mod ai;
+mod ai_props;
 mod cua;
 mod effective;
 #[cfg(any(test, feature = "testing"))]
@@ -19,10 +21,12 @@ mod sync_kinds;
 mod terms;
 
 pub use agent::{AgentCap, AgentProgram, AgentProtocol, EnvName};
+pub use agent_login::{LoginFault, LoginOutcome, LoginRequestId};
 pub use ai::{
     EmbedCap, EmbedPrompts, ImageGenCap, ImageMode, LanguageSet, LanguageTag, LlmCap, LlmFeature,
     LlmWire, Modality, PrefixText, RerankCap, SpeechCap, SpeechMode,
 };
+pub use ai_props::{Billing, Locality, PriceTable, Region, Tier};
 pub use cua::{CuaBatching, CuaCap, CuaEnv};
 pub use effective::{KindToggle, Toggle, effective};
 pub use kind::{CapabilityKind, VocabVersion};

@@ -8,11 +8,12 @@ use crate::common;
 use common::bus::PrivateBus;
 use common::inferd::{Behaviour, FakeInferd, Seen, slugs};
 use porter_capability::SpeechMode;
+use porter_capability::Tier;
 use porter_client::{
     Accounts, ClientError, DbusTransport, InProcess, NoBroker, SessionHost, TransportError,
 };
 use porter_core::consent::Usage;
-use porter_core::{AppId, AppName, DataClass, Isolation, Tier};
+use porter_core::{AppId, AppName, DataClass, Isolation};
 use porter_fake::{FakeService, ScriptedSheets, fake_service};
 use porter_ids::Permille;
 use porter_infer::testing::FakeInferSession;

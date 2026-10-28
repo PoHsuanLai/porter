@@ -23,8 +23,8 @@ use super::fields::{
 use super::view::{FieldProblem, ProblemKind};
 use porter_core::SecretText;
 use porter_core::{EndpointUrl, server_address, server_address_shape};
-use porter_core::{Machine, MachineOwner};
 use porter_ids::UrlScheme;
+use porter_tailscale::{Machine, MachineOwner};
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 

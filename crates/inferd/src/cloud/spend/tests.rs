@@ -1,6 +1,6 @@
 use super::*;
 use crate::settings::{ScopeLimits, SpendLimits};
-use porter_core::PriceTable;
+use porter_capability::PriceTable;
 use porter_core::{AppName, Isolation};
 use test_kit::Scratch;
 
@@ -395,7 +395,7 @@ fn usage_names_what_the_app_used_and_each_cap_that_is_set() {
 
 #[test]
 fn a_turn_not_yet_run_is_estimated_at_a_thousand_tokens_each_way() {
-    let price = porter_core::PriceTable {
+    let price = porter_capability::PriceTable {
         input_per_mtok: MicroUsd(4_000_000),
         output_per_mtok: MicroUsd(20_000_000),
     };

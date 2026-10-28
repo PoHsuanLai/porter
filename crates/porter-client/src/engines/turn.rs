@@ -7,7 +7,7 @@ use super::keys::KeySource;
 use super::wire::{Temperature, provider};
 use model_provider as sp;
 use porter_bridge::{DefaultSampling, Frames, JsonReply, Target, chat_turn_for, task_turn_for};
-use porter_core::Tier;
+use porter_capability::Tier;
 use porter_infer::{
     InferEvent, InferRefusal, InferReply, InferRequest, Knob, ModelError, ServedBy,
 };

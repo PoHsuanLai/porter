@@ -23,7 +23,9 @@ use crate::tailnet::{Candidate, Tailnet};
 use crate::toolproof::ToolWatch;
 use crate::watch::Probing;
 use porter_capability::ModelId;
-use porter_core::{DataClass, HelperId, NodeId, SecretText, Tier};
+use porter_capability::Tier;
+use porter_core::HelperId;
+use porter_core::{DataClass, SecretText};
 use porter_dbus::names::{
     CANDIDATE_KEY_MODELS, CANDIDATE_KEY_NAME, CANDIDATE_KEY_NEEDS_APPROVAL, GUEST_KEY_NAME,
     GUEST_KEY_SINCE, GUEST_KEY_STATE, INFERENCE_BUS, INFERENCE_PATH, PLACE_KEY_ENGINES,
@@ -36,6 +38,7 @@ use porter_infer::{InferRefusal, PlaceId, PlaceRow, PlaceState};
 use porter_router::router::placed::{Allowed, Unplaced};
 use porter_router::seams::Seams;
 use porter_router::session::SessionSpec;
+use porter_tailscale::NodeId;
 use porter_turns::audit::{AuditOut, SessionAudit};
 use porter_turns::structured::Limits;
 use serde::Serialize;
@@ -734,7 +737,7 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
                 .await
                 .into_iter()
                 .any(|machine| {
-                    machine.node == node && machine.owner == porter_core::MachineOwner::Mine
+                    machine.node == node && machine.owner == porter_tailscale::MachineOwner::Mine
                 });
             return Err(if mine {
                 ComputerError::NotAnswering
@@ -749,7 +752,7 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
             .engines
             .listed()
             .into_iter()
-            .filter(|one| one.card.locality == porter_core::Locality::OnDevice)
+            .filter(|one| one.card.locality == porter_capability::Locality::OnDevice)
             .map(|one| one.card.model.to_string())
             .collect();
         let catalogue = self.engines.attached().catalogue();
@@ -999,7 +1002,7 @@ fn candidate_row(candidate: Candidate) -> (String, Details) {
 }
 
 /// A computer that asked, as a row of `Guests`: its node id and the vardict of `GUEST_KEY_*`.
-fn guest_row(row: porter_core::lending::GuestRow) -> (String, Details) {
+fn guest_row(row: porter_tailnet::GuestRow) -> (String, Details) {
     use porter_dbus::zvariant::{OwnedValue, Value};
     let entries = [
         (GUEST_KEY_NAME, text_value(row.name)),

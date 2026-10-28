@@ -22,11 +22,12 @@
 
 use super::book::AttachedBook;
 use porter_capability::ModelId;
-use porter_core::{NodeId, SecretText};
+use porter_core::SecretText;
 use porter_fs::atomic::AtomicWrite;
 use porter_infer::{ComputerName, PlaceId};
 use porter_router::attached::{Attached, AttachedEntry, AttachedError, Place, Reach, local_model};
 use porter_router::startup::SUN_PATH;
+use porter_tailscale::NodeId;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};

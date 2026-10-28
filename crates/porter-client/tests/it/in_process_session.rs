@@ -3,10 +3,11 @@
 //! gets the broker's sessions, opened for the app the host names.
 #![cfg(all(feature = "infer", feature = "in-process"))]
 
+use porter_capability::Tier;
 use porter_client::{
     Accounts, ClientError, InProcess, InferSession, NoBroker, SessionHost, TransportError,
 };
-use porter_core::{AppId, AppName, DataClass, Isolation, Tier};
+use porter_core::{AppId, AppName, DataClass, Isolation};
 use porter_fake::fake_service;
 use porter_fake::{FakeService, ScriptedSheets};
 use porter_ids::Tokens;
@@ -34,7 +35,7 @@ fn served() -> ServedBy {
     ServedBy {
         account: porter_core::AccountId::parse("local").expect("id"),
         model: porter_capability::ModelId::parse("echo").expect("id"),
-        locality: porter_core::Locality::OnDevice,
+        locality: porter_capability::Locality::OnDevice,
     }
 }
 
@@ -89,13 +90,13 @@ async fn with_no_broker_a_session_is_unreachable_and_accounts_still_answer() {
 #[tokio::test]
 async fn the_guest_and_computer_calls_are_unsupported_in_process() {
     let accounts = Accounts::over(InProcess::new(service().await, app()));
-    let node = porter_core::NodeId::parse("nPI").expect("node");
+    let node = porter_tailscale::NodeId::parse("nPI").expect("node");
     let unsupported = Some(ClientError::Transport(TransportError::Unsupported));
     assert_eq!(accounts.guests().await.err(), unsupported);
     assert_eq!(accounts.candidates().await.err(), unsupported);
     assert_eq!(
         accounts
-            .answer_guest(&node, porter_client::GuestAnswer::Allow)
+            .answer_guest(&node, porter_tailnet::GuestAnswer::Allow)
             .await
             .err(),
         unsupported

@@ -1,7 +1,7 @@
 use super::*;
+use porter_capability::{Billing, Locality};
 use porter_capability::{Capability, LlmCap, LlmFeature, LlmWire};
 use porter_core::AccountId;
-use porter_core::{Billing, Locality};
 use porter_ids::Tokens;
 use porter_infer::{
     AutoPolicy, LicenceClass, LocalOnly, ModelCard, Permit, PlaceKind, Policy, Readiness, SwapCost,

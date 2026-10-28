@@ -8,8 +8,10 @@ use super::keys::{pool_path, pool_row_key};
 use super::resolve::{model_text, parse_model};
 use crate::cloud::picker::{Choice, choices};
 use ds_settings::live::LiveError;
+use porter_capability::Locality;
+use porter_core::HelperId;
 use porter_core::consent::Usage;
-use porter_core::{AppId, AppName, DataClass, HelperId, Isolation, Locality};
+use porter_core::{AppId, AppName, DataClass, Isolation};
 use porter_infer::{Chooser, ModelRef, Slot};
 use porter_router::router::slots_of;
 

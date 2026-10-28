@@ -20,7 +20,7 @@ use crate::pipeline::Hearing;
 use crate::seats::Gate;
 use crate::speech::{ChannelAudio, SpeechRunner};
 use crate::supervise::Supervised;
-use porter_core::Tier;
+use porter_capability::Tier;
 use porter_infer::{
     Asker, AudioFrame, ChatRequest, InferRefusal, InferReply, InferRequest, ModelError, ServedBy,
     TranscribeBegin, answer,

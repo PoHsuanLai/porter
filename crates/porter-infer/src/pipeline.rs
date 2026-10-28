@@ -23,7 +23,8 @@ use crate::readiness::Readiness;
 use crate::reply::ServedBy;
 use crate::route::{RouteAsk, route};
 use crate::slot::Slot;
-use porter_core::{DataClass, Locality, Tier};
+use porter_capability::{Locality, Tier};
+use porter_core::DataClass;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 

@@ -12,15 +12,17 @@ use super::Transport;
 use super::dbus_session::DbusSession;
 use crate::Destination;
 use crate::error::TransportError;
-use porter_core::NodeId;
-use porter_core::lending::{ComputerCandidate, GuestAnswer, GuestRow};
 #[cfg(feature = "infer")]
-use porter_core::{DataClass, Tier};
+use porter_capability::Tier;
+#[cfg(feature = "infer")]
+use porter_core::DataClass;
 use porter_dbus::{BusConnection, BusError, BusFailure, classify};
 #[cfg(feature = "infer")]
 use porter_infer::{ComputerName, OpenOptions, PlaceId, PlaceRow, Readiness};
 #[cfg(feature = "infer")]
 use porter_match::Need;
+use porter_tailnet::{ComputerCandidate, GuestAnswer, GuestRow};
+use porter_tailscale::NodeId;
 use porter_wire::{AccountsReply, AccountsRequest};
 #[cfg(feature = "infer")]
 use serde::Serialize;

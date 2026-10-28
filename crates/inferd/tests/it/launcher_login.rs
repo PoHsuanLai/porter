@@ -8,8 +8,9 @@ use crate::launcher_rig::*;
 
 use inferd::launcher::LoginTiming;
 use porter_capability::AgentProgram;
+use porter_capability::LoginOutcome;
 use porter_core::AccountId;
-use porter_core::{AccountState, LoginOutcome};
+use porter_core::AccountState;
 use porter_dbus::{LauncherFault, ServiceRoot};
 use porter_ids::clock::Clock;
 use porter_service::audit::AuditEvent;

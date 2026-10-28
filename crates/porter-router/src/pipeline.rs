@@ -9,8 +9,9 @@
 
 use crate::router::{Decided, Listed, fits, plain, slots_of};
 use porter_capability::Capability;
+use porter_capability::Tier;
 use porter_capability::{LlmFeature, SpeechMode};
-use porter_core::{DataClass, Tier};
+use porter_core::DataClass;
 use porter_infer::{
     Answer, AutoPolicy, CatalogueModel, DescribeImages, Modality, PickCandidate, Pipeline,
     PlanRules, Policy, ProviderId, Refusal, RequestShape, RouteCandidate, Slot, TierMap, picks_for,

@@ -126,16 +126,6 @@ pub use guests::{GuestChange, GuestChanges};
 pub use identities::{Identities, IdentitiesError, IdentityRemovals, Picked};
 #[cfg(feature = "dbus")]
 pub use launcher::{AskKind, KeyCandidate, Launcher, LauncherError, LauncherRequest, Requests};
-pub use porter_core::lending;
-/// The computers that ask to use this one's models, and the ones that could be added, from
-/// porter-core: what `Accounts::guests` and `Accounts::candidates` return and
-/// `Accounts::answer_guest` takes, so Settings and the shell parse no vardict. The module
-/// (`porter_client::lending`) also holds `Approval`, `RowState`, `GuestAsk` and
-/// `CandidateModel`.
-pub use porter_core::lending::{ComputerCandidate, GuestAnswer, GuestRow};
-/// A computer on the person's Tailscale network, whose it is, and its stable id, from
-/// porter-core: what `Tailnet::machines` returns, so a terminal or Settings parses no vardict.
-pub use porter_core::{Machine, MachineLink, MachineOwner, MachineSsh, NodeId};
 /// The client's side of one `Open` fd, from porter-infer.
 #[cfg(feature = "infer")]
 pub use porter_infer::{

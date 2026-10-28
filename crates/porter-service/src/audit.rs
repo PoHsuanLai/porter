@@ -7,12 +7,12 @@
 
 pub use porter_core::audit::{CredentialEnd, Handoff};
 
+use porter_capability::LoginRequestId;
 use porter_capability::Toggle;
 use porter_capability::{AgentProgram, CapabilityKind};
+use porter_core::LauncherSession;
 use porter_core::{AccountId, GrantId};
-use porter_core::{
-    AgentState, AppId, Audience, DesktopSpace, EndpointUrl, LauncherSession, LoginRequestId,
-};
+use porter_core::{AgentState, AppId, Audience, DesktopSpace, EndpointUrl};
 use porter_ids::UnixSeconds;
 use serde::{Deserialize, Serialize};
 

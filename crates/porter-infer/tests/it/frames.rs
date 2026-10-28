@@ -5,11 +5,12 @@ use cua_action::{
     Button, ClickCount, Coord, CuaAction, DeviceSize, PixelFormat, Point, Scale120, Size, Target,
     WindowSpace,
 };
+use porter_capability::Locality;
 use porter_capability::ModelId;
 use porter_capability::{CuaEnv, LanguageTag};
 use porter_core::AccountId;
+use porter_core::DataClass;
 use porter_core::consent::Usage;
-use porter_core::{DataClass, Locality};
 use porter_ids::{Count, Permille, Tokens};
 use porter_infer::*;
 use serde::Serialize;
@@ -299,7 +300,7 @@ fn picker_data_round_trips_with_plain_slugs() {
     let map = TierMap {
         rows: vec![TierRow {
             kind: Slot::VoiceIn,
-            tier: porter_core::Tier::Balanced,
+            tier: porter_capability::Tier::Balanced,
             model: model.clone(),
         }],
         autos: vec![],
@@ -341,11 +342,11 @@ fn picker_data_round_trips_with_plain_slugs() {
         label: "Nemotron streaming".into(),
         kind: Slot::VoiceIn,
         locality: Locality::OnDevice,
-        billing: porter_core::Billing::Free,
+        billing: porter_capability::Billing::Free,
         readiness: Readiness::Loadable,
         fit: Fit::Fits,
         licence: LicenceClass::Open,
-        chosen_for: [porter_core::Tier::Balanced].into(),
+        chosen_for: [porter_capability::Tier::Balanced].into(),
     });
 }
 
@@ -511,7 +512,7 @@ fn a_frame_names_how_many_descriptors_ride_with_it() {
                     role: Role::User,
                     parts,
                 }],
-                porter_core::Tier::Fast,
+                porter_capability::Tier::Fast,
                 DataClass::Public,
                 Usage::Interactive,
             )

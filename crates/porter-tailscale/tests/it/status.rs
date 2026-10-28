@@ -1,6 +1,6 @@
 use crate::common::{LOGIN_PAGE, network, start};
-use porter_core::MachineOwner;
 use porter_fake_servers::Daemon;
+use porter_tailscale::MachineOwner;
 use porter_tailscale::{Backend, Standing};
 
 #[tokio::test]

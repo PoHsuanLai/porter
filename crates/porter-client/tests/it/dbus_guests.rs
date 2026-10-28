@@ -8,13 +8,14 @@
 use crate::common;
 
 use common::bus::PrivateBus;
-use porter_client::lending::{Approval, CandidateModel, GuestAsk, RowState};
 use porter_client::{
-    Accounts, ClientError, ComputerReason, DbusTransport, GuestAnswer, GuestChange, GuestRow,
-    NodeId, TransportError,
+    Accounts, ClientError, ComputerReason, DbusTransport, GuestChange, TransportError,
 };
 use porter_dbus::{BusStream, Details};
 use porter_ids::UnixSeconds;
+use porter_tailnet::{Approval, CandidateModel, GuestAsk, RowState};
+use porter_tailnet::{GuestAnswer, GuestRow};
+use porter_tailscale::NodeId;
 use std::sync::{Arc, Mutex};
 use zbus::fdo;
 use zbus::object_server::SignalEmitter;

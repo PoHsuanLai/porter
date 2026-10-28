@@ -427,7 +427,7 @@ async fn only_the_agent_launcher_may_open_an_endpoint() {
                 porter_ids::Tokens(10),
             )),
             porter_core::DataClass::Prompt,
-            porter_core::Tier::Balanced,
+            porter_capability::Tier::Balanced,
         )
         .await;
     assert!(refused.is_err(), "the launcher cannot Open a session");

@@ -111,7 +111,7 @@ pub struct CloudModel<'a> {
     cloud: &'a Cloud,
     pin: &'a CloudPin,
     served: ServedBy,
-    tier: porter_core::Tier,
+    tier: porter_capability::Tier,
     frames: Frames,
 }
 
@@ -122,7 +122,7 @@ impl<'a> CloudModel<'a> {
         cloud: &'a Cloud,
         pin: &'a CloudPin,
         served: &ServedBy,
-        tier: porter_core::Tier,
+        tier: porter_capability::Tier,
         attachments: Vec<OwnedFd>,
     ) -> Result<Self, TurnError> {
         if cloud.spend(pin.line, &pin.app, &pin.model) == SpendVerdict::Stop {

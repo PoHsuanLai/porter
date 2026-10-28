@@ -5,7 +5,7 @@ use crate::callers::Callers;
 use crate::host::Host;
 use crate::state::Core;
 use crate::tailnet::{TailnetWatch, account_of, listed, machines, state_of};
-use porter_core::Machine;
+use porter_tailscale::Machine;
 use std::sync::Arc;
 use tokio::time::Instant;
 

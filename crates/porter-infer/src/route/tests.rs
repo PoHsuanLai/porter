@@ -1,6 +1,6 @@
 use super::*;
 use crate::policy::{ClassFloor, Floor};
-use porter_core::PriceTable;
+use porter_capability::PriceTable;
 use porter_ids::MicroUsd;
 
 fn metered(input: u64) -> Billing {

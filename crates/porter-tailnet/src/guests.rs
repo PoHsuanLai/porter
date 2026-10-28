@@ -9,11 +9,13 @@
 //! person may want back. The questions still waiting are kept in memory only: after a restart
 //! the computer asks again when it next wants a model.
 
-use porter_core::NodeId;
+#[cfg(feature = "persist")]
 use porter_fs::atomic::AtomicWrite;
 use porter_ids::UnixSeconds;
+use porter_tailscale::NodeId;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+#[cfg(feature = "persist")]
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, RwLock};
 
@@ -46,11 +48,6 @@ impl State {
         }
     }
 }
-
-/// The person's answer to a computer: what `AnswerGuest` takes, as a word. It lives in
-/// `porter_core::lending` (a client of the bus names it without this crate's files); the old
-/// path stays.
-pub use porter_core::lending::GuestAnswer;
 
 /// One record, as the file holds it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -119,9 +116,7 @@ pub enum GuestError {
     NotSaved,
 }
 
-// How one computer stands and one line of the list live in `porter_core::lending`: a client of
-// the bus reads them without this crate's files.
-use porter_core::lending::{GuestRow, RowState};
+use crate::lending::{GuestAnswer, GuestRow, RowState};
 
 #[derive(Debug, Default)]
 struct Inner {
@@ -133,6 +128,7 @@ type Listener = Box<dyn Fn(&GuestEvent) + Send + Sync>;
 
 /// The computers' answers and questions of one lending computer.
 pub struct Guests {
+    #[cfg(feature = "persist")]
     path: Option<PathBuf>,
     inner: Mutex<Inner>,
     listeners: RwLock<Vec<Arc<Listener>>>,
@@ -140,9 +136,10 @@ pub struct Guests {
 
 impl std::fmt::Debug for Guests {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Guests")
-            .field("path", &self.path)
-            .finish_non_exhaustive()
+        let mut shown = f.debug_struct("Guests");
+        #[cfg(feature = "persist")]
+        shown.field("path", &self.path);
+        shown.finish_non_exhaustive()
     }
 }
 
@@ -164,16 +161,18 @@ impl Guests {
     /// Records kept nowhere: for a computer that is not to remember, and for tests.
     pub fn in_memory() -> Self {
         Self {
+            #[cfg(feature = "persist")]
             path: None,
             inner: Mutex::default(),
             listeners: RwLock::default(),
         }
     }
 
-    /// The records kept in the file at `path`. A missing file is the empty list. One that cannot
+    /// The records kept in the file at `path` (feature `persist`). A missing file is the empty list. One that cannot
     /// be read as a list is moved aside (`<name>.unusable`) and the list starts empty; the
     /// second part says so, in a line for a log. A record whose id is not a computer's is
     /// dropped.
+    #[cfg(feature = "persist")]
     pub fn open(path: &Path) -> (Self, Option<String>) {
         let (file, said) = match std::fs::read_to_string(path) {
             Ok(text) => match toml::from_str::<File>(&text) {
@@ -213,6 +212,7 @@ impl Guests {
         };
         (
             Self {
+                #[cfg(feature = "persist")]
                 path: Some(path.to_owned()),
                 inner: Mutex::new(Inner {
                     file,
@@ -255,6 +255,12 @@ impl Guests {
             .map(|guest| guest.state)
     }
 
+    #[cfg(not(feature = "persist"))]
+    fn save(&self, _file: &File) -> Result<(), GuestError> {
+        Ok(())
+    }
+
+    #[cfg(feature = "persist")]
     fn save(&self, file: &File) -> Result<(), GuestError> {
         let Some(path) = &self.path else {
             return Ok(());

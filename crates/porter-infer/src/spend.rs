@@ -1,8 +1,9 @@
 //! Spend caps (design/31 §5.5): per account and per app, daily and monthly, warn then stop.
 
 use crate::reply::TokenUsage;
+use porter_capability::PriceTable;
 use porter_core::AccountId;
-use porter_core::{AppId, PriceTable};
+use porter_core::AppId;
 use porter_ids::{MicroUsd, Permille};
 use serde::{Deserialize, Serialize};
 

@@ -1,6 +1,6 @@
 use crate::common::{network, start};
-use porter_core::MachineOwner;
 use porter_fake_servers::Daemon;
+use porter_tailscale::MachineOwner;
 use porter_tailscale::{TailscaleError, UserId};
 
 #[tokio::test]

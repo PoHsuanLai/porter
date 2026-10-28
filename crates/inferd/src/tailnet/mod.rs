@@ -28,12 +28,12 @@ pub use machines::{BusMachines, Machines, NoMachines};
 use crate::attached::relay_socket;
 use crate::engines::Engines;
 use crate::settings::TailnetServe;
-use porter_core::NodeId;
 use porter_ids::clock::Clock;
 use porter_tailnet::{
     Config, Dialer, GuestEvent, Guests, Lending, Listening, Observer, OnFault, Relay, Timing, lend,
 };
 use porter_tailscale::LocalApi;
+use porter_tailscale::NodeId;
 use porter_turns::audit::AuditOut;
 use std::collections::BTreeMap;
 use std::path::PathBuf;

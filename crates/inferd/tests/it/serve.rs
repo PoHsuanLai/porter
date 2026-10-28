@@ -6,9 +6,10 @@
 use crate::support;
 
 use inferd::serve::serve_session;
+use porter_capability::Tier;
 use porter_capability::{CuaEnv, SpeechMode};
+use porter_core::DataClass;
 use porter_core::consent::Usage;
-use porter_core::{DataClass, Tier};
 use porter_ids::{Count, Tokens};
 use porter_infer::{
     AttachIndex, AudioFrame, AudioRate, Base64Bytes, ChatControl, ChatMessage, ChatReply,

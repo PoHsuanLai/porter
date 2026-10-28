@@ -5,8 +5,8 @@ use crate::policy::{ClassFloor, Floor, LocalOnly};
 use crate::route::{Permit, RouteCandidate, TierChoice};
 use crate::spend::SpendVerdict;
 use porter_capability::ModelId;
+use porter_capability::{Billing, Locality};
 use porter_core::AccountId;
-use porter_core::{Billing, Locality};
 
 pub(super) fn mref(name: &str) -> ModelRef {
     ModelRef {

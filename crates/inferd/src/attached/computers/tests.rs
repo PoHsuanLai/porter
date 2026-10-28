@@ -485,7 +485,10 @@ fn a_computer_on_the_network_is_kept_by_its_node_with_no_address_and_no_key() {
         );
         assert!(target.is_relayed());
         assert_eq!(target.place, Place::MyNetwork);
-        assert_eq!(found.card.locality, porter_core::Locality::LocalNetwork);
+        assert_eq!(
+            found.card.locality,
+            porter_capability::Locality::LocalNetwork
+        );
         assert_eq!(found.name.0, id, "asked for by the catalogue's id");
     }
     assert_eq!(

@@ -10,8 +10,9 @@
 //! a running turn.
 
 use porter_capability::SpeechMode;
+use porter_capability::Tier;
+use porter_core::DataClass;
 use porter_core::consent::Usage;
-use porter_core::{DataClass, Tier};
 use porter_infer::{
     AudioFrame, ClientFrame, InferEvent, InferReply, InferRequest, ModelLabel, ModelRef,
     PickRefusal, Readiness, RequestKind, ServedBy, ShowReason, StageNote, StageRole,

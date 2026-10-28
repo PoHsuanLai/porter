@@ -8,6 +8,7 @@
 //! (BSD-3-Clause); each reader says which file it follows.
 
 mod error;
+mod machine;
 mod notice;
 mod object;
 mod status;
@@ -18,6 +19,7 @@ mod whois;
 mod client;
 
 pub use error::TailscaleError;
+pub use machine::{Machine, MachineLink, MachineOwner, MachineSsh, NodeId};
 pub use notice::Notice;
 pub use status::{Backend, Node, Standing, Status, Tailnet, User, UserId};
 pub use whois::{WhoIs, WhoIsNode};

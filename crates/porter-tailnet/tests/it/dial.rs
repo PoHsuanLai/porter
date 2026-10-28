@@ -1,10 +1,10 @@
 //! Reaching one of the person's own computers, after asking who is at the address.
 
 use super::common::{addresses, fake, free_port, network};
-use porter_core::{MachineOwner, NodeId};
 use porter_fake_servers::Daemon;
 use porter_tailnet::{DialError, Dialer};
 use porter_tailscale::TailscaleError;
+use porter_tailscale::{MachineOwner, NodeId};
 use std::net::SocketAddr;
 use test_kit::GENEROUS;
 use tokio::net::TcpListener;

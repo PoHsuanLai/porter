@@ -5,8 +5,9 @@ use crate::route::Permit;
 use crate::route::TierChoice;
 use crate::spend::SpendVerdict;
 use porter_capability::ModelId;
+use porter_capability::{Billing, Locality};
 use porter_core::AccountId;
-use porter_core::{Billing, DataClass, Locality};
+use porter_core::DataClass;
 use proptest::prelude::*;
 
 fn readiness() -> impl Strategy<Value = Readiness> {
@@ -93,7 +94,7 @@ fn candidates() -> impl Strategy<Value = Vec<PickCandidate>> {
                         c.route.billing = match price {
                             0 => Billing::Free,
                             1 => Billing::PlanBudget,
-                            _ => Billing::Metered(porter_core::PriceTable {
+                            _ => Billing::Metered(porter_capability::PriceTable {
                                 input_per_mtok: porter_ids::MicroUsd(u64::from(price)),
                                 output_per_mtok: porter_ids::MicroUsd(0),
                             }),

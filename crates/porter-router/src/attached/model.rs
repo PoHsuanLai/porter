@@ -10,9 +10,9 @@ use engine_supervisor::{EngineId, EnginePaths, EngineSpec, ProgramPath, SocketPa
 use model_catalog::{EngineKind, EngineProfile, MiB, ModelEntry, Serving, WeightFiles};
 use model_openai_compat::Flavor;
 use model_provider::ModelName;
+use porter_capability::Billing;
 use porter_capability::{Capability, Offer};
 use porter_core::AccountId;
-use porter_core::Billing;
 use porter_infer::ModelCard;
 use std::path::{Path, PathBuf};
 

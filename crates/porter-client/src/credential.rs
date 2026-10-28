@@ -25,8 +25,9 @@
 
 use crate::launcher::LauncherError;
 use porter_capability::EnvName;
+use porter_core::ProcessCredentialId;
+use porter_core::SecretText;
 use porter_core::audit::{CredentialEnd, Handoff};
-use porter_core::{ProcessCredentialId, SecretText};
 use porter_dbus::{BusStream, ProcessCredentialRevoked, ProcessCredentialRevokedStream};
 use std::io;
 use std::os::fd::{AsFd, OwnedFd, RawFd};

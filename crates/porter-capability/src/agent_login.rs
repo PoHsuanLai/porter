@@ -4,7 +4,7 @@
 //! URL, no code, no free text. Every word here is a member of a closed set, so a launcher cannot
 //! tunnel the login through the outcome.
 
-use crate::error::CoreError;
+use porter_ids::IdError;
 use porter_ids::is_id;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -17,13 +17,10 @@ pub struct LoginRequestId(Box<str>);
 
 impl LoginRequestId {
     /// The request id written as `text`.
-    pub fn parse(text: &str) -> Result<Self, CoreError> {
+    pub fn parse(text: &str) -> Result<Self, IdError> {
         match is_id(text) {
             true => Ok(Self(text.into())),
-            false => Err(CoreError::MalformedId {
-                what: "login request id",
-                text: text.to_owned(),
-            }),
+            false => Err(IdError::malformed("login request id", text)),
         }
     }
 
@@ -34,8 +31,8 @@ impl LoginRequestId {
 }
 
 impl TryFrom<String> for LoginRequestId {
-    type Error = CoreError;
-    fn try_from(text: String) -> Result<Self, CoreError> {
+    type Error = IdError;
+    fn try_from(text: String) -> Result<Self, IdError> {
         Self::parse(&text)
     }
 }
@@ -118,16 +115,16 @@ impl LoginOutcome {
 
     /// The outcome two words stand for. A reason with any outcome but `failed`, a `failed` with
     /// no reason, and a word outside the set are all refused.
-    pub fn from_wire(outcome: &str, reason: &str) -> Result<Self, CoreError> {
+    pub fn from_wire(outcome: &str, reason: &str) -> Result<Self, IdError> {
         let fault = LoginFault::ALL.into_iter().find(|f| f.slug() == reason);
         match (outcome, reason, fault) {
             ("ready", "", _) => Ok(LoginOutcome::Ready),
             ("cancelled", "", _) => Ok(LoginOutcome::Cancelled),
             ("failed", _, Some(fault)) => Ok(LoginOutcome::Failed(fault)),
-            _ => Err(CoreError::MalformedId {
-                what: "login outcome",
-                text: format!("{outcome}/{reason}"),
-            }),
+            _ => Err(IdError::malformed(
+                "login outcome",
+                &format!("{outcome}/{reason}"),
+            )),
         }
     }
 }

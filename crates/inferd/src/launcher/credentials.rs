@@ -12,9 +12,10 @@
 //!
 //! The bus-facing flow (who may issue, the audit lines, the signal) is in `handoff`.
 
+use porter_core::ProcessCredentialId;
 use porter_core::audit::{CredentialEnd, Handoff};
 use porter_core::{AccountId, GrantId};
-use porter_core::{AppId, ProcessCredentialId, SecretText};
+use porter_core::{AppId, SecretText};
 use porter_wire::Refusal;
 use std::collections::BTreeMap;
 use std::fs::{DirBuilder, OpenOptions, Permissions};

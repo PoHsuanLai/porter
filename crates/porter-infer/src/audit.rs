@@ -2,9 +2,10 @@
 
 use crate::pick::Why;
 use crate::reply::TokenUsage;
+use porter_capability::Locality;
 use porter_capability::ModelId;
 use porter_core::AccountId;
-use porter_core::{AppId, DataClass, Locality};
+use porter_core::{AppId, DataClass};
 use porter_ids::{Bytes, Count, MicroUsd, UnixSeconds};
 use serde::{Deserialize, Serialize};
 

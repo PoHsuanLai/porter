@@ -15,9 +15,10 @@ use inferd::service::{Inference, serve_with_settings};
 use inferd::settings::{ConfigFile, InferdSettings, Reload};
 use inferd::supervise::Supervised;
 use porter_capability::ModelId;
+use porter_capability::{Billing, Locality};
 use porter_capability::{Capability, LlmCap, LlmFeature, LlmWire};
 use porter_core::AccountId;
-use porter_core::{AppId, AppName, Billing, Isolation, Locality};
+use porter_core::{AppId, AppName, Isolation};
 use porter_dbus::InferenceProxy;
 use porter_dbus::names::{INFERENCE_BUS, INFERENCE_PATH, INFERENCE_SETTINGS_PATH};
 use porter_ids::clock::FixedClock;
@@ -397,7 +398,7 @@ async fn a_set_by_the_settings_role_is_validated_written_and_in_force_for_the_ne
         rig.engines
             .settings()
             .tiers
-            .pick(Slot::Text, porter_core::Tier::Balanced)
+            .pick(Slot::Text, porter_capability::Tier::Balanced)
     };
     assert_eq!(settings.get(&slot).await.expect("get"), text(""));
     assert_eq!(in_force(), None);
@@ -516,7 +517,7 @@ async fn a_coding_agent_is_a_choice_of_the_text_slot_alone_listed_in_its_own_gro
         .await
         .expect("set");
     assert!(matches!(
-        rig.engines.settings().tiers.pick(Slot::Text, porter_core::Tier::Balanced),
+        rig.engines.settings().tiers.pick(Slot::Text, porter_capability::Tier::Balanced),
         Some(Pick::Named(m)) if m.is_agent()
     ));
     let schema = settings.describe().await.expect("describe");
@@ -642,7 +643,7 @@ async fn an_old_kind_row_in_the_file_is_the_slots_row_and_a_set_keeps_the_two_in
         rig.engines
             .settings()
             .tiers
-            .pick(Slot::Text, porter_core::Tier::Balanced),
+            .pick(Slot::Text, porter_capability::Tier::Balanced),
         Some(Pick::Auto { .. })
     ));
 }

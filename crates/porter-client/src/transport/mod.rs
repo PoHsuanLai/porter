@@ -40,15 +40,18 @@ use crate::authenticated::Relayed;
 #[cfg(feature = "infer")]
 use crate::computers::NewComputer;
 use crate::error::TransportError;
-use porter_core::GrantId;
-use porter_core::lending::{ComputerCandidate, GuestAnswer, GuestRow};
 #[cfg(feature = "infer")]
-use porter_core::{DataClass, Tier};
-use porter_core::{EndpointUrl, NodeId};
+use porter_capability::Tier;
+#[cfg(feature = "infer")]
+use porter_core::DataClass;
+use porter_core::EndpointUrl;
+use porter_core::GrantId;
 #[cfg(feature = "infer")]
 use porter_infer::{ComputerName, InferSession, OpenOptions, PlaceId, PlaceRow, Readiness};
 #[cfg(feature = "infer")]
 use porter_match::Need;
+use porter_tailnet::{ComputerCandidate, GuestAnswer, GuestRow};
+use porter_tailscale::NodeId;
 use porter_wire::{AccountsReply, AccountsRequest};
 use std::future::Future;
 

@@ -9,14 +9,13 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
-porter-core = { workspace = true }
 porter-ids = { workspace = true }
-porter-fs = { workspace = true }
+porter-fs = { workspace = true, optional = true }
 porter-tailscale = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-toml = { workspace = true }
+toml = { workspace = true, optional = true }
 hyper = { workspace = true, optional = true, features = ["client", "http1"] }
 hyper-util = { workspace = true, optional = true, features = ["tokio"] }
 http-body-util = { workspace = true, optional = true }
@@ -25,12 +24,15 @@ tokio = { workspace = true, optional = true, features = ["rt", "net", "time", "i
 [dev-dependencies]
 test-kit = { workspace = true }
 # The integration tests use the listeners, the dial and the relay, which the `io` feature builds.
-porter-tailnet = { workspace = true, features = ["io"] }
+porter-tailnet = { workspace = true, features = ["io", "persist"] }
 porter-tailscale = { workspace = true, features = ["io"] }
 porter-fake-servers = { workspace = true }
 tokio = { workspace = true, features = ["rt", "macros", "net", "time", "io-util", "sync"] }
 
 [features]
+# `Guests::open`: the records kept in a file the owner reads, written with porter-fs. Off by default,
+# so a client that only reads the rows of a lending computer builds no file writer and no toml.
+persist = ["dep:porter-fs", "dep:toml"]
 # The listeners, the dial, the relay and the hello client: sockets, tokio and hyper. Off by
 # default, so the judgement of who may ask and the lists of guests reach none of them.
 io = [

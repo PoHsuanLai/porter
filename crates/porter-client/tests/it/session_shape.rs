@@ -1,8 +1,9 @@
 //! `Accounts::session` and `Accounts::infer` over a transport whose sessions are scripted.
 #![cfg(feature = "infer")]
 
+use porter_capability::Tier;
 use porter_client::{Accounts, ClientError, InferSession, Transport, TransportError};
-use porter_core::{DataClass, Tier};
+use porter_core::DataClass;
 use porter_ids::Tokens;
 use porter_infer::OpenOptions;
 use porter_infer::testing::{FakeInferSession, Script, ScriptStep};
@@ -49,7 +50,7 @@ fn served() -> ServedBy {
     ServedBy {
         account: porter_core::AccountId::parse("local").expect("id"),
         model: porter_capability::ModelId::parse("echo").expect("id"),
-        locality: porter_core::Locality::OnDevice,
+        locality: porter_capability::Locality::OnDevice,
     }
 }
 

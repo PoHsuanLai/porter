@@ -3,8 +3,9 @@
 //! session removes exactly its grants.
 
 use porter_capability::LlmFeature;
+use porter_core::LauncherSession;
 use porter_core::consent::{Decision, GrantScope, Usage};
-use porter_core::{AppId, AppName, DataClass, Isolation, LauncherSession};
+use porter_core::{AppId, AppName, DataClass, Isolation};
 use porter_fake::{
     AskLog, MemoryStore, RecordingAudit, Scripted, ScriptedSheets, cloud_provider, llm_account,
     llm_provider,

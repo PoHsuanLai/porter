@@ -2,8 +2,9 @@
 //! started turn hands the test a sender, and the turn yields whatever the test pushes.
 
 use porter_capability::ModelId;
+use porter_capability::{Locality, Tier};
 use porter_core::AccountId;
-use porter_core::{DataClass, Locality, Tier};
+use porter_core::DataClass;
 use porter_ids::Tokens;
 use porter_infer::{
     AudioFrame, ClientFrame, InferEvent, InferRefusal, InferReply, InferRequest, ModelRef,

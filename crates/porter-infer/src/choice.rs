@@ -9,8 +9,8 @@ use crate::readiness::Readiness;
 use crate::route::TierChoice;
 use crate::slot::Slot;
 use porter_capability::ModelId;
+use porter_capability::{Billing, Locality, Tier};
 use porter_core::AccountId;
-use porter_core::{Billing, Locality, Tier};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -545,7 +545,7 @@ mod tests {
     fn picker_rows_filter_then_order_by_closeness_then_readiness() {
         use Readiness::*;
         let cloud = |region: Option<&str>| Locality::Cloud {
-            region: region.map(|r| porter_core::Region(r.to_owned())),
+            region: region.map(|r| porter_capability::Region(r.to_owned())),
         };
         let cards = [
             card("far-ready", Slot::Text, cloud(Some("eu-west-1")), Ready),

@@ -8,7 +8,7 @@ use crate::common;
 
 use accountd::{Options, TableCallers, TailnetWatch};
 use common::bus::PrivateBus;
-use porter_client::{DbusTransport, Machine, MachineOwner, TailnetError};
+use porter_client::{DbusTransport, TailnetError};
 use porter_core::{
     Account, AccountLabel, AccountState, AppId, AppName, AuthKind, Isolation, Restriction,
 };
@@ -21,6 +21,7 @@ use porter_ids::clock::FixedClock;
 use porter_secrets::MemorySecrets;
 use porter_service::{AccountService, Registry};
 use porter_tailscale::LocalApi;
+use porter_tailscale::{Machine, MachineOwner};
 use std::sync::Arc;
 use std::time::Duration;
 use test_kit::Scratch;

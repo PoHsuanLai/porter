@@ -34,10 +34,11 @@
 
 use clap::{Parser, Subcommand};
 use porter_capability::AgentProgram;
+use porter_core::LauncherSession;
 use porter_core::audit::Handoff;
 use porter_core::consent::Usage;
 use porter_core::{AccountId, KeyPermitId, ProviderId};
-use porter_core::{DataClass, IdentityId, LauncherSession};
+use porter_core::{DataClass, IdentityId};
 use porter_rig::client::{Ask, Command, parse_need, run, word};
 use porter_rig::fixture::Identity;
 use std::path::PathBuf;

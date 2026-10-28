@@ -1,7 +1,9 @@
 //! The vocabulary of the rows: slugs, the classes, slots and tiers they range over, and the
 //! `ai.model.<slot>.<tier>` paths (the old `<kind>` segments still read).
 
-use porter_core::{DataClass, HelperId, Tier};
+use porter_capability::Tier;
+use porter_core::DataClass;
+use porter_core::HelperId;
 use porter_infer::{Chooser, Slot};
 use serde::Serialize;
 use serde::de::DeserializeOwned;

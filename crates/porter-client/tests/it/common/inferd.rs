@@ -3,7 +3,8 @@
 //! ride on them), plays them into a scripted `FakeInferSession` and writes its events back as
 //! frames. How it misbehaves is a `Behaviour`, so the client's error paths run too.
 
-use porter_core::{DataClass, Tier};
+use porter_capability::Tier;
+use porter_core::DataClass;
 use porter_dbus::{Details, NeedArg, need_from_dbus};
 use porter_infer::testing::{FakeInferSession, Script};
 use porter_infer::{ClientFrame, InferEvent, InferRefusal, InferReply, InferSession};

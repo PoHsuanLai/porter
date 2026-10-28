@@ -8,16 +8,18 @@
 //! there is nothing to ask a grant for or to open a relay to. The app's identity is the
 //! daemons' to find (see `fixture`).
 
+use porter_capability::Tier;
 use porter_capability::{Access, AgentProgram, Delta, Offered, QuotaReport, StorageScope};
 use porter_client::{
     Accounts, AiKeys, AiKeysError, ClientError, DbusTransport, Identities, IdentitiesError,
     InferSession, Launcher, LauncherError, OpenOptions,
 };
+use porter_core::LauncherSession;
 use porter_core::ProviderHint;
 use porter_core::audit::Handoff;
 use porter_core::consent::Usage;
 use porter_core::{AccountId, KeyPermitId, ProviderId};
-use porter_core::{DataClass, IdentityId, LauncherSession, Tier};
+use porter_core::{DataClass, IdentityId};
 use porter_dbus::{SyncProxy, from_vardict};
 use porter_ids::Tokens;
 use porter_infer::{

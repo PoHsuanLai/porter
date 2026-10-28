@@ -13,9 +13,9 @@ model-catalog = { workspace = true }
 model-openai-compat = { workspace = true }
 model-provider = { workspace = true }
 porter-core = { workspace = true }
+porter-capability = { workspace = true }
 porter-match = { workspace = true }
 porter-ids = { workspace = true }
-porter-capability = { workspace = true }
 porter-infer = { workspace = true }
 thiserror = { workspace = true }
 vision-prep = { workspace = true }

@@ -3,7 +3,7 @@
 //! them (`porter_core::server_address`). A host with no view of the tailnet sets none, and only
 //! this computer may then be plain.
 
-use porter_core::Machine;
+use porter_tailscale::Machine;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;

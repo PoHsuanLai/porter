@@ -13,9 +13,10 @@ use hosting::entries;
 use hosting::rig::{Hosted, Plan, Trust, World};
 use inferd::settings::{ConfigFile, InferdSettings, Reload, SpendLine, serve_settings};
 use porter_capability::LlmFeature;
+use porter_capability::Tier;
 use porter_client::InferSession;
 use porter_core::consent::Usage;
-use porter_core::{AppId, AppName, DataClass, Isolation, Tier};
+use porter_core::{AppId, AppName, DataClass, Isolation};
 use porter_dbus::InferenceProxy;
 use porter_ids::{MicroUsd, Tokens};
 use porter_infer::{
@@ -266,7 +267,7 @@ async fn acceptance_7_a_chat_turn_goes_to_a_hosted_model_through_openrouter_and_
     assert_eq!(served.model.as_str(), "gpt-6-luna");
     assert!(matches!(
         served.locality,
-        porter_core::Locality::Cloud { .. }
+        porter_capability::Locality::Cloud { .. }
     ));
     // The Answer note names the hosted entry by its label, after Routed and before any token.
     let at = |want: fn(&InferEvent) -> bool| events.iter().position(want).expect("event");
@@ -327,7 +328,7 @@ async fn acceptance_7_a_chat_turn_goes_to_a_hosted_model_through_openrouter_and_
     assert_eq!(audited[0].account.as_str(), "openrouter");
     assert!(matches!(
         audited[0].locality,
-        porter_core::Locality::Cloud { .. }
+        porter_capability::Locality::Cloud { .. }
     ));
     let cloud = world.served.cloud().expect("cloud");
     let spent = cloud.ledger().spent(

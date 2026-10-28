@@ -7,7 +7,7 @@ use super::fail::Shape;
 use super::session::Ctx;
 use crate::cloud::spend::SpendGuard;
 use model_http::SseDecoder;
-use porter_core::{Locality, PriceTable};
+use porter_capability::{Locality, PriceTable};
 use porter_ids::{Bytes, Count, MicroUsd, Tokens};
 use porter_infer::{AuditEntry, ServedBy, TokenUsage, Why, cost};
 use porter_turns::audit::AuditOut;

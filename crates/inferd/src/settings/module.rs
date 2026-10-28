@@ -20,7 +20,7 @@ use ds_settings::schema::{
     AgentSetting, ChoiceGroup, ChoicePlace, ChoiceWord, CompanyName, EngineName, Exposure, Help,
     HostName, KeyKind, KeyPath, KeySpec, Label, Page, Section, UnavailableReason, WordLabels,
 };
-use porter_core::{Locality, Tier};
+use porter_capability::{Locality, Tier};
 use porter_dbus::names::INFERENCE_SETTINGS_PATH;
 use porter_infer::{Chooser, ModelRef, Slot, tier_label};
 use porter_router::local::LocalModel;

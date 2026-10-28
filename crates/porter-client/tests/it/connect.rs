@@ -8,10 +8,11 @@ use crate::common;
 use common::bus::PrivateBus;
 use common::inferd::{Behaviour, FakeInferd};
 use porter_capability::ModelId;
+use porter_capability::Tier;
 use porter_client::{Accounts, ClientError, TransportError};
 use porter_core::AccountId;
+use porter_core::DataClass;
 use porter_core::consent::Usage;
-use porter_core::{DataClass, Tier};
 use porter_ids::Tokens;
 use porter_infer::testing::{Script, ScriptStep};
 use porter_infer::{
@@ -40,7 +41,7 @@ fn reply() -> InferReply {
         ServedBy {
             account: AccountId::parse("local").expect("id"),
             model: ModelId::parse("echo").expect("id"),
-            locality: porter_core::Locality::OnDevice,
+            locality: porter_capability::Locality::OnDevice,
         },
     ))
 }

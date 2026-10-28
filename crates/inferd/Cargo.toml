@@ -41,7 +41,7 @@ porter-engines = { workspace = true }
 porter-http = { workspace = true }
 porter-http-reqwest = { workspace = true }
 porter-provider = { workspace = true }
-porter-tailnet = { workspace = true, features = ["io"] }
+porter-tailnet = { workspace = true, features = ["io", "persist"] }
 porter-tailscale = { workspace = true, features = ["io"] }
 porter-infer = { workspace = true }
 # Routing and the session machine: the router, the plan, the catalogue, the local model book, the

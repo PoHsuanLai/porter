@@ -12,8 +12,8 @@ use crate::reply::{ChatReply, EmbedReply, InferReply};
 use crate::request::{ChatRequest, EmbedRequest, InferRequest, TaskRequest};
 use porter_capability::Capability;
 use porter_capability::ModelId;
+use porter_capability::{Billing, Locality};
 use porter_core::AccountId;
-use porter_core::{Billing, Locality};
 use std::future::Future;
 
 /// What routing knows about one model.

@@ -11,11 +11,12 @@
 //! while changes.next().await.is_some() { /* read the list again */ }
 //! ```
 
-use porter_core::{CoreError, Machine};
+use porter_core::CoreError;
 use porter_dbus::{
     BusConnection, BusError, BusFailure, BusStream, TailnetChanged, TailnetChangedStream,
     TailnetProxy, classify, machine_from_dbus,
 };
+use porter_tailscale::Machine;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 

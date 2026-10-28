@@ -7,7 +7,7 @@ use crate::structured::{self, Checked, Limits, Shaping};
 use model_openai_compat::OpenAiCodec;
 use model_provider as sp;
 use model_provider::Embedder;
-use porter_core::Tier;
+use porter_capability::Tier;
 use porter_infer::{
     ChatReply, ChatRequest, ChatSink, EmbedReply, EmbedRequest, Flow, InferEvent, InferRefusal,
     Model, ModelCard, ServedBy, StopReason, TaskRequest, TokenUsage, TurnError,

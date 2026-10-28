@@ -8,7 +8,7 @@
 //! program shows says why.
 
 use crate::dial::{DialError, Dialer};
-use porter_core::NodeId;
+use porter_tailscale::NodeId;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::io::{AsyncWriteExt, copy_bidirectional};

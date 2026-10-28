@@ -65,7 +65,7 @@ async fn a_local_route_serves_an_anthropic_tool_conversation_with_no_key_and_no_
     assert_eq!(spent(&world, "").micro_usd, 0);
     let audited = world.audit.entries();
     assert_eq!(audited.len(), 1);
-    assert_eq!(audited[0].locality, porter_core::Locality::OnDevice);
+    assert_eq!(audited[0].locality, porter_capability::Locality::OnDevice);
     assert_eq!(audited[0].cost, None);
     assert_eq!(audited[0].app, agent_app());
     assert!(provider_requests(&world).is_empty());
@@ -276,7 +276,10 @@ async fn an_attached_my_network_engine_follows_the_floor_and_the_my_network_sett
     assert_eq!(lab.chats().len(), 1);
     // Free and keyless: no spend, and the audit line says it was another machine of theirs.
     let audited = world.audit.entries();
-    assert_eq!(audited[0].locality, porter_core::Locality::LocalNetwork);
+    assert_eq!(
+        audited[0].locality,
+        porter_capability::Locality::LocalNetwork
+    );
     assert_eq!(audited[0].cost, None);
     // The setting turned back off: the open session's next request is refused.
     let mut settings = (*world.served.settings()).clone();

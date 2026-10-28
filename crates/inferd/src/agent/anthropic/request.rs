@@ -259,7 +259,7 @@ pub fn parse(body: &[u8], class: DataClass) -> Result<Parsed, Unmapped> {
         include_usage: true,
         chat: ChatRequest::new(
             messages,
-            porter_core::Tier::Balanced,
+            porter_capability::Tier::Balanced,
             class,
             Usage::Interactive,
         )

@@ -11,9 +11,10 @@ use hosting::engine::{Chat, Script};
 use hosting::entries;
 use hosting::rig::{Plan, SpeechPlan, World};
 use porter_capability::LlmFeature;
+use porter_capability::Tier;
 use porter_client::{DbusSession, InferSession};
+use porter_core::DataClass;
 use porter_core::consent::Usage;
-use porter_core::{DataClass, Tier};
 use porter_ids::Tokens;
 use porter_infer::{
     AudioFrame, AudioRate, Base64Bytes, ChatMessage, ChatRequest, ClientFrame, InferEvent,

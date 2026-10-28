@@ -13,9 +13,10 @@ use hosting::rig::{Plan, SpeechPlan, World};
 use inferd::runner::{Pin, Pinned, Turns};
 use inferd::speech::Ears;
 use porter_capability::SpeechMode;
+use porter_capability::Tier;
 use porter_client::{Accounts, ClientError, DbusSession, DbusTransport, InferSession};
+use porter_core::DataClass;
 use porter_core::consent::Usage;
-use porter_core::{DataClass, Tier};
 use porter_infer::{
     Answer, AudioFrame, AudioRate, AutoPolicy, Base64Bytes, ChatMessage, ChatReply, ChatRequest,
     ClientFrame, DescribeImages, Flow, HeardDelta, InferEvent, InferReply, InferRequest, LangPick,

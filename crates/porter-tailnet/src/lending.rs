@@ -5,8 +5,8 @@
 //! `porter-client`. They live here so a client that only talks to the bus builds none of the
 //! lending computer's own dependencies.
 
-use crate::tailnet::NodeId;
 use porter_ids::UnixSeconds;
+use porter_tailscale::NodeId;
 
 /// The person's answer to a computer: what `AnswerGuest` takes, as a word.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

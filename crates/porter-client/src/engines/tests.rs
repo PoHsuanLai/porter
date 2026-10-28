@@ -2,8 +2,8 @@ use super::engine::Scheme;
 use super::routes::Table;
 use super::wire::{Temperature, shape};
 use super::*;
+use porter_capability::{Locality, Tier};
 use porter_core::AccountId;
-use porter_core::{Locality, Tier};
 use porter_ids::Tokens;
 use porter_infer::Slot;
 

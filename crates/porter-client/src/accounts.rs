@@ -6,18 +6,19 @@ use crate::error::ClientError;
 use crate::error::TransportError;
 use crate::found::{ConsentOffer, Found, found};
 use crate::transport::Transport;
-use porter_core::ProviderHint;
 #[cfg(feature = "infer")]
-use porter_core::Tier;
+use porter_capability::Tier;
+use porter_core::ProviderHint;
 use porter_core::consent::{Grant, Usage};
-use porter_core::lending::{ComputerCandidate, GuestAnswer, GuestRow};
 use porter_core::{AccountId, GrantId};
-use porter_core::{Audience, Candidate, DataClass, EndpointUrl, IssuedToken, NodeId};
+use porter_core::{Audience, Candidate, DataClass, EndpointUrl, IssuedToken};
 #[cfg(feature = "infer")]
 use porter_infer::{
     ClientFrame, InferEvent, InferReply, InferRequest, InferSession, OpenOptions, Readiness,
 };
 use porter_match::Need;
+use porter_tailnet::{ComputerCandidate, GuestAnswer, GuestRow};
+use porter_tailscale::NodeId;
 use porter_wire::ParentWindow;
 use porter_wire::{AccountsReply, AccountsRequest};
 
