@@ -144,24 +144,15 @@ pub(super) fn graph_only(scopes: &[String]) -> bool {
         .any(|s| s.starts_with("https://outlook.office.com/"))
 }
 
-/// Which kind of Microsoft account an address belongs to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AccountClass {
-    /// A consumer account (outlook.com, hotmail.com, live.com, msn.com): no organisation, so no
-    /// tenant to consent.
-    Personal,
-    /// A work or school account, in an organisation's tenant.
-    Work,
-}
+/// The consumer domains of Microsoft accounts: no organisation, so no tenant to consent.
+const PERSONAL_DOMAINS: [&str; 4] = ["outlook.com", "hotmail.com", "live.com", "msn.com"];
 
-/// The class of the account `address` names. The rule is mailo's: the four consumer domains are
+/// Whether `address` names a personal (consumer) Microsoft account rather than a work or school
+/// account in an organisation's tenant. The rule is mailo's: the four consumer domains are
 /// personal, anything else is a tenant's.
-pub fn classify(address: &str) -> AccountClass {
+pub fn is_personal(address: &str) -> bool {
     let domain = address.rsplit_once('@').map_or("", |(_, d)| d);
-    match domain.trim().to_ascii_lowercase().as_str() {
-        "outlook.com" | "hotmail.com" | "live.com" | "msn.com" => AccountClass::Personal,
-        _ => AccountClass::Work,
-    }
+    PERSONAL_DOMAINS.contains(&domain.trim().to_ascii_lowercase().as_str())
 }
 
 #[cfg(test)]
@@ -333,18 +324,18 @@ mod tests {
 
     #[test]
     fn personal_and_work_addresses_are_told_apart_by_domain() {
-        const CASES: &[(&str, AccountClass)] = &[
-            ("me@outlook.com", AccountClass::Personal),
-            ("me@Hotmail.com", AccountClass::Personal),
-            ("me@live.com", AccountClass::Personal),
-            ("me@msn.com", AccountClass::Personal),
-            ("me@contoso.onmicrosoft.com", AccountClass::Work),
-            ("me@firm.example", AccountClass::Work),
-            ("me@notoutlook.com", AccountClass::Work),
-            ("not an address", AccountClass::Work),
+        const CASES: &[(&str, bool)] = &[
+            ("me@outlook.com", true),
+            ("me@Hotmail.com", true),
+            ("me@live.com", true),
+            ("me@msn.com", true),
+            ("me@contoso.onmicrosoft.com", false),
+            ("me@firm.example", false),
+            ("me@notoutlook.com", false),
+            ("not an address", false),
         ];
         for (address, want) in CASES {
-            assert_eq!(classify(address), *want, "{address}");
+            assert_eq!(is_personal(address), *want, "{address}");
         }
     }
 }

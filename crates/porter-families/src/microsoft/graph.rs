@@ -5,7 +5,7 @@
 //! Requests carry no query string (an `EndpointUrl` has none): each path answers with its
 //! default page.
 
-use super::scopes::{AccountClass, classify};
+use super::scopes::is_personal;
 use porter_capability::{AbsentReason, Claim, Offer, Provenance, Subject};
 use porter_capability::{Capability, CapabilityKind, QuotaReport};
 use porter_core::EndpointUrl;
@@ -94,7 +94,7 @@ pub(super) async fn probe<H: Http>(
     token: &str,
 ) -> Result<Found, ProviderError> {
     let address = whoami(http, base, token).await?;
-    let class = classify(&address);
+    let personal = is_personal(&address);
     let mut claims = Vec::new();
     let mut seen = Vec::new();
     // An on-use row (the whole drive) is not the account's until it is asked for.
@@ -104,7 +104,7 @@ pub(super) async fn probe<H: Http>(
             continue;
         }
         seen.push(kind);
-        claims.push(claim_for(http, base, token, class, &row.capability).await?);
+        claims.push(claim_for(http, base, token, personal, &row.capability).await?);
     }
     Ok(Found { address, claims })
 }
@@ -113,7 +113,7 @@ async fn claim_for<H: Http>(
     http: &H,
     base: &EndpointUrl,
     token: &str,
-    class: AccountClass,
+    personal: bool,
     declared: &Capability,
 ) -> Result<Claim, ProviderError> {
     let kind = declared.kind();
@@ -138,9 +138,9 @@ async fn claim_for<H: Http>(
         ),
         // A personal account has no tenant to refuse: a 403 there is the service itself.
         403 => claim(
-            absent(match class {
-                AccountClass::Work => AbsentReason::TenantConsent,
-                AccountClass::Personal => AbsentReason::ProviderOffersNone,
+            absent(match personal {
+                false => AbsentReason::TenantConsent,
+                true => AbsentReason::ProviderOffersNone,
             }),
             Provenance::Probed,
         ),

@@ -14,7 +14,7 @@ mod session;
 mod signin;
 
 pub use env::{Clock, MicrosoftEnv, Random};
-pub use scopes::{AccountClass, classify};
+pub use scopes::is_personal;
 pub use session::MicrosoftSession;
 pub use signin::MicrosoftSignIn;
 
