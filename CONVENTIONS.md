@@ -17,8 +17,7 @@ What porter adds or decides differently, each with its reason:
    `-> impl Future<Output = ...> + Send` (return-position `impl Trait`) or a plain `async fn` in
    its implementations, so every future can cross a multi-threaded runtime and dispatch is
    static. Only a trait used as `dyn` (an `Arc<dyn Machines>`) returns a hand-boxed
-   `Pin<Box<dyn Future<Output = T> + Send + 'a>>` (inferd's `Boxed`). Closed sets of
-   implementations are enums implementing the trait (`accountd`'s `FamilyProvider`), not `dyn`.
+   `Pin<Box<dyn Future<Output = T> + Send + 'a>>` (inferd's `Boxed`).
    Events of a model turn go to a `ChatSink` callback, not a `Stream`: a turn is one future that
    pushes as it runs, dropping it cancels, and the sink ends it early with `Flow::Stop`. That is
    deliberate.
@@ -39,3 +38,21 @@ What porter adds or decides differently, each with its reason:
    reason is for a test that sets process-wide state or needs a `required-features` (or a
    feature-less build) the rest must not: porter-client `socket_accounts` builds without
    porter-infer. Dependencies build without debug info (`[profile.dev.package."*"]`).
+
+Type rules (the owner's, 2026-10-28; quote them in review):
+
+- `bool` is fine for fields, returns, locals and private fns. An enum only where a public fn
+  would read `f(true, false)`, a third state is realistic, or the value is persisted or on the
+  bus.
+- A newtype only when it holds a rule (parsed or validated), a unit, or an id that must not be
+  mixed up with another.
+- An enum for a closed set the code branches on. A set that grows (issuers, files, ports) is
+  data, in a provider file or a table.
+- Behaviour that varies by case is a trait with default methods. Generics by default;
+  `Box<dyn>` or `&'static dyn` when the case is picked from config, a file or the bus. The
+  stored or bus id stays as it is, and one function maps it to the impl.
+- One fact has one type: no twin enums (use `#[serde]` attributes or `From`), and a two-way
+  outcome is a `Result` or an `Option`.
+- A data format never changes with a refactor: every persisted or bus value round-trips byte
+  for byte, and a type that was stored and becomes another gets a test that the stored text is
+  read and written unchanged.
