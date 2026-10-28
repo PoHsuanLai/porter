@@ -4,6 +4,7 @@
 //! `AUTHENTICATE` and the initial response, and gives the app the capability list without
 //! `SASL` and `STARTTLS` followed by `OK`, then relays bytes.
 
+use crate::auth::{Sasl, pick};
 use crate::fault::RelayFault;
 use crate::lines::{MAX_EARLY, closes, fail, finished, overlong, send, send_line, take_line, text};
 use crate::step::{Effect, Input, Relaying, Side};
@@ -60,15 +61,10 @@ impl SieveAuth {
     pub fn choose(capabilities: &[String], auth: &RelayAuth) -> Result<Self, RelayFault> {
         let offered = mechanisms(capabilities);
         let has = |name: &str| offered.iter().any(|m| m == name);
-        match auth {
-            RelayAuth::Password(_) if has("PLAIN") => Ok(SieveAuth::Plain),
-            RelayAuth::AccessToken(_) if has("XOAUTH2") => Ok(SieveAuth::Xoauth2),
-            RelayAuth::Password(_) | RelayAuth::AccessToken(_) | RelayAuth::Anonymous => {
-                Err(RelayFault::Protocol)
-            }
-            // a variant a newer porter adds: refused, never sent as anonymous
-            _ => Err(RelayFault::Protocol),
-        }
+        Ok(match pick(auth, has("PLAIN"), has("XOAUTH2"))? {
+            Sasl::Plain => SieveAuth::Plain,
+            Sasl::Xoauth2 => SieveAuth::Xoauth2,
+        })
     }
 }
 

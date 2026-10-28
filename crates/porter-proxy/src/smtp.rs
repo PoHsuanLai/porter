@@ -2,6 +2,7 @@
 //! app sees `220 porter ESMTP ready`, then an `EHLO` reply that offers no `AUTH` and no
 //! `STARTTLS`, then a session that is already authenticated.
 
+use crate::auth::{Sasl, pick};
 use crate::fault::RelayFault;
 use porter_core::{RelayAuth, RelayPlan};
 
@@ -107,15 +108,10 @@ impl SmtpAuth {
     pub fn choose(ehlo: &EhloReply, auth: &RelayAuth) -> Result<Self, RelayFault> {
         let mechanisms = ehlo.mechanisms();
         let offered = |name: &str| mechanisms.iter().any(|m| m == name);
-        match auth {
-            RelayAuth::AccessToken(_) if offered("XOAUTH2") => Ok(SmtpAuth::Xoauth2),
-            RelayAuth::Password(_) if offered("PLAIN") => Ok(SmtpAuth::Plain),
-            RelayAuth::AccessToken(_) | RelayAuth::Password(_) | RelayAuth::Anonymous => {
-                Err(RelayFault::Protocol)
-            }
-            // a variant a newer porter adds: refused, never sent as anonymous
-            _ => Err(RelayFault::Protocol),
-        }
+        Ok(match pick(auth, offered("PLAIN"), offered("XOAUTH2"))? {
+            Sasl::Plain => SmtpAuth::Plain,
+            Sasl::Xoauth2 => SmtpAuth::Xoauth2,
+        })
     }
 }
 

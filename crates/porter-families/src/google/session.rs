@@ -22,9 +22,7 @@ use porter_core::AccountId;
 use porter_core::{Audience, Credential, Family, IssuedToken, TokenKind};
 use porter_http::Http;
 use porter_ids::UnixSeconds;
-use porter_oauth::{
-    ExchangeFault, endpoints_of, is_due, refresh_scoped_detailed,
-};
+use porter_oauth::{ExchangeFault, endpoints_of, is_due, refresh_scoped_detailed};
 use porter_provider::{Issuer, Presented, ProviderError, ProviderSession, ProviderSpec};
 use std::collections::HashMap;
 use std::sync::{Mutex, MutexGuard};

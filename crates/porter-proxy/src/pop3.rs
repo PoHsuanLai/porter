@@ -10,6 +10,7 @@
 //!    `PASS` and `APOP` are answered `+OK` here and never forwarded (a client that logs in
 //!    anyway is told it succeeded); its `AUTH` and `STLS` are refused.
 
+use crate::auth::{Sasl, pick};
 use crate::fault::RelayFault;
 use porter_core::RelayAuth;
 
@@ -42,13 +43,13 @@ impl Pop3Auth {
     /// `SASL PLAIN` and not `USER`.
     pub fn choose(capabilities: &[String], auth: &RelayAuth) -> Result<Self, RelayFault> {
         let user = capabilities.iter().any(|c| c.eq_ignore_ascii_case("USER"));
-        match auth {
-            RelayAuth::AccessToken(_) if sasl(capabilities, "XOAUTH2") => Ok(Pop3Auth::Xoauth2),
-            RelayAuth::AccessToken(_) | RelayAuth::Anonymous => Err(RelayFault::Protocol),
-            RelayAuth::Password(_) if !user && sasl(capabilities, "PLAIN") => Ok(Pop3Auth::Plain),
-            RelayAuth::Password(_) => Ok(Pop3Auth::User),
-            // a variant a newer porter adds: refused, never sent as anonymous
-            _ => Err(RelayFault::Protocol),
+        let plain = !user && sasl(capabilities, "PLAIN");
+        match pick(auth, plain, sasl(capabilities, "XOAUTH2")) {
+            Ok(Sasl::Plain) => Ok(Pop3Auth::Plain),
+            Ok(Sasl::Xoauth2) => Ok(Pop3Auth::Xoauth2),
+            // a password goes by `USER` and `PASS`, the way every server takes it
+            Err(_) if matches!(auth, RelayAuth::Password(_)) => Ok(Pop3Auth::User),
+            Err(fault) => Err(fault),
         }
     }
 }

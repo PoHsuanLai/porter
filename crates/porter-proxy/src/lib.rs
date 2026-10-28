@@ -22,6 +22,7 @@
 //! passes in (TCP, and the TLS check against system roots). TLS and certificate checks live in
 //! the connector, never in the app. Nothing here reads the clock or the environment.
 
+mod auth;
 mod connect;
 mod fault;
 mod http1;
