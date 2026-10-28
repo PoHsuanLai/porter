@@ -443,6 +443,24 @@ mod tests {
         );
     }
 
+    /// The generic family finds a password file's servers by its discovery (an address, a
+    /// server's name, or the file's own servers); a file whose discovery is none of those is not
+    /// the generic family's to serve.
+    #[test]
+    fn a_password_file_whose_discovery_no_lookup_uses_is_not_served() {
+        let text = std::fs::read_to_string(shipped().join("generic-imap.toml")).expect("file");
+        let changed = text.replace("kind = \"autoconfig\"", "kind = \"nextcloud_ocs\"");
+        assert_ne!(changed, text, "the line was found");
+        let own = scratch("discovery");
+        std::fs::write(own.join("generic-imap.toml"), changed).expect("write");
+        let loaded = load_specs(&[(Layer::Named, own.to_path_buf())]);
+        assert!(loaded.skipped.is_empty(), "{:?}", loaded.skipped);
+        let io = io_over(&loaded.specs);
+        let (families, unserved) = served(loaded.specs, &io);
+        assert!(families.is_empty(), "not served");
+        assert_eq!(unserved.len(), 1);
+    }
+
     fn microsoft() -> String {
         std::fs::read_to_string(shipped().join("microsoft.toml")).expect("file")
     }

@@ -11,6 +11,7 @@
 mod dav;
 mod jmap;
 mod login;
+mod lookup;
 mod mail;
 mod sign_in;
 
@@ -22,24 +23,29 @@ use porter_core::AccountId;
 use porter_core::{Account, Audience, Credential, IssuedToken};
 use porter_discover::Dns;
 use porter_http::{NoSleep, SharedHttp};
+#[cfg(feature = "set")]
+use porter_provider::Discovery;
 use porter_provider::{
-    Discovery, Presented, Provider, ProviderError, ProviderSession, ProviderSet, ProviderSpec,
-    RevokeOutcome, SignInStart,
+    Presented, Provider, ProviderError, ProviderSession, ProviderSet, ProviderSpec, RevokeOutcome,
+    SignInStart,
 };
+use std::marker::PhantomData;
 
-pub use sign_in::GenericFlow;
+pub use lookup::{DavLookup, FixedLookup, MailLookup};
+pub use sign_in::{GenericFlow, Located, Lookup, Mid, Outcome, Seams};
 
-/// The Generic family's provider.
+/// The Generic family's provider for the accounts `L` finds the servers of.
 #[derive(Debug, Clone)]
-pub struct GenericProvider {
+pub struct GenericProvider<L = MailLookup> {
     spec: ProviderSpec,
     io: Io,
     dns: SharedDns,
     providers: ProviderSet,
     login: login::SharedLogin,
+    lookup: PhantomData<fn() -> L>,
 }
 
-impl GenericProvider {
+impl<L> GenericProvider<L> {
     /// The provider serving the accounts of `spec`, dialling through `http` and resolving
     /// through `dns`. It knows no other provider, so every address is searched for.
     pub fn new(spec: ProviderSpec, http: SharedHttp, dns: impl Dns + 'static) -> Self {
@@ -49,6 +55,7 @@ impl GenericProvider {
             dns: SharedDns::new(dns),
             providers: ProviderSet::default(),
             login: login::SharedLogin::platform(),
+            lookup: PhantomData,
         }
     }
 
@@ -82,9 +89,9 @@ impl GenericSession {
     }
 }
 
-impl Provider for GenericProvider {
+impl<L: Lookup> Provider for GenericProvider<L> {
     type Session = GenericSession;
-    type SignIn = Conversation<GenericFlow>;
+    type SignIn = Conversation<GenericFlow<L>>;
 
     fn spec(&self) -> &ProviderSpec {
         &self.spec
@@ -110,19 +117,12 @@ impl Provider for GenericProvider {
     }
 
     fn sign_in(&self, start: SignInStart) -> Result<Self::SignIn, ProviderError> {
-        let flavor = match self.spec.discovery {
-            Discovery::Autoconfig => sign_in::Flavor::Mail,
-            Discovery::WellKnown => sign_in::Flavor::Dav,
-            Discovery::Fixed => sign_in::Flavor::Fixed,
-            _ => return Err(ProviderError::Unreadable),
-        };
         Ok(Conversation::new(GenericFlow::new(
             self.io.clone(),
             self.dns.clone(),
             self.providers.clone(),
             self.login.clone(),
             self.spec.clone(),
-            flavor,
             start.mode,
         )))
     }
@@ -148,14 +148,26 @@ impl ProviderSession for GenericSession {
     }
 }
 
-/// This family for `spec` when it signs in by a password or an app password, else the spec back.
+/// This family for `spec` when it signs in by a password or an app password, else the spec
+/// back. How the servers are found is the lookup its discovery names: an address (autoconfig, or
+/// a JMAP server the person types), a server's name (`.well-known`), or the file's own servers.
 #[cfg(feature = "set")]
 pub(crate) fn build(spec: ProviderSpec, io: &crate::set::FamilyIo) -> crate::set::Built {
     use porter_core::AuthKind;
-    match spec.auth.kind {
-        AuthKind::Password | AuthKind::AppPassword => {
-            let provider = GenericProvider::new(spec, io.http.clone(), io.dns.clone());
-            Ok(Box::new(provider.with_providers(io.providers.clone())))
+    fn serving<L: Lookup>(spec: ProviderSpec, io: &crate::set::FamilyIo) -> crate::set::Built {
+        let provider = GenericProvider::<L>::new(spec, io.http.clone(), io.dns.clone());
+        Ok(Box::new(provider.with_providers(io.providers.clone())))
+    }
+    match (spec.auth.kind, &spec.discovery) {
+        (
+            AuthKind::Password | AuthKind::AppPassword,
+            Discovery::Autoconfig | Discovery::JmapSession,
+        ) => serving::<MailLookup>(spec, io),
+        (AuthKind::Password | AuthKind::AppPassword, Discovery::WellKnown) => {
+            serving::<DavLookup>(spec, io)
+        }
+        (AuthKind::Password | AuthKind::AppPassword, Discovery::Fixed) => {
+            serving::<FixedLookup>(spec, io)
         }
         _ => Err(Box::new(spec)),
     }

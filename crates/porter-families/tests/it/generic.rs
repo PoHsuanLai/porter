@@ -18,7 +18,7 @@ use porter_fake_servers::{
     Accounts, AutoconfigHandle, DavHandle, FakeAutoconfig, FakeDav, FakeDns, FakeImap, FakeSmtp,
     Running, autoconfig_xml, mailbox,
 };
-use porter_families::GenericProvider;
+use porter_families::{DavLookup, FixedLookup, GenericProvider, MailLookup};
 use porter_http::SharedHttp;
 use porter_provider::{
     Presented, Provider, ProviderError, ProviderSession, ProviderSpec, SignInMode, SignInStart,
@@ -77,8 +77,12 @@ async fn mail_as(user: &str, dns: FakeDns) -> Mail {
         .collect();
     Mail {
         autoconfig,
-        provider: GenericProvider::new(imap_spec(), SharedHttp::new(Fakes::new(places)), dns)
-            .with_connect(servers.wire()),
+        provider: GenericProvider::<MailLookup>::new(
+            imap_spec(),
+            SharedHttp::new(Fakes::new(places)),
+            dns,
+        )
+        .with_connect(servers.wire()),
         _servers: servers,
     }
 }
@@ -445,7 +449,7 @@ impl porter_http::Http for FakeJmap {
 }
 
 fn jmap_provider(fake: FakeJmap) -> GenericProvider {
-    GenericProvider::new(imap_spec(), SharedHttp::new(fake), FakeDns::new())
+    GenericProvider::<MailLookup>::new(imap_spec(), SharedHttp::new(fake), FakeDns::new())
 }
 
 fn jmap_answers(login: Option<&str>) -> Vec<FieldAnswer> {
@@ -658,7 +662,7 @@ async fn typed_pop3_starttls_defaults_to_port_110_and_may_be_plain_on_this_compu
 #[tokio::test]
 async fn nothing_reachable_is_offline_and_a_bad_form_is_unreadable() {
     // No host is in the table, so every request fails to connect, and so does DNS.
-    let provider = GenericProvider::new(
+    let provider = GenericProvider::<MailLookup>::new(
         imap_spec(),
         SharedHttp::new(Fakes::loopback()),
         FakeDns::new().unreachable(),
@@ -717,7 +721,7 @@ async fn signing_in_again_to_a_mail_account_asks_the_form_and_finishes_without_a
 struct Dav {
     dav: Running<DavHandle>,
     wellknown: Running<AutoconfigHandle>,
-    provider: GenericProvider,
+    provider: GenericProvider<DavLookup>,
 }
 
 async fn dav() -> Dav {
@@ -744,7 +748,7 @@ async fn dav_with(address_book: bool) -> Dav {
             port: port_of(dav.base_url()),
         },
     ];
-    let provider = GenericProvider::new(
+    let provider = GenericProvider::<DavLookup>::new(
         dav_spec(),
         SharedHttp::new(Fakes::new(places)),
         FakeDns::new(),
@@ -922,19 +926,6 @@ async fn a_refused_dav_password_ends_the_sign_in_refused_and_a_server_with_no_da
 }
 
 #[tokio::test]
-async fn a_provider_file_that_is_not_a_generic_kind_does_not_sign_in() {
-    let provider = GenericProvider::new(
-        porter_fake_servers::shipped::nextcloud(),
-        SharedHttp::new(Fakes::loopback()),
-        FakeDns::new(),
-    );
-    assert_eq!(
-        provider.sign_in(add()).err(),
-        Some(ProviderError::Unreadable)
-    );
-}
-
-#[tokio::test]
 async fn a_session_never_hands_out_the_password_and_revoke_has_nothing_to_do() {
     let mail = mail_with(FakeDns::new()).await;
     let account = AccountId::parse("generic-imap-ada").expect("id");
@@ -1005,8 +996,8 @@ fn brand(id: &str) -> ProviderSpec {
 fn fixed_provider(
     spec: ProviderSpec,
     connect: impl porter_proxy::Connect + 'static,
-) -> GenericProvider {
-    GenericProvider::new(
+) -> GenericProvider<FixedLookup> {
+    GenericProvider::<FixedLookup>::new(
         spec,
         SharedHttp::new(Fakes::loopback()),
         FakeDns::new().unreachable(),

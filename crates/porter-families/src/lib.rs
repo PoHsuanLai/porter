@@ -67,7 +67,10 @@ pub use dispatch::{DynProvider, DynSession, DynSignIn};
 #[cfg(feature = "oauth")]
 pub use env_common::{ClientFiles, Clock, Random};
 #[cfg(feature = "generic")]
-pub use generic::{GenericFlow, GenericProvider, GenericSession};
+pub use generic::{
+    DavLookup, FixedLookup, GenericFlow, GenericProvider, GenericSession, Located, Lookup,
+    MailLookup, Mid, Outcome, Seams,
+};
 #[cfg(feature = "oauth")]
 pub use google::{Google, GoogleState};
 #[cfg(any(feature = "nextcloud", feature = "generic"))]
