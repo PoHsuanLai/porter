@@ -10,23 +10,29 @@
 use super::host::KeyHost;
 use super::local::state_slug;
 use crate::cloud::accountd::Boxed;
+use crate::cloud::spend::written;
+use crate::cloud::wire::charges_of;
 use ds_settings::live::{LiveError, Served};
 use ds_settings::schema::{
     ActionLabel, ActionWeight, AgentSetting, Exposure, Help, KeyKind, KeyPath, KeySpec, Label,
     LiveAction, Page, Section, WordLabels,
 };
+use iso_currency::Currency;
+use model_catalog::ProviderId;
+use model_provider::{Charges, Money};
 use porter_capability::LoginOutcome;
 use porter_capability::{CapabilityKind, Offer, Toggle};
 use porter_core::consent::{Decision, Grant, GrantScope};
 use porter_core::{Account, AccountState, AgentState, AppId, AppName, AuthKind, Isolation};
 use porter_core::{AccountId, GrantId};
 use porter_families::set::ProviderNames;
-use porter_ids::MicroUsd;
+use porter_infer::ChargeTotal;
 use porter_service::{Launchers as LaunchersSeam, LoginEnd, Registry, program_of};
 use porter_sheet::ProviderGroup;
 use porter_sheets::AppNames;
 use porter_wire::AccountsReply;
 use porter_wire::ParentWindow;
+use rust_decimal::Decimal;
 use std::sync::{Arc, OnceLock};
 
 /// What a key names.
@@ -58,11 +64,14 @@ pub(crate) enum Key {
     /// `accounts.<id>.grant.<grant>.service`: read-only, the service it reaches (its labels give
     /// the service's name).
     GrantService(AccountId, GrantId),
-    /// `accounts.<id>.spend.month`: read-only, what was spent through the account on hosted
-    /// models this calendar month (UTC), in whole US cents rounded up, as digits.
+    /// `accounts.<id>.spend.month`: read-only, what the provider reported was charged through the
+    /// account on hosted models this calendar month (UTC), in whole US cents rounded up, as
+    /// digits. A provider that reports no charges leaves it at `0` and the row says so.
     SpendMonth(AccountId),
     /// `accounts.<id>.spend.cap`: read-only, the monthly cap on an account
-    /// (`ai.spend.account_monthly_cents`) in whole US cents, as digits; `0` for no cap.
+    /// (`ai.spend.account_monthly_cents`) in whole US cents, as digits; `0` for no cap. For a
+    /// provider that reports no charges the row says, before anything runs, that the limit
+    /// cannot apply.
     SpendCap(AccountId),
     /// `accounts.<id>.reauth`.
     Reauth(AccountId),
@@ -245,6 +254,12 @@ fn readout(key: &Key, section: &str, label: &str, word: &str, labels: &[(&str, &
     )
 }
 
+/// `spec` with the help text under its row.
+fn with_help(mut spec: KeySpec, help: &str) -> KeySpec {
+    spec.help = Help(help.to_owned());
+    spec
+}
+
 /// How long a permit holds, as a person reads it.
 const SCOPE_WORDS: [(&str, &str); 3] = [
     ("once", "Once"),
@@ -384,19 +399,39 @@ fn account_keys(
     }
     // A program on this computer costs nothing: only an account reached over the network spends.
     if spending && account.auth != AuthKind::LocalRuntime {
-        keys.push(readout(
-            &Key::SpendMonth(id.clone()),
-            section,
-            "Spent this month",
-            "0",
-            &[],
+        // Only what a provider reports is counted. For one that reports nothing, both rows say so
+        // before any request runs: its replies show tokens and never dollars, so a limit on it
+        // could never be met.
+        let reported = charges_of(&ProviderId(account.provider.as_str().to_owned()));
+        let says = |what: &str| {
+            format!("{provider_label} doesn't report what its replies cost, so {what}.")
+        };
+        let (counted, limit) = match reported {
+            Charges::PerReply => (String::new(), String::new()),
+            _ => (
+                says("nothing is counted here"),
+                says("a limit can't apply to it"),
+            ),
+        };
+        keys.push(with_help(
+            readout(
+                &Key::SpendMonth(id.clone()),
+                section,
+                "Spent this month",
+                "0",
+                &[],
+            ),
+            &counted,
         ));
-        keys.push(readout(
-            &Key::SpendCap(id.clone()),
-            section,
-            "Monthly limit",
-            "0",
-            &[],
+        keys.push(with_help(
+            readout(
+                &Key::SpendCap(id.clone()),
+                section,
+                "Monthly limit",
+                "0",
+                &[],
+            ),
+            &limit,
         ));
     }
     keys.extend(match account.auth {
@@ -457,15 +492,19 @@ pub(crate) fn schema(
 pub trait SpendBook: Send + Sync + 'static {
     /// What was spent through `account` this calendar month (UTC), and the monthly cap on an
     /// account (`None`: no cap).
-    fn month(&self, account: &AccountId) -> (MicroUsd, Option<MicroUsd>);
+    fn month(&self, account: &AccountId) -> (ChargeTotal, Option<Money>);
 }
 
-/// Micro-dollars in a cent.
-const MICRO_USD_PER_CENT: u64 = 10_000;
-
-/// `micro` in whole cents, as digits: rounded up, so a part of a cent spent shows as one.
-fn cents_up(micro: MicroUsd) -> String {
-    micro.0.div_ceil(MICRO_USD_PER_CENT).to_string()
+/// `money` as the spend rows show it: US dollars in whole cents, as digits, rounded up so a part
+/// of a cent shows as one; an amount in another currency as its digits and code (`3 EUR`).
+fn cents_up(money: Money) -> String {
+    if money.currency != Currency::USD {
+        return written(money);
+    }
+    money
+        .amount
+        .checked_mul(Decimal::ONE_HUNDRED)
+        .map_or_else(|| written(money), |cents| cents.ceil().to_string())
 }
 
 /// The rows of the AI accounts, as the settings module serves them.
@@ -729,7 +768,7 @@ impl<H: KeyHost, L: LaunchersSeam + Clone + 'static> AccountRows<H, L> {
             Key::SpendMonth(id) => {
                 let spend = self.spend.as_ref().ok_or_else(unknown)?;
                 account(&id)?;
-                text(&cents_up(spend.month(&id).0))
+                text(&cents_up(spend.month(&id).0.reported))
             }
             Key::SpendCap(id) => {
                 let spend = self.spend.as_ref().ok_or_else(unknown)?;

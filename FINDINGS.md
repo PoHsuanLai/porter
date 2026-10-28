@@ -2936,3 +2936,18 @@ Nothing here was compiled or run (no-build lane); the coordinator gates the merg
   a whole value (the sweep's probe) is one more keyring call there.
 - **Byte secrets.** `set_secret` cuts at two bytes to a UTF-16 unit of the limit; porter calls only
   `set_password`.
+
+## Spending shows only what providers report (2026-10-28, lane `spending`)
+
+- Only OpenRouter reports a charge per reply (`usage.cost`); every other provider shows tokens and
+  never dollars. There is no price table, no hold before a turn and no estimate: a cap compares the
+  reported total (`ChargeTotal`) and stops the next turn, never the current one.
+- Automatic no longer prefers the cheaper of two metered models (it has no price): the listed order
+  decides among them.
+- inferd's agent route reads `usage.cost` itself (`agent::meter::reported_charge`), the same reading
+  as stoker's `model-openai-compat::charge` which is `pub(crate)` there; export it from stoker and
+  delete the copy.
+- The OpenRouter fixture in stoker is built from the documented shape, not recorded. Record a real
+  reply with a key and check where `usage.cost` sits.
+- A ledger file written before this (no `format`) is read for its token counts; its dollar amounts
+  were worked out from prices and are dropped, with a note on stderr.

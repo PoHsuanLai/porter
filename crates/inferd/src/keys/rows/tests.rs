@@ -156,8 +156,52 @@ fn only_an_account_over_the_network_has_spend_rows_and_only_when_inferd_meters()
 
 #[test]
 fn spend_is_whole_cents_and_a_part_of_a_cent_counts_as_one() {
-    assert_eq!(cents_up(MicroUsd(0)), "0");
-    assert_eq!(cents_up(MicroUsd(1)), "1");
-    assert_eq!(cents_up(MicroUsd(10_000)), "1");
-    assert_eq!(cents_up(MicroUsd(1_234_567)), "124");
+    let usd = |millionths: i64| Money::usd(Decimal::new(millionths, 6));
+    assert_eq!(cents_up(usd(0)), "0");
+    assert_eq!(cents_up(usd(1)), "1");
+    assert_eq!(cents_up(usd(10_000)), "1");
+    assert_eq!(cents_up(usd(1_234_567)), "124");
+    let euros = Money::new(Decimal::new(3, 0), Currency::EUR);
+    assert_eq!(
+        cents_up(euros),
+        "3 EUR",
+        "another currency is written as it is"
+    );
+}
+
+/// Before any request runs, the limit row of an account whose provider reports no charges says
+/// the limit cannot apply; OpenRouter, which reports each reply's charge, says nothing of the sort.
+#[test]
+fn the_limit_row_says_when_the_provider_reports_no_charges() {
+    let mut registry = registry();
+    let template = registry.accounts[0].clone();
+    registry.accounts.clear();
+    for (id, provider) in [("sees-nothing", "anthropic"), ("sees-all", "openrouter")] {
+        let mut account = template.clone();
+        account.id = AccountId::parse(id).expect("id");
+        account.provider = porter_core::ProviderId::parse(provider).expect("provider");
+        account.auth = AuthKind::ApiKey;
+        registry.accounts.push(account);
+    }
+    let rows = schema(
+        &registry,
+        &AppNames::default(),
+        &ProviderNames::default(),
+        true,
+    );
+    let help = |path: &str| {
+        rows.iter()
+            .find(|row| row.path.0 == path)
+            .unwrap_or_else(|| panic!("{path}"))
+            .help
+            .0
+            .clone()
+    };
+    assert_eq!(
+        help("accounts.sees-nothing.spend.cap"),
+        "anthropic doesn't report what its replies cost, so a limit can't apply to it."
+    );
+    assert!(help("accounts.sees-nothing.spend.month").contains("nothing is counted"));
+    assert_eq!(help("accounts.sees-all.spend.cap"), "");
+    assert_eq!(help("accounts.sees-all.spend.month"), "");
 }
