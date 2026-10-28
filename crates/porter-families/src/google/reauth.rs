@@ -1,5 +1,5 @@
-//! Why a Google account has to be signed in again, and the seven day rule behind the one that is
-//! Google's doing. The words for each reason are the sheet's.
+//! Why Google refused a sign-in, and the seven day rule behind the one that is Google's doing.
+//! The reason and its word are core's (`porter_core::ReauthReason`).
 //!
 //! An OAuth client whose consent screen is in *testing* (the state every client the owner
 //! registers starts in, and stays in until Google verifies it) gets refresh tokens that Google
@@ -7,43 +7,20 @@
 //! family says which it is from the client's row (`testing = true`) and, where it knows when the
 //! person signed in, from the age of the sign-in.
 
+use porter_core::ReauthReason;
 use porter_ids::UnixSeconds;
 
-/// Seconds a refresh token of a client in testing lasts.
-pub const TESTING_SIGN_IN_SECONDS: i64 = 7 * 24 * 60 * 60;
-
-/// A refusal this young cannot be Google's seven days: the person ended it (or the password
-/// changed). A day short of the seven is allowed for clocks and for how Google counts.
-const TESTING_REFUSAL_FROM_SECONDS: i64 = 6 * 24 * 60 * 60;
-
-/// Why Google would not renew a sign-in.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[non_exhaustive]
-pub enum ReauthReason {
-    /// The client is in testing, and Google signs its accounts out every seven days.
-    TestingExpiry,
-    /// Google no longer accepts the sign-in: the person removed the app from their Google
-    /// account, or changed the password.
-    Revoked,
-}
-
-impl ReauthReason {
-    /// What a refused refresh means for a client that is `testing` or not, given when the person
-    /// signed in when that is known. A client in testing whose sign-in is old, or of unknown age,
-    /// is the seven day rule; a young sign-in was ended by someone.
-    pub fn of_refusal(testing: bool, signed_in: Option<UnixSeconds>, now: UnixSeconds) -> Self {
-        let aged = signed_in.is_none_or(|at| now.0 - at.0 >= TESTING_REFUSAL_FROM_SECONDS);
-        match (testing, aged) {
-            (true, true) => ReauthReason::TestingExpiry,
-            _ => ReauthReason::Revoked,
-        }
-    }
-}
-
-/// Test seam: the day a sign-in made at `signed_in` through a client in testing stops working.
-/// The product reads the reason ([`ReauthReason`]), not this date; the tests pin the figure.
-pub fn testing_expiry_seam(signed_in: UnixSeconds) -> UnixSeconds {
-    UnixSeconds(signed_in.0 + TESTING_SIGN_IN_SECONDS)
+/// Why Google refused a renewal, when it is the seven days: the client is in testing and the
+/// sign-in is old enough, or of unknown age (core's one rule, `ReauthReason::of_seven_days`). A
+/// young sign-in was ended by someone, and any other refusal has no reason porter knows.
+pub(super) fn reason_of_refusal(
+    testing: bool,
+    signed_in: Option<UnixSeconds>,
+    now: UnixSeconds,
+) -> Option<ReauthReason> {
+    testing
+        .then(|| ReauthReason::of_seven_days(signed_in, now))
+        .flatten()
 }
 
 #[cfg(test)]
@@ -57,33 +34,17 @@ mod tests {
         let at = |days_ago: i64| Some(UnixSeconds(now.0 - days_ago * DAY));
         const T: bool = true;
         const V: bool = false;
+        let seven = Some(ReauthReason::TestingAppExpired);
         let cases = [
-            ("testing, a week old", T, at(7), ReauthReason::TestingExpiry),
-            (
-                "testing, six and a half",
-                T,
-                at(6),
-                ReauthReason::TestingExpiry,
-            ),
-            ("testing, a day old", T, at(1), ReauthReason::Revoked),
-            ("testing, age unknown", T, None, ReauthReason::TestingExpiry),
-            ("verified, a week old", V, at(7), ReauthReason::Revoked),
-            ("verified, age unknown", V, None, ReauthReason::Revoked),
+            ("testing, a week old", T, at(7), seven),
+            ("testing, six and a half", T, at(6), seven),
+            ("testing, a day old", T, at(1), None),
+            ("testing, age unknown", T, None, seven),
+            ("verified, a week old", V, at(7), None),
+            ("verified, age unknown", V, None, None),
         ];
-        for (name, review, signed_in, want) in cases {
-            assert_eq!(
-                ReauthReason::of_refusal(review, signed_in, now),
-                want,
-                "{name}"
-            );
+        for (name, testing, signed_in, want) in cases {
+            assert_eq!(reason_of_refusal(testing, signed_in, now), want, "{name}");
         }
-    }
-
-    #[test]
-    fn the_date_is_seven_days_after_the_sign_in() {
-        assert_eq!(
-            testing_expiry_seam(UnixSeconds(1_000)),
-            UnixSeconds(1_000 + 7 * 86_400)
-        );
     }
 }

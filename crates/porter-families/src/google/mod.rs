@@ -8,7 +8,7 @@
 //! With no client row the provider is still served: signing in answers `NeedsClientId`, which the
 //! sheet words as "Google sign-in needs a client id" and points at the guide. A client whose row
 //! says `testing = true` is signed out by Google every seven days; a refresh Google refuses is
-//! then `NeedsReauth` with [`ReauthReason::TestingExpiry`].
+//! then `NeedsReauth` with [`porter_core::ReauthReason::TestingAppExpired`].
 //!
 //! Everything it touches comes in through [`GoogleEnv`] (the `Http` seam, the client registry,
 //! the clock, randomness), so tests drive it against a fake Google.
@@ -21,7 +21,6 @@ mod session;
 mod signin;
 
 pub use env::GoogleEnv;
-pub use reauth::{ReauthReason, TESTING_SIGN_IN_SECONDS, testing_expiry_seam};
 pub use scopes::{Sensitivity, on_use_scopes_of, scope_sensitivity, scopes_of};
 pub use session::GoogleSession;
 pub use signin::GoogleSignIn;

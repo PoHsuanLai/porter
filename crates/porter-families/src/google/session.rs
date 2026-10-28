@@ -14,11 +14,11 @@
 
 use super::env::GoogleEnv;
 use super::probe::{self, whoami};
-use super::reauth::ReauthReason;
+use super::reauth::reason_of_refusal;
 use super::scopes::{Granted, grant_scopes};
 use porter_capability::{Ask, StorageScope};
 use porter_capability::{CapabilityKind, Claim};
-use porter_core::AccountId;
+use porter_core::{AccountId, ReauthReason};
 use porter_core::{Audience, Credential, Family, IssuedToken, TokenKind};
 use porter_http::Http;
 use porter_ids::UnixSeconds;
@@ -91,7 +91,7 @@ impl<H: Http> GoogleSession<H> {
     }
 
     /// The same session knowing the person signed in at `at`, so a refusal can be told from
-    /// Google's seven days (`ReauthReason::of_refusal`). accountd does not keep that date yet
+    /// Google's seven days (`reason_of_refusal`). accountd does not keep that date yet
     /// (FINDINGS), so `open` leaves it unknown.
     pub fn signed_in_at(self, at: UnixSeconds) -> Self {
         self.state().signed_in = Some(at);
@@ -189,7 +189,7 @@ impl<H: Http> GoogleSession<H> {
             ExchangeFault::Refused => {
                 let testing = clients.traits(Issuer::Google, self.env.channel).testing;
                 let mut state = self.state();
-                state.reauth = Some(ReauthReason::of_refusal(testing, state.signed_in, now));
+                state.reauth = reason_of_refusal(testing, state.signed_in, now);
                 ProviderError::Unauthorized
             }
             ExchangeFault::Unreachable => ProviderError::Unreachable,

@@ -3,9 +3,9 @@ use porter_capability::CapabilityKind as K;
 use porter_capability::Offer;
 use porter_capability::StorageScope;
 use porter_core::AccountId;
+use porter_core::ReauthReason;
 use porter_core::{Credential, SecretText, TokenKind};
 use porter_fake_servers::IssuerEvent;
-use porter_families::ReauthReason;
 use porter_ids::UnixSeconds;
 use porter_provider::{Presented, Provider, ProviderError, ProviderSession, RevokeOutcome};
 
@@ -284,7 +284,7 @@ async fn a_refresh_google_refuses_needs_reauth_and_an_unreachable_one_does_not()
         Err(ProviderError::Unauthorized)
     );
     // A client whose app is verified: the person or the password ended it, not the seven days.
-    assert_eq!(session.reauth_reason(), Some(ReauthReason::Revoked));
+    assert_eq!(session.reauth_reason(), None);
     // A good refresh clears the reason.
     session
         .access_token(&audience("google_tasks"))
@@ -318,7 +318,7 @@ async fn a_client_in_testing_is_signed_out_after_seven_days_and_the_reason_says_
         Err(ProviderError::Unauthorized)
     );
     let reason = session.reauth_reason().expect("a reason");
-    assert_eq!(reason, ReauthReason::TestingExpiry);
+    assert_eq!(reason, ReauthReason::TestingAppExpired);
 }
 
 #[tokio::test]
@@ -334,7 +334,7 @@ async fn a_young_sign_in_refused_is_not_blamed_on_the_seven_days() {
             .await
             .is_err()
     );
-    assert_eq!(session.reauth_reason(), Some(ReauthReason::Revoked));
+    assert_eq!(session.reauth_reason(), None);
 }
 
 #[tokio::test]

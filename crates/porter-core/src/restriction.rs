@@ -84,11 +84,8 @@ impl Restriction {
     /// Why an account the provider refused (`NeedsReauth`) was refused, when it is the seven
     /// days: the lifetime is seven days and the sign-in is old enough, or of unknown age.
     pub fn reauth_reason(&self, now: UnixSeconds) -> Option<ReauthReason> {
-        let aged = self
-            .signed_in
-            .is_none_or(|at| now.0 - at.0 >= SEVEN_DAY_REFUSAL_FROM);
-        match (self.token_lifetime, aged) {
-            (TokenLifetime::SevenDays, true) => Some(ReauthReason::TestingAppExpired),
+        match self.token_lifetime {
+            TokenLifetime::SevenDays => ReauthReason::of_seven_days(self.signed_in, now),
             _ => None,
         }
     }
@@ -105,6 +102,15 @@ pub enum ReauthReason {
 }
 
 impl ReauthReason {
+    /// The reason for a refusal of a sign-in that lasts seven days, given when the person signed
+    /// in when that is known: the seven days when the sign-in is old enough, or of unknown age; a
+    /// young sign-in was ended by someone. The one place the rule is written.
+    pub fn of_seven_days(signed_in: Option<UnixSeconds>, now: UnixSeconds) -> Option<Self> {
+        signed_in
+            .is_none_or(|at| now.0 - at.0 >= SEVEN_DAY_REFUSAL_FROM)
+            .then_some(ReauthReason::TestingAppExpired)
+    }
+
     /// The word on the bus and in the audit trail.
     pub fn slug(self) -> &'static str {
         match self {
