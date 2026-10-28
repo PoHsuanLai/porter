@@ -29,15 +29,15 @@ pub struct Options {
     pub provider_names: ProviderNames,
     /// The clock the `ReauthReason` property reads; none is the system's.
     pub clock: Option<Arc<dyn Clock>>,
-    /// Where the desktop-wide Spaces are kept (`spaces.json` in the registry's directory); the
-    /// default keeps them in memory only.
-    pub spaces: crate::spaces::SpacesStore,
+    /// The directory the desktop-wide Spaces are kept in (`spaces.json` in the registry's
+    /// directory); none, the default, keeps them in memory only.
+    pub spaces: Option<std::path::PathBuf>,
     /// Tailscale, and how it is followed: the account's state, and `org.quire.Tailnet1`'s
     /// computers and signal. The default follows nothing: no computers are listed.
     pub tailnet: Option<crate::tailnet::TailnetWatch>,
-    /// Where the apps that use each identity are kept (`identity-uses.json` in the registry's
-    /// directory); the default keeps them in memory only.
-    pub uses: crate::identities::UsesStore,
+    /// The directory the apps that use each identity are kept in (`identity-uses.json` in the
+    /// registry's directory); none, the default, keeps them in memory only.
+    pub uses: Option<std::path::PathBuf>,
     /// The picker and the passwords behind `org.quire.Identities1`'s `Offer` and `TakePassword`;
     /// none refuses both as unavailable (`List`, `RegisterUse` and `Uses` need no desk).
     pub identities: Option<Arc<dyn crate::identity_desk::IdentityDesk>>,
@@ -77,11 +77,11 @@ pub async fn serve_with<H: Host, C: Callers>(
     options: Options,
 ) -> zbus::Result<()> {
     let published = host.registry();
-    let (spaces, said) = crate::spaces::SpaceBook::open(&options.spaces).await;
+    let (spaces, said) = crate::spaces::SpaceBook::open(options.spaces.as_deref()).await;
     if let Some(said) = said {
         eprintln!("accountd: {said}");
     }
-    let (uses, said) = crate::identities::UseBook::open(&options.uses).await;
+    let (uses, said) = crate::identities::UseBook::open(options.uses.as_deref()).await;
     if let Some(said) = said {
         eprintln!("accountd: {said}");
     }

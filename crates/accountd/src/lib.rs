@@ -93,7 +93,6 @@ pub use core::{Options, serve, serve_with};
 pub use daemon::{Config, Daemon, StartError};
 pub use errors::RefusedError;
 pub use host::Host;
-pub use identities::UsesStore;
 pub use identity_desk::{IdentityDesk, SheetsDesk};
 pub use porter_dbus::callers::{
     CallerFileError, CallerTomlError, load_callers, table_from_file, table_from_toml,
@@ -103,6 +102,6 @@ pub use porter_families::set::ProviderNames;
 #[doc(inline)]
 pub use porter_sheets::{AppNames, BusLink, BusSheets};
 pub use settings::settings_path;
-pub use spaces::{CREATE_WINDOW, CREATES_PER_WINDOW, SpacesStore};
+pub use spaces::{CREATE_WINDOW, CREATES_PER_WINDOW};
 pub use store::EXIT_REGISTRY_REFUSED;
 pub use tailnet::TailnetWatch;

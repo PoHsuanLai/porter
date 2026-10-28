@@ -4,7 +4,7 @@
 
 use crate::common;
 
-use accountd::{CREATES_PER_WINDOW, Options, SpacesStore};
+use accountd::{CREATES_PER_WINDOW, Options};
 use common::*;
 use porter_core::DesktopSpace;
 use porter_dbus::callers::CallerRole;
@@ -15,7 +15,7 @@ use test_kit::Scratch;
 /// Options whose Spaces are kept in a directory of `scratch`.
 fn options(scratch: &Scratch) -> Options {
     Options {
-        spaces: SpacesStore::File(scratch.join("porter")),
+        spaces: Some(scratch.join("porter")),
         ..Options::default()
     }
 }

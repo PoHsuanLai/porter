@@ -258,12 +258,12 @@ impl Daemon {
             provider_names,
             clock: None,
             // `spaces.json` beside `registry.json`.
-            spaces: crate::SpacesStore::File(paths.registry_dir.clone()),
+            spaces: Some(paths.registry_dir.clone()),
             // Tailscale's own socket, `/var/run/tailscale/tailscaled.sock` unless `paths` names
             // another.
             tailnet: Some(crate::TailnetWatch::new(tailscale(&paths))),
             // `identity-uses.json` beside `registry.json`.
-            uses: crate::UsesStore::File(paths.registry_dir.clone()),
+            uses: Some(paths.registry_dir.clone()),
             identities: Some(Arc::new(identity_desk)),
         };
         serve_with(&connection, service, callers, options)

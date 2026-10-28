@@ -1,9 +1,10 @@
 use super::*;
+use std::path::PathBuf;
 use test_kit::Scratch;
 
-/// A Spaces store in a directory of `scratch`.
-fn store(scratch: &Scratch) -> SpacesStore {
-    SpacesStore::File(scratch.join("porter"))
+/// The directory a Spaces file is kept in, under `scratch`.
+fn store(scratch: &Scratch) -> PathBuf {
+    scratch.join("porter")
 }
 
 fn app(name: &str) -> AppName {
@@ -23,7 +24,7 @@ const NOW: UnixSeconds = UnixSeconds(1_790_000_000);
 #[tokio::test]
 async fn a_first_start_writes_an_empty_list_once() {
     let scratch = Scratch::new("spaces");
-    let (book, said) = SpaceBook::open(&store(&scratch)).await;
+    let (book, said) = SpaceBook::open(Some(&store(&scratch))).await;
     assert_eq!(said, None);
     assert!(book.list().is_empty());
     assert!(scratch.path().join("porter/spaces.json").exists());
@@ -32,7 +33,7 @@ async fn a_first_start_writes_an_empty_list_once() {
 #[tokio::test]
 async fn ids_are_minted_not_named_and_survive_renames_and_restarts() {
     let scratch = Scratch::new("spaces");
-    let (mut book, _) = SpaceBook::open(&store(&scratch)).await;
+    let (mut book, _) = SpaceBook::open(Some(&store(&scratch))).await;
     let photos = app("org.quire.Photos");
     let at = (Instant::now(), NOW);
     // A registered Space already holds the id the counter would give first.
@@ -64,7 +65,7 @@ async fn ids_are_minted_not_named_and_survive_renames_and_restarts() {
         .await
         .expect("look");
 
-    let (after, said) = SpaceBook::open(&store(&scratch)).await;
+    let (after, said) = SpaceBook::open(Some(&store(&scratch))).await;
     assert_eq!(said, None);
     assert_eq!(ids(&after), ["space-1", "space-2", "space-3"]);
     assert_eq!(after.list()[1].name.as_str(), "Office");
@@ -74,7 +75,7 @@ async fn ids_are_minted_not_named_and_survive_renames_and_restarts() {
 
 #[tokio::test]
 async fn changing_or_removing_a_space_that_is_not_there_is_refused() {
-    let (mut book, _) = SpaceBook::open(&SpacesStore::Memory).await;
+    let (mut book, _) = SpaceBook::open(None).await;
     let ghost = DesktopSpace::parse("ghost").expect("id");
     assert_eq!(
         book.rename(&ghost, name("x")).await,
@@ -89,7 +90,7 @@ async fn changing_or_removing_a_space_that_is_not_there_is_refused() {
 
 #[tokio::test]
 async fn creates_are_limited_per_app_within_the_window() {
-    let (mut book, _) = SpaceBook::open(&SpacesStore::Memory).await;
+    let (mut book, _) = SpaceBook::open(None).await;
     let (flood, calm) = (app("org.example.Flood"), app("org.example.Calm"));
     let start = Instant::now();
     for n in 0..CREATES_PER_WINDOW {
@@ -137,7 +138,7 @@ async fn a_counter_at_the_top_of_its_range_is_refused_and_not_wrapped() {
         u64::MAX - 1
     );
     std::fs::write(&file, &almost).expect("write");
-    let (mut book, said) = SpaceBook::open(&store(&scratch)).await;
+    let (mut book, said) = SpaceBook::open(Some(&store(&scratch))).await;
     assert_eq!(said, None);
     let made = book
         .create(&photos, name("Last"), SpaceLook::default(), at)
@@ -154,7 +155,7 @@ async fn a_counter_at_the_top_of_its_range_is_refused_and_not_wrapped() {
     // A file that starts at the top: refused outright.
     let full = format!(r#"{{"version":{VERSION},"next":{},"spaces":[]}}"#, u64::MAX);
     std::fs::write(&file, &full).expect("write");
-    let (mut book, _) = SpaceBook::open(&store(&scratch)).await;
+    let (mut book, _) = SpaceBook::open(Some(&store(&scratch))).await;
     assert_eq!(
         book.create(&photos, name("x"), SpaceLook::default(), at)
             .await,
@@ -169,7 +170,7 @@ async fn an_unreadable_file_is_left_alone_and_nothing_changes() {
     let dir = scratch.path().join("porter");
     std::fs::create_dir_all(&dir).expect("dir");
     std::fs::write(dir.join("spaces.json"), "{ not the spaces").expect("write");
-    let (mut book, said) = SpaceBook::open(&store(&scratch)).await;
+    let (mut book, said) = SpaceBook::open(Some(&store(&scratch))).await;
     assert!(said.is_some_and(|s| s.contains("spaces.json")));
     assert!(book.list().is_empty());
     assert_eq!(
@@ -194,7 +195,7 @@ async fn an_unreadable_file_is_left_alone_and_nothing_changes() {
 #[tokio::test]
 async fn a_registered_id_is_kept_as_minted_and_registering_it_again_changes_nothing() {
     let scratch = Scratch::new("spaces");
-    let (mut book, _) = SpaceBook::open(&store(&scratch)).await;
+    let (mut book, _) = SpaceBook::open(Some(&store(&scratch))).await;
     let casement = app("org.quire.Casement");
     let at = (Instant::now(), NOW);
     let workspace = DesktopSpace::parse("s-0123456789abcdef0123456789abcdef").expect("id");
@@ -203,7 +204,7 @@ async fn a_registered_id_is_kept_as_minted_and_registering_it_again_changes_noth
         assert_eq!(
             book.register(&casement, id.clone(), name("One"), SpaceLook::default(), at)
                 .await,
-            Ok(Registered::New)
+            Ok(true)
         );
     }
     book.rename(&workspace, name("Mine"))
@@ -220,7 +221,7 @@ async fn a_registered_id_is_kept_as_minted_and_registering_it_again_changes_noth
                 at
             )
             .await,
-            Ok(Registered::Known)
+            Ok(false)
         );
     }
     assert_eq!(
@@ -238,7 +239,7 @@ async fn a_registered_id_is_kept_as_minted_and_registering_it_again_changes_noth
         "the counter skips a registered id"
     );
 
-    let (after, said) = SpaceBook::open(&store(&scratch)).await;
+    let (after, said) = SpaceBook::open(Some(&store(&scratch))).await;
     assert_eq!(said, None);
     assert_eq!(
         ids(&after),

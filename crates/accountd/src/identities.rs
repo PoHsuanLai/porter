@@ -16,23 +16,13 @@ use porter_core::{AppName, IdentityId};
 use porter_fs::atomic::AtomicFile;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::{Mutex, PoisonError};
 
 /// The file's name inside the state directory.
 const FILE: &str = "identity-uses.json";
 /// The file's own format version.
 const VERSION: u16 = 1;
-
-/// Where accountd keeps which apps use which identity.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub enum UsesStore {
-    /// Only in memory: gone when accountd stops (tests, and a host with no state directory).
-    #[default]
-    Memory,
-    /// `identity-uses.json` in this directory (the registry's state directory).
-    File(PathBuf),
-}
 
 /// `identity-uses.json`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -51,36 +41,24 @@ impl Document {
     }
 }
 
-/// Why a change to the uses was refused.
+/// A change to the uses was refused: the file could not be written, or was refused at start.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum UseFault {
-    /// The file could not be written, or was refused at start.
-    Unsaved,
-}
-
-/// Whether changes may be saved.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Writable {
-    Yes,
-    /// The file on disk could not be read at start; it is left as it is.
-    Refused,
-}
+pub(crate) struct Unsaved;
 
 /// The apps that use each identity, as accountd holds them.
 #[derive(Debug)]
 pub(crate) struct UseBook {
     doc: Document,
     file: Option<AtomicFile>,
-    writable: Writable,
+    /// False when the file on disk could not be read at start: it is left as it is.
+    writable: bool,
 }
 
 impl UseBook {
-    /// The uses `store` holds. A message for the log comes back when the file was refused.
-    pub(crate) async fn open(store: &UsesStore) -> (Self, Option<String>) {
-        let file = match store {
-            UsesStore::Memory => None,
-            UsesStore::File(dir) => Some(AtomicFile::new(dir.clone(), FILE)),
-        };
+    /// The uses kept in `dir` (none: only in memory, gone when accountd stops). A message for the
+    /// log comes back when the file was refused.
+    pub(crate) async fn open(dir: Option<&Path>) -> (Self, Option<String>) {
+        let file = dir.map(|dir| AtomicFile::new(dir.to_path_buf(), FILE));
         let read = match &file {
             None => Ok(None),
             Some(file) => {
@@ -93,7 +71,7 @@ impl UseBook {
         let mut book = Self {
             doc: Document::empty(),
             file,
-            writable: Writable::Yes,
+            writable: true,
         };
         let parsed = read.map(|bytes| {
             bytes.map(|bytes| serde_json::from_slice::<Document>(&bytes).map_err(|e| e.to_string()))
@@ -108,7 +86,7 @@ impl UseBook {
             Ok(Some(Err(why))) => why,
             Err(why) => why.to_string(),
         };
-        book.writable = Writable::Refused;
+        book.writable = false;
         let path = book
             .file
             .as_ref()
@@ -136,9 +114,9 @@ impl UseBook {
         &mut self,
         identity: IdentityId,
         app: AppName,
-    ) -> Result<(), UseFault> {
-        if self.writable == Writable::Refused {
-            return Err(UseFault::Unsaved);
+    ) -> Result<(), Unsaved> {
+        if !self.writable {
+            return Err(Unsaved);
         }
         if self
             .doc
@@ -154,9 +132,9 @@ impl UseBook {
     }
 
     /// Forgets the apps of `identity`, which was removed. Nothing to forget changes nothing.
-    pub(crate) async fn forget(&mut self, identity: &IdentityId) -> Result<(), UseFault> {
-        if self.writable == Writable::Refused {
-            return Err(UseFault::Unsaved);
+    pub(crate) async fn forget(&mut self, identity: &IdentityId) -> Result<(), Unsaved> {
+        if !self.writable {
+            return Err(Unsaved);
         }
         if !self.doc.uses.contains_key(identity) {
             return Ok(());
@@ -167,13 +145,13 @@ impl UseBook {
     }
 
     /// Saves `doc` and, once it is on disk, holds it. In memory it is held at once.
-    async fn commit(&mut self, doc: Document) -> Result<(), UseFault> {
+    async fn commit(&mut self, doc: Document) -> Result<(), Unsaved> {
         if let Some(file) = self.file.clone() {
-            let text = serde_json::to_string_pretty(&doc).map_err(|_| UseFault::Unsaved)?;
+            let text = serde_json::to_string_pretty(&doc).map_err(|_| Unsaved)?;
             tokio::task::spawn_blocking(move || file.write(&text))
                 .await
-                .map_err(|_| UseFault::Unsaved)?
-                .map_err(|_| UseFault::Unsaved)?;
+                .map_err(|_| Unsaved)?
+                .map_err(|_| Unsaved)?;
         }
         self.doc = doc;
         Ok(())

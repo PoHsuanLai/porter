@@ -24,7 +24,7 @@
 use crate::callers::Callers;
 use crate::errors::RefusedError;
 use crate::host::Host;
-use crate::identities::UseFault;
+use crate::identities::Unsaved;
 use crate::request::departed;
 use crate::state::{Core, Standing, hint};
 use porter_capability::CapabilityKind;
@@ -84,10 +84,8 @@ fn identity_arg(text: &str) -> Result<IdentityId, RefusedError> {
 }
 
 /// What a use that could not be saved is told, in plain words.
-fn unsaved(fault: UseFault) -> RefusedError {
-    match fault {
-        UseFault::Unsaved => RefusedError::failed("The list of apps could not be saved."),
-    }
+fn unsaved(_: Unsaved) -> RefusedError {
+    RefusedError::failed("The list of apps could not be saved.")
 }
 
 impl<H: Host, C: Callers> IdentitiesObject<H, C> {

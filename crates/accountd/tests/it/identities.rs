@@ -5,7 +5,7 @@
 
 use crate::common;
 
-use accountd::{Options, UsesStore};
+use accountd::Options;
 use common::*;
 use porter_capability::CapabilityKind;
 use porter_core::consent::{AskPurpose, ConsentAnswer, GrantScope};
@@ -26,7 +26,7 @@ const LIMITS_EXCEEDED: &str = "org.freedesktop.DBus.Error.LimitsExceeded";
 /// Options whose identity uses are kept in a directory of `scratch`.
 fn options(scratch: &Scratch) -> Options {
     Options {
-        uses: UsesStore::File(scratch.join("porter")),
+        uses: Some(scratch.join("porter")),
         ..Options::default()
     }
 }

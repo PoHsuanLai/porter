@@ -16,7 +16,7 @@ use porter_fs::atomic::AtomicFile;
 use porter_ids::UnixSeconds;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, VecDeque};
-use std::path::PathBuf;
+use std::path::Path;
 use std::time::{Duration, Instant};
 
 /// The file's name inside the state directory.
@@ -28,16 +28,6 @@ const VERSION: u16 = 1;
 pub const CREATES_PER_WINDOW: usize = 10;
 /// The window [`CREATES_PER_WINDOW`] counts over.
 pub const CREATE_WINDOW: Duration = Duration::from_secs(60);
-
-/// Where accountd keeps the desktop-wide Spaces.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub enum SpacesStore {
-    /// Only in memory: gone when accountd stops (tests, and a host with no state directory).
-    #[default]
-    Memory,
-    /// `spaces.json` in this directory (the registry's state directory).
-    File(PathBuf),
-}
 
 /// `spaces.json`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -74,41 +64,23 @@ pub(crate) enum SpaceFault {
     Unsaved,
 }
 
-/// What a `register` did.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Registered {
-    /// The Space was added.
-    New,
-    /// A Space of that id was there already; nothing changed.
-    Known,
-}
-
-/// Whether changes may be saved.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Writable {
-    Yes,
-    /// The file on disk could not be read at start; it is left as it is.
-    Refused,
-}
-
 /// The Spaces as accountd holds them.
 #[derive(Debug)]
 pub(crate) struct SpaceBook {
     doc: Document,
     file: Option<AtomicFile>,
-    writable: Writable,
+    /// False when the file on disk could not be read at start: it is left as it is.
+    writable: bool,
     /// When each app last made Spaces, within the window.
     creates: BTreeMap<AppName, VecDeque<Instant>>,
 }
 
 impl SpaceBook {
-    /// The Spaces `store` holds; a first start (no file) writes an empty one at once. A message
-    /// for the log comes back when the file was refused or could not be written.
-    pub(crate) async fn open(store: &SpacesStore) -> (Self, Option<String>) {
-        let file = match store {
-            SpacesStore::Memory => None,
-            SpacesStore::File(dir) => Some(AtomicFile::new(dir.clone(), FILE)),
-        };
+    /// The Spaces kept in `dir` (none: only in memory, gone when accountd stops); a first start
+    /// (no file) writes an empty one at once. A message for the log comes back when the file was
+    /// refused or could not be written.
+    pub(crate) async fn open(dir: Option<&Path>) -> (Self, Option<String>) {
+        let file = dir.map(|dir| AtomicFile::new(dir.to_path_buf(), FILE));
         let read = match &file {
             None => Ok(None),
             Some(file) => {
@@ -121,7 +93,7 @@ impl SpaceBook {
         let mut book = Self {
             doc: Document::empty(),
             file,
-            writable: Writable::Yes,
+            writable: true,
             creates: BTreeMap::new(),
         };
         let parsed = read.map(|bytes| {
@@ -133,18 +105,18 @@ impl SpaceBook {
                 (book, None)
             }
             Ok(Some(Ok(doc))) => {
-                book.writable = Writable::Refused;
+                book.writable = false;
                 let why = format!("it is of a newer version ({})", doc.version);
                 let said = book.refused_message(&why);
                 (book, Some(said))
             }
             Ok(Some(Err(why))) => {
-                book.writable = Writable::Refused;
+                book.writable = false;
                 let said = book.refused_message(&why);
                 (book, Some(said))
             }
             Err(why) => {
-                book.writable = Writable::Refused;
+                book.writable = false;
                 let said = book.refused_message(&why.to_string());
                 (book, Some(said))
             }
@@ -199,7 +171,7 @@ impl SpaceBook {
         look: SpaceLook,
         now: (Instant, UnixSeconds),
     ) -> Result<DesktopSpace, SpaceFault> {
-        if self.writable == Writable::Refused {
+        if !self.writable {
             return Err(SpaceFault::Unsaved);
         }
         if !self.admit(app, now.0) {
@@ -225,7 +197,7 @@ impl SpaceBook {
     /// Registers a Space whose id `app` minted (the compositor, per workspace). An id already
     /// registered is left as it is, name and look included (the person may have renamed it), so
     /// a compositor registers every workspace again at each start; only a new one counts toward
-    /// the per-app limit.
+    /// the per-app limit. It answers whether the Space is new.
     pub(crate) async fn register(
         &mut self,
         app: &AppName,
@@ -233,12 +205,12 @@ impl SpaceBook {
         name: SpaceName,
         look: SpaceLook,
         now: (Instant, UnixSeconds),
-    ) -> Result<Registered, SpaceFault> {
-        if self.writable == Writable::Refused {
+    ) -> Result<bool, SpaceFault> {
+        if !self.writable {
             return Err(SpaceFault::Unsaved);
         }
         if self.doc.spaces.iter().any(|s| s.id == id) {
-            return Ok(Registered::Known);
+            return Ok(false);
         }
         if !self.admit(app, now.0) {
             return Err(SpaceFault::TooMany);
@@ -250,7 +222,7 @@ impl SpaceBook {
             look,
             created: now.1,
         });
-        self.commit(doc).await.map(|()| Registered::New)
+        self.commit(doc).await.map(|()| true)
     }
 
     /// Renames a Space.
@@ -294,7 +266,7 @@ impl SpaceBook {
 
     /// Saves `doc` and, once it is on disk, holds it. In memory it is held at once.
     async fn commit(&mut self, doc: Document) -> Result<(), SpaceFault> {
-        if self.writable == Writable::Refused {
+        if !self.writable {
             return Err(SpaceFault::Unsaved);
         }
         if let Some(file) = self.file.clone() {

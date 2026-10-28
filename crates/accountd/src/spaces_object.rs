@@ -16,7 +16,7 @@
 use crate::callers::Callers;
 use crate::errors::RefusedError;
 use crate::host::Host;
-use crate::spaces::{CREATES_PER_WINDOW, Registered, SpaceFault};
+use crate::spaces::{CREATES_PER_WINDOW, SpaceFault};
 use crate::state::{Core, Standing};
 use porter_core::{DesktopSpace, SpaceChange, SpaceLook, SpaceName};
 use porter_dbus::Details;
@@ -225,14 +225,11 @@ impl<H: Host, C: Callers> SpacesObject<H, C> {
             )
             .await
             .map_err(fault)?;
-        match done {
-            Registered::New => {
-                self.0
-                    .host
-                    .audit_app(&caller.app, AuditEvent::SpaceCreated { space: id.clone() });
-                self.tell(&id, SpaceChange::Created).await;
-            }
-            Registered::Known => {}
+        if done {
+            self.0
+                .host
+                .audit_app(&caller.app, AuditEvent::SpaceCreated { space: id.clone() });
+            self.tell(&id, SpaceChange::Created).await;
         }
         Ok(())
     }
