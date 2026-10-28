@@ -13,8 +13,8 @@ use porter_core::{
     Candidate, EndpointUrl, Family, Limit, LimitReason, LoginName, Restriction, ServiceEndpoint,
     TenantConsent, Tls, TokenLifetime, Verification,
 };
-use porter_dbus::names::account_path;
-use porter_dbus::{candidate_from_dbus, candidate_to_dbus, need_from_dbus, need_to_dbus};
+use porter_dbus::accounts::{account_path, candidate_from_dbus, candidate_to_dbus};
+use porter_dbus::inference::{need_from_dbus, need_to_dbus};
 use porter_ids::{Bytes, Count, Dims, Px, Tokens};
 use porter_match::Need;
 use porter_match::{
@@ -141,7 +141,8 @@ fn a_need_survives_the_bus_signature() {
     for (_, need) in every_need() {
         let arg = need_to_dbus(&need);
         let bytes = zbus::zvariant::to_bytes(ctxt, &arg).expect("encodes");
-        let (back, _): (porter_dbus::NeedArg, usize) = bytes.deserialize().expect("decodes");
+        let (back, _): (porter_dbus::inference::NeedArg, usize) =
+            bytes.deserialize().expect("decodes");
         assert_eq!(need_from_dbus(back), Ok(need));
     }
 }
@@ -233,7 +234,8 @@ fn an_agent_candidate_with_no_variable_to_set_round_trips() {
     let ctxt = zbus::zvariant::serialized::Context::new_dbus(zbus::zvariant::LE, 0);
     let arg = candidate_to_dbus(&candidate);
     let bytes = zbus::zvariant::to_bytes(ctxt, &arg).expect("encodes");
-    let (back, _): (porter_dbus::CandidateArg, usize) = bytes.deserialize().expect("decodes");
+    let (back, _): (porter_dbus::accounts::CandidateArg, usize) =
+        bytes.deserialize().expect("decodes");
     assert_eq!(candidate_from_dbus(back), Ok(candidate));
 }
 
@@ -272,7 +274,8 @@ fn a_candidate_survives_the_bus_signature() {
     for candidate in candidates() {
         let arg = candidate_to_dbus(&candidate);
         let bytes = zbus::zvariant::to_bytes(ctxt, &arg).expect("encodes");
-        let (back, _): (porter_dbus::CandidateArg, usize) = bytes.deserialize().expect("decodes");
+        let (back, _): (porter_dbus::accounts::CandidateArg, usize) =
+            bytes.deserialize().expect("decodes");
         assert_eq!(candidate_from_dbus(back), Ok(candidate));
     }
 }

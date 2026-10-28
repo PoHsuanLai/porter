@@ -7,9 +7,9 @@ use crate::common;
 use common::bus::PrivateBus;
 use common::{ACCESS_DENIED, INVALID_ARGS, Known, NO_FITTING, client, error_name, eventually};
 use porter_capability::{Access, Delta, HashKind, StorageCap, StorageScope};
-use porter_dbus::SyncProxy;
 use porter_dbus::callers::CallerRole;
-use porter_dbus::names::{STATUS_KEY_QUOTA, SYNC_BUS, SYNC_ERROR_PAUSED, SYNC_PATH};
+use porter_dbus::sync::SyncProxy;
+use porter_dbus::sync::{STATUS_KEY_QUOTA, SYNC_BUS, SYNC_ERROR_PAUSED, SYNC_PATH};
 use porter_ids::{Bytes, UnixSeconds};
 use porter_sync::{
     BaseVersion, Conflict, ConflictRule, LocalId, MemoryReplica, Quota, RemoteId, RemoteSide,

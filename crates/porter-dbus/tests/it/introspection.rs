@@ -1,31 +1,31 @@
-//! The checked-in introspection files are the interfaces the skeletons declare. A change to a
+//! The checked-in introspection files are the interfaces as they are declared once. A change to a
 //! signature changes the file in the same commit.
 
-use porter_dbus::{Bus, introspection};
+use porter_dbus::{accounts, inference, sync};
 use std::path::PathBuf;
 
 #[test]
 fn checked_in_introspection_matches_the_interfaces() {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../dbus");
-    for bus in [
-        Bus::Accounts,
-        Bus::AccountsSheet,
-        Bus::Sync,
-        Bus::Inference,
-        Bus::InferenceAgents,
-        Bus::InferenceLauncher,
-        Bus::InferenceKeys,
-        Bus::Spaces,
-        Bus::Identities,
-        Bus::Tailnet,
-        Bus::Storage,
+    for document in [
+        accounts::ACCOUNTS,
+        accounts::ACCOUNTS_SHEET,
+        sync::SYNC,
+        inference::INFERENCE,
+        inference::AGENTS,
+        inference::LAUNCHER,
+        inference::KEYS,
+        accounts::SPACES,
+        accounts::IDENTITIES,
+        accounts::TAILNET,
+        sync::STORAGE,
     ] {
-        let path = dir.join(bus.file_name());
+        let path = dir.join(document.file_name);
         let expected =
             std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-        let actual = match bus {
-            Bus::Sync => without_picker(&introspection(bus)),
-            _ => introspection(bus),
+        let actual = match document.file_name {
+            "org.quire.Sync1.xml" => without_picker(&document.introspection()),
+            _ => document.introspection(),
         };
         assert!(
             actual == expected,
@@ -46,7 +46,7 @@ fn without_picker(xml: &str) -> String {
 
 #[test]
 fn the_spaces_registry_declares_its_six_methods_and_one_signal() {
-    let xml = introspection(Bus::Spaces);
+    let xml = porter_dbus::accounts::SPACES.introspection();
     for member in [
         "<method name=\"List\">",
         "<arg type=\"a(sa{sv})\" direction=\"out\"/>",
@@ -61,16 +61,18 @@ fn the_spaces_registry_declares_its_six_methods_and_one_signal() {
     }
     assert_eq!(xml.matches("<method ").count(), 6);
     assert_eq!(xml.matches("<signal ").count(), 1);
-    assert_eq!(porter_dbus::names::SPACES_PATH, "/org/quire/Spaces1");
+    assert_eq!(porter_dbus::accounts::SPACES_PATH, "/org/quire/Spaces1");
     assert!(
-        !introspection(Bus::Accounts).contains("org.quire.Spaces1"),
+        !porter_dbus::accounts::ACCOUNTS
+            .introspection()
+            .contains("org.quire.Spaces1"),
         "its own file, beside Accounts1's"
     );
 }
 
 #[test]
 fn the_identities_object_declares_five_methods_and_one_signal_and_no_token() {
-    let xml = introspection(Bus::Identities);
+    let xml = porter_dbus::accounts::IDENTITIES.introspection();
     for member in [
         "<interface name=\"org.quire.Identities1\">",
         "<method name=\"List\">",
@@ -93,18 +95,30 @@ fn the_identities_object_declares_five_methods_and_one_signal_and_no_token() {
     // `Offer` answers its identity's id, address and provider, and nothing that is a token.
     assert_eq!(xml.matches("direction=\"out\"").count(), 6);
     assert_eq!(
-        porter_dbus::names::IDENTITIES_PATH,
+        porter_dbus::accounts::IDENTITIES_PATH,
         "/org/quire/Identities1"
     );
     // Additive: its own file, and the others are as they were.
-    assert!(!introspection(Bus::Accounts).contains("Identities1"));
-    assert!(!introspection(Bus::Spaces).contains("Identities1"));
-    assert!(!introspection(Bus::Tailnet).contains("Identities1"));
+    assert!(
+        !porter_dbus::accounts::ACCOUNTS
+            .introspection()
+            .contains("Identities1")
+    );
+    assert!(
+        !porter_dbus::accounts::SPACES
+            .introspection()
+            .contains("Identities1")
+    );
+    assert!(
+        !porter_dbus::accounts::TAILNET
+            .introspection()
+            .contains("Identities1")
+    );
 }
 
 #[test]
 fn the_tailnet_object_declares_machines_and_changed_and_nothing_else() {
-    let xml = introspection(Bus::Tailnet);
+    let xml = porter_dbus::accounts::TAILNET.introspection();
     for member in [
         "<interface name=\"org.quire.Tailnet1\">",
         "<method name=\"Machines\">",
@@ -118,15 +132,23 @@ fn the_tailnet_object_declares_machines_and_changed_and_nothing_else() {
     assert_eq!(xml.matches("<property ").count(), 0);
     // The signal carries nothing: a listener calls Machines again.
     assert!(xml.contains("<signal name=\"Changed\">\n   </signal>"));
-    assert_eq!(porter_dbus::names::TAILNET_PATH, "/org/quire/Tailnet1");
+    assert_eq!(porter_dbus::accounts::TAILNET_PATH, "/org/quire/Tailnet1");
     // Additive: its own file, and Accounts1's and Spaces1's are as they were.
-    assert!(!introspection(Bus::Accounts).contains("Tailnet1"));
-    assert!(!introspection(Bus::Spaces).contains("Tailnet1"));
+    assert!(
+        !porter_dbus::accounts::ACCOUNTS
+            .introspection()
+            .contains("Tailnet1")
+    );
+    assert!(
+        !porter_dbus::accounts::SPACES
+            .introspection()
+            .contains("Tailnet1")
+    );
 }
 
 #[test]
 fn accountd_declares_identities_and_no_grant_keyed_member() {
-    let xml = introspection(Bus::Accounts);
+    let xml = porter_dbus::accounts::ACCOUNTS.introspection();
     let members = [
         "<method name=\"AddAccount\">",
         "<method name=\"NeedingReauth\">",
@@ -163,7 +185,7 @@ fn accountd_declares_identities_and_no_grant_keyed_member() {
 
 #[test]
 fn inference1_xml_unchanged_members() {
-    let xml = introspection(Bus::Inference);
+    let xml = porter_dbus::inference::INFERENCE.introspection();
     let members = [
         "<method name=\"Availability\">",
         "<method name=\"Open\">",
@@ -225,14 +247,14 @@ fn inference1_xml_unchanged_members() {
          PointEngine, HardwareNotes, SetHelperPool, and Start, Stop, Running and RunningChanged"
     );
     assert_eq!(
-        porter_dbus::names::COMPUTER_ERROR_PREFIX,
+        porter_dbus::inference::COMPUTER_ERROR_PREFIX,
         "org.quire.Inference1.Error.Computer."
     );
 }
 
 #[test]
 fn speech_and_computer_use_are_fd_only() {
-    let xml = introspection(Bus::Inference);
+    let xml = porter_dbus::inference::INFERENCE.introspection();
     for word in ["Transcribe", "Speak", "Audio", "Cua", "Listen"] {
         assert!(
             !xml.contains(word),
@@ -243,19 +265,19 @@ fn speech_and_computer_use_are_fd_only() {
 
 #[test]
 fn inference_calls_carry_an_options_dict_for_the_reserved_traceparent() {
-    let xml = introspection(Bus::Inference);
+    let xml = porter_dbus::inference::INFERENCE.introspection();
     assert_eq!(
         xml.matches("<arg name=\"options\" type=\"a{sv}\" direction=\"in\"/>")
             .count(),
         4,
         "Availability, Open, Prepare and HardwareNotes"
     );
-    assert_eq!(porter_dbus::names::OPTION_TRACEPARENT, "traceparent");
+    assert_eq!(porter_dbus::inference::OPTION_TRACEPARENT, "traceparent");
 }
 
 #[test]
 fn the_launcher_interface_is_the_agent_launchers_nine_methods_and_three_signals() {
-    let xml = introspection(Bus::InferenceLauncher);
+    let xml = porter_dbus::inference::LAUNCHER.introspection();
     for member in [
         "<interface name=\"org.quire.Inference1.Launcher\">",
         "<method name=\"SetAgentState\">",
@@ -286,7 +308,7 @@ fn the_launcher_interface_is_the_agent_launchers_nine_methods_and_three_signals(
 
 #[test]
 fn the_keys_interface_is_a_request_for_a_permit_and_adding_a_key_and_nothing_else() {
-    let xml = introspection(Bus::InferenceKeys);
+    let xml = porter_dbus::inference::KEYS.introspection();
     for member in [
         "<interface name=\"org.quire.Inference1.Keys\">",
         "<method name=\"RequestKey\">",
@@ -306,7 +328,7 @@ fn the_keys_interface_is_a_request_for_a_permit_and_adding_a_key_and_nothing_els
 
 #[test]
 fn the_sheet_backend_takes_views_in_and_sends_inputs_out() {
-    let xml = introspection(Bus::AccountsSheet);
+    let xml = porter_dbus::accounts::ACCOUNTS_SHEET.introspection();
     for member in [
         "<method name=\"Open\">",
         "<method name=\"Update\">",
@@ -317,26 +339,26 @@ fn the_sheet_backend_takes_views_in_and_sends_inputs_out() {
     }
     let declared = xml.matches("<method ").count() + xml.matches("<signal ").count();
     assert_eq!(declared, 4);
-    assert_eq!(porter_dbus::names::SHEET_BUS, "org.quire.AccountsSheet1");
+    assert_eq!(porter_dbus::accounts::SHEET_BUS, "org.quire.AccountsSheet1");
 }
 
 #[test]
 fn syncd_and_inferd_declare_what_they_did() {
-    let sync = introspection(Bus::Sync);
+    let sync = porter_dbus::sync::SYNC.introspection();
     let sync1 = without_picker(&sync);
     assert_eq!(sync1.matches("<method ").count(), 8);
     assert_eq!(sync1.matches("<signal ").count(), 3);
     assert!(sync1.contains("<method name=\"ConfirmDiscard\">"));
     assert!(sync1.contains("<method name=\"SyncNow\">"));
     assert_eq!(
-        porter_dbus::names::SYNC_ERROR_PAUSED,
-        format!("{}Paused", porter_dbus::names::SYNC_ERROR_PREFIX)
+        porter_dbus::sync::SYNC_ERROR_PAUSED,
+        format!("{}Paused", porter_dbus::sync::SYNC_ERROR_PREFIX)
     );
     assert!(sync1.contains("<method name=\"Watch\">"));
     assert!(sync1.contains("<signal name=\"NeedsConfirmation\">"));
     assert_eq!(
-        porter_dbus::names::SYNC_ERROR_NOTHING_HELD,
-        format!("{}NothingHeld", porter_dbus::names::SYNC_ERROR_PREFIX)
+        porter_dbus::sync::SYNC_ERROR_NOTHING_HELD,
+        format!("{}NothingHeld", porter_dbus::sync::SYNC_ERROR_PREFIX)
     );
     #[cfg(feature = "photos-picker")]
     {
@@ -356,8 +378,8 @@ fn syncd_and_inferd_declare_what_they_did() {
             "Import answers the files' paths"
         );
         assert_eq!(
-            porter_dbus::PICKER_ERROR_NOT_YET,
-            format!("{}NotYet", porter_dbus::PICKER_ERROR_PREFIX)
+            porter_dbus::sync::PICKER_ERROR_NOT_YET,
+            format!("{}NotYet", porter_dbus::sync::PICKER_ERROR_PREFIX)
         );
     }
     #[cfg(not(feature = "photos-picker"))]
@@ -367,11 +389,11 @@ fn syncd_and_inferd_declare_what_they_did() {
     );
     assert!(sync.contains("<method name=\"Resolve\">"));
     assert!(sync.contains("<arg name=\"conflict\" type=\"x\" direction=\"in\"/>"));
-    assert_eq!(porter_dbus::names::RESOLVE_KEEP_LOCAL, "keep_local");
-    assert_eq!(porter_dbus::names::RESOLVE_KEEP_REMOTE, "keep_remote");
+    assert_eq!(porter_dbus::sync::RESOLVE_KEEP_LOCAL, "keep_local");
+    assert_eq!(porter_dbus::sync::RESOLVE_KEEP_REMOTE, "keep_remote");
     assert_eq!(
-        porter_dbus::names::SYNC_ERROR_NO_SUCH_CONFLICT,
-        format!("{}NoSuchConflict", porter_dbus::names::SYNC_ERROR_PREFIX)
+        porter_dbus::sync::SYNC_ERROR_NO_SUCH_CONFLICT,
+        format!("{}NoSuchConflict", porter_dbus::sync::SYNC_ERROR_PREFIX)
     );
-    assert_eq!(porter_dbus::names::STATUS_KEY_QUOTA, "quota");
+    assert_eq!(porter_dbus::sync::STATUS_KEY_QUOTA, "quota");
 }

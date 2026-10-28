@@ -1,7 +1,7 @@
 //! `org.quire.Accounts1.Request`: one object per sheet shown, as portals do. `Response`
 //! carries 0 (done), 1 (cancelled) or 2 (other), and the results by name.
 
-use crate::args::Details;
+use crate::Details;
 use porter_dbus_macros::bus_interface;
 
 /// The interface, written once. `#[bus_interface]` makes [`RequestProxy`] for its callers from this

@@ -20,7 +20,7 @@ use porter_capability::{Locality, Tier};
 use porter_client::InferSession;
 use porter_core::consent::Usage;
 use porter_core::{AppId, AppName, DataClass, Isolation};
-use porter_dbus::InferenceProxy;
+use porter_dbus::inference::InferenceProxy;
 use porter_fake_servers::net::Bind;
 use porter_fake_servers::{FakeModels, ModelDef, ModelsHandle, Running, Wire};
 use porter_ids::Tokens;

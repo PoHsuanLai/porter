@@ -13,7 +13,8 @@ use porter_capability::LoginOutcome;
 use porter_client::{AskKind, Launcher, LauncherError};
 use porter_core::DataClass;
 use porter_core::LauncherSession;
-use porter_dbus::{BusStream, LauncherFault};
+use porter_dbus::BusStream;
+use porter_dbus::inference::LauncherFault;
 use porter_wire::Refusal;
 
 fn program(name: &str) -> AgentProgram {

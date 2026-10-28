@@ -7,7 +7,7 @@ use crate::common;
 
 use common::Known;
 use common::bus::PrivateBus;
-use porter_dbus::names::SYNC_BUS;
+use porter_dbus::sync::SYNC_BUS;
 use porter_fake_servers::HeldRuntime;
 use std::time::Duration;
 use syncd::service::{Hub, serve};

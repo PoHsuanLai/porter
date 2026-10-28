@@ -20,10 +20,10 @@
 //!   know the key reads it as the account added). `Reauthenticate` (code 0): empty. Code 1:
 //!   empty. Code 2: `refusal`.
 
-use crate::args::Details;
-use crate::codec::{candidate_from_dbus, candidate_to_dbus};
+use super::account_path;
+use super::{candidate_from_dbus, candidate_to_dbus};
+use crate::Details;
 use crate::json_value::bad;
-use crate::names::account_path;
 use porter_core::AccountId;
 use porter_core::CoreError;
 use porter_wire::AccountsReply;
@@ -249,21 +249,21 @@ pub fn is_handle_token(token: &str) -> bool {
 /// The path under which every Request object of `sender` lives: a caller subscribes to
 /// `Response` here before it calls.
 pub fn request_namespace(sender: &str) -> String {
-    request_namespace_in(crate::ServiceRoot::Accounts, sender)
+    request_namespace_in(super::ServiceRoot::Accounts, sender)
 }
 
 /// The Request object of `sender`'s call that carried `token`, or `None` for a token that is
 /// not one.
 pub fn request_path(sender: &str, token: &str) -> Option<String> {
-    request_path_in(crate::ServiceRoot::Accounts, sender, token)
+    request_path_in(super::ServiceRoot::Accounts, sender, token)
 }
 
 /// [`request_namespace`] under `service`'s root.
-pub fn request_namespace_in(service: crate::ServiceRoot, sender: &str) -> String {
+pub fn request_namespace_in(service: super::ServiceRoot, sender: &str) -> String {
     format!("{}/{}", service.request_root(), sender_segment(sender))
 }
 
 /// [`request_path`] under `service`'s root.
-pub fn request_path_in(service: crate::ServiceRoot, sender: &str, token: &str) -> Option<String> {
+pub fn request_path_in(service: super::ServiceRoot, sender: &str, token: &str) -> Option<String> {
     is_handle_token(token).then(|| format!("{}/{token}", request_namespace_in(service, sender)))
 }

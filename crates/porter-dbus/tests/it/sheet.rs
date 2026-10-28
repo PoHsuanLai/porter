@@ -8,12 +8,13 @@ use porter_core::{AccountId, GrantId, ProviderId};
 use porter_core::{
     AccountLabel, Candidate, EndpointUrl, Family, LoginName, Restriction, ServiceEndpoint, Tls,
 };
-use porter_dbus::names::account_path;
-use porter_dbus::sheet::{
+use porter_dbus::Details;
+use porter_dbus::accounts::ServiceRoot;
+use porter_dbus::accounts::account_path;
+use porter_dbus::accounts::sheet::{
     ResponseCode, SheetKind, is_handle_token, reply_of, request_namespace, request_namespace_in,
     request_path, request_path_in, response_of, sender_segment,
 };
-use porter_dbus::{Details, ServiceRoot};
 use porter_wire::AccountsReply;
 use porter_wire::Refusal;
 use zbus::zvariant::{OwnedValue, Value};

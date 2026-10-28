@@ -17,7 +17,7 @@
 //! document's address, as Google's own desktop client writes them. A caller opens the `url` of
 //! its details rather than reading the file; an app that opens the file directly reads `url`.
 
-use crate::args::Details;
+use crate::Details;
 use porter_dbus_macros::bus_interface;
 use porter_ids::word::{from_word, word};
 use serde::{Deserialize, Serialize};

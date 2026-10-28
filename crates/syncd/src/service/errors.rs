@@ -1,13 +1,13 @@
 //! What a method answers instead of a value: a refusal as the error
-//! `org.quire.Accounts1.Error.<Refusal>` (`porter_dbus::refusal_error_name` pins the names; one
+//! `org.quire.Accounts1.Error.<Refusal>` (`porter_dbus::accounts::refusal_error_name` pins the names; one
 //! error vocabulary for porter's daemons), or one of the bus's own under its real name, so a
 //! client classifies it as it does a bus's refusal. Written by hand, as accountd's: the
 //! `DBusError` derive names every non-refusal `org.freedesktop.zbus.Error`.
 
-use porter_dbus::names::{SYNC_ERROR_NO_SUCH_CONFLICT, SYNC_ERROR_NOTHING_HELD, SYNC_ERROR_PAUSED};
-use porter_dbus::refusal_error_name;
+use porter_dbus::accounts::refusal_error_name;
 #[cfg(feature = "photos-picker")]
-use porter_dbus::{PICKER_ERROR_NO_SUCH_SESSION, PICKER_ERROR_NOT_YET};
+use porter_dbus::sync::{PICKER_ERROR_NO_SUCH_SESSION, PICKER_ERROR_NOT_YET};
+use porter_dbus::sync::{SYNC_ERROR_NO_SUCH_CONFLICT, SYNC_ERROR_NOTHING_HELD, SYNC_ERROR_PAUSED};
 use porter_wire::Refusal;
 use zbus::DBusError;
 use zbus::fdo;

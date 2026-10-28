@@ -14,7 +14,8 @@ use porter_capability::Tier;
 use porter_client::InferSession;
 use porter_core::DataClass;
 use porter_core::consent::Usage;
-use porter_dbus::{Details, InferenceProxy, need_to_dbus};
+use porter_dbus::Details;
+use porter_dbus::inference::{InferenceProxy, need_to_dbus};
 use porter_ids::Tokens;
 use porter_infer::{
     ChatMessage, ChatRequest, ClientFrame, InferEvent, InferReply, InferRequest, MessagePart,

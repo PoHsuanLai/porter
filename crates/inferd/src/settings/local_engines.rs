@@ -6,7 +6,7 @@
 use super::missing::Engine;
 use crate::installed::{Installed, Standing};
 use crate::supervise::Programs;
-use porter_dbus::{EnginePlace, EngineState, LocalEngine};
+use porter_dbus::inference::{EnginePlace, EngineState, LocalEngine};
 use porter_engines::{EngineId, Place};
 use porter_infer::Slot;
 use porter_router::local::EngineConfig;

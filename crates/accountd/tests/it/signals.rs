@@ -6,9 +6,9 @@ use crate::common;
 use common::*;
 use ds_settings::schema::KeyPath;
 use porter_core::AccountState;
-use porter_dbus::AccountProxy;
+use porter_dbus::accounts::AccountProxy;
+use porter_dbus::accounts::account_path;
 use porter_dbus::callers::CallerRole;
-use porter_dbus::names::account_path;
 use std::time::Duration;
 use zbus::zvariant::ObjectPath;
 

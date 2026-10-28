@@ -7,7 +7,7 @@
 use crate::hosting;
 
 use hosting::rig::{Plan, World};
-use porter_dbus::InferenceProxy;
+use porter_dbus::inference::InferenceProxy;
 use porter_fake_servers::HeldRuntime;
 use std::time::Duration;
 

@@ -1,4 +1,4 @@
-//! `org.quire.Photos1.Picker` on syncd's object (`porter_dbus::PhotosPickerProxy`): the Google
+//! `org.quire.Photos1.Picker` on syncd's object (`porter_dbus::sync::PhotosPickerProxy`): the Google
 //! Photos Picker for the Photos app. Served in a build with the `photos-picker` feature; an
 //! account answers through it while its Photos row in Settings is on. The caller is identified as `Sync1`'s are (the connection's, by
 //! porter-dbus's `Callers`), and only an app that owns the Photos datasets (`org.quire.Photos`)
@@ -21,11 +21,13 @@ use crate::datasets::photos::google::{GooglePicker, PickerError, PickerState, Se
 use crate::paths::AccountDir;
 use porter_client::Transport;
 #[cfg(feature = "photos-picker")]
+use porter_dbus::Call;
+#[cfg(feature = "photos-picker")]
 use porter_dbus::callers::Callers;
 #[cfg(feature = "photos-picker")]
-use porter_dbus::names::SYNC_PATH;
+use porter_dbus::sync::SYNC_PATH;
 #[cfg(feature = "photos-picker")]
-use porter_dbus::{Call, PICKER_PICKED, PICKER_WAITING, PhotosPickerServed, PhotosPickerServer};
+use porter_dbus::sync::{PICKER_PICKED, PICKER_WAITING, PhotosPickerServed, PhotosPickerServer};
 #[cfg(feature = "photos-picker")]
 use porter_wire::Refusal;
 use std::collections::BTreeMap;

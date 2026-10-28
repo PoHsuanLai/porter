@@ -9,9 +9,10 @@ use common::bus::PrivateBus;
 use common::{Known, NO_FITTING, client, error_name};
 use porter_capability::{Access, Delta, HashKind, StorageCap, StorageScope};
 use porter_core::AppName;
+use porter_dbus::Details;
 use porter_dbus::callers::CallerRole;
-use porter_dbus::names::SYNC_ERROR_NOTHING_HELD;
-use porter_dbus::{Details, SyncProxy};
+use porter_dbus::sync::SYNC_ERROR_NOTHING_HELD;
+use porter_dbus::sync::SyncProxy;
 use porter_ids::UnixSeconds;
 use porter_sync::{
     BaseVersion, Blob, ByteRange, ChangePage, ConflictRule, Cursor, ItemPath, MemoryReplica,

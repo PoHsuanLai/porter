@@ -14,7 +14,7 @@ use engine_supervisor::{EngineHost, EngineId, GpuAccess, Network, ProgramPath, S
 use inferd::hosts::ProcessHost;
 use inferd::shutdown::{Ended, Signals, on_signal};
 use model_catalog::{EngineArg, MiB};
-use porter_dbus::names::INFERENCE_BUS;
+use porter_dbus::inference::INFERENCE_BUS;
 use rustix::process::{Pid, Signal, kill_process};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};

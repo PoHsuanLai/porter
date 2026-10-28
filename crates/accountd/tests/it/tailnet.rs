@@ -13,8 +13,9 @@ use common::host::{HostLog, SheetHost, send_input};
 use common::{Shared, caller, error_name, eventually};
 use porter_core::ProviderId;
 use porter_core::{Account, AccountLabel, AccountState, AuthKind, Restriction};
+use porter_dbus::BusStream;
+use porter_dbus::accounts::{ManagerProxy, Sheet, SpacesProxy, TailnetProxy, machine_from_dbus};
 use porter_dbus::callers::CallerRole;
-use porter_dbus::{BusStream, ManagerProxy, Sheet, SpacesProxy, TailnetProxy, machine_from_dbus};
 use porter_fake::{MemoryStore, RecordingAudit};
 use porter_fake_servers::{Daemon, FakeLocalApi, FakePeer, Network};
 use porter_families::{DynProvider, TailnetProvider};
@@ -150,14 +151,14 @@ impl World {
         let host_connection = bus.connect().await;
         host_connection
             .object_server()
-            .at(porter_dbus::names::SHEET_PATH, host)
+            .at(porter_dbus::accounts::SHEET_PATH, host)
             .await
             .expect("host object");
         porter_dbus::serve_ready(&host_connection)
             .await
             .expect("the host takes calls");
         host_connection
-            .request_name(porter_dbus::names::SHEET_BUS)
+            .request_name(porter_dbus::accounts::SHEET_BUS)
             .await
             .expect("host name");
         callers.introduce_as(
@@ -309,7 +310,7 @@ async fn read(connection: &zbus::Connection) -> Result<Vec<Machine>, zbus::Error
 
 /// Waits for the next `Changed`, as long as a starved machine needs (`Deadline::generous`): a
 /// signal that should come is waited for, never raced against a short timer.
-async fn told(stream: &mut porter_dbus::TailnetChangedStream, what: &str) {
+async fn told(stream: &mut porter_dbus::accounts::TailnetChangedStream, what: &str) {
     let deadline = Deadline::generous();
     let next = std::future::poll_fn(|cx| std::pin::Pin::new(&mut *stream).poll_next(cx));
     match tokio::time::timeout(test_kit::GENEROUS, next).await {
@@ -323,7 +324,10 @@ async fn told(stream: &mut porter_dbus::TailnetChangedStream, what: &str) {
 /// should fail on a starved machine, never fails when it should pass. The windows used are
 /// several times the coalescing window of the tests (300 ms), the time a second signal for the
 /// same burst would come in.
-async fn quiet_for(stream: &mut porter_dbus::TailnetChangedStream, window: Duration) -> bool {
+async fn quiet_for(
+    stream: &mut porter_dbus::accounts::TailnetChangedStream,
+    window: Duration,
+) -> bool {
     tokio::time::timeout(
         window,
         std::future::poll_fn(|cx| std::pin::Pin::new(&mut *stream).poll_next(cx)),

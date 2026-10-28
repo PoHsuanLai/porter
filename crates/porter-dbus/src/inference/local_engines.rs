@@ -3,7 +3,7 @@
 //! would serve and, where they apply, its release and where it came from. A client reads the typed
 //! [`LocalEngine`], never the strings.
 
-use crate::args::Details;
+use crate::Details;
 use porter_ids::word::{from_word, word};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;

@@ -16,8 +16,8 @@ use porter_capability::CapabilityKind;
 use porter_capability::Offer;
 use porter_core::{AccountId, ProviderId};
 use porter_core::{AccountState, Credential, SecretKey, SecretPurpose, TokenLifetime};
+use porter_dbus::accounts::{ManagerProxy, Sheet};
 use porter_dbus::callers::CallerRole;
-use porter_dbus::{ManagerProxy, Sheet};
 use porter_fake::{MemoryStore, RecordingAudit};
 use porter_fake_servers::{Google, shipped};
 use porter_families::DynProvider;
@@ -125,14 +125,14 @@ impl World {
         let host_connection = bus.connect().await;
         host_connection
             .object_server()
-            .at(porter_dbus::names::SHEET_PATH, host)
+            .at(porter_dbus::accounts::SHEET_PATH, host)
             .await
             .expect("host object");
         porter_dbus::serve_ready(&host_connection)
             .await
             .expect("the host takes calls");
         host_connection
-            .request_name(porter_dbus::names::SHEET_BUS)
+            .request_name(porter_dbus::accounts::SHEET_BUS)
             .await
             .expect("host name");
         callers.introduce_as(
@@ -322,9 +322,9 @@ async fn reauth_reason_of(world: &World, id: &AccountId) -> String {
     let shell = world
         .connection_as("org.example.OtherShell", CallerRole::SheetHost)
         .await;
-    porter_dbus::AccountProxy::builder(&shell)
+    porter_dbus::accounts::AccountProxy::builder(&shell)
         .path(
-            zbus::zvariant::ObjectPath::try_from(porter_dbus::names::account_path(id))
+            zbus::zvariant::ObjectPath::try_from(porter_dbus::accounts::account_path(id))
                 .expect("path"),
         )
         .expect("path")

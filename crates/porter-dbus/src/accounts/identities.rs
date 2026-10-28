@@ -11,7 +11,7 @@
 //! `CallerRole::SheetHost`). The agent, computer use, the agent launcher, the terminal and the
 //! compositor are `AccessDenied`, as is a sender accountd does not know.
 
-use crate::args::Details;
+use crate::Details;
 use crate::json_value::bad;
 use porter_core::ProviderId;
 use porter_core::{CoreError, Identity, IdentityAddress, IdentityId, IdentityKind, IdentityName};

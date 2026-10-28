@@ -1,6 +1,6 @@
 //! `org.quire.Sync1` at `/org/quire/Sync1`: syncd's datasets and their state.
 
-use crate::args::Details;
+use crate::Details;
 use porter_dbus_macros::bus_interface;
 
 /// The interface, written once. `#[bus_interface]` makes [`SyncProxy`] for its callers from this

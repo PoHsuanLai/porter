@@ -15,10 +15,8 @@
 //! never. [`Closer`] is the caller giving up (`Request.Close`): the task that waits for a sheet is
 //! dropped when the app's own call is, and the sheet should not stay on the screen.
 
-use crate::args::Details;
-use crate::request::RequestProxy;
-use crate::service_root::ServiceRoot;
-use crate::sheet::{OPTION_HANDLE_TOKEN, REQUEST_INTERFACE, request_namespace_in, request_path_in};
+use super::sheet::{OPTION_HANDLE_TOKEN, REQUEST_INTERFACE, request_namespace_in, request_path_in};
+use super::{RequestProxy, ServiceRoot};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::task::Poll;
@@ -31,6 +29,7 @@ use zbus::{MatchRule, Message, MessageStream};
 
 use crate::BusConnection;
 use crate::BusError;
+use crate::Details;
 
 /// Why no `Response` came.
 #[derive(Debug)]

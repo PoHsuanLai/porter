@@ -8,7 +8,7 @@
 //! A separate interface from `org.quire.Inference1` (whose seven members are frozen), on the same
 //! bus name and object.
 
-use crate::args::Details;
+use crate::Details;
 use porter_dbus_macros::bus_interface;
 
 /// A route (`(sssas)`): its kind (`account` or `model`), its id (an account id, or a catalogue

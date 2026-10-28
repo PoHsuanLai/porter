@@ -155,7 +155,7 @@ pub(super) fn slug<T: Serialize + ?Sized>(value: &T) -> Result<String, Transport
 pub(crate) fn bus_error(error: &BusError) -> TransportError {
     // inferd's answer to a call that named its places and has none to run in.
     #[cfg(feature = "infer")]
-    if let Some((reason, kind)) = porter_dbus::place_refusal_of(error)
+    if let Some((reason, kind)) = porter_dbus::inference::place_refusal_of(error)
         && let Some(reason) = porter_infer::NoPlaceReason::from_name(&reason)
     {
         return TransportError::NoAllowedPlace {
@@ -164,7 +164,7 @@ pub(crate) fn bus_error(error: &BusError) -> TransportError {
         };
     }
     // inferd's plain refusal of a call about computers or guests.
-    if let Some((name, words)) = porter_dbus::computer_refusal_of(error) {
+    if let Some((name, words)) = porter_dbus::inference::computer_refusal_of(error) {
         return TransportError::Computer {
             reason: crate::error::ComputerReason::from_name(&name),
             words,

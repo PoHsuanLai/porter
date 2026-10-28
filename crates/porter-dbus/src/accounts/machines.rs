@@ -2,7 +2,7 @@
 //! fields by name. The lists are real string arrays (`as`), not the lists of variants that
 //! `json_value` writes, since a client reads them as they are.
 
-use crate::args::Details;
+use crate::Details;
 use crate::json_value::bad;
 use porter_core::CoreError;
 use porter_ids::UnixSeconds;

@@ -16,10 +16,10 @@
 //! sealed memfd or in a 0600 file, under a permit; `ProcessCredentialRevoked` tells the launcher
 //! that inferd ended it.
 //!
-//! Errors are `org.quire.Inference1.Error.<Name>`: the refusals of [`crate::refusal`] and the
-//! launcher's own, [`crate::LauncherFault`].
+//! Errors are `org.quire.Inference1.Error.<Name>`: the refusals of [`crate::accounts::refusal_error_name`] and the
+//! launcher's own, [`LauncherFault`](crate::inference::LauncherFault).
 
-use crate::args::Details;
+use crate::Details;
 use porter_dbus_macros::bus_interface;
 use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 

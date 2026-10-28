@@ -6,8 +6,9 @@ use crate::common;
 
 use common::*;
 use porter_core::AccountState;
+use porter_dbus::Details;
+use porter_dbus::accounts::{AccountProxy, ManagerProxy};
 use porter_dbus::callers::CallerRole;
-use porter_dbus::{AccountProxy, Details, ManagerProxy};
 use std::time::Duration;
 
 #[tokio::test(flavor = "multi_thread")]
@@ -44,7 +45,7 @@ async fn the_shell_is_told_of_a_refusal_and_a_recovery_and_reads_the_account() {
     assert!(manager.needing_reauth().await.expect("list").is_empty());
     // An app that has called accountd does not hear.
     let other = rig.client("org.quire.Mail").await;
-    porter_dbus::IdentitiesProxy::new(&other)
+    porter_dbus::accounts::IdentitiesProxy::new(&other)
         .await
         .expect("proxy")
         .list()

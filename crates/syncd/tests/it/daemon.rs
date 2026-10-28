@@ -6,7 +6,7 @@
 use crate::common::bus::PrivateBus;
 
 use porter_dbus::BusTarget;
-use porter_dbus::names::SYNC_BUS;
+use porter_dbus::sync::SYNC_BUS;
 use std::path::Path;
 use std::time::Duration;
 use syncd::paths::Paths;

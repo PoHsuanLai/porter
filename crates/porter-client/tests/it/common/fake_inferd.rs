@@ -8,8 +8,9 @@
 use porter_capability::Subject;
 use porter_core::{AccountId, GrantId, ProviderId};
 use porter_core::{AccountLabel, Candidate, Restriction};
-use porter_dbus::sheet::{REQUEST_INTERFACE, SheetKind, request_path_in, response_of};
-use porter_dbus::{Details, ServiceRoot};
+use porter_dbus::Details;
+use porter_dbus::accounts::ServiceRoot;
+use porter_dbus::accounts::sheet::{REQUEST_INTERFACE, SheetKind, request_path_in, response_of};
 use porter_wire::AccountsReply;
 use porter_wire::Refusal;
 use std::path::PathBuf;
@@ -139,7 +140,7 @@ impl FakeInferd {
         let server = connection.object_server();
         server
             .at(
-                porter_dbus::names::INFERENCE_PATH,
+                porter_dbus::inference::INFERENCE_PATH,
                 Keys {
                     shared: Arc::clone(&self.shared),
                 },
@@ -148,7 +149,7 @@ impl FakeInferd {
             .expect("serve Keys");
         server
             .at(
-                porter_dbus::names::INFERENCE_PATH,
+                porter_dbus::inference::INFERENCE_PATH,
                 Launcher {
                     shared: Arc::clone(&self.shared),
                 },
@@ -156,7 +157,7 @@ impl FakeInferd {
             .await
             .expect("serve Launcher");
         connection
-            .request_name(porter_dbus::names::INFERENCE_BUS)
+            .request_name(porter_dbus::inference::INFERENCE_BUS)
             .await
             .expect("own the name");
     }
@@ -178,7 +179,7 @@ impl FakeInferd {
         connection
             .emit_signal(
                 Some(to),
-                porter_dbus::names::INFERENCE_PATH,
+                porter_dbus::inference::INFERENCE_PATH,
                 "org.quire.Inference1.Launcher",
                 signal,
                 &body,
@@ -199,7 +200,7 @@ impl FakeInferd {
         connection
             .emit_signal(
                 Some(to),
-                porter_dbus::names::INFERENCE_PATH,
+                porter_dbus::inference::INFERENCE_PATH,
                 "org.quire.Inference1.Launcher",
                 "ProcessCredentialRevoked",
                 &(id, reason),

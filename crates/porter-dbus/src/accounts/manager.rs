@@ -3,7 +3,7 @@
 //! grant-keyed, so there is no finding, choosing or granting here: an app that wants an identity
 //! asks `Identities1.Offer`, and one that wants an AI key asks inferd's `Keys`.
 
-use crate::args::Details;
+use crate::Details;
 use porter_dbus_macros::bus_interface;
 use zbus::zvariant::{ObjectPath, OwnedObjectPath};
 

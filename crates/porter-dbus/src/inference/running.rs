@@ -2,7 +2,7 @@
 //! model (`account/model`), then a vardict of what its engine is doing. A client reads the typed
 //! [`RunningModel`], never the strings.
 
-use crate::args::Details;
+use crate::Details;
 use porter_ids::word::{from_word, word};
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};

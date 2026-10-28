@@ -12,7 +12,9 @@ use inferd::settings::LocalEngines;
 use inferd::settings::{ConfigFile, Reload};
 use inferd::supervise::Supervised;
 use porter_core::{AppId, AppName, Isolation};
-use porter_dbus::{EnginePlace, EngineState, InferenceProxy, LocalEngine, local_engine_from_dbus};
+use porter_dbus::inference::{
+    EnginePlace, EngineState, InferenceProxy, LocalEngine, local_engine_from_dbus,
+};
 use porter_engines::{
     Arch, Artifact, Backend, Delivery, EngineId, Manifest, Record, Roots, Row, Scope, seal_of,
 };

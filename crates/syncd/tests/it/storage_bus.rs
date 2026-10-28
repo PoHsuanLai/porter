@@ -22,9 +22,9 @@ use porter_core::{
     GrantKey,
     consent::{Decision, Grant, GrantScope, Usage},
 };
-use porter_dbus::SyncProxy;
 use porter_dbus::callers::CallerRole;
-use porter_dbus::names::{CONFLICT_KEY_NUMBER, RESOLVE_KEEP_REMOTE, SYNC_ERROR_NO_SUCH_CONFLICT};
+use porter_dbus::sync::SyncProxy;
+use porter_dbus::sync::{CONFLICT_KEY_NUMBER, RESOLVE_KEEP_REMOTE, SYNC_ERROR_NO_SUCH_CONFLICT};
 use porter_fake::FakeProvider;
 use porter_fake_servers::{FakeGraph, GraphHandle, Running};
 use porter_ids::UnixSeconds;

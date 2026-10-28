@@ -7,7 +7,8 @@ use crate::launcher_rig::*;
 use inferd::launcher::LoginTiming;
 use inferd::peers::Role;
 use porter_core::AccountState;
-use porter_dbus::{LauncherFault, ServiceRoot};
+use porter_dbus::accounts::ServiceRoot;
+use porter_dbus::inference::LauncherFault;
 
 const DENIED: &str = "org.freedesktop.DBus.Error.AccessDenied";
 const INVALID: &str = "org.freedesktop.DBus.Error.InvalidArgs";
@@ -103,7 +104,7 @@ async fn only_the_launcher_calls_and_bad_words_are_invalid() {
     let app = rig.client_as("org.example.App", Role::App).await;
     let stranger = rig.bus.connect().await;
     for connection in [&app, &stranger] {
-        let proxy = porter_dbus::LauncherProxy::new(connection)
+        let proxy = porter_dbus::inference::LauncherProxy::new(connection)
             .await
             .expect("proxy");
         assert_eq!(

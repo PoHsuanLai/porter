@@ -38,7 +38,7 @@ use porter_core::consent::{Decision, GrantScope};
 use porter_core::{Account, AccountState, AppId, AuthKind};
 use porter_core::{AccountId, GrantId};
 use porter_core::{LauncherSession, ProcessCredentialId};
-use porter_dbus::LauncherFault;
+use porter_dbus::inference::LauncherFault;
 use porter_ids::word::{from_word, word as word_of};
 use porter_service::Registry;
 use porter_service::audit::{AuditEvent, CredentialEnd, Handoff};

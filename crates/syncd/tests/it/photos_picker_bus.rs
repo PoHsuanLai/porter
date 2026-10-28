@@ -11,7 +11,7 @@ use google_rig::{
     PICKER_BEARER, Rig, SECRET_ACCESS, SECRET_REFRESH, SEGMENT, client_of, rig, rig_picker_only,
     serve_picker,
 };
-use porter_dbus::{
+use porter_dbus::sync::{
     PICKER_ERROR_NO_SUCH_SESSION, PICKER_ERROR_NOT_YET, PICKER_PICKED, PICKER_WAITING,
     PhotosPickerProxy,
 };

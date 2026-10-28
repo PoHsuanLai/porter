@@ -4,9 +4,9 @@
 //! A sheet method registers an `org.quire.Accounts1.Request` object under the request root of its
 //! [`ServiceRoot`] (the caller's unique name, then its `handle_token` or one minted here), returns
 //! its path at once, and runs the call in a task. When the call ends the task sends
-//! `Response(code, results)` (`porter_dbus::sheet::response_of` says what the answer looks like) to the
+//! `Response(code, results)` (`porter_dbus::accounts::sheet::response_of` says what the answer looks like) to the
 //! caller alone, then removes the object. The signal may therefore reach the caller before the
-//! method's reply does; callers subscribe first (`porter_dbus::Sheet`).
+//! method's reply does; callers subscribe first (`porter_dbus::accounts::Sheet`).
 //!
 //! The sheet ends without a `Response` when the caller calls `Close` or leaves the bus; the call
 //! in flight is dropped, which is how the prompter's sheet is taken down. A call that panics
@@ -17,10 +17,11 @@
 //! anyone but the caller.
 
 use porter_core::AppId;
-use porter_dbus::sheet::{
+use porter_dbus::accounts::sheet::{
     OPTION_HANDLE_TOKEN, SheetKind, is_handle_token, request_path_in, response_of,
 };
-use porter_dbus::{Call, Details, RequestServed, RequestServer, ServiceRoot};
+use porter_dbus::accounts::{RequestServed, RequestServer, ServiceRoot};
+use porter_dbus::{Call, Details};
 use porter_wire::AccountsReply;
 use porter_wire::Refusal;
 use std::collections::HashSet;

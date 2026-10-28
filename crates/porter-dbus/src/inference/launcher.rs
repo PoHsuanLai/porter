@@ -3,7 +3,7 @@
 //! `Refusal` (the sheet's answer to a login nobody can do); these are the launcher's own. A reader
 //! also takes the same names under accountd's prefix, as an older accountd sent them.
 
-use crate::service_root::ServiceRoot;
+use crate::accounts::ServiceRoot;
 
 /// Why inferd refused a launcher's call.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -110,7 +110,7 @@ mod tests {
             assert!(seen.insert(name.clone()), "{name} twice");
             assert_eq!(LauncherFault::from_error_name(&name), Some(fault));
             // A launcher's fault is never mistaken for an app-facing refusal.
-            assert_eq!(crate::refusal_from_error_name(&name), None);
+            assert_eq!(crate::accounts::refusal_from_error_name(&name), None);
         }
         assert_eq!(
             LauncherFault::from_error_name("org.other.UnknownRequest"),

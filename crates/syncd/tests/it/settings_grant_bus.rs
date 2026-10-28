@@ -19,8 +19,8 @@ use porter_core::{
     Account, AccountLabel, AccountState, AuthKind, Credential, EndpointUrl, Family, LoginName,
     Restriction, SecretKey, SecretPurpose, SecretText, ServiceEndpoint, Tls,
 };
-use porter_dbus::SyncProxy;
 use porter_dbus::callers::CallerRole;
+use porter_dbus::sync::SyncProxy;
 use porter_fake::FakeProvider;
 use porter_fake_servers::{FakeGraph, GraphHandle, Running};
 use porter_families::set::ProviderNames;

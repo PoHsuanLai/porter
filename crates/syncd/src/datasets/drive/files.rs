@@ -13,7 +13,7 @@
 //! opened for this; a cache that cannot be read stops the removal.
 
 use crate::paths::{AccountDir, Paths};
-use porter_dbus::DriveState;
+use porter_dbus::sync::DriveState;
 use porter_drive::{Changed, Drive, DriveConfig, NodeId};
 use porter_drive_fuse::Mounted;
 use std::collections::BTreeMap;

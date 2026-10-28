@@ -8,7 +8,7 @@
 //! computers that lend their models). Anyone else, and a sender accountd does not know, is
 //! `AccessDenied`.
 
-use crate::args::Details;
+use crate::Details;
 use porter_dbus_macros::bus_interface;
 
 /// The interface, written once. `#[bus_interface]` makes [`TailnetProxy`] for its callers from this

@@ -1,12 +1,12 @@
 //! What a method answers instead of a value: a refusal as the error
-//! `org.quire.Accounts1.Error.<Refusal>` (`porter_dbus::refusal_error_name` pins the names), or
+//! `org.quire.Accounts1.Error.<Refusal>` (`porter_dbus::accounts::refusal_error_name` pins the names), or
 //! one of the bus's own (`AccessDenied`, `InvalidArgs`, `UnknownObject`) under its real name, so
 //! a client classifies it as it does a bus's refusal.
 //!
 //! Written by hand rather than with the `DBusError` derive: the derive names every non-refusal
 //! `org.freedesktop.zbus.Error`, which a client cannot tell from any other failure.
 
-use porter_dbus::refusal_error_name;
+use porter_dbus::accounts::refusal_error_name;
 use porter_wire::Refusal;
 use zbus::DBusError;
 use zbus::fdo;

@@ -30,11 +30,11 @@ fn the_activation_file_and_the_unit_name_the_bus_name_and_each_other() {
     let unit = dist("inferd.service");
     assert_eq!(
         key(&activation, "Name"),
-        Some(porter_dbus::names::INFERENCE_BUS)
+        Some(porter_dbus::inference::INFERENCE_BUS)
     );
     assert_eq!(
         key(&unit, "BusName"),
-        Some(porter_dbus::names::INFERENCE_BUS)
+        Some(porter_dbus::inference::INFERENCE_BUS)
     );
     assert_eq!(key(&activation, "SystemdService"), Some("inferd.service"));
     assert_eq!(key(&activation, "Exec"), key(&unit, "ExecStart"));

@@ -2,7 +2,7 @@
 //! give them: which slots each serves and whether its program is there.
 
 use model_catalog::EngineKind;
-use porter_dbus::EngineState;
+use porter_dbus::inference::EngineState;
 use porter_infer::Slot;
 use porter_router::local::EngineConfig;
 use std::path::PathBuf;

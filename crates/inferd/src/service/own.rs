@@ -4,7 +4,7 @@
 
 use crate::peers::Caller;
 use porter_dbus::Details;
-use porter_dbus::names::{OPTION_ASKER, OPTION_MODEL};
+use porter_dbus::inference::{OPTION_ASKER, OPTION_MODEL};
 use porter_infer::{Asker, ModelRef};
 use zbus::fdo;
 

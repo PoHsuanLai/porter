@@ -21,7 +21,8 @@ use porter_core::audit::Handoff;
 use porter_core::consent::Usage;
 use porter_core::{AccountId, GrantId, ProviderId};
 use porter_core::{DataClass, IdentityId};
-use porter_dbus::{SyncProxy, from_vardict};
+use porter_dbus::from_vardict;
+use porter_dbus::sync::SyncProxy;
 use porter_ids::Tokens;
 use porter_ids::word::word as word_of;
 use porter_infer::{

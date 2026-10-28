@@ -243,7 +243,7 @@ pub enum StartError {
     #[error("cannot serve org.quire.Photos1.Picker: {0}")]
     Picker(#[source] zbus::Error),
     /// The bus objects or the name could not be served.
-    #[error("cannot serve {bus}: {0}", bus = porter_dbus::names::SYNC_BUS)]
+    #[error("cannot serve {bus}: {0}", bus = porter_dbus::sync::SYNC_BUS)]
     Serve(#[source] zbus::Error),
 }
 

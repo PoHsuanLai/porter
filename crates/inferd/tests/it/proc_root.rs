@@ -4,8 +4,9 @@
 
 use crate::hosting::bus;
 
-use porter_dbus::names::INFERENCE_BUS;
-use porter_dbus::{Details, InferenceProxy, need_to_dbus};
+use porter_dbus::Details;
+use porter_dbus::inference::INFERENCE_BUS;
+use porter_dbus::inference::{InferenceProxy, need_to_dbus};
 use porter_match::LlmNeed;
 use porter_match::Need;
 use std::path::{Path, PathBuf};

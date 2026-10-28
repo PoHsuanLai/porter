@@ -10,7 +10,7 @@ use crate::error::TransportError;
 use crate::identities::{Identities, IdentitiesError, IdentityRemovals};
 use porter_core::AccountId;
 use porter_dbus::BusConnection;
-use porter_dbus::names::ACCOUNTS_PATH;
+use porter_dbus::accounts::ACCOUNTS_PATH;
 use porter_ids::object_segment;
 use zbus::export::futures_core::Stream;
 

@@ -142,7 +142,7 @@ pub enum StartError {
     #[error("no session bus: {0}")]
     Bus(#[source] zbus::Error),
     /// The bus objects or the name could not be served.
-    #[error("cannot serve {bus}: {0}", bus = porter_dbus::names::ACCOUNTS_BUS)]
+    #[error("cannot serve {bus}: {0}", bus = porter_dbus::accounts::ACCOUNTS_BUS)]
     Serve(#[source] zbus::Error),
 }
 

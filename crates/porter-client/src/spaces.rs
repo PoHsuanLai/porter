@@ -15,11 +15,9 @@
 
 use crate::call_failure::{CallFailure, bus_failure_from};
 use porter_core::{CoreError, DesktopSpace, DesktopSpaceRecord, SpaceChange, SpaceLook, SpaceName};
-use porter_dbus::names::{SPACE_KEY_CREATED, SPACE_KEY_LOOK, SPACE_KEY_NAME};
-use porter_dbus::{
-    BusConnection, BusError, BusStream, Details, SpaceChanged, SpaceChangedStream, SpacesProxy,
-    is_limits_exceeded,
-};
+use porter_dbus::accounts::{SPACE_KEY_CREATED, SPACE_KEY_LOOK, SPACE_KEY_NAME};
+use porter_dbus::accounts::{SpaceChanged, SpaceChangedStream, SpacesProxy};
+use porter_dbus::{BusConnection, BusError, BusStream, Details, is_limits_exceeded};
 use porter_ids::word::from_word;
 use porter_ids::{IdError, UnixSeconds};
 use std::pin::Pin;

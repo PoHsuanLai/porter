@@ -7,7 +7,7 @@
 //! only Settings and the shell (`CallerRole::Settings`, `CallerRole::SheetHost`), and anyone else
 //! is `AccessDenied`, as is a sender accountd does not know.
 
-use crate::args::Details;
+use crate::Details;
 use porter_dbus_macros::bus_interface;
 
 /// The interface, written once. `#[bus_interface]` makes [`SpacesProxy`] for its callers from this

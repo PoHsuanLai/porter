@@ -1,5 +1,5 @@
 //! What a launcher method answers instead of a value: a refusal as the error
-//! `org.quire.Inference1.Error.<Refusal>` (`porter_dbus::refusal_error_name_in` pins the names), a
+//! `org.quire.Inference1.Error.<Refusal>` (`porter_dbus::accounts::refusal_error_name_in` pins the names), a
 //! launcher fault under its own name (`LauncherFault`), or one of the bus's own (`AccessDenied`,
 //! `InvalidArgs`, `LimitsExceeded`) under its real name, so a client classifies it as it does a
 //! bus's refusal.
@@ -7,7 +7,9 @@
 //! Written by hand rather than with the `DBusError` derive: the derive names every non-refusal
 //! `org.freedesktop.zbus.Error`, which a client cannot tell from any other failure.
 
-use porter_dbus::{LauncherFault, ServiceRoot, refusal_error_name_in};
+use porter_dbus::accounts::ServiceRoot;
+use porter_dbus::accounts::refusal_error_name_in;
+use porter_dbus::inference::LauncherFault;
 use porter_wire::Refusal;
 use zbus::DBusError;
 use zbus::fdo;

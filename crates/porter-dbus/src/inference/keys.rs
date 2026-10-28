@@ -3,8 +3,8 @@
 //! it, so the AI keys are inferd's (an app never sees one): the app asks inferd, inferd shows the
 //! consent sheet, and the answer is a permit.
 //!
-//! Both methods return a Request object (the portal shape, [`crate::Sheet`]) on inferd's name,
-//! under `/org/quire/Inference1/request` ([`crate::ServiceRoot::Inference`]):
+//! Both methods return a Request object (the portal shape, [`crate::accounts::Sheet`]) on inferd's name,
+//! under `/org/quire/Inference1/request` ([`crate::accounts::ServiceRoot::Inference`]):
 //! - `RequestKey(class, usage, parent_window, options)`: the consent sheet for the caller's use of
 //!   one of the person's AI keys for data of `class`, used `usage` (`interactive`, `background`).
 //!   Answered with the results of a `Choose` response (the chosen key's account) whose `grant` is
@@ -17,7 +17,7 @@
 //! terminal and the compositor are refused `AccessDenied` (a role the table does not name fails
 //! closed).
 
-use crate::args::Details;
+use crate::Details;
 use porter_dbus_macros::bus_interface;
 use zbus::zvariant::OwnedObjectPath;
 

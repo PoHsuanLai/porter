@@ -23,3 +23,30 @@ pub struct Call<'a> {
 /// daemon; its methods never answer.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Unserved;
+
+/// The introspection document of one object: the interfaces it serves, in one `<node>`. Each
+/// interface writes its own element (`<Name>Served::<Unserved>::introspect`); a document is only
+/// the list of them, in the order the object serves them, and the file under `dbus/` that holds
+/// the result. A group lists its own documents (`accounts::ACCOUNTS`), so nothing here knows the
+/// interfaces.
+#[derive(Debug, Clone, Copy)]
+pub struct Document {
+    /// The file under `dbus/` that holds it.
+    pub file_name: &'static str,
+    /// The interfaces' own writers.
+    pub interfaces: &'static [fn(&mut String)],
+}
+
+impl Document {
+    /// The document as the daemon's object introspects.
+    pub fn introspection(&self) -> String {
+        let mut xml = String::from(
+            "<!DOCTYPE node PUBLIC \"-//freedesktop//DTD D-BUS Object Introspection 1.0//EN\"\n \"http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd\">\n<node>\n",
+        );
+        for introspect in self.interfaces {
+            introspect(&mut xml);
+        }
+        xml.push_str("</node>\n");
+        xml
+    }
+}

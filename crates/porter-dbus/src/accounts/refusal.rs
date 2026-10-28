@@ -1,7 +1,7 @@
 //! accountd's refusals as D-Bus error names: `org.quire.Accounts1.Error.<Slug in Pascal case>`
 //! (`NoFittingAccount`, `AudienceNotGranted`), so an app that gets the error knows what to do.
 
-use crate::service_root::ServiceRoot;
+use super::ServiceRoot;
 use porter_wire::Refusal;
 
 /// The prefix of every accountd refusal's error name (inferd's and syncd's are
@@ -61,6 +61,15 @@ fn pascal(slug: &str) -> String {
                 .unwrap_or_default()
         })
         .collect()
+}
+
+/// The refusal a daemon's error reply stands for (`org.quire.Accounts1.Error.*`), if it is one.
+pub fn refusal_of(error: &zbus::Error) -> Option<porter_wire::Refusal> {
+    let name = match error {
+        zbus::Error::MethodError(name, _, _) => name.as_str().to_owned(),
+        _ => return None,
+    };
+    refusal_from_error_name(&name)
 }
 
 #[cfg(test)]

@@ -2,7 +2,7 @@
 
 use crate::errors::RefusedError;
 use porter_core::AppId;
-use porter_dbus::sheet::SheetKind;
+use porter_dbus::accounts::sheet::SheetKind;
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex, PoisonError};
 

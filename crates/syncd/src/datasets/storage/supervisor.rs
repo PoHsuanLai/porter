@@ -49,7 +49,7 @@ use crate::scheduler::next_look;
 use crate::service::{Access, DatasetName};
 use porter_client::Transport;
 use porter_core::{AppName, Candidate, EndpointUrl};
-use porter_dbus::DriveState;
+use porter_dbus::sync::DriveState;
 use porter_drive::{CacheLimit, Drive, DriveConfig, FreeSpace, ReplicaSource};
 use porter_drive_fuse::{DriveFs, Mounter, Now};
 use porter_ids::WebUrl;
@@ -498,7 +498,7 @@ where
         }
         let live = Arc::new(LiveDrive::new(
             account.as_str().to_owned(),
-            porter_dbus::names::account_path(&candidate.account),
+            porter_dbus::accounts::account_path(&candidate.account),
             candidate.label.0.clone(),
             provider,
             path.clone(),

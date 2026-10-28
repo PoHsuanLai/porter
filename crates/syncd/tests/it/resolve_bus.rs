@@ -8,9 +8,9 @@ use common::bus::PrivateBus;
 use common::{INVALID_ARGS, Known, NO_FITTING, client, error_name};
 use porter_capability::{Access, Delta, HashKind, StorageCap, StorageScope};
 use porter_core::AppName;
-use porter_dbus::SyncProxy;
 use porter_dbus::callers::CallerRole;
-use porter_dbus::names::{
+use porter_dbus::sync::SyncProxy;
+use porter_dbus::sync::{
     CONFLICT_KEY_NUMBER, RESOLVE_KEEP_LOCAL, RESOLVE_KEEP_REMOTE, SYNC_ERROR_NO_SUCH_CONFLICT,
 };
 use porter_ids::UnixSeconds;

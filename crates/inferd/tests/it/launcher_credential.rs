@@ -12,7 +12,9 @@ use inferd::launcher::LoginTiming;
 use inferd::peers::Role;
 use porter_core::GrantId;
 use porter_core::consent::{Decision, GrantScope};
-use porter_dbus::{LauncherFault, ServiceRoot, refusal_error_name_in};
+use porter_dbus::accounts::ServiceRoot;
+use porter_dbus::accounts::refusal_error_name_in;
+use porter_dbus::inference::LauncherFault;
 use porter_service::audit::{AuditEvent, CredentialEnd};
 use porter_wire::Refusal;
 use rustix::fs::{SealFlags, fcntl_get_seals};
@@ -189,7 +191,7 @@ async fn a_credential_is_refused_unless_every_check_holds() {
     let app = rig.client_as("org.example.App", Role::App).await;
     let stranger = rig.bus.connect().await;
     for connection in [&app, &stranger] {
-        let proxy = porter_dbus::LauncherProxy::new(connection)
+        let proxy = porter_dbus::inference::LauncherProxy::new(connection)
             .await
             .expect("proxy");
         assert_eq!(

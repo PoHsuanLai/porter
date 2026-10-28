@@ -434,7 +434,7 @@ async fn a_daemon_that_errors_on_open_is_not_unreachable() {
     // The connection answers for the objects it serves, none here, once its object server runs.
     let _ = daemon.object_server();
     daemon
-        .request_name(porter_dbus::names::INFERENCE_BUS)
+        .request_name(porter_dbus::inference::INFERENCE_BUS)
         .await
         .expect("name");
     let accounts = Accounts::over(DbusTransport::over(bus.connect().await));

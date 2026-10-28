@@ -1,7 +1,7 @@
 //! `org.quire.Accounts1.Account`, one object per account at `account_path(id)`; readable only
 //! with a grant for it.
 
-use crate::args::Details;
+use crate::Details;
 use porter_dbus_macros::bus_interface;
 use zbus::zvariant::OwnedObjectPath;
 

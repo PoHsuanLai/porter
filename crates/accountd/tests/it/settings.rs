@@ -9,7 +9,7 @@ use common::*;
 use ds_settings::live::{AnyOwner, LiveClient, LiveError, Snapshot};
 use ds_settings::schema::KeyPath;
 use porter_core::{AccountState, SecretKey, SecretPurpose};
-use porter_dbus::IdentitiesProxy;
+use porter_dbus::accounts::IdentitiesProxy;
 use porter_dbus::callers::CallerRole;
 use porter_secrets::{Secrets, SecretsError};
 use porter_service::audit::AuditEvent;

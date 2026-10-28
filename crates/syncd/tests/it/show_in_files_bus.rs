@@ -693,7 +693,7 @@ async fn a_computer_that_cannot_show_the_folder_says_so_and_the_drive_still_list
     let drive = shown(&mut rig).await;
     // The folder is mounted off the runtime's thread: its answer comes a moment later.
     eventually("the drive says it is not shown", async || {
-        drive.state().0 == porter_dbus::DriveState::Error
+        drive.state().0 == porter_dbus::sync::DriveState::Error
     })
     .await;
     let (_, said) = drive.state();
@@ -732,7 +732,7 @@ async fn porter_mountd_is_asked_when_it_listens_and_its_words_are_shown() {
     let drive = shown(&mut rig).await;
     // The folder is mounted off the runtime's thread: its answer comes a moment later.
     eventually("the drive says it is not shown", async || {
-        drive.state().0 == porter_dbus::DriveState::Error
+        drive.state().0 == porter_dbus::sync::DriveState::Error
     })
     .await;
     let (_, said) = drive.state();

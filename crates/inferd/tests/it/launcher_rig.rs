@@ -18,7 +18,7 @@ use porter_core::{
     GrantKey,
     consent::{Decision, Grant, GrantScope, Usage},
 };
-use porter_dbus::LauncherProxy;
+use porter_dbus::inference::LauncherProxy;
 use porter_fake::{
     FakeProvider, MemoryStore, RecordingAudit, Scripted, ScriptedSheets, llm_account, llm_provider,
 };
@@ -163,7 +163,7 @@ impl Rig {
         .await
         .expect("the launcher serves");
         connection
-            .request_name(porter_dbus::names::INFERENCE_BUS)
+            .request_name(porter_dbus::inference::INFERENCE_BUS)
             .await
             .expect("the name");
         Self {

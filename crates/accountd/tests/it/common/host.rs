@@ -73,7 +73,8 @@ impl SheetHost {
 
 /// Sends an `Input` signal from `connection` as the host would.
 pub async fn send_input(connection: &Connection, handle: &str, input: &SheetInput) {
-    let emitter = SignalEmitter::new(connection, porter_dbus::names::SHEET_PATH).expect("emitter");
+    let emitter =
+        SignalEmitter::new(connection, porter_dbus::accounts::SHEET_PATH).expect("emitter");
     let json = serde_json::to_string(input).expect("json");
     emitter
         .emit(

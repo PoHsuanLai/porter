@@ -8,7 +8,7 @@ use common::bus::PrivateBus;
 use porter_capability::StorageScope;
 use porter_core::AuthKind;
 use porter_core::store::Persisted;
-use porter_dbus::IdentitiesProxy;
+use porter_dbus::accounts::IdentitiesProxy;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 
@@ -83,7 +83,11 @@ async fn serving(bus: &PrivateBus, daemon: &mut Daemon) -> bool {
     let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         if dbus
-            .name_has_owner(porter_dbus::names::ACCOUNTS_BUS.try_into().expect("name"))
+            .name_has_owner(
+                porter_dbus::accounts::ACCOUNTS_BUS
+                    .try_into()
+                    .expect("name"),
+            )
             .await
             .unwrap_or(false)
         {

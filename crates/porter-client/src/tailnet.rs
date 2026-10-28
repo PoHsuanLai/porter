@@ -12,9 +12,10 @@
 //! ```
 
 use crate::call_failure::CallFailure;
-use porter_dbus::{
-    BusConnection, BusStream, TailnetChanged, TailnetChangedStream, TailnetProxy, machine_from_dbus,
+use porter_dbus::accounts::{
+    TailnetChanged, TailnetChangedStream, TailnetProxy, machine_from_dbus,
 };
+use porter_dbus::{BusConnection, BusStream};
 use porter_tailscale::Machine;
 use std::pin::Pin;
 use std::task::{Context, Poll};

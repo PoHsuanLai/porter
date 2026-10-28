@@ -15,7 +15,8 @@ use porter_client::credential::{ChildKey, ChildKeyError, CredentialHandle, Deliv
 use porter_client::{Launcher, LauncherError};
 use porter_core::GrantId;
 use porter_core::audit::{CredentialEnd, Handoff};
-use porter_dbus::{BusStream, LauncherFault};
+use porter_dbus::BusStream;
+use porter_dbus::inference::LauncherFault;
 use porter_wire::Refusal;
 use std::io::Read;
 use std::os::fd::AsFd;

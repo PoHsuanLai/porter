@@ -6,8 +6,8 @@ use crate::common;
 
 use common::bus::PrivateBus;
 use common::error_name;
-use porter_dbus::SyncProxy;
-use porter_dbus::names::SYNC_BUS;
+use porter_dbus::sync::SYNC_BUS;
+use porter_dbus::sync::SyncProxy;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 
@@ -134,18 +134,18 @@ async fn accountd_saying_an_account_is_gone_does_not_wipe_syncds_copy() {
     // This connection plays accountd and says the account is gone, to everyone.
     let accountd = bus.connect().await;
     accountd
-        .request_name(porter_dbus::names::ACCOUNTS_BUS)
+        .request_name(porter_dbus::accounts::ACCOUNTS_BUS)
         .await
         .expect("name");
     let path = zbus::zvariant::ObjectPath::try_from(format!(
         "{}/account/a1",
-        porter_dbus::names::ACCOUNTS_PATH
+        porter_dbus::accounts::ACCOUNTS_PATH
     ))
     .expect("path");
     accountd
         .emit_signal(
             None::<zbus::names::BusName<'_>>,
-            porter_dbus::names::ACCOUNTS_PATH,
+            porter_dbus::accounts::ACCOUNTS_PATH,
             "org.quire.Accounts1.Manager",
             "AccountRemoved",
             &(path,),

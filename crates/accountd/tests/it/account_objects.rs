@@ -4,9 +4,9 @@
 use crate::common;
 
 use common::*;
-use porter_dbus::AccountProxy;
+use porter_dbus::accounts::AccountProxy;
+use porter_dbus::accounts::account_path;
 use porter_dbus::callers::CallerRole;
-use porter_dbus::names::account_path;
 use zbus::zvariant::ObjectPath;
 
 async fn proxy_of(

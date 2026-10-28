@@ -31,7 +31,7 @@ use porter_core::store::RegistryStore;
 use porter_core::{AccountId, GrantId, ProviderId};
 use porter_core::{AppId, AppName, DataClass, Isolation};
 use porter_dbus::BusTarget;
-use porter_dbus::names::INFERENCE_BUS;
+use porter_dbus::inference::INFERENCE_BUS;
 use porter_ids::clock::Clock;
 use porter_ids::clock::SystemClock;
 use porter_provider::Provider;

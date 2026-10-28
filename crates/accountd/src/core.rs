@@ -7,8 +7,8 @@ use crate::callers::Callers;
 use crate::host::Host;
 use crate::manager::Manager;
 use crate::state::Core;
-use porter_dbus::names::{ACCOUNTS_BUS, ACCOUNTS_PATH};
-use porter_dbus::{IdentitiesServed, ManagerServed, SpacesServed, TailnetServed};
+use porter_dbus::accounts::{ACCOUNTS_BUS, ACCOUNTS_PATH};
+use porter_dbus::accounts::{IdentitiesServed, ManagerServed, SpacesServed, TailnetServed};
 use porter_families::set::ProviderNames;
 use porter_ids::{clock::Clock, clock::SystemClock};
 use porter_sheets::{AppNames, RequestObjects};
@@ -99,7 +99,10 @@ pub async fn serve_with<H: Host, C: Callers>(
         clock,
         settings: OnceLock::new(),
         open_sheets: crate::open_sheets::OpenSheets::default(),
-        requests: RequestObjects::new(connection.clone(), porter_dbus::ServiceRoot::Accounts),
+        requests: RequestObjects::new(
+            connection.clone(),
+            porter_dbus::accounts::ServiceRoot::Accounts,
+        ),
         spaces: tokio::sync::Mutex::new(spaces),
         tailnet: options.tailnet,
         identity_desk: options.identities,
@@ -117,13 +120,13 @@ pub async fn serve_with<H: Host, C: Callers>(
         .await?;
     server
         .at(
-            porter_dbus::names::SPACES_PATH,
+            porter_dbus::accounts::SPACES_PATH,
             SpacesServed(crate::spaces_object::SpacesObject::new(Arc::clone(&core))),
         )
         .await?;
     server
         .at(
-            porter_dbus::names::IDENTITIES_PATH,
+            porter_dbus::accounts::IDENTITIES_PATH,
             IdentitiesServed(crate::identities_object::IdentitiesObject::new(Arc::clone(
                 &core,
             ))),
@@ -131,7 +134,7 @@ pub async fn serve_with<H: Host, C: Callers>(
         .await?;
     server
         .at(
-            porter_dbus::names::TAILNET_PATH,
+            porter_dbus::accounts::TAILNET_PATH,
             TailnetServed(crate::tailnet_object::TailnetObject::new(Arc::clone(&core))),
         )
         .await?;

@@ -14,8 +14,8 @@ use google_rig::{
     DRIVE_BEARER, FILES_DATASET, Rig, SECRET_ACCESS, SECRET_REFRESH, SEGMENT, client_of,
     eventually, local, rig,
 };
-use porter_dbus::SyncProxy;
-use porter_dbus::names::{
+use porter_dbus::sync::SyncProxy;
+use porter_dbus::sync::{
     CONFLICT_KEY_NUMBER, RESOLVE_KEEP_LOCAL, RESOLVE_KEEP_REMOTE, SYNC_ERROR_NO_SUCH_CONFLICT,
 };
 use std::pin::Pin;

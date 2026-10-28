@@ -27,9 +27,9 @@ use porter_core::{
     GrantKey,
     consent::{Decision, Grant, GrantScope, Usage},
 };
-use porter_dbus::SyncProxy;
 use porter_dbus::callers::CallerRole;
-use porter_dbus::names::STATUS_KEY_QUOTA;
+use porter_dbus::sync::STATUS_KEY_QUOTA;
+use porter_dbus::sync::SyncProxy;
 use porter_fake::FakeProvider;
 use porter_fake_servers::graph::Knobs;
 use porter_fake_servers::{FakeGraph, GraphHandle, Running};

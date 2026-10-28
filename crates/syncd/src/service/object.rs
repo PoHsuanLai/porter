@@ -6,8 +6,9 @@ use super::resolve::{ConfirmError, ConflictNumber, How, SettleError, SyncNowErro
 use super::status::{conflict_details, held_details, progress_details, status_details};
 use crate::scheduler::Pausing;
 use porter_dbus::callers::{Caller, Callers};
-use porter_dbus::names::{SYNC_BUS, SYNC_PATH};
-use porter_dbus::{Call, Details, SyncServed, SyncServer};
+use porter_dbus::sync::{SYNC_BUS, SYNC_PATH};
+use porter_dbus::sync::{SyncServed, SyncServer};
+use porter_dbus::{Call, Details};
 use porter_wire::Refusal;
 use std::collections::BTreeMap;
 use std::pin::Pin;
