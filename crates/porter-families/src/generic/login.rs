@@ -9,10 +9,9 @@
 //!
 //! DAV does not come through here: `dav::discover` already sends a PROPFIND with the password.
 
+use porter_capability::CapabilityKind;
 use porter_core::stream::ByteStream;
-use porter_core::{
-    CapabilityKind, Credential, EndpointProtocol, Reach, RelayAuth, RelayPlan, ServiceEndpoint,
-};
+use porter_core::{Credential, EndpointProtocol, Reach, RelayAuth, RelayPlan, ServiceEndpoint};
 use porter_proxy::{Connect, RelayEnd, RelayFault, RustlsConnect, relay};
 use porter_sheet::SignInFault;
 use std::future::Future;

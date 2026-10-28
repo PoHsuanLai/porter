@@ -1,6 +1,6 @@
 //! Why an account is limited, for the one secondary line Settings shows (design/31 §2.5).
 
-use crate::capability::CapabilityKind;
+use porter_capability::CapabilityKind;
 use porter_ids::{Count, UnixSeconds};
 use serde::{Deserialize, Serialize};
 

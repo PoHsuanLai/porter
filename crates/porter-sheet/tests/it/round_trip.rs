@@ -1,13 +1,14 @@
 //! Every view, input and progress step of the sheet survives its serde form, and the forms other
 //! programs read keep their slugs.
 
-use porter_core::capability::CapabilityKind;
+use porter_capability::CapabilityKind;
+use porter_capability::{AbsentReason, Toggle};
 use porter_core::consent::{AccountChoice, ConsentAnswer, ConsentAsk, Usage};
-use porter_core::{
-    AbsentReason, AccountLabel, AppId, AppLabel, AppName, DataClass, EndpointUrl, Family,
-    Isolation, LauncherSession, LimitReason, LoginName, SecretText, ServiceEndpoint, Tls, Toggle,
-};
 use porter_core::{AccountId, ProviderId};
+use porter_core::{
+    AccountLabel, AppId, AppLabel, AppName, DataClass, EndpointUrl, Family, Isolation,
+    LauncherSession, LimitReason, LoginName, SecretText, ServiceEndpoint, Tls,
+};
 use porter_ids::WebUrl;
 use porter_sheet::{
     Entry, FieldAnswer, FieldKind, FieldProblem, FieldSpec, FieldValue, MarkColour, MarkFace,

@@ -5,7 +5,7 @@
 
 use crate::startup::SUN_PATH;
 use model_http::Port;
-use porter_core::ModelId;
+use porter_capability::ModelId;
 use porter_core::{Locality, NodeId};
 use porter_infer::ComputerName;
 use serde::{Deserialize, Serialize};

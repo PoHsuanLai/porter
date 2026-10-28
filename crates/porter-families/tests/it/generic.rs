@@ -7,9 +7,10 @@ use crate::common;
 
 use common::mail::{MailWorld, Wire};
 use common::{Fakes, Place, all_on, drive, plain, secret};
+use porter_capability::CapabilityKind;
+use porter_capability::Offer;
 use porter_core::AccountId;
-use porter_core::capability::CapabilityKind;
-use porter_core::{Credential, Family, Offer, SecretPurpose, SecretText, Tls};
+use porter_core::{Credential, Family, SecretPurpose, SecretText, Tls};
 use porter_discover::{MxRecord, SrvRecord};
 use porter_fake::FakeServer;
 use porter_fake_servers::net::Bind;
@@ -869,7 +870,7 @@ async fn a_service_the_server_does_not_publish_is_marked_absent() {
         matches!(
             contacts.offer,
             Offer::Absent {
-                reason: porter_core::AbsentReason::NotOnServer,
+                reason: porter_capability::AbsentReason::NotOnServer,
                 ..
             }
         ),

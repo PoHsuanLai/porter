@@ -1,14 +1,14 @@
 //! The registry's state and the pure answers over it: which accounts fit a need, what the
 //! consent store says for each, and the candidates a caller may see.
 
+use porter_capability::{Capability, CapabilityKind, Claim, Offer};
+use porter_capability::{StorageScope, VocabVersion};
 use porter_core::GrantId;
 use porter_core::SpaceScope;
-use porter_core::capability::{StorageScope, VocabVersion};
 use porter_core::consent::{Decision, Grant, GrantKey, Usage, Verdict, decide_key};
 use porter_core::store::{AccountToggle, Persisted};
 use porter_core::{
-    Account, AppId, Candidate, Capability, CapabilityKind, Claim, DataClass, EndpointUrl, Match,
-    Need, Offer, ServiceEndpoint, matches,
+    Account, AppId, Candidate, DataClass, EndpointUrl, Match, Need, ServiceEndpoint, matches,
 };
 use porter_wire::Refusal;
 

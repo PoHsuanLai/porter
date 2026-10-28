@@ -4,7 +4,7 @@
 use super::*;
 use crate::hosting::bus::within;
 use inferd::attached::{Attached, Place, Reach};
-use porter_core::ModelId;
+use porter_capability::ModelId;
 use porter_dbus::{
     Details, InferenceProxy, RunState, RunningModel, RunningRowError, running_from_dbus,
 };

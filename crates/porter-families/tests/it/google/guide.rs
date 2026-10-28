@@ -2,7 +2,7 @@
 //! asks: every scope, those asked only on use included, with the class the code gives it, and the
 //! clients.toml row it reads.
 
-use porter_core::capability::CapabilityKind as K;
+use porter_capability::CapabilityKind as K;
 use porter_families::{Sensitivity, on_use_scopes_of, scope_sensitivity, scopes_of};
 use porter_oauth::{AppReview, ClientRegistry, MailRights};
 use porter_provider::{ClientChannel, Issuer};

@@ -10,8 +10,9 @@
 
 use super::apis_of;
 use super::scopes::Granted;
-use porter_core::capability::{Capability, CapabilityKind};
-use porter_core::{AbsentReason, Claim, EndpointUrl, Family, Offer, Provenance, Subject};
+use porter_capability::{AbsentReason, Claim, Offer, Provenance, Subject};
+use porter_capability::{Capability, CapabilityKind};
+use porter_core::{EndpointUrl, Family};
 use porter_http::http::header::{ACCEPT, AUTHORIZATION};
 use porter_http::http::{Method, Response};
 use porter_http::{Http, SensitiveHeader, request};

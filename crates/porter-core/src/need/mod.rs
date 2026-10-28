@@ -12,7 +12,7 @@ pub use data::{
     IdentityNeed, KeyValueNeed, MailNeed, NotesNeed, PhotosNeed, PimNeed, PushNeed, StorageNeed,
 };
 
-use crate::capability::{CapabilityKind, StorageScope};
+use porter_capability::{CapabilityKind, StorageScope};
 use serde::{Deserialize, Serialize};
 
 /// A capability query: "an account that can do at least this".

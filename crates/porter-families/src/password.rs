@@ -7,9 +7,10 @@
 //! credential itself.
 
 use base64::Engine;
+use porter_capability::CapabilityKind;
+use porter_capability::{Claim, Offer, Provenance, Subject};
 use porter_core::ServiceEndpoint;
-use porter_core::capability::CapabilityKind;
-use porter_core::{Claim, Credential, EndpointUrl, Offer, Provenance, SecretText, Subject, Tls};
+use porter_core::{Credential, EndpointUrl, SecretText, Tls};
 use porter_http::HttpError;
 use porter_http::http::Request;
 use porter_http::http::header::{AUTHORIZATION, HeaderValue};

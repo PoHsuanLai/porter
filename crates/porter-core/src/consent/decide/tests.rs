@@ -1,11 +1,11 @@
 use super::*;
 use crate::AccountId;
 use crate::app_id::{AppId, AppName, Isolation};
-use crate::capability::CapabilityKind;
 use crate::consent::grant::Usage;
 use crate::consent::{Grant, GrantKey};
 use crate::data_class::DataClass;
 use crate::space::{SpaceId, SpaceScope};
+use porter_capability::CapabilityKind;
 use porter_ids::UnixSeconds;
 
 fn key(app: &str, usage: Usage) -> GrantKey {
@@ -19,7 +19,7 @@ fn key(app: &str, usage: Usage) -> GrantKey {
         class: DataClass::Photos,
         usage,
         space: SpaceScope::Any,
-        reach: crate::capability::StorageScope::AppFolder,
+        reach: porter_capability::StorageScope::AppFolder,
     }
 }
 

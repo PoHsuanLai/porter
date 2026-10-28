@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::testing::{Table, respond};
-use porter_core::capability::CapabilityKind;
+use porter_capability::CapabilityKind;
 
 fn url(port: u16, path: &str) -> String {
     format!("http://127.0.0.1:{port}{path}")

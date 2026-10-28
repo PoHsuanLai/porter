@@ -4,7 +4,7 @@ use crate::asker::Asker;
 use crate::choice::ModelRef;
 use crate::ids::Traceparent;
 use crate::place::PlaceId;
-use porter_core::ModelId;
+use porter_capability::ModelId;
 use porter_core::consent::Usage;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

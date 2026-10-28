@@ -3,13 +3,14 @@
 //! tokens are per kind (Microsoft's Graph, Google's APIs) gives a calendar grant a calendar
 //! token and nothing wider (sec-1).
 
+use porter_capability::CapabilityKind;
+use porter_capability::StorageScope;
 use porter_core::GrantId;
-use porter_core::capability::StorageScope;
 use porter_core::consent::{Decision, GrantScope, Usage};
 use porter_core::consent::{Grant, GrantKey};
 use porter_core::{
-    AppId, AppName, Audience, CapabilityKind, Credential, DataClass, Isolation, IssuedToken,
-    RelayAuth, SecretKey, SecretPurpose, SecretText, SpaceScope,
+    AppId, AppName, Audience, Credential, DataClass, Isolation, IssuedToken, RelayAuth, SecretKey,
+    SecretPurpose, SecretText, SpaceScope,
 };
 use porter_fake::{
     FakeProvider, MemoryStore, RecordingAudit, ScriptedSheets, cloud_provider, mail_account,
@@ -73,7 +74,7 @@ impl Provider for Noting {
         &self,
         account: &porter_core::Account,
         presented: &Presented,
-    ) -> Result<Vec<porter_core::Claim>, ProviderError> {
+    ) -> Result<Vec<porter_capability::Claim>, ProviderError> {
         self.inner.discover(account, presented).await
     }
 
@@ -283,7 +284,7 @@ async fn a_token_is_asked_for_as_far_as_the_storage_grant_reaches() {
 
 #[tokio::test]
 async fn a_grant_reaches_as_far_as_the_need_it_was_chosen_for() {
-    use porter_core::capability::{Access, Delta, QuotaReport};
+    use porter_capability::{Access, Delta, QuotaReport};
     use porter_core::need::StorageNeed;
     use porter_fake::Scripted;
     use porter_wire::ParentWindow;

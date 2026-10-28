@@ -3,9 +3,7 @@
 
 use crate::addr::{Addr, Root};
 use crate::json::{DriveInfo, DriveItem};
-use porter_core::capability::{
-    Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope,
-};
+use porter_capability::{Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope};
 use porter_http::http::header::{ACCEPT, HeaderValue, RANGE};
 use porter_http::http::{Method, Request, Response};
 use porter_http::{HeaderText, Http, request};

@@ -5,8 +5,8 @@
 use crate::common;
 
 use common::bus::PrivateBus;
+use porter_capability::StorageScope;
 use porter_core::AuthKind;
-use porter_core::capability::StorageScope;
 use porter_core::store::Persisted;
 use porter_dbus::IdentitiesProxy;
 use std::path::{Path, PathBuf};
@@ -137,7 +137,7 @@ fn seed(home: &Path) {
         key: GrantKey {
             app: probe(),
             account: key.id.clone(),
-            kind: porter_core::CapabilityKind::Llm,
+            kind: porter_capability::CapabilityKind::Llm,
             class: DataClass::Photos,
             usage: Usage::Interactive,
             space: SpaceScope::Any,

@@ -2,7 +2,7 @@
 //! the request was made in, a session scope is recorded only for that session, and ending a
 //! session removes exactly its grants.
 
-use porter_core::capability::LlmFeature;
+use porter_capability::LlmFeature;
 use porter_core::consent::{Decision, GrantScope, Usage};
 use porter_core::need::LlmNeed;
 use porter_core::{AppId, AppName, DataClass, Isolation, LauncherSession, Need};

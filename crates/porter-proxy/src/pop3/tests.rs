@@ -3,9 +3,8 @@ use crate::step::{Effect, Input, RelayEnd, Relaying, Side};
 use crate::testing::{bytewise, sent, whole};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
-use porter_core::{
-    CapabilityKind, EndpointUrl, Family, LoginName, RelayPlan, SecretText, ServiceEndpoint, Tls,
-};
+use porter_capability::CapabilityKind;
+use porter_core::{EndpointUrl, Family, LoginName, RelayPlan, SecretText, ServiceEndpoint, Tls};
 
 fn caps(lines: &[&str]) -> Vec<String> {
     lines.iter().map(|l| (*l).to_owned()).collect()

@@ -1,13 +1,13 @@
 use super::*;
-use crate::capability::{
+use crate::need::AgentNeed;
+use crate::need::{CuaNeed, LlmNeed, MailNeed, PhotosNeed, StorageNeed};
+use porter_capability::fixtures::{llm, mail, storage};
+use porter_capability::{
     Access, Albums, CapabilityKind, Delta, LibraryRead, LlmFeature, Offered, PhotosCap,
     QuotaReport, StorageScope,
 };
-use crate::capability::{AgentCap, AgentProgram, AgentProtocol, EnvName};
-use crate::capability::{CuaBatching, CuaCap, CuaEnv, LlmWire};
-use crate::fixtures::{llm, mail, storage};
-use crate::need::AgentNeed;
-use crate::need::{CuaNeed, LlmNeed, MailNeed, PhotosNeed, StorageNeed};
+use porter_capability::{AgentCap, AgentProgram, AgentProtocol, EnvName};
+use porter_capability::{CuaBatching, CuaCap, CuaEnv, LlmWire};
 use porter_ids::{Px, Tokens};
 
 fn agent(program: &str, base_url_env: Option<&str>, protocols: &[AgentProtocol]) -> Offer {

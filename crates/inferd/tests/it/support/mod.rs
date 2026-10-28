@@ -1,7 +1,8 @@
 //! Scripted seams and a raw client for the session server's tests. The test plays the engine: a
 //! started turn hands the test a sender, and the turn yields whatever the test pushes.
 
-use porter_core::{AccountId, ModelId};
+use porter_capability::ModelId;
+use porter_core::AccountId;
 use porter_core::{DataClass, Locality, Need, Tier};
 use porter_ids::Tokens;
 use porter_infer::{

@@ -1,7 +1,8 @@
 //! Every request and reply survives its serde form, and the forms other programs read keep their
 //! slugs.
 
-use porter_core::capability::{
+use porter_capability::Subject;
+use porter_capability::{
     Access, Capability, CapabilityKind, Delta, HashKind, Offered, QuotaReport, StorageCap,
     StorageScope,
 };
@@ -11,7 +12,7 @@ use porter_core::token::Audience;
 use porter_core::{AccountId, GrantId, ProviderId};
 use porter_core::{
     AccountLabel, AppId, AppName, Candidate, DataClass, EndpointUrl, Isolation, IssuedToken,
-    ProviderHint, Restriction, SecretText, SpaceId, SpaceScope, Subject, TokenKind,
+    ProviderHint, Restriction, SecretText, SpaceId, SpaceScope, TokenKind,
 };
 use porter_ids::UnixSeconds;
 use porter_wire::{AccountsReply, AccountsRequest, ParentWindow, Refusal};

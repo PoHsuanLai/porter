@@ -24,9 +24,8 @@
 //!   has the origin's root as its endpoint.
 
 use crate::registry::serves;
-use porter_core::{
-    Account, CapabilityKind, EndpointUrl, Family, PathReach, Reach, ReachMethods, ServiceEndpoint,
-};
+use porter_capability::CapabilityKind;
+use porter_core::{Account, EndpointUrl, Family, PathReach, Reach, ReachMethods, ServiceEndpoint};
 use porter_provider::ProviderSpec;
 use porter_wire::Refusal;
 

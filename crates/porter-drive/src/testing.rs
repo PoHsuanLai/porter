@@ -5,7 +5,7 @@
 use crate::listing::{Entry, Listing, ListingError};
 use crate::sink::{Sending, Sink};
 use crate::source::{CopyError, Exporting, Fetching, Source, SourceError};
-use porter_core::capability::HashKind;
+use porter_capability::HashKind;
 use porter_ids::{Bytes, UnixSeconds, WebUrl};
 use porter_sync::{
     BaseVersion, Conflict, ContentHash, Found, ItemKind, Place, PutRefused, RemoteId, RemoteSide,

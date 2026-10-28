@@ -1,10 +1,17 @@
-//! The capability vocabulary (design/31 §2): a closed set, versioned as a whole.
+//! The capability vocabulary (design/31 §2): a closed set, versioned as a whole, what an
+//! account offers ([`Offer`], [`Claim`], with their [`Provenance`]) and the effective set once the
+//! person's switches are applied ([`effective`]). Pure values; no I/O.
 
 mod agent;
 mod ai;
 mod cua;
+mod effective;
+#[cfg(any(test, feature = "testing"))]
+pub mod fixtures;
 mod kind;
 mod mail;
+mod model_id;
+mod offer;
 mod photos;
 mod pim;
 mod storage;
@@ -17,8 +24,11 @@ pub use ai::{
     LlmWire, Modality, PrefixText, RerankCap, SpeechCap, SpeechMode,
 };
 pub use cua::{CuaBatching, CuaCap, CuaEnv};
+pub use effective::{KindToggle, Toggle, effective};
 pub use kind::{CapabilityKind, VocabVersion};
 pub use mail::{IdentityCap, LabelModel, MailCap, MailTransport};
+pub use model_id::ModelId;
+pub use offer::{AbsentReason, Claim, Offer, Provenance, Subject};
 pub use photos::{Albums, LibraryRead, PhotosCap};
 pub use pim::{NotesCap, NotesTransport, PimCap, PimTransport};
 pub use storage::{HashKind, StorageCap, StorageScope};

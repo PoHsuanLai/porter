@@ -10,11 +10,11 @@ use crate::progress::{
     Progress, Review, ServiceChoice, ServiceRow, ServiceState, SignInFault, SignInInput, UserCode,
 };
 use crate::view::{FieldProblem, ProblemKind, ProviderKind, ProviderRow, RowKind, SheetView};
+use porter_capability::CapabilityKind;
+use porter_capability::Toggle;
 use porter_core::AccountLabel;
 use porter_core::ProviderHint;
 use porter_core::SecretText;
-use porter_core::Toggle;
-use porter_core::capability::CapabilityKind;
 use proptest::prelude::*;
 
 const SECRET: &str = "hunter2-correct-horse";

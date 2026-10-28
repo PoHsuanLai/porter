@@ -2,7 +2,7 @@ use super::rig::*;
 use crate::dataset::{Dataset, DatasetError, DatasetId, MemoryDataset};
 use crate::engine::{Engine, Outcome};
 use crate::journal::Journal;
-use porter_core::capability::{Delta, HashKind, QuotaReport};
+use porter_capability::{Delta, HashKind, QuotaReport};
 use porter_ids::{Bytes, WebUrl};
 use porter_sync::{
     Acknowledgement, BaseVersion, Blob, Change, ConflictRule, ItemKind, ItemPath, ItemState,

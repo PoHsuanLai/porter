@@ -8,9 +8,7 @@
 use crate::common;
 
 use common::{Replica, Server};
-use porter_core::capability::{
-    Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope,
-};
+use porter_capability::{Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope};
 use porter_fake_servers::graph::Knobs;
 use porter_ids::{Bytes, UnixSeconds};
 use porter_sync::{

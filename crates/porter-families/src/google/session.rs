@@ -16,9 +16,10 @@ use super::env::GoogleEnv;
 use super::probe::{self, whoami};
 use super::reauth::ReauthReason;
 use super::scopes::{Granted, grant_scopes};
+use porter_capability::{Ask, StorageScope};
+use porter_capability::{CapabilityKind, Claim};
 use porter_core::AccountId;
-use porter_core::capability::{Ask, StorageScope};
-use porter_core::{Audience, CapabilityKind, Claim, Credential, Family, IssuedToken, TokenKind};
+use porter_core::{Audience, Credential, Family, IssuedToken, TokenKind};
 use porter_http::Http;
 use porter_ids::UnixSeconds;
 use porter_oauth::{

@@ -8,7 +8,7 @@ mod memory;
 #[cfg(any(test, feature = "testing"))]
 pub use memory::MemoryDataset;
 
-use porter_core::capability::HashKind;
+use porter_capability::HashKind;
 use porter_sync::{Blob, ConflictRule, ContentHash, ItemPath, LocalId, Scanned};
 use sha2::{Digest, Sha256};
 use std::future::Future;

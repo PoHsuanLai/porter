@@ -7,8 +7,8 @@
 //! seeds one). Until then syncd mirrors nothing and says so on standard error, once per kind.
 
 use super::PimKind;
+use porter_capability::{Access, Delta};
 use porter_client::{Accounts, Found, Transport};
-use porter_core::capability::{Access, Delta};
 use porter_core::consent::Usage;
 use porter_core::need::PimNeed;
 use porter_core::{Candidate, Need};

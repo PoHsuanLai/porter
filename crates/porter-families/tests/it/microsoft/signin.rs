@@ -1,9 +1,8 @@
 use super::rig::*;
+use porter_capability::CapabilityKind as K;
+use porter_capability::{AbsentReason, Offer, Provenance, Toggle};
 use porter_core::AccountId;
-use porter_core::capability::CapabilityKind as K;
-use porter_core::{
-    AbsentReason, Credential, Family, Offer, Provenance, SecretPurpose, TenantConsent, Toggle,
-};
+use porter_core::{Credential, Family, SecretPurpose, TenantConsent};
 use porter_fake_servers::{Consent, IssuerEvent, TokenResult};
 use porter_provider::{LoginHint, Provider, SignIn, SignInMode, SignInStart, SignInStep};
 use porter_sheet::{ServiceChoice, SignInFault, SignInInput};
@@ -226,10 +225,10 @@ async fn onedrive_reports_its_quota() {
         .iter()
         .find(|c| c.offer.kind() == K::Storage)
         .expect("storage");
-    let Offer::Present(porter_core::capability::Capability::Storage(cap)) = &storage.offer else {
+    let Offer::Present(porter_capability::Capability::Storage(cap)) = &storage.offer else {
         panic!("present storage")
     };
-    assert_eq!(cap.quota, porter_core::capability::QuotaReport::Reported);
+    assert_eq!(cap.quota, porter_capability::QuotaReport::Reported);
 }
 
 #[tokio::test]

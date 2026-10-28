@@ -33,8 +33,8 @@
 //! Identity: see `porter_rig::fixture`. Test tooling, never installed.
 
 use clap::{Parser, Subcommand};
+use porter_capability::AgentProgram;
 use porter_core::audit::Handoff;
-use porter_core::capability::AgentProgram;
 use porter_core::consent::Usage;
 use porter_core::{AccountId, KeyPermitId, ProviderId};
 use porter_core::{DataClass, IdentityId, LauncherSession};

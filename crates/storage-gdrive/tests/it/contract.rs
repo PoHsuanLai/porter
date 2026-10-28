@@ -7,9 +7,7 @@
 use crate::common;
 
 use common::{Replica, Server};
-use porter_core::capability::{
-    Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope,
-};
+use porter_capability::{Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope};
 use porter_ids::{Bytes, UnixSeconds};
 use porter_sync::{
     BaseVersion, Blob, ByteRange, Change, Conflict, Cursor, ItemPath, MemoryReplica, More, PutItem,

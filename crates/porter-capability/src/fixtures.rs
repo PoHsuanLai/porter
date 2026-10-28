@@ -1,13 +1,15 @@
-//! Capabilities the unit tests build from (test-only).
+//! Capabilities and claims the tests of this crate and of porter-match build from (feature
+//! `testing`; always there in this crate's own tests).
 
-use crate::capability::{
+use crate::offer::{Claim, Offer, Provenance, Subject};
+use crate::{
     Access, Capability, Delta, HashKind, LabelModel, LlmCap, LlmFeature, LlmWire, MailCap,
     MailTransport, Offered, QuotaReport, StorageCap, StorageScope,
 };
-use crate::offer::{Claim, Offer, Provenance, Subject};
 use porter_ids::Tokens;
 
-pub(crate) fn storage(access: Access, delta: Delta, scope: StorageScope) -> Capability {
+/// A storage capability with the given access, change feed and reach.
+pub fn storage(access: Access, delta: Delta, scope: StorageScope) -> Capability {
     Capability::Storage(StorageCap {
         access,
         delta,
@@ -19,7 +21,8 @@ pub(crate) fn storage(access: Access, delta: Delta, scope: StorageScope) -> Capa
     })
 }
 
-pub(crate) fn mail(send: Offered) -> Capability {
+/// A mail capability that offers `send` as given.
+pub fn mail(send: Offered) -> Capability {
     Capability::Mail(MailCap {
         access: Access::ReadWrite,
         send,
@@ -29,7 +32,8 @@ pub(crate) fn mail(send: Offered) -> Capability {
     })
 }
 
-pub(crate) fn llm(features: &[LlmFeature], context: u32) -> Capability {
+/// A language model with the given features and context window.
+pub fn llm(features: &[LlmFeature], context: u32) -> Capability {
     Capability::Llm(LlmCap {
         features: features.iter().copied().collect(),
         context: Tokens(context),
@@ -38,7 +42,8 @@ pub(crate) fn llm(features: &[LlmFeature], context: u32) -> Capability {
     })
 }
 
-pub(crate) fn claim(capability: Capability, provenance: Provenance) -> Claim {
+/// A claim of `capability` made by the account itself, at `provenance`.
+pub fn claim(capability: Capability, provenance: Provenance) -> Claim {
     Claim {
         subject: Subject::Account,
         offer: Offer::Present(capability),

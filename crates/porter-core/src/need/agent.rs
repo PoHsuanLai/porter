@@ -1,6 +1,6 @@
 //! The need for an account that runs an agent program.
 
-use crate::capability::{AgentProgram, AgentProtocol, Offered};
+use porter_capability::{AgentProgram, AgentProtocol, Offered};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 

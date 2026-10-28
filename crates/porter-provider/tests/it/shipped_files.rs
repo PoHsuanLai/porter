@@ -67,8 +67,8 @@ fn a_user_file_replaces_the_system_file_of_the_same_id() {
 
 #[test]
 fn the_microsoft_file_declares_mail_over_imap_and_the_rest_over_graph() {
+    use porter_capability::CapabilityKind as K;
     use porter_core::Family;
-    use porter_core::capability::CapabilityKind as K;
     let spec = shipped()
         .into_iter()
         .map(|(_, spec)| spec)
@@ -139,7 +139,7 @@ fn the_generic_files_declare_what_the_generic_family_finds() {
 
 #[test]
 fn the_openai_compatible_file_is_a_pasted_key_with_no_server_so_the_sign_in_asks() {
-    use porter_core::capability::{Capability, CapabilityKind as K};
+    use porter_capability::{Capability, CapabilityKind as K};
     use porter_core::{AuthKind, Family, Locality};
     use porter_provider::Discovery;
     let spec = shipped_spec("openai-compatible");
@@ -181,7 +181,7 @@ fn the_nextcloud_file_names_the_login_flow_and_no_server() {
 
 #[test]
 fn the_ai_company_files_declare_a_cloud_llm_row_behind_a_pasted_key() {
-    use porter_core::capability::CapabilityKind as K;
+    use porter_capability::CapabilityKind as K;
     use porter_core::{AuthKind, Family, Locality};
     use porter_provider::Discovery;
     for (id, label, family, endpoint) in [
@@ -333,8 +333,8 @@ fn the_compiled_in_files_are_the_whole_providers_directory_byte_for_byte() {
 
 #[test]
 fn only_microsofts_storage_rows_declare_linked_origins_the_app_folder_at_sign_in() {
-    use porter_core::capability::{Ask, StorageScope};
-    use porter_core::{Capability, CapabilityKind};
+    use porter_capability::{Ask, StorageScope};
+    use porter_capability::{Capability, CapabilityKind};
     type Row = (
         String,
         CapabilityKind,
@@ -382,8 +382,8 @@ fn only_microsofts_storage_rows_declare_linked_origins_the_app_folder_at_sign_in
 
 #[test]
 fn a_whole_drive_is_asked_only_on_use() {
-    use porter_core::Capability;
-    use porter_core::capability::{Ask, StorageScope};
+    use porter_capability::Capability;
+    use porter_capability::{Ask, StorageScope};
     for (_, spec) in shipped() {
         let id = spec.id.as_str();
         for row in &spec.capabilities {
@@ -397,7 +397,7 @@ fn a_whole_drive_is_asked_only_on_use() {
         // A grant of the app folder is served by the app-folder row asked at sign-in, a grant
         // of the whole store by the on-use row.
         if matches!(id, "google" | "microsoft") {
-            use porter_core::CapabilityKind as K;
+            use porter_capability::CapabilityKind as K;
             assert_eq!(
                 spec.ask_for(K::Storage, StorageScope::AppFolder),
                 Some(Ask::SignIn),
@@ -419,8 +419,8 @@ fn a_whole_drive_is_asked_only_on_use() {
 
 #[test]
 fn ask_reads_on_use_and_is_sign_in_when_left_out() {
-    use porter_core::CapabilityKind as K;
-    use porter_core::capability::{Ask, StorageScope};
+    use porter_capability::CapabilityKind as K;
+    use porter_capability::{Ask, StorageScope};
     let spec = porter_provider::parse_provider(
         r#"
 id = "asks"
@@ -495,8 +495,9 @@ fn the_generic_files_make_generic_rows_and_every_other_file_a_provider_row() {
 
 #[test]
 fn the_agent_files_hold_no_secret_and_name_their_program_and_variables() {
-    use porter_core::capability::{AgentProtocol as P, CapabilityKind as K};
-    use porter_core::{AuthKind, Capability, Family};
+    use porter_capability::Capability;
+    use porter_capability::{AgentProtocol as P, CapabilityKind as K};
+    use porter_core::{AuthKind, Family};
     use porter_provider::Discovery;
     // (id, program, key variable, base-url variable, protocols)
     type Row = (
@@ -565,8 +566,8 @@ fn the_agent_files_hold_no_secret_and_name_their_program_and_variables() {
 
 #[test]
 fn a_key_provider_names_the_agent_programs_that_may_use_its_key() {
-    use porter_core::Capability;
-    use porter_core::capability::CapabilityKind as K;
+    use porter_capability::Capability;
+    use porter_capability::CapabilityKind as K;
     // Every key provider's named programs, by file id; a key file that names none is listed empty.
     let named = |id: &str| -> Vec<String> {
         shipped_spec(id)

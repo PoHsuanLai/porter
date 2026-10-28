@@ -345,9 +345,8 @@ impl World {
         for model in &mut models {
             if plan.hears.contains(&model.entry.id.0.as_str()) {
                 for capability in &mut model.card.capabilities {
-                    if let porter_core::Capability::Llm(llm) = capability {
-                        llm.features
-                            .insert(porter_core::capability::LlmFeature::AudioIn);
+                    if let porter_capability::Capability::Llm(llm) = capability {
+                        llm.features.insert(porter_capability::LlmFeature::AudioIn);
                     }
                 }
             }
@@ -477,7 +476,7 @@ impl World {
                     model: card.model.clone(),
                 }))
                 .chain(catalog.entries.iter().flat_map(|entry| {
-                    let model = porter_core::ModelId::parse(&entry.id.0).ok();
+                    let model = porter_capability::ModelId::parse(&entry.id.0).ok();
                     [local.clone(), cloud.clone()]
                         .into_iter()
                         .filter_map(move |account| {

@@ -12,8 +12,8 @@ use hosting::engine::{Chat, Script};
 use hosting::entries;
 use hosting::rig::{Hosted, Plan, Trust, World};
 use inferd::settings::{ConfigFile, InferdSettings, Reload, SpendLine, serve_settings};
+use porter_capability::LlmFeature;
 use porter_client::InferSession;
-use porter_core::capability::LlmFeature;
 use porter_core::consent::Usage;
 use porter_core::need::LlmNeed;
 use porter_core::{AppId, AppName, DataClass, Isolation, Need, Tier};
@@ -990,7 +990,7 @@ async fn a_picked_hosted_model_is_served_through_the_account_the_app_is_granted(
         tier: Tier::Balanced,
         model: porter_infer::ModelRef {
             account: porter_core::AccountId::parse("cloud").expect("id"),
-            model: porter_core::ModelId::parse("kimi-k3").expect("id"),
+            model: porter_capability::ModelId::parse("kimi-k3").expect("id"),
         },
     });
     world.served.apply(settings);

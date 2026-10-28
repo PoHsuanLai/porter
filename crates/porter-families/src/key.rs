@@ -9,12 +9,13 @@
 //! ([`own_server`]) and the key, which such a server may not need, is kept as an empty key when
 //! there is none, so the account always has its one secret. An empty key is presented as no key.
 
+use porter_capability::Capability;
+use porter_capability::CapabilityKind;
+use porter_capability::{Claim, Offer, Provenance, Subject};
 use porter_core::AccountId;
-use porter_core::Capability;
-use porter_core::capability::CapabilityKind;
 use porter_core::{
-    AccountLabel, Audience, Claim, Credential, EndpointUrl, Family, IssuedToken, Offer, Provenance,
-    Restriction, SecretPurpose, SecretText, ServiceEndpoint, Subject,
+    AccountLabel, Audience, Credential, EndpointUrl, Family, IssuedToken, Restriction,
+    SecretPurpose, SecretText, ServiceEndpoint,
 };
 use porter_http::http::Method;
 use porter_http::http::header::{ACCEPT, AUTHORIZATION, HeaderName};

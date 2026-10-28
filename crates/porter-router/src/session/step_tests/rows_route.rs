@@ -11,7 +11,7 @@ use porter_infer::{
 fn old() -> ModelRef {
     ModelRef {
         account: porter_core::AccountId::parse("local").expect("id"),
-        model: porter_core::ModelId::parse("old").expect("id"),
+        model: porter_capability::ModelId::parse("old").expect("id"),
     }
 }
 

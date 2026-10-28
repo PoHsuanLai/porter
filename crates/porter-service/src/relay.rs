@@ -9,11 +9,12 @@ use crate::ctx::Ctx;
 use crate::reach::{Declared, declared_endpoint, reach_for};
 use crate::sheets::Sheets;
 use crate::token::{secret_purpose, secrets_refusal};
+use porter_capability::CapabilityKind;
+use porter_capability::StorageScope;
 use porter_core::GrantId;
-use porter_core::capability::StorageScope;
 use porter_core::{
-    Account, AccountState, AppId, Audience, CapabilityKind, Credential, EndpointUrl, Family,
-    RelayAuth, RelayPlan, SecretKey, SecretPurpose, SecretText, ServiceEndpoint, TokenKind,
+    Account, AccountState, AppId, Audience, Credential, EndpointUrl, Family, RelayAuth, RelayPlan,
+    SecretKey, SecretPurpose, SecretText, ServiceEndpoint, TokenKind,
 };
 use porter_ids::clock::Clock;
 use porter_provider::Provider;

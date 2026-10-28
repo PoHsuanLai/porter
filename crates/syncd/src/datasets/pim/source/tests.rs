@@ -1,7 +1,8 @@
 use super::*;
-use porter_core::capability::{Access, Delta, Offered, PimCap};
+use porter_capability::Subject;
+use porter_capability::{Access, Delta, Offered, PimCap};
 use porter_core::{AccountId, GrantId, ProviderId};
-use porter_core::{AccountLabel, EndpointUrl, Family, LoginName, Restriction, Subject, Tls};
+use porter_core::{AccountLabel, EndpointUrl, Family, LoginName, Restriction, Tls};
 
 fn cap(transport: PimTransport) -> PimCap {
     PimCap {

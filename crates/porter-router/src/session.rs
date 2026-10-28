@@ -9,7 +9,7 @@
 //! run's progress (a step before a begin is refused) and the one request that may queue behind
 //! a running turn.
 
-use porter_core::capability::SpeechMode;
+use porter_capability::SpeechMode;
 use porter_core::consent::Usage;
 use porter_core::{DataClass, Need, Tier};
 use porter_infer::{
@@ -301,7 +301,7 @@ mod step_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_core::capability::CuaEnv;
+    use porter_capability::CuaEnv;
     use porter_core::need::{CuaNeed, DimsNeed, EmbedNeed, LlmNeed, SpeechNeed};
     use porter_ids::Tokens;
 

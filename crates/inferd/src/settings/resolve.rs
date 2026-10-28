@@ -40,7 +40,7 @@ pub fn parse_model(text: &str) -> Option<ModelRef> {
     let (account, model) = text.split_once('/')?;
     Some(ModelRef {
         account: porter_core::AccountId::parse(account).ok()?,
-        model: porter_core::ModelId::parse(model).ok()?,
+        model: porter_capability::ModelId::parse(model).ok()?,
     })
 }
 

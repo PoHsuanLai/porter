@@ -3,8 +3,8 @@
 //! runs on a computer), never guessed from its name; a model whose capabilities say nothing about
 //! text is [`Takes::Unknown`] and gets no words.
 
-use porter_core::Capability;
-use porter_core::capability::LlmFeature;
+use porter_capability::Capability;
+use porter_capability::LlmFeature;
 use serde::{Deserialize, Serialize};
 
 /// What a model reads or hears, besides how it answers.
@@ -128,7 +128,7 @@ pub const NO_MODEL_SEES_SCREEN: &str =
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_core::capability::{CuaBatching, CuaCap, CuaEnv, LlmCap, LlmWire, Offered};
+    use porter_capability::{CuaBatching, CuaCap, CuaEnv, LlmCap, LlmWire, Offered};
     use porter_ids::{Px, Tokens};
 
     fn llm(features: &[LlmFeature]) -> Capability {

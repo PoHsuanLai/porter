@@ -2,11 +2,10 @@
 
 use crate::found::{DiscoverFault, Found, Source};
 use crate::mail::mail_claim;
-use porter_core::capability::{Access, Capability, CapabilityKind, Delta, MailTransport, Offered};
-use porter_core::capability::{PimCap, PimTransport};
-use porter_core::{
-    Claim, EndpointUrl, Family, LoginName, Offer, Provenance, ServiceEndpoint, Subject, Tls,
-};
+use porter_capability::{Access, Capability, CapabilityKind, Delta, MailTransport, Offered};
+use porter_capability::{Claim, Offer, Provenance, Subject};
+use porter_capability::{PimCap, PimTransport};
+use porter_core::{EndpointUrl, Family, LoginName, ServiceEndpoint, Tls};
 use porter_http::http::{Method, Response};
 use porter_http::{HeaderText, Http, request_to};
 use porter_provider::DomainName;

@@ -1,6 +1,6 @@
 use super::*;
 use crate::entries;
-use porter_core::capability::{Capability, LlmFeature};
+use porter_capability::{Capability, LlmFeature};
 use porter_core::consent::GrantScope;
 use porter_router::catalog::{CatalogDirs, parse_entry_text, read_catalog};
 use std::path::PathBuf;

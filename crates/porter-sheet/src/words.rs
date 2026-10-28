@@ -4,7 +4,7 @@
 //! these. What a daemon's settings page or the add-account sheet shows comes from here.
 
 use crate::ProviderGroup;
-use porter_core::capability::{Access, Capability, CapabilityKind, StorageCap, StorageScope};
+use porter_capability::{Access, Capability, CapabilityKind, StorageCap, StorageScope};
 
 /// The group as a person reads it, the heading of its part of the page.
 pub fn group_heading(group: ProviderGroup) -> &'static str {
@@ -61,7 +61,7 @@ pub fn access_words(capability: &Capability) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_core::capability::{Delta, HashKind, Offered, QuotaReport};
+    use porter_capability::{Delta, HashKind, Offered, QuotaReport};
 
     fn storage(scope: StorageScope, access: Access) -> Capability {
         Capability::Storage(StorageCap {

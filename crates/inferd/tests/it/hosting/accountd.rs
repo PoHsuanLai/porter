@@ -11,11 +11,12 @@ use inferd::cloud::own::{OWN_PROVIDER, OwnServer};
 use inferd::probe::Runtime;
 use inferd::probed::Standing as Probed;
 use inferd::report::{ReportFault, Reports};
+use porter_capability::Claim;
 use porter_core::consent::{GrantScope, Usage, Verdict};
 use porter_core::{AccountId, GrantId};
 use porter_core::{
-    AccountState, AppId, Claim, DataClass, EndpointUrl, Family, LoginName, SecretText,
-    ServiceEndpoint, Tls,
+    AccountState, AppId, DataClass, EndpointUrl, Family, LoginName, SecretText, ServiceEndpoint,
+    Tls,
 };
 use std::sync::{Arc, Mutex};
 use tokio::sync::Notify;

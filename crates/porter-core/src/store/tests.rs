@@ -3,11 +3,11 @@ use crate::app_id::{AppName, Isolation};
 use crate::consent::{Decision, GrantKey, GrantScope, Usage};
 use crate::endpoint::{LoginName, ServiceEndpoint, Tls};
 use crate::launcher_session::LauncherSession;
-use crate::offer::{Claim, Offer, Provenance, Subject};
 use crate::restriction::{Restriction, TokenLifetime};
 use crate::space::SpaceScope;
 use crate::{AccountLabel, AccountState, AppId, AuthKind, DataClass, EndpointUrl, Family};
 use crate::{GrantId, ProviderId};
+use porter_capability::{Claim, Offer, Provenance, Subject};
 use porter_ids::UnixSeconds;
 
 fn account(endpoints: Vec<ServiceEndpoint>) -> Account {
@@ -21,7 +21,7 @@ fn account(endpoints: Vec<ServiceEndpoint>) -> Account {
             subject: Subject::Account,
             offer: Offer::Absent {
                 kind: CapabilityKind::Notes,
-                reason: crate::AbsentReason::NotOnServer,
+                reason: porter_capability::AbsentReason::NotOnServer,
             },
             provenance: Provenance::Probed,
         }],
@@ -57,7 +57,7 @@ fn filled() -> Persisted {
                 class: DataClass::Photos,
                 usage: Usage::Interactive,
                 space: SpaceScope::Any,
-                reach: crate::capability::StorageScope::AppFolder,
+                reach: porter_capability::StorageScope::AppFolder,
             },
             decision: Decision::Allow,
             scope: GrantScope::Always,

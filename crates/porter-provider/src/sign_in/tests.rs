@@ -1,9 +1,10 @@
 use super::*;
-use porter_core::capability::{
+use porter_capability::{AbsentReason, Provenance, Subject};
+use porter_capability::{
     Access, Capability, CapabilityKind, Delta, HashKind, Offered, QuotaReport, StorageCap,
     StorageScope,
 };
-use porter_core::{AbsentReason, Limit, LimitReason, Provenance, SecretText, Subject};
+use porter_core::{Limit, LimitReason, SecretText};
 
 fn storage_claim() -> Claim {
     Claim {

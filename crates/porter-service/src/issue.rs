@@ -7,12 +7,12 @@ use crate::audit::{AuditEvent, AuditSink};
 use crate::ctx::Ctx;
 use crate::sheets::Sheets;
 use crate::token::{provider_refusal, secret_purpose, secrets_refusal};
-use porter_core::capability::StorageScope;
+use porter_capability::CapabilityKind;
+use porter_capability::StorageScope;
 use porter_core::consent::GrantScope;
 use porter_core::store::RegistryStore;
 use porter_core::{
-    Account, AccountState, AppId, Audience, CapabilityKind, Credential, IssuedToken, SecretKey,
-    SecretPurpose,
+    Account, AccountState, AppId, Audience, Credential, IssuedToken, SecretKey, SecretPurpose,
 };
 use porter_core::{AccountId, GrantId};
 use porter_ids::clock::Clock;

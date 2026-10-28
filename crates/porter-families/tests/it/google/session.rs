@@ -1,8 +1,9 @@
 use super::rig::*;
+use porter_capability::CapabilityKind as K;
+use porter_capability::Offer;
+use porter_capability::StorageScope;
 use porter_core::AccountId;
-use porter_core::capability::CapabilityKind as K;
-use porter_core::capability::StorageScope;
-use porter_core::{Credential, Offer, SecretText, TokenKind};
+use porter_core::{Credential, SecretText, TokenKind};
 use porter_fake_servers::IssuerEvent;
 use porter_families::ReauthReason;
 use porter_ids::UnixSeconds;

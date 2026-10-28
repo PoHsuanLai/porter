@@ -6,11 +6,9 @@ use crate::io::Io;
 use crate::password::{authorize, basic, endpoint, fault_of, join};
 use dav_proto::Depth;
 use dav_proto::names::CURRENT_USER_PRINCIPAL;
-use porter_core::capability::CapabilityKind;
-use porter_core::{
-    AbsentReason, Claim, EndpointUrl, Family, LoginName, Offer, Provenance, SecretText,
-    ServiceEndpoint, Subject,
-};
+use porter_capability::CapabilityKind;
+use porter_capability::{AbsentReason, Claim, Offer, Provenance, Subject};
+use porter_core::{EndpointUrl, Family, LoginName, SecretText, ServiceEndpoint};
 use porter_dav::propfind;
 use porter_discover::well_known_found;
 use porter_http::http::Method;

@@ -12,7 +12,7 @@ use crate::engines::Engines;
 use crate::supervise::Supervised;
 use model_catalog::EngineKind;
 use model_provider::{Flow as ProviderFlow, ModelName, ProviderError};
-use porter_core::capability::LanguageTag;
+use porter_capability::LanguageTag;
 use porter_infer::{
     ChatSink, Flow, HeardDelta, InferEvent, LangPick, ModelError, ModelRef, ServedBy, Stage,
     TranscribeBegin, TranscribeMode, TranscribeReply,

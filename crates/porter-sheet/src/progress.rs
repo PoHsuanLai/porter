@@ -2,11 +2,11 @@
 //! `SignInStep`, and its `SignInInput`.
 
 use super::fields::{FieldAnswer, FieldSpec};
-use porter_core::AbsentReason;
+use porter_capability::AbsentReason;
+use porter_capability::CapabilityKind;
+use porter_capability::Toggle;
 use porter_core::AccountLabel;
 use porter_core::LimitReason;
-use porter_core::Toggle;
-use porter_core::capability::CapabilityKind;
 use porter_core::{EndpointUrl, ServiceEndpoint};
 use porter_ids::WebUrl;
 use serde::{Deserialize, Serialize};

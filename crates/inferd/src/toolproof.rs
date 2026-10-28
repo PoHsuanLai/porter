@@ -11,8 +11,8 @@
 //! The results are a cache in `tool-proofs.json` beside the audit trail: model ids and a word,
 //! never a prompt. A file that cannot be read is an empty cache, and the checks run again.
 
+use porter_capability::LlmFeature;
 use porter_core::Need;
-use porter_core::capability::LlmFeature;
 use porter_fs::atomic::AtomicWrite;
 use porter_infer::{InferReply, ModelError, ModelRef, ServedBy, ToolProof, Why};
 use porter_router::carried::Carried;

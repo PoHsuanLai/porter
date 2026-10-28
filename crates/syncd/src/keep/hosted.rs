@@ -2,11 +2,12 @@
 //! identities it continues as ([`Directory`]) and the sheets it draws ([`SyncSheets`]).
 
 use super::classes::sync_app;
+use porter_capability::CapabilityKind;
 use porter_client::{Identities, IdentitiesError};
 use porter_core::ProviderHint;
 use porter_core::consent::{ConsentAnswer, ConsentAsk, GrantScope};
 use porter_core::store::RegistryStore;
-use porter_core::{Account, CapabilityKind, IdentityAddress, IdentityId};
+use porter_core::{Account, IdentityAddress, IdentityId};
 use porter_core::{AccountId, ProviderId};
 use porter_ids::clock::Clock;
 use porter_provider::Provider;

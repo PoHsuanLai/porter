@@ -6,7 +6,7 @@
 use crate::support;
 
 use inferd::serve::serve_session;
-use porter_core::capability::{CuaEnv, SpeechMode};
+use porter_capability::{CuaEnv, SpeechMode};
 use porter_core::consent::Usage;
 use porter_core::need::{CuaNeed, SpeechNeed};
 use porter_core::{DataClass, Need, Tier};

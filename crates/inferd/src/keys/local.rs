@@ -10,13 +10,11 @@ use crate::cloud::own::{OWN_PROVIDER, OwnServer};
 use crate::probe::Runtime;
 use crate::probed::Standing;
 use crate::report::{ReportFault, Reports};
-use porter_core::capability::StorageScope;
+use porter_capability::StorageScope;
+use porter_capability::{CapabilityKind, Claim, Offer};
 use porter_core::consent::{Decision, GrantKey, Usage, decide_key};
 use porter_core::{AccountId, GrantId, ProviderId};
-use porter_core::{
-    AccountState, AppId, CapabilityKind, Claim, DataClass, Match, Offer, SecretText, SpaceScope,
-    matches,
-};
+use porter_core::{AccountState, AppId, DataClass, Match, SecretText, SpaceScope, matches};
 use porter_families::set::ProviderNames;
 use porter_service::LocalFault;
 use porter_wire::Refusal;

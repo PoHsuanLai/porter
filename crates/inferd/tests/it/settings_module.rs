@@ -14,8 +14,9 @@ use inferd::peers::{Caller, Role, TablePeers};
 use inferd::service::{Inference, serve_with_settings};
 use inferd::settings::{ConfigFile, InferdSettings, Reload};
 use inferd::supervise::Supervised;
-use porter_core::capability::{Capability, LlmCap, LlmFeature, LlmWire};
-use porter_core::{AccountId, ModelId};
+use porter_capability::ModelId;
+use porter_capability::{Capability, LlmCap, LlmFeature, LlmWire};
+use porter_core::AccountId;
 use porter_core::{AppId, AppName, Billing, Isolation, Locality};
 use porter_dbus::InferenceProxy;
 use porter_dbus::names::{INFERENCE_BUS, INFERENCE_PATH, INFERENCE_SETTINGS_PATH};
@@ -341,8 +342,8 @@ async fn a_model_of_a_probed_runtime_is_listed_under_this_computer_and_stays_lis
 {
     use inferd::probe::{Found, Probed, Runtime};
     use inferd::probed::Standing;
-    use porter_core::capability::{Capability, LlmCap, LlmFeature, LlmWire};
-    use porter_core::{Claim, Offer, Provenance, Subject};
+    use porter_capability::{Capability, LlmCap, LlmFeature, LlmWire};
+    use porter_capability::{Claim, Offer, Provenance, Subject};
     use porter_ids::Tokens;
     let id = ModelId::parse("llama3.2-3b").expect("id");
     let found = Found {

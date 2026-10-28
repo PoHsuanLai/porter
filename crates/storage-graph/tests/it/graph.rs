@@ -439,7 +439,7 @@ async fn without_the_relays_bearer_every_request_is_refused_and_the_replica_neve
 
 #[tokio::test]
 async fn the_features_say_what_the_replica_does() {
-    use porter_core::capability::{Access, Delta, HashKind, Offered, QuotaReport, StorageScope};
+    use porter_capability::{Access, Delta, HashKind, Offered, QuotaReport, StorageScope};
     let server = Server::start().await;
     let features = server.replica("", 50, Uploads::default()).features();
     assert_eq!(features.access, Access::ReadWrite);

@@ -2,9 +2,10 @@
 //! the seam accountd serves over the bus ([`Launchers`]), which programs have a launcher
 //! ([`Roster`]), and the program an agent account or provider file runs.
 
+use porter_capability::AgentProgram;
+use porter_capability::{Capability, Offer, Subject};
 use porter_core::AccountId;
-use porter_core::capability::AgentProgram;
-use porter_core::{Account, Capability, LoginFault, LoginOutcome, Offer, Subject};
+use porter_core::{Account, LoginFault, LoginOutcome};
 use porter_sheet::SignInFault;
 use std::future::Future;
 use std::pin::Pin;

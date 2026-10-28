@@ -2,9 +2,10 @@
 //! few things Settings and the local-runtime report do to it. [`AccountService`] is the
 //! implementation; the trait keeps the bus objects free of its six type parameters.
 
+use porter_capability::{CapabilityKind, Claim, Toggle};
 use porter_core::store::RegistryStore;
 use porter_core::{AccountId, GrantId, ProviderId};
-use porter_core::{AccountState, AgentState, AppId, Candidate, CapabilityKind, Claim, Toggle};
+use porter_core::{AccountState, AgentState, AppId, Candidate};
 use porter_ids::clock::Clock;
 use porter_provider::Provider;
 use porter_secrets::{Secrets, SecretsError};

@@ -16,7 +16,7 @@ use hosting::tailnet::{Addresses, Seen, TailnetPlan, addresses, free_port, netwo
 use inferd::attached::{Attached, Place, Reach};
 use inferd::peers::Role;
 use inferd::settings::TailnetServe;
-use porter_core::ModelId;
+use porter_capability::ModelId;
 use porter_core::{AppId, AppName, DataClass, Isolation, Tier};
 use porter_dbus::names::{CANDIDATE_KEY_MODELS, CANDIDATE_KEY_NEEDS_APPROVAL, GUEST_KEY_STATE};
 use porter_dbus::{Details, InferenceProxy};
@@ -195,9 +195,9 @@ fn place(text: &str) -> PlaceId {
 
 mod chat {
     use super::*;
+    use porter_capability::LlmFeature;
     use porter_client::InferSession;
     use porter_core::Need;
-    use porter_core::capability::LlmFeature;
     use porter_core::consent::Usage;
     use porter_core::need::LlmNeed;
     use porter_ids::Tokens;

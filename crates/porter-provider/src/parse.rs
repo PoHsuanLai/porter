@@ -3,7 +3,8 @@
 
 use crate::error::ProviderFileError;
 use crate::spec::ProviderSpec;
-use porter_core::{AuthKind, Capability, CapabilityKind, Family};
+use porter_capability::{Capability, CapabilityKind};
+use porter_core::{AuthKind, Family};
 
 /// The provider declared by one file's text, or why it is refused.
 pub fn parse_provider(text: &str) -> Result<ProviderSpec, ProviderFileError> {

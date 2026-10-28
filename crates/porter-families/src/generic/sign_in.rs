@@ -7,8 +7,9 @@ use super::mail::{self, Looked, Vouched};
 use super::{dav, jmap};
 use crate::io::{Io, SharedDns};
 use crate::password::{parse_server, password_for, plain, text_of, typed_password};
+use porter_capability::Claim;
 use porter_core::{
-    AccountLabel, Claim, Credential, Family, LoginName, Restriction, SecretPurpose, SecretText,
+    AccountLabel, Credential, Family, LoginName, Restriction, SecretPurpose, SecretText,
     ServiceEndpoint,
 };
 use porter_provider::{ProviderSet, ProviderSpec, SignIn, SignInMode, SignInStep, Signed};

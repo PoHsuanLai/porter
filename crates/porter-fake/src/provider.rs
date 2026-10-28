@@ -1,9 +1,10 @@
 //! A provider that answers from its declaration and mints predictable tokens.
 
+use porter_capability::{Claim, Offer, Provenance, Subject};
 use porter_core::AccountId;
 use porter_core::{
-    Account, AccountLabel, Audience, Claim, Credential, IssuedToken, Offer, Provenance,
-    Restriction, SecretPurpose, SecretText, Subject, TokenKind,
+    Account, AccountLabel, Audience, Credential, IssuedToken, Restriction, SecretPurpose,
+    SecretText, TokenKind,
 };
 use porter_ids::UnixSeconds;
 use porter_provider::{

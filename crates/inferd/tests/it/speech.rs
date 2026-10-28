@@ -12,8 +12,8 @@ use hosting::entries;
 use hosting::rig::{Plan, SpeechPlan, World};
 use inferd::runner::{Pin, Pinned, Turns};
 use inferd::speech::Ears;
+use porter_capability::SpeechMode;
 use porter_client::{Accounts, ClientError, DbusSession, DbusTransport, InferSession};
-use porter_core::capability::SpeechMode;
 use porter_core::consent::Usage;
 use porter_core::need::SpeechNeed;
 use porter_core::{DataClass, Need, Tier};
@@ -404,7 +404,7 @@ async fn a_hear_then_answer_pipeline_hears_on_the_speech_host_and_answers_on_a_t
         answer: Answer::Text,
     };
     let need = Need::Llm(porter_core::need::LlmNeed::new(
-        [porter_core::capability::LlmFeature::Chat].into(),
+        [porter_capability::LlmFeature::Chat].into(),
         porter_ids::Tokens(1000),
     ));
     let planned = plan(

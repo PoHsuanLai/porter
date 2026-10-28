@@ -12,10 +12,11 @@
 
 pub mod placed;
 
-use porter_core::capability::LlmFeature;
-use porter_core::{Capability, DataClass, Locality, Need, Tier};
+use porter_capability::Capability;
+use porter_capability::LlmFeature;
+use porter_capability::{Offer as CoreOffer, SpeechMode};
+use porter_core::{DataClass, Locality, Need, Tier};
 use porter_core::{Match, matches};
-use porter_core::{Offer as CoreOffer, capability::SpeechMode};
 use porter_infer::{
     AutoPolicy, Chosen, Declined, DeclinedBecause, InferRefusal, LicenceClass, ModelCard, ModelRef,
     Permit, Pick, PickCandidate, PickPolicy, PickRefusal, Policy, ProviderId, Readiness, RouteAsk,

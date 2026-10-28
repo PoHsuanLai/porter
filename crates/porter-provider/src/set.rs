@@ -1,9 +1,10 @@
 //! The installed providers: the system's files, overlaid by the user's (user files win).
 
 use crate::spec::{DomainMatch, DomainName, ProviderSpec};
+use porter_capability::Offer;
 use porter_core::ProviderId;
 use porter_core::consent::Catalog;
-use porter_core::{Match, Need, Offer, matches};
+use porter_core::{Match, Need, matches};
 
 /// Every provider accountd knows, by id.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

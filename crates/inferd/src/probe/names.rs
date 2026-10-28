@@ -8,8 +8,8 @@
 //! lists one name and the probe found one model, they are the same model.
 
 use super::{Probed, Runtime, model_of};
-use porter_core::Claim;
-use porter_core::ModelId;
+use porter_capability::Claim;
+use porter_capability::ModelId;
 use porter_http::http::Method;
 use porter_http::{Http, request};
 use porter_ids::WebUrl;

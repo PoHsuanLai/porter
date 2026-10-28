@@ -1,9 +1,7 @@
 use super::rig::*;
-use porter_core::capability::CapabilityKind as K;
-use porter_core::{
-    AbsentReason, Credential, Family, LimitReason, Offer, Provenance, SecretPurpose, Toggle,
-    TokenLifetime, Verification,
-};
+use porter_capability::CapabilityKind as K;
+use porter_capability::{AbsentReason, Offer, Provenance, Toggle};
+use porter_core::{Credential, Family, LimitReason, SecretPurpose, TokenLifetime, Verification};
 use porter_fake_servers::{Consent, IssuerEvent, TokenResult};
 use porter_ids::Count;
 use porter_provider::{
@@ -32,7 +30,12 @@ async fn to_review_from(
     (signin, step)
 }
 
-fn review(step: SignInStep) -> (Vec<porter_core::Claim>, Vec<porter_core::ServiceEndpoint>) {
+fn review(
+    step: SignInStep,
+) -> (
+    Vec<porter_capability::Claim>,
+    Vec<porter_core::ServiceEndpoint>,
+) {
     let SignInStep::Review {
         claims, endpoints, ..
     } = step
@@ -42,7 +45,7 @@ fn review(step: SignInStep) -> (Vec<porter_core::Claim>, Vec<porter_core::Servic
     (claims, endpoints)
 }
 
-fn offer_of(claims: &[porter_core::Claim], kind: K) -> &Offer {
+fn offer_of(claims: &[porter_capability::Claim], kind: K) -> &Offer {
     &claims
         .iter()
         .find(|c| c.offer.kind() == kind)
@@ -255,7 +258,7 @@ async fn a_persons_own_client_also_asks_gmail_and_gets_imap_and_smtp_endpoints()
     };
     assert!(matches!(
         offer_of(&claims, K::Mail),
-        Offer::Present(porter_core::capability::Capability::Mail(_))
+        Offer::Present(porter_capability::Capability::Mail(_))
     ));
     let mail: Vec<(Family, String)> = endpoints
         .iter()
@@ -387,14 +390,12 @@ const PICKER_SCOPE: &str = "https://www.googleapis.com/auth/photospicker.mediait
 
 /// What a sign-in where the person unticked `unticked` offers of Photos: whether it uploads,
 /// what it reads, and the Photos endpoints it holds.
-async fn photos_after_unticking(
-    unticked: &[&str],
-) -> (porter_core::capability::PhotosCap, Vec<Family>) {
+async fn photos_after_unticking(unticked: &[&str]) -> (porter_capability::PhotosCap, Vec<Family>) {
     let rig = Rig::new(PLAIN).await;
     rig.google.issuer.untick(unticked);
     let (_, step) = to_review(&rig).await;
     let (claims, endpoints) = review(step);
-    let Offer::Present(porter_core::capability::Capability::Photos(photos)) =
+    let Offer::Present(porter_capability::Capability::Photos(photos)) =
         offer_of(&claims, K::Photos).clone()
     else {
         panic!("Photos should be present")
@@ -409,7 +410,7 @@ async fn photos_after_unticking(
 
 #[tokio::test]
 async fn a_person_who_grants_only_the_picker_gets_no_upload_to_offer() {
-    use porter_core::capability::{Albums, LibraryRead, Offered};
+    use porter_capability::{Albums, LibraryRead, Offered};
     let (photos, families) = photos_after_unticking(&[UPLOAD_SCOPE]).await;
     assert_eq!(photos.upload, Offered::Absent);
     assert_eq!(photos.albums, Albums::None);
@@ -419,7 +420,7 @@ async fn a_person_who_grants_only_the_picker_gets_no_upload_to_offer() {
 
 #[tokio::test]
 async fn a_person_who_grants_only_the_upload_gets_no_picker_to_offer() {
-    use porter_core::capability::{Albums, LibraryRead, Offered};
+    use porter_capability::{Albums, LibraryRead, Offered};
     let (photos, families) = photos_after_unticking(&[PICKER_SCOPE]).await;
     assert_eq!(photos.upload, Offered::Present);
     assert_eq!(photos.albums, Albums::AppCreated);
@@ -429,7 +430,7 @@ async fn a_person_who_grants_only_the_upload_gets_no_picker_to_offer() {
 
 #[tokio::test]
 async fn both_photos_scopes_offer_both_and_neither_turns_photos_off() {
-    use porter_core::capability::Offered;
+    use porter_capability::Offered;
     let (photos, families) = photos_after_unticking(&[]).await;
     assert_eq!(photos.upload, Offered::Present);
     assert_eq!(

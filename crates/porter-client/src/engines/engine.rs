@@ -2,7 +2,8 @@
 //! key goes with every request.
 
 use model_openai_compat::Flavor;
-use porter_core::{AccountId, ModelId};
+use porter_capability::ModelId;
+use porter_core::AccountId;
 use porter_ids::Tokens;
 use std::fmt;
 

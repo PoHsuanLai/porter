@@ -5,9 +5,10 @@
 
 pub mod sieve;
 
+use porter_capability::CapabilityKind;
 use porter_core::{
-    CapabilityKind, EndpointUrl, Family, LoginName, PathReach, Reach, ReachMethods, RelayAuth,
-    RelayPlan, SecretText, ServiceEndpoint, Tls,
+    EndpointUrl, Family, LoginName, PathReach, Reach, ReachMethods, RelayAuth, RelayPlan,
+    SecretText, ServiceEndpoint, Tls,
 };
 use porter_fake::FakeAddress;
 use porter_fake_servers::tls;

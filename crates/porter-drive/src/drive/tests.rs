@@ -720,7 +720,7 @@ fn hashed(rig: &Rig, id: &str, size: u64, version: &str, of: &[u8]) {
         size,
         version,
     );
-    entry.hash = crate::hash::of_bytes(porter_core::capability::HashKind::Sha256, of)
+    entry.hash = crate::hash::of_bytes(porter_capability::HashKind::Sha256, of)
         .map(porter_sync::ContentHash);
     rig.listing.put(entry);
 }
@@ -728,8 +728,7 @@ fn hashed(rig: &Rig, id: &str, size: u64, version: &str, of: &[u8]) {
 #[tokio::test]
 async fn a_download_is_checked_against_the_drives_hash_and_dropped_when_it_differs() {
     let rig = rig(4).await;
-    rig.source
-        .set_hashes(porter_core::capability::HashKind::Sha256);
+    rig.source.set_hashes(porter_capability::HashKind::Sha256);
     hashed(&rig, "g", 8, "v1", b"12345678");
     rig.source.put("g", b"12345678".to_vec());
     rig.drive.download(&remote("g")).expect("download");

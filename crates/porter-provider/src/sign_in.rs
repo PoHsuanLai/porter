@@ -3,10 +3,10 @@
 //! until `Done` or `Failed`. The credential comes out only in `Done(Signed)`, which the host
 //! keeps: it is never drawn, never sent to a sheet and never serialised.
 
+use porter_capability::{CapabilityKind, Claim, Offer, Toggle};
 use porter_core::AccountId;
 use porter_core::{
-    AccountLabel, CapabilityKind, Claim, Credential, EndpointUrl, Offer, Restriction,
-    SecretPurpose, ServiceEndpoint, Toggle,
+    AccountLabel, Credential, EndpointUrl, Restriction, SecretPurpose, ServiceEndpoint,
 };
 use porter_ids::WebUrl;
 use porter_sheet::{

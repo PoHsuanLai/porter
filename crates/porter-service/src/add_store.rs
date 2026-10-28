@@ -13,13 +13,13 @@ use crate::choose::settle;
 use crate::ctx::Ctx;
 use crate::registry::{Asker, Registry};
 use crate::sheets::Sheets;
+use porter_capability::{
+    Capability, Claim, KindToggle, Offer, Provenance, Subject, Toggle, effective,
+};
 use porter_core::consent::{ConsentAnswer, GrantScope, Usage};
 use porter_core::store::AccountToggle;
 use porter_core::store::RegistryStore;
-use porter_core::{
-    Account, AccountState, AppId, AuthKind, Capability, Claim, DataClass, KindToggle, LoginName,
-    Need, Offer, Provenance, SecretKey, Subject, Toggle, effective,
-};
+use porter_core::{Account, AccountState, AppId, AuthKind, DataClass, LoginName, Need, SecretKey};
 use porter_core::{AccountId, ProviderId};
 use porter_ids::clock::Clock;
 use porter_provider::{Provider, ProviderSpec, SignInStep, Signed};
@@ -447,7 +447,7 @@ fn same_person(
     !held.is_empty() && held == logins(new)
 }
 
-fn ask_kind(allow: Option<&AllowFor>) -> porter_core::CapabilityKind {
+fn ask_kind(allow: Option<&AllowFor>) -> porter_capability::CapabilityKind {
     allow.map_or_else(
         || unreachable!("a grant was made only for an ask"),
         |ask| ask.need.kind(),

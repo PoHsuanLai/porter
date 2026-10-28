@@ -1,6 +1,6 @@
 use super::*;
+use porter_capability::{Capability, LlmCap, LlmFeature, LlmWire};
 use porter_core::AccountId;
-use porter_core::capability::{Capability, LlmCap, LlmFeature, LlmWire};
 use porter_core::need::{DimsNeed, EmbedNeed, LlmNeed};
 use porter_core::{Billing, Locality};
 use porter_ids::Tokens;
@@ -24,7 +24,7 @@ fn need() -> Need {
 fn embeddings() -> Need {
     Need::Embeddings(EmbedNeed::new(
         DimsNeed::Any,
-        [porter_core::capability::Modality::Text].into(),
+        [porter_capability::Modality::Text].into(),
     ))
 }
 

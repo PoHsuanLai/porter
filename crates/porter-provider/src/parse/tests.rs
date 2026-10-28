@@ -1,7 +1,8 @@
 use super::*;
 use crate::spec::{Discovery, Port};
-use porter_core::capability::{Access, Delta, StorageScope};
-use porter_core::{AuthKind, Capability, Family};
+use porter_capability::Capability;
+use porter_capability::{Access, Delta, StorageScope};
+use porter_core::{AuthKind, Family};
 
 const HEAD: &str = r#"
 id = "example"
@@ -217,7 +218,7 @@ issuer = "microsoft""#;
 
 #[test]
 fn an_agent_row_parses_to_its_typed_fields() {
-    use porter_core::capability::{AgentProgram, AgentProtocol};
+    use porter_capability::{AgentProgram, AgentProtocol};
     let text = file(r#"kind = "agent_login""#, r#"kind = "fixed""#, &[AGENT_ROW]);
     let spec = parse_provider(&text).expect("parses");
     assert_eq!(spec.auth.kind, AuthKind::AgentLogin);

@@ -32,12 +32,10 @@ use super::errors::RefusedError;
 use super::host::LauncherHost;
 use super::roster::Launchers;
 use crate::peers::{Peers, Role};
-use porter_core::capability::AgentProgram;
+use porter_capability::AgentProgram;
+use porter_capability::{CapabilityKind, Toggle};
 use porter_core::consent::{Decision, GrantScope};
-use porter_core::{
-    Account, AccountState, AppId, AuthKind, CapabilityKind, LauncherSession, ProcessCredentialId,
-    Toggle,
-};
+use porter_core::{Account, AccountState, AppId, AuthKind, LauncherSession, ProcessCredentialId};
 use porter_core::{AccountId, GrantId, KeyPermitId};
 use porter_dbus::LauncherFault;
 use porter_service::Registry;

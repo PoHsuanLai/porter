@@ -1,13 +1,12 @@
 //! The account service over its seams: the audience a grant covers, the endpoints a candidate
 //! carries and a relay may dial, and what is saved and audited when the registry changes.
 
-use porter_core::capability::{Access, Delta, Offered, QuotaReport, StorageScope};
+use porter_capability::CapabilityKind;
+use porter_capability::{Access, Delta, Offered, QuotaReport, StorageScope};
 use porter_core::consent::{GrantScope, Usage};
 use porter_core::need::{MailNeed, StorageNeed};
 use porter_core::{AccountId, GrantId};
-use porter_core::{
-    AppId, AppName, Audience, CapabilityKind, DataClass, EndpointUrl, Family, Isolation, Need,
-};
+use porter_core::{AppId, AppName, Audience, DataClass, EndpointUrl, Family, Isolation, Need};
 use porter_fake::{MemoryStore, NOW, RecordingAudit, Scripted, ScriptedSheets, fake_service};
 use porter_ids::clock::FixedClock;
 use porter_service::audit::AuditEvent;

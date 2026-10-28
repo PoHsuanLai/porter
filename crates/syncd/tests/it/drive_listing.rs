@@ -3,7 +3,7 @@
 //! its journal and read back by path and id, a pass cut short and resumed, a restart that keeps
 //! the tree, a folder moved, an anchor that expired, and access not given yet.
 
-use porter_core::capability::StorageCap;
+use porter_capability::StorageCap;
 use porter_fake_servers::{FakeGoogle, FakeGraph};
 use porter_http::http::header::{AUTHORIZATION, HeaderValue};
 use porter_http::http::{Request, Response};

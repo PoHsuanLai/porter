@@ -1,8 +1,8 @@
 use super::*;
 use crate::engines::Engines;
 use crate::probe::testing::{chat, found};
-use porter_core::ModelId;
-use porter_core::capability::LlmFeature;
+use porter_capability::LlmFeature;
+use porter_capability::ModelId;
 use porter_core::need::LlmNeed;
 use porter_core::{DataClass, Locality, Need, Tier};
 use porter_ids::Tokens;

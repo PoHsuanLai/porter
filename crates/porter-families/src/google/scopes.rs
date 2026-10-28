@@ -5,7 +5,7 @@
 //! unverified (FINDINGS), and docs/google.md, which tells the owner what to put on the consent
 //! screen, is checked against this table by a test.
 
-use porter_core::capability::{Albums, Ask, Capability, CapabilityKind, LibraryRead, Offered};
+use porter_capability::{Albums, Ask, Capability, CapabilityKind, LibraryRead, Offered};
 use porter_core::{Family, GrantedScopes};
 use porter_oauth::MailRights;
 

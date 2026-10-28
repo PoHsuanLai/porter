@@ -10,12 +10,13 @@ use crate::common;
 use common::bus::PrivateBus;
 use common::hosted::{Link, host};
 use common::{Known, PhotosGrant, client};
-use porter_core::capability::StorageScope;
+use porter_capability::StorageScope;
+use porter_capability::{CapabilityKind, Claim, Offer, Provenance, Subject};
 use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
 use porter_core::{
-    Account, AccountLabel, AccountState, AuthKind, Candidate, CapabilityKind, Claim, Credential,
-    DataClass, EndpointUrl, Family, LoginName, Offer, Provenance, Restriction, SecretKey,
-    SecretPurpose, SecretText, ServiceEndpoint, SpaceScope, Subject, Tls,
+    Account, AccountLabel, AccountState, AuthKind, Candidate, Credential, DataClass, EndpointUrl,
+    Family, LoginName, Restriction, SecretKey, SecretPurpose, SecretText, ServiceEndpoint,
+    SpaceScope, Tls,
 };
 use porter_core::{AccountId, GrantId};
 use porter_dbus::SyncProxy;

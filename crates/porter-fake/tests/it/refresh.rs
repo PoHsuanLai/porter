@@ -4,13 +4,14 @@
 //! each, as Microsoft's does. No timing is involved: the issuer yields once while the first
 //! caller holds the account's turn, so the second is queued behind it at any load.
 
+use porter_capability::Claim;
+use porter_capability::{Access, Delta, Offered};
 use porter_core::AccountId;
-use porter_core::capability::{Access, Delta, Offered};
 use porter_core::consent::{GrantScope, Usage};
 use porter_core::need::MailNeed;
 use porter_core::{
-    Account, AppId, AppName, Audience, Candidate, Claim, Credential, DataClass, Isolation,
-    IssuedToken, Need, SecretKey, SecretPurpose, SecretText, TokenKind,
+    Account, AppId, AppName, Audience, Candidate, Credential, DataClass, Isolation, IssuedToken,
+    Need, SecretKey, SecretPurpose, SecretText, TokenKind,
 };
 use porter_fake::{
     FakeProvider, FakeSignIn, MemoryStore, NOW, Scripted, ScriptedSheets, mail_account,

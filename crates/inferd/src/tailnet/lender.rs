@@ -25,7 +25,7 @@ use crate::agent::session::Ctx;
 use crate::agent::token::Token;
 use crate::agent::{local, openai};
 use crate::engines::Engines;
-use porter_core::capability::AgentProgram;
+use porter_capability::AgentProgram;
 use porter_core::{AppId, AppName, DataClass, Isolation, NodeId};
 use porter_ids::clock::Clock;
 use porter_tailnet::{Approval, Guests, Hello, LentModel, Refusal, State, Visit, Visits};

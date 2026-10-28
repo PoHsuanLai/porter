@@ -6,7 +6,8 @@
 
 use crate::io::Io;
 use crate::password::{authorize, basic, fault_of};
-use porter_core::{Claim, Credential, EndpointUrl, LoginName, ServiceEndpoint};
+use porter_capability::Claim;
+use porter_core::{Credential, EndpointUrl, LoginName, ServiceEndpoint};
 use porter_discover::parse_jmap_session;
 use porter_http::http::Method;
 use porter_http::{Http, request_to};

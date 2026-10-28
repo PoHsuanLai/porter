@@ -4,8 +4,9 @@ use crate::catalog::{CatalogDirs, local_claims, parse_entry_text, read_catalog};
 use crate::testkit::Scratch;
 use crate::testkit::entries;
 use model_openai_compat::Flavor;
-use porter_core::ModelId;
-use porter_core::{Locality, Subject};
+use porter_capability::ModelId;
+use porter_capability::Subject;
+use porter_core::Locality;
 
 fn attached(id: &str, place: Place) -> Attached {
     Attached {

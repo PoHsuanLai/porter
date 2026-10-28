@@ -1,11 +1,11 @@
 //! Nextcloud's `/ocs/v2.php/cloud/capabilities` answer.
 
 use crate::found::{DiscoverFault, Found, Source};
-use porter_core::capability::{
+use porter_capability::{AbsentReason, Claim, Offer, Provenance, Subject};
+use porter_capability::{
     Access, Capability, CapabilityKind, Delta, HashKind, NotesCap, NotesTransport, Offered, PimCap,
     PimTransport, QuotaReport, StorageCap, StorageScope,
 };
-use porter_core::{AbsentReason, Claim, Offer, Provenance, Subject};
 use serde_json::{Map, Value};
 
 /// What a Nextcloud's OCS capabilities answer says the account can do: files and quota always;

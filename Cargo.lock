@@ -8,6 +8,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "ds-settings",
+ "porter-capability",
  "porter-core",
  "porter-daemon",
  "porter-dbus",
@@ -1541,6 +1542,7 @@ dependencies = [
  "model-replay",
  "model-wire",
  "porter-bridge",
+ "porter-capability",
  "porter-client",
  "porter-core",
  "porter-daemon",
@@ -2432,6 +2434,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "porter-capability"
+version = "0.1.0"
+dependencies = [
+ "porter-ids",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "porter-client"
 version = "0.1.0"
 dependencies = [
@@ -2444,6 +2455,7 @@ dependencies = [
  "model-provider",
  "model-wire",
  "porter-bridge",
+ "porter-capability",
  "porter-core",
  "porter-dbus",
  "porter-fake",
@@ -2478,6 +2490,7 @@ name = "porter-core"
 version = "0.1.0"
 dependencies = [
  "peephole-core",
+ "porter-capability",
  "porter-ids",
  "secrecy",
  "serde",
@@ -2515,6 +2528,7 @@ dependencies = [
  "peephole",
  "peephole-bus",
  "peephole-core",
+ "porter-capability",
  "porter-core",
  "porter-ids",
  "porter-wire",
@@ -2533,6 +2547,7 @@ name = "porter-discover"
 version = "0.1.0"
 dependencies = [
  "hickory-resolver",
+ "porter-capability",
  "porter-core",
  "porter-http",
  "porter-ids",
@@ -2551,7 +2566,7 @@ version = "0.1.0"
 dependencies = [
  "hex",
  "md-5",
- "porter-core",
+ "porter-capability",
  "porter-drive",
  "porter-fs",
  "porter-ids",
@@ -2613,6 +2628,7 @@ dependencies = [
 name = "porter-fake"
 version = "0.1.0"
 dependencies = [
+ "porter-capability",
  "porter-core",
  "porter-ids",
  "porter-provider",
@@ -2655,6 +2671,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "dav-proto",
+ "porter-capability",
  "porter-core",
  "porter-dav",
  "porter-discover",
@@ -2740,6 +2757,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "cua-action",
+ "porter-capability",
  "porter-core",
  "porter-fake",
  "porter-ids",
@@ -2787,6 +2805,7 @@ dependencies = [
 name = "porter-provider"
 version = "0.1.0"
 dependencies = [
+ "porter-capability",
  "porter-core",
  "porter-ids",
  "porter-sheet",
@@ -2802,6 +2821,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "httparse",
+ "porter-capability",
  "porter-core",
  "porter-fake",
  "porter-fake-servers",
@@ -2822,6 +2842,7 @@ dependencies = [
  "accountd",
  "clap",
  "fake-secret-service",
+ "porter-capability",
  "porter-client",
  "porter-core",
  "porter-dbus",
@@ -2853,6 +2874,7 @@ dependencies = [
  "model-http",
  "model-openai-compat",
  "model-provider",
+ "porter-capability",
  "porter-core",
  "porter-engines",
  "porter-ids",
@@ -2873,6 +2895,7 @@ dependencies = [
  "keyring-chunked",
  "keyring-core",
  "oo7",
+ "porter-capability",
  "porter-core",
  "porter-fs",
  "porter-ids",
@@ -2890,6 +2913,7 @@ dependencies = [
 name = "porter-service"
 version = "0.1.0"
 dependencies = [
+ "porter-capability",
  "porter-core",
  "porter-ids",
  "porter-provider",
@@ -2905,6 +2929,7 @@ dependencies = [
 name = "porter-sheet"
 version = "0.1.0"
 dependencies = [
+ "porter-capability",
  "porter-core",
  "porter-ids",
  "proptest",
@@ -2918,6 +2943,7 @@ dependencies = [
 name = "porter-sheets"
 version = "0.1.0"
 dependencies = [
+ "porter-capability",
  "porter-core",
  "porter-dbus",
  "porter-ids",
@@ -2935,6 +2961,7 @@ dependencies = [
 name = "porter-store"
 version = "0.1.0"
 dependencies = [
+ "porter-capability",
  "porter-core",
  "porter-fake",
  "porter-fs",
@@ -2946,7 +2973,7 @@ dependencies = [
 name = "porter-sync"
 version = "0.1.0"
 dependencies = [
- "porter-core",
+ "porter-capability",
  "porter-http",
  "porter-ids",
  "porter-sync",
@@ -3010,6 +3037,7 @@ dependencies = [
  "model-openai-compat",
  "model-provider",
  "porter-bridge",
+ "porter-capability",
  "porter-core",
  "porter-ids",
  "porter-infer",
@@ -3025,6 +3053,7 @@ dependencies = [
 name = "porter-wire"
 version = "0.1.0"
 dependencies = [
+ "porter-capability",
  "porter-core",
  "porter-ids",
  "serde",
@@ -3842,7 +3871,7 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 name = "storage-gdrive"
 version = "0.1.0"
 dependencies = [
- "porter-core",
+ "porter-capability",
  "porter-fake-servers",
  "porter-http",
  "porter-http-relay",
@@ -3860,7 +3889,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "hex",
- "porter-core",
+ "porter-capability",
  "porter-fake-servers",
  "porter-http",
  "porter-http-relay",
@@ -3878,7 +3907,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "dav-proto",
- "porter-core",
+ "porter-capability",
  "porter-dav",
  "porter-fake-servers",
  "porter-http",
@@ -3945,6 +3974,7 @@ dependencies = [
  "hex",
  "mime_guess",
  "nanohtml2text",
+ "porter-capability",
  "porter-client",
  "porter-core",
  "porter-daemon",

@@ -8,8 +8,9 @@
 //! request is one stage. Running a plan is `porter-turns`'s `pipeline` module.
 
 use crate::router::{Decided, Listed, fits, plain, slots_of};
-use porter_core::capability::{LlmFeature, SpeechMode};
-use porter_core::{Capability, DataClass, Need, Tier};
+use porter_capability::Capability;
+use porter_capability::{LlmFeature, SpeechMode};
+use porter_core::{DataClass, Need, Tier};
 use porter_infer::{
     Answer, AutoPolicy, CatalogueModel, DescribeImages, Modality, PickCandidate, Pipeline,
     PlanRules, Policy, ProviderId, Refusal, RequestShape, RouteCandidate, Slot, TierMap, picks_for,

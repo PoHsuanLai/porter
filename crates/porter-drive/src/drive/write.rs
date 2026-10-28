@@ -31,7 +31,7 @@ use super::{
 };
 use crate::index::{Dirty, Edit, Index};
 use crate::naming;
-use porter_core::capability::HashKind;
+use porter_capability::HashKind;
 use porter_sync::{ItemKind, RemoteId};
 use std::os::unix::fs::{FileExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};

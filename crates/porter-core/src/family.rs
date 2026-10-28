@@ -2,8 +2,8 @@
 //! file names one per capability row, and adding a family needs code. The set lives here, below
 //! the provider crate, because an account's endpoints name the family that speaks to them.
 
-use crate::capability::CapabilityKind;
 use crate::protocol::EndpointProtocol;
+use porter_capability::CapabilityKind;
 use serde::{Deserialize, Serialize};
 
 /// One protocol engine.

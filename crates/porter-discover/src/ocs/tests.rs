@@ -1,7 +1,7 @@
 //! Nextcloud's capabilities answer, from recorded-shape fixtures.
 
 use super::*;
-use porter_core::capability::Capability;
+use porter_capability::Capability;
 
 fn offers(found: &Found) -> Vec<(CapabilityKind, bool)> {
     found

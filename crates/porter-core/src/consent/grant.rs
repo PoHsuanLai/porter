@@ -1,11 +1,11 @@
 //! A consent decision and what it covers (design/31 §4.5).
 
 use crate::app_id::AppId;
-use crate::capability::{CapabilityKind, StorageScope};
 use crate::data_class::DataClass;
 use crate::launcher_session::LauncherSession;
 use crate::space::SpaceScope;
 use crate::{AccountId, GrantId};
+use porter_capability::{CapabilityKind, StorageScope};
 use porter_ids::UnixSeconds;
 use serde::{Deserialize, Serialize};
 

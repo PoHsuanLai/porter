@@ -3,9 +3,10 @@
 use crate::error::ProviderError;
 use crate::sign_in::{RevokeOutcome, SignIn, SignInStart};
 use crate::spec::ProviderSpec;
+use porter_capability::StorageScope;
+use porter_capability::{CapabilityKind, Claim};
 use porter_core::AccountId;
-use porter_core::capability::StorageScope;
-use porter_core::{Account, Audience, AuthKind, CapabilityKind, Claim, Credential, IssuedToken};
+use porter_core::{Account, Audience, AuthKind, Credential, IssuedToken};
 use std::future::Future;
 
 /// What an account presents when it talks to its provider.

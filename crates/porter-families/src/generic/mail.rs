@@ -3,8 +3,9 @@
 
 use crate::io::{Io, SharedDns};
 use crate::password::declared;
-use porter_core::capability::{Capability, MailCap, MailTransport};
-use porter_core::{Claim, EndpointUrl, Family, LoginName, Offer, ServiceEndpoint, Tls};
+use porter_capability::{Capability, MailCap, MailTransport};
+use porter_capability::{Claim, Offer};
+use porter_core::{EndpointUrl, Family, LoginName, ServiceEndpoint, Tls};
 use porter_discover::{Found, Outcome, Source, discover_mail};
 use porter_ids::UrlScheme;
 use porter_provider::{DomainName, ProviderSet, ProviderSpec};

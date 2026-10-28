@@ -15,8 +15,8 @@
 //!   withdraw it).
 
 use super::errors::RefusedError;
+use porter_capability::AgentProgram;
 use porter_core::AccountId;
-use porter_core::capability::AgentProgram;
 use porter_core::{AppId, LauncherSession, LoginRequestId};
 use porter_dbus::LauncherFault;
 use porter_dbus::names::INFERENCE_PATH;

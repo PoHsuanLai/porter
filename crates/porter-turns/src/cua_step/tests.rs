@@ -8,7 +8,7 @@ use model_provider::{
     ToolCallId as CallId, TurnEnd, TurnEvent, TurnUsage,
 };
 use model_provider::{Part, Role, TurnRequest};
-use porter_core::capability::CuaEnv;
+use porter_capability::CuaEnv;
 use porter_infer::{AttachIndex, ImageSource, StepIndex as Index};
 use porter_router::testkit::{Scratch, models};
 use std::io::Write;

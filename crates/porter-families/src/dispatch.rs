@@ -1,9 +1,10 @@
 //! The closed enums over the built families: a variant per family, its arms present only when
 //! its feature is on.
 
+use porter_capability::StorageScope;
+use porter_capability::{CapabilityKind, Claim};
 use porter_core::AccountId;
-use porter_core::capability::StorageScope;
-use porter_core::{Account, Audience, CapabilityKind, Claim, Credential, IssuedToken};
+use porter_core::{Account, Audience, Credential, IssuedToken};
 use porter_provider::{
     Presented, Provider, ProviderError, ProviderSession, ProviderSpec, Readiness, RevokeOutcome,
     SignIn, SignInStart, SignInStep,

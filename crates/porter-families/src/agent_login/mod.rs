@@ -10,8 +10,9 @@
 
 mod sign_in;
 
+use porter_capability::{Claim, Offer, Provenance, Subject};
 use porter_core::AccountId;
-use porter_core::{Account, Audience, Claim, Credential, IssuedToken, Offer, Provenance, Subject};
+use porter_core::{Account, Audience, Credential, IssuedToken};
 use porter_provider::{
     Presented, Provider, ProviderError, ProviderSession, ProviderSpec, RevokeOutcome, SignInStart,
 };
@@ -23,7 +24,7 @@ pub(crate) fn claims(spec: &ProviderSpec) -> Vec<Claim> {
     spec.capabilities
         .iter()
         .filter_map(|row| match &row.capability {
-            porter_core::Capability::Agent(agent) => Some(Claim {
+            porter_capability::Capability::Agent(agent) => Some(Claim {
                 subject: Subject::Agent(agent.program.clone()),
                 offer: Offer::Present(row.capability.clone()),
                 provenance: Provenance::Declared,

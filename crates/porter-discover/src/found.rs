@@ -1,6 +1,7 @@
 //! What a discovery step returns.
 
-use porter_core::{Claim, ServiceEndpoint};
+use porter_capability::Claim;
+use porter_core::ServiceEndpoint;
 
 /// Where a finding came from, for the review step ("from the provider's autoconfig", "via MX").
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

@@ -7,10 +7,10 @@
 use crate::AccountId;
 use crate::account::Account;
 use crate::auth_kind::AuthKind;
-use crate::capability::{CapabilityKind, VocabVersion};
 use crate::consent::Grant;
-use crate::effective::Toggle;
 use crate::identities::IdentityKind;
+use porter_capability::Toggle;
+use porter_capability::{CapabilityKind, VocabVersion};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::future::Future;

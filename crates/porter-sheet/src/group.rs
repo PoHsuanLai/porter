@@ -4,7 +4,8 @@
 //! (`group = "internet" | "intelligence" | "agent"`); a file that does not gets the one
 //! [`ProviderGroup::fallback`] decides from how its accounts sign in and what they do.
 
-use porter_core::{AuthKind, CapabilityKind};
+use porter_capability::CapabilityKind;
+use porter_core::AuthKind;
 use serde::{Deserialize, Serialize};
 
 /// The group a provider's accounts belong to.

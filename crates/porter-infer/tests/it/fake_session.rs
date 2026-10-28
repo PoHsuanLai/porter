@@ -1,8 +1,8 @@
 //! The scripted session: transcript events arrive as audio passes their index, a request with
 //! no script is refused, Cancel ends the turn.
 
+use porter_capability::LanguageTag;
 use porter_core::DataClass;
-use porter_core::capability::LanguageTag;
 use porter_core::consent::Usage;
 use porter_ids::Tokens;
 use porter_infer::testing::{FakeInferSession, Script, ScriptStep};

@@ -69,9 +69,10 @@ pub(super) fn check(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use porter_capability::CapabilityKind;
     use porter_core::{
-        CapabilityKind, EndpointUrl, Family, LoginName, PathReach, Reach, RelayAuth, SecretText,
-        ServiceEndpoint, Tls,
+        EndpointUrl, Family, LoginName, PathReach, Reach, RelayAuth, SecretText, ServiceEndpoint,
+        Tls,
     };
 
     fn plan(reach: Reach) -> RelayPlan {

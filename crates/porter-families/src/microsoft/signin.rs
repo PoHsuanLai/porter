@@ -14,9 +14,10 @@ use super::graph::{Found, probe, whoami};
 use super::scopes::{GRAPH_DEFAULT, extend_scopes, graph_only, scopes_for};
 use super::{graph_origin, imap_origin};
 use crate::extend::{answered_as, asked_claims};
-use porter_core::capability::{Capability, CapabilityKind, Offered};
+use porter_capability::Offer;
+use porter_capability::{Capability, CapabilityKind, Offered};
 use porter_core::{
-    AccountLabel, Credential, EndpointUrl, Family, GrantedScopes, LoginName, Offer, Restriction,
+    AccountLabel, Credential, EndpointUrl, Family, GrantedScopes, LoginName, Restriction,
     SecretPurpose, ServiceEndpoint, TenantConsent, Tls,
 };
 use porter_http::Http;

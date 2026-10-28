@@ -1,7 +1,7 @@
 //! The effective capabilities of an account (design/31 §2.4): per subject and kind, the most
 //! authoritative claim wins, then the user's toggles turn kinds off.
 
-use crate::capability::CapabilityKind;
+use crate::CapabilityKind;
 use crate::offer::{AbsentReason, Claim, Offer};
 use serde::{Deserialize, Serialize};
 

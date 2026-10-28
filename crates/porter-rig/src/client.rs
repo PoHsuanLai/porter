@@ -8,13 +8,13 @@
 //! there is nothing to ask a grant for or to open a relay to. The app's identity is the
 //! daemons' to find (see `fixture`).
 
+use porter_capability::{Access, AgentProgram, Delta, Offered, QuotaReport, StorageScope};
 use porter_client::{
     Accounts, AiKeys, AiKeysError, ClientError, DbusTransport, Identities, IdentitiesError,
     InferSession, Launcher, LauncherError, OpenOptions,
 };
 use porter_core::ProviderHint;
 use porter_core::audit::Handoff;
-use porter_core::capability::{Access, AgentProgram, Delta, Offered, QuotaReport, StorageScope};
 use porter_core::consent::Usage;
 use porter_core::need::{LlmNeed, MailNeed, NotesNeed, PimNeed, StorageNeed};
 use porter_core::{AccountId, KeyPermitId, ProviderId};

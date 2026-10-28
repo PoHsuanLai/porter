@@ -117,7 +117,7 @@ impl<T: Transport + 'static> Feed for DavFeed<T> {
         Ok(self.0.fetch(id, ByteRange::Whole).await?.0)
     }
 
-    fn features(&self) -> porter_core::capability::StorageCap {
+    fn features(&self) -> porter_capability::StorageCap {
         self.0.features()
     }
 

@@ -3,7 +3,7 @@ use crate::attached::local_model;
 use crate::entries;
 use crate::lab::Lab;
 use crate::testkit::Scratch;
-use porter_core::ModelId;
+use porter_capability::ModelId;
 use porter_fake_servers::net::Bind;
 use porter_router::attached::config::{Attached, Place, Reach};
 use porter_router::catalog::parse_entry_text;

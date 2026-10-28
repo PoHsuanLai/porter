@@ -9,11 +9,13 @@ use crate::replay::replayer::Replayer;
 use crate::runner::{Pin, Pinned, Turns};
 use crate::supervise::Supervised;
 use crate::testkit::Scratch;
-use porter_core::capability::{LanguageSet, LlmCap, LlmFeature, LlmWire, SpeechCap, SpeechMode};
+use porter_capability::Capability;
+use porter_capability::ModelId;
+use porter_capability::{LanguageSet, LlmCap, LlmFeature, LlmWire, SpeechCap, SpeechMode};
+use porter_core::AccountId;
 use porter_core::consent::Usage;
 use porter_core::need::LlmNeed;
-use porter_core::{AccountId, ModelId};
-use porter_core::{Billing, Capability, DataClass, Locality, Need, Tier};
+use porter_core::{Billing, DataClass, Locality, Need, Tier};
 use porter_ids::Tokens;
 use porter_infer::{
     Answer, AudioFrame, AudioRate, AutoPolicy, Base64Bytes, ChatMessage, ChatReply, DescribeImages,

@@ -32,7 +32,7 @@ fn need() -> Need {
 fn served() -> ServedBy {
     ServedBy {
         account: porter_core::AccountId::parse("local").expect("id"),
-        model: porter_core::ModelId::parse("echo").expect("id"),
+        model: porter_capability::ModelId::parse("echo").expect("id"),
         locality: porter_core::Locality::OnDevice,
     }
 }

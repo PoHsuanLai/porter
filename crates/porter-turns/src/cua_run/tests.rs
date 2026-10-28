@@ -6,7 +6,7 @@ use model_provider::{
     ModelName, Part, Script, ScriptedProvider, StopReason, ToolCall, ToolCallId, TurnEnd,
     TurnEvent, TurnUsage,
 };
-use porter_core::capability::CuaEnv;
+use porter_capability::CuaEnv;
 use porter_infer::{
     AttachIndex, FrameImage, FrameLayout, InferEvent, InferRefusal, MediaKind, StepIndex, TreeText,
     WindowGeometry,

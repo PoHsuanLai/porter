@@ -1,8 +1,8 @@
 //! Does an offer meet a need? The one place a query meets the vocabulary.
 
-use crate::capability::Capability;
 use crate::need::{DimsNeed, Need};
-use crate::offer::{AbsentReason, Offer};
+use porter_capability::Capability;
+use porter_capability::{AbsentReason, Offer};
 use serde::{Deserialize, Serialize};
 
 /// The answer for one need against one offer.

@@ -1,7 +1,7 @@
 //! Where a drive's bytes come from: a span of one item at a time, and an online document's
 //! copy as a file.
 
-use porter_core::capability::HashKind;
+use porter_capability::HashKind;
 use porter_ids::Bytes;
 use porter_sync::{ByteRange, ExportError, RemoteId, Replica, ReplicaError};
 use std::future::Future;

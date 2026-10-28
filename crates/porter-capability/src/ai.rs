@@ -1,7 +1,7 @@
 //! The AI kinds (design/31 §2.3): declared per model, aggregated per account. Feature sets are
 //! sets of variants, never flags.
 
-use crate::error::CoreError;
+use porter_ids::IdError;
 use porter_ids::{Count, Dims, Px, Tokens};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -137,24 +137,21 @@ pub struct LanguageTag(String);
 
 impl LanguageTag {
     /// The tag written as `text`: 1 to 35 bytes of ASCII letters, digits and `-`.
-    pub fn parse(text: &str) -> Result<Self, CoreError> {
+    pub fn parse(text: &str) -> Result<Self, IdError> {
         let ok = !text.is_empty()
             && text.len() <= 35
             && text.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-');
         if ok {
             Ok(Self(text.to_owned()))
         } else {
-            Err(CoreError::MalformedId {
-                what: "language tag",
-                text: text.to_owned(),
-            })
+            Err(IdError::malformed("language tag", text))
         }
     }
 }
 
 impl TryFrom<String> for LanguageTag {
-    type Error = CoreError;
-    fn try_from(text: String) -> Result<Self, CoreError> {
+    type Error = IdError;
+    fn try_from(text: String) -> Result<Self, IdError> {
         Self::parse(&text)
     }
 }

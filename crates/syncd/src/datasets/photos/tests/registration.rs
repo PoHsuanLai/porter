@@ -6,7 +6,7 @@ use crate::removal::wipe;
 use crate::scheduler::{Network, Settings};
 use crate::service::{Access, DatasetName, Hub};
 use crate::testing::scratch;
-use porter_core::capability::{
+use porter_capability::{
     Access as Rights, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope,
 };
 use porter_core::{AppId, AppName, Isolation};

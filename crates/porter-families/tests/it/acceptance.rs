@@ -8,14 +8,13 @@
 use crate::common;
 
 use common::{Brief, Fakes, Kept, Person, Service, TestSheets, plain, service};
+use porter_capability::{AbsentReason, Offer};
+use porter_capability::{Access, CapabilityKind, Delta, QuotaReport, StorageScope};
 use porter_core::ProviderHint;
-use porter_core::capability::{Access, CapabilityKind, Delta, QuotaReport, StorageScope};
 use porter_core::consent::{GrantScope, Usage};
 use porter_core::need::StorageNeed;
-use porter_core::{
-    AbsentReason, AccountState, AppId, AppName, Audience, DataClass, Family, Isolation, Need, Offer,
-};
 use porter_core::{AccountId, ProviderId};
+use porter_core::{AccountState, AppId, AppName, Audience, DataClass, Family, Isolation, Need};
 use porter_fake::{Scripted, ScriptedSheets};
 use porter_fake_servers::{FakeNextcloud, LoginPolicy, NextcloudHandle, Running, shipped};
 use porter_families::{FamilyProvider, NextcloudProvider, Pacing};
@@ -529,7 +528,7 @@ async fn add_and_allow_grants_nothing_when_the_new_account_does_not_meet_the_nee
     );
     let mail = Need::Mail(porter_core::need::MailNeed::new(
         Access::ReadWrite,
-        porter_core::capability::Offered::Present,
+        porter_capability::Offered::Present,
         Delta::Poll,
     ));
     let reply = service

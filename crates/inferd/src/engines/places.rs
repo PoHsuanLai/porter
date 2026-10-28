@@ -5,9 +5,9 @@
 use super::*;
 use crate::cloud::models::{known_providers, provider_of, remote_models};
 use crate::settings::Engine;
+use porter_capability::LlmFeature;
+use porter_capability::ModelId;
 use porter_core::AccountState;
-use porter_core::ModelId;
-use porter_core::capability::LlmFeature;
 use porter_core::need::LlmNeed;
 use porter_ids::Tokens;
 use porter_infer::{

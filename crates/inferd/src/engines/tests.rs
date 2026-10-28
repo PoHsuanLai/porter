@@ -6,9 +6,10 @@ use engine_supervisor::{
     SupervisorConfig,
 };
 use model_catalog::MiB;
-use porter_core::capability::{Capability, CuaEnv, LlmCap, LlmFeature, LlmWire, SpeechMode};
+use porter_capability::ModelId;
+use porter_capability::{Capability, CuaEnv, LlmCap, LlmFeature, LlmWire, SpeechMode};
+use porter_core::AccountId;
 use porter_core::need::{CuaNeed, LlmNeed, SpeechNeed};
-use porter_core::{AccountId, ModelId};
 use porter_core::{Billing, Locality};
 use porter_ids::Tokens;
 use porter_infer::{LocalOnly, Slot};

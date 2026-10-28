@@ -1,9 +1,7 @@
 //! The sync contract (design/31 §6.1), driven through the reference replica: anchors, base
 //! versions, conflicts as values, tombstones, and cursor reset.
 
-use porter_core::capability::{
-    Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope,
-};
+use porter_capability::{Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope};
 use porter_ids::{Bytes, UnixSeconds};
 use porter_sync::{
     BaseVersion, Blob, ByteRange, Change, ChangePage, Conflict, Cursor, ItemPath, MemoryReplica,

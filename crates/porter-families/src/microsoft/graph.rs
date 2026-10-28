@@ -6,8 +6,9 @@
 //! default page.
 
 use super::scopes::{AccountClass, classify};
-use porter_core::capability::{Capability, CapabilityKind, QuotaReport};
-use porter_core::{AbsentReason, Claim, EndpointUrl, Offer, Provenance, Subject};
+use porter_capability::{AbsentReason, Claim, Offer, Provenance, Subject};
+use porter_capability::{Capability, CapabilityKind, QuotaReport};
+use porter_core::EndpointUrl;
 use porter_http::http::header::{ACCEPT, AUTHORIZATION};
 use porter_http::http::{Method, Response};
 use porter_http::{Http, SensitiveHeader, request_to};
@@ -157,7 +158,7 @@ fn with_quota(declared: &Capability, answer: &Response<Vec<u8>>) -> Capability {
                 .and_then(|d| d.quota)
                 .and_then(|q| q.total)
                 .is_some();
-            Capability::Storage(porter_core::capability::StorageCap {
+            Capability::Storage(porter_capability::StorageCap {
                 quota: match reported {
                     true => QuotaReport::Reported,
                     false => QuotaReport::Unreported,

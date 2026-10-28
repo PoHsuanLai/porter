@@ -4,9 +4,7 @@
 use crate::addr::{Addr, FILE_FIELDS, Root};
 use crate::json::{About, File};
 use crate::refuse::{export_error, read_error};
-use porter_core::capability::{
-    Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope,
-};
+use porter_capability::{Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope};
 use porter_http::http::header::{ACCEPT, HeaderValue, RANGE};
 use porter_http::http::{Method, Request, Response};
 use porter_http::{Http, request};

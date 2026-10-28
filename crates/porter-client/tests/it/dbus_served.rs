@@ -9,11 +9,12 @@ use crate::common;
 use common::bus::PrivateBus;
 use common::inferd::{Behaviour, FakeInferd, Served};
 use common::served::{Gate, Route, Scripted};
+use porter_capability::CuaEnv;
+use porter_capability::ModelId;
 use porter_client::{Accounts, ClientError, DbusTransport, InferSession};
-use porter_core::capability::CuaEnv;
+use porter_core::AccountId;
 use porter_core::consent::Usage;
 use porter_core::need::{CuaNeed, DimsNeed, EmbedNeed};
-use porter_core::{AccountId, ModelId};
 use porter_core::{DataClass, Locality, Need, Tier};
 use porter_ids::{Dims, Tokens};
 use porter_infer::testing::{Script, ScriptStep};
@@ -77,7 +78,7 @@ async fn rig(route: Route, gate: Gate, scripts: Vec<Script>) -> Rig {
 fn embeddings() -> Need {
     Need::Embeddings(EmbedNeed::new(
         DimsNeed::Exactly(Dims(2)),
-        [porter_core::capability::Modality::Text].into(),
+        [porter_capability::Modality::Text].into(),
     ))
 }
 

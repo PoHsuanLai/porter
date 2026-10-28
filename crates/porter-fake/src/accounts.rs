@@ -1,10 +1,11 @@
 //! Three accounts made from the fake providers, their capabilities as declared.
 
 use crate::provider::{FakeProvider, cloud_provider, llm_provider, mail_provider};
+use porter_capability::{Claim, Offer, Provenance, Subject};
 use porter_core::AccountId;
 use porter_core::{
-    Account, AccountLabel, AccountState, Claim, EndpointUrl, Family, LoginName, Offer, Provenance,
-    Restriction, ServiceEndpoint, Subject, Tls,
+    Account, AccountLabel, AccountState, EndpointUrl, Family, LoginName, Restriction,
+    ServiceEndpoint, Tls,
 };
 use porter_provider::Provider;
 

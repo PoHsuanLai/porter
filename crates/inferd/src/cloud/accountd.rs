@@ -13,7 +13,7 @@
 //! needs no permit. A seam that has no such account answers none.
 
 use super::own::OwnServer;
-use porter_core::capability::LlmFeature;
+use porter_capability::LlmFeature;
 use porter_core::consent::{Usage, Verdict};
 use porter_core::need::LlmNeed;
 use porter_core::{AccountId, GrantId};

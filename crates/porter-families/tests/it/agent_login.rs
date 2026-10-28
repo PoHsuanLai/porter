@@ -2,11 +2,11 @@
 //! mints no token, and revoking has nothing to do at a provider.
 #![cfg(feature = "agent_login")]
 
+use porter_capability::{Capability, CapabilityKind};
+use porter_capability::{Offer, Provenance, Subject};
 use porter_core::AccountId;
-use porter_core::capability::{Capability, CapabilityKind};
 use porter_core::{
-    Account, AccountLabel, AccountState, Audience, AuthKind, Credential, Offer, Provenance,
-    Restriction, SecretText, Subject,
+    Account, AccountLabel, AccountState, Audience, AuthKind, Credential, Restriction, SecretText,
 };
 use porter_families::AgentLoginProvider;
 use porter_provider::{

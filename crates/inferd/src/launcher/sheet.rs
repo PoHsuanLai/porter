@@ -11,7 +11,7 @@ use super::errors::RefusedError;
 use super::host::LauncherHost;
 use super::shared::{AGENT_APP_PREFIX, Core};
 use crate::peers::Peers;
-use porter_core::capability::{AgentProgram, LlmFeature};
+use porter_capability::{AgentProgram, LlmFeature};
 use porter_core::consent::Usage;
 use porter_core::need::LlmNeed;
 use porter_core::{AppId, AppName, DataClass, Isolation, LauncherSession, Need};

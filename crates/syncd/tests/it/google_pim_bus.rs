@@ -11,12 +11,12 @@ use crate::common;
 use common::bus::PrivateBus;
 use common::caller as caller_of;
 use common::hosted::host;
-use porter_core::capability::StorageScope;
+use porter_capability::StorageScope;
+use porter_capability::{CapabilityKind, Claim, Offer, Provenance, Subject};
 use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
 use porter_core::{
-    Account, AccountLabel, AccountState, AuthKind, CapabilityKind, Claim, Credential, EndpointUrl,
-    Family, LoginName, Offer, Provenance, Restriction, SecretKey, SecretPurpose, SecretText,
-    ServiceEndpoint, SpaceScope, Subject, Tls,
+    Account, AccountLabel, AccountState, AuthKind, Credential, EndpointUrl, Family, LoginName,
+    Restriction, SecretKey, SecretPurpose, SecretText, ServiceEndpoint, SpaceScope, Tls,
 };
 use porter_core::{AccountId, GrantId};
 use porter_dbus::callers::CallerRole;

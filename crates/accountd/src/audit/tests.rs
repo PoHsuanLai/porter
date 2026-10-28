@@ -1,5 +1,5 @@
 use super::*;
-use porter_core::capability::{Access, Delta, QuotaReport, StorageScope};
+use porter_capability::{Access, Delta, QuotaReport, StorageScope};
 use porter_core::consent::{GrantScope, Usage};
 use porter_core::need::StorageNeed;
 use porter_core::{AppId, AppName, Audience, DataClass, Isolation, Need};

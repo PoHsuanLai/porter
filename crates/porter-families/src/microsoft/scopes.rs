@@ -6,7 +6,7 @@
 //! `MICROSOFT_SCOPES`, `is_personal_microsoft`, `issuer_for_server`), the issuer and brand half
 //! only.
 
-use porter_core::capability::{Ask, CapabilityKind};
+use porter_capability::{Ask, CapabilityKind};
 use porter_core::{Audience, TokenKind};
 
 /// Exchange Online's IMAP scope (a delegated permission, not the application-only family).

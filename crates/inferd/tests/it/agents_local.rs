@@ -233,7 +233,7 @@ async fn an_attached_my_network_engine_follows_the_floor_and_the_my_network_sett
     let mut p = Plan {
         catalog: vec![("attached.toml", entries::attached())],
         attached: vec![Attached {
-            id: porter_core::ModelId::parse(entries::ATTACHED).expect("id"),
+            id: porter_capability::ModelId::parse(entries::ATTACHED).expect("id"),
             reach: Reach::Socket(lab.socket()),
             key_file: None,
             place: Place::MyNetwork,

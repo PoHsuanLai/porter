@@ -15,10 +15,10 @@ use ds_settings::schema::{
     ActionLabel, ActionWeight, AgentSetting, Exposure, Help, KeyKind, KeyPath, KeySpec, Label,
     LiveAction, Page, Section, WordLabels,
 };
+use porter_capability::{CapabilityKind, Offer, Toggle};
 use porter_core::consent::{Decision, Grant, GrantScope};
 use porter_core::{
-    Account, AccountState, AgentState, AppId, AppName, AuthKind, CapabilityKind, Isolation,
-    LoginOutcome, Offer, Toggle,
+    Account, AccountState, AgentState, AppId, AppName, AuthKind, Isolation, LoginOutcome,
 };
 use porter_core::{AccountId, GrantId};
 use porter_families::set::ProviderNames;
@@ -322,7 +322,7 @@ fn account_keys(
             Offer::Present(_) => Some(claim.offer.kind()),
             Offer::Absent {
                 kind,
-                reason: porter_core::AbsentReason::TurnedOff,
+                reason: porter_capability::AbsentReason::TurnedOff,
             } => Some(*kind),
             Offer::Absent { .. } => None,
         })

@@ -1,17 +1,16 @@
 //! Adding an account and signing in again, over a provider whose sign-in is a script: the host
 //! half of the conversation (what is drawn, what the sign-in is told, what is stored, when).
 
+use porter_capability::CapabilityKind;
+use porter_capability::StorageScope;
+use porter_capability::{Access, Capability, Delta, LabelModel, MailCap, MailTransport, Offered};
+use porter_capability::{Claim, Offer, Provenance, Subject, Toggle};
 use porter_core::ProviderHint;
-use porter_core::capability::CapabilityKind;
-use porter_core::capability::StorageScope;
-use porter_core::capability::{
-    Access, Capability, Delta, LabelModel, MailCap, MailTransport, Offered,
-};
 use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
 use porter_core::{
-    Account, AccountLabel, AccountState, AppId, AppName, AuthKind, Claim, Credential, DataClass,
-    EndpointUrl, Family, Isolation, LoginName, Offer, Provenance, Restriction, SecretKey,
-    SecretPurpose, SecretText, ServiceEndpoint, SpaceScope, Subject, Tls, Toggle,
+    Account, AccountLabel, AccountState, AppId, AppName, AuthKind, Credential, DataClass,
+    EndpointUrl, Family, Isolation, LoginName, Restriction, SecretKey, SecretPurpose, SecretText,
+    ServiceEndpoint, SpaceScope, Tls,
 };
 use porter_core::{AccountId, ProviderId};
 use porter_fake::{MemoryStore, RecordingAudit, ScriptedSheets};
@@ -1765,7 +1764,7 @@ async fn only_an_access_the_provider_asks_on_use_can_be_asked_for_later() {
 }
 
 fn whole_store() -> porter_core::Need {
-    use porter_core::capability::{QuotaReport, StorageScope};
+    use porter_capability::{QuotaReport, StorageScope};
     porter_core::Need::Storage(porter_core::need::StorageNeed::new(
         Access::ReadWrite,
         Delta::Poll,

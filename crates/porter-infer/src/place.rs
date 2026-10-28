@@ -256,7 +256,7 @@ pub struct PlaceEngine {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PlaceModel {
     /// The model's id.
-    pub id: porter_core::ModelId,
+    pub id: porter_capability::ModelId,
     /// The name a person reads for it.
     pub name: String,
     /// The engine that runs it, for a model on this computer whose engine inferd knows. Absent
@@ -271,7 +271,7 @@ pub struct PlaceModel {
 
 impl PlaceModel {
     /// A model with its name and no engine.
-    pub fn new(id: porter_core::ModelId, name: String) -> Self {
+    pub fn new(id: porter_capability::ModelId, name: String) -> Self {
         Self {
             id,
             name,
@@ -470,7 +470,7 @@ mod tests {
 
     #[test]
     fn a_model_row_without_an_engine_reads_and_leaves_the_field_out() {
-        let id = porter_core::ModelId::parse("qwen").expect("id");
+        let id = porter_capability::ModelId::parse("qwen").expect("id");
         let plain = PlaceModel::new(id.clone(), "Qwen".to_owned());
         let json = serde_json::to_string(&plain).expect("json");
         assert_eq!(json, r#"{"id":"qwen","name":"Qwen"}"#);
@@ -495,7 +495,7 @@ mod tests {
 
     #[test]
     fn a_model_row_says_what_it_takes_in_only_when_that_is_known() {
-        let id = porter_core::ModelId::parse("qwen").expect("id");
+        let id = porter_capability::ModelId::parse("qwen").expect("id");
         let plain = PlaceModel::new(id, "Qwen".to_owned()).with_takes(Takes::TextAndImages);
         let json = serde_json::to_string(&plain).expect("json");
         assert_eq!(
@@ -572,7 +572,7 @@ mod tests {
             ])
             .with_place_model(
                 PlaceId::this_computer(),
-                porter_core::ModelId::parse("qwen").expect("id"),
+                porter_capability::ModelId::parse("qwen").expect("id"),
             );
         let json = serde_json::to_string(&options).expect("json");
         assert!(

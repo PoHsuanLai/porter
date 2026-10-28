@@ -1,8 +1,9 @@
 use super::rig::*;
+use porter_capability::CapabilityKind as K;
+use porter_capability::StorageScope;
+use porter_capability::{AbsentReason, Offer, Provenance};
 use porter_core::AccountId;
-use porter_core::capability::CapabilityKind as K;
-use porter_core::capability::StorageScope;
-use porter_core::{AbsentReason, Credential, Offer, Provenance, SecretText, TokenKind};
+use porter_core::{Credential, SecretText, TokenKind};
 use porter_ids::UnixSeconds;
 use porter_provider::{Presented, Provider, ProviderError, ProviderSession, RevokeOutcome};
 

@@ -1,9 +1,9 @@
 use super::*;
 use crate::fields::{Entry, FieldKind, FieldSpec, Presence};
 use crate::progress::{ServiceRow, ServiceState};
+use porter_capability::CapabilityKind;
+use porter_capability::Toggle;
 use porter_core::AccountLabel;
-use porter_core::Toggle;
-use porter_core::capability::CapabilityKind;
 
 fn provider(text: &str) -> ProviderId {
     ProviderId::parse(text).expect("provider id")

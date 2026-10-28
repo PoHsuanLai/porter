@@ -10,12 +10,12 @@
 //! ([`photos_key`]), so a `Storage` grant of syncd's (the Drive app folder) never reaches them.
 
 use crate::datasets::storage::{drive_need, photos_need, storage_need};
+use porter_capability::{Capability, CapabilityKind, Offer};
+use porter_capability::{Offered, StorageScope};
 use porter_core::AccountId;
-use porter_core::capability::{Offered, StorageScope};
 use porter_core::consent::{Decision, Grant, GrantKey, Usage};
 use porter_core::{
-    Account, AppId, AppName, Capability, CapabilityKind, DataClass, Family, Isolation, Match, Need,
-    Offer, SpaceScope, matches,
+    Account, AppId, AppName, DataClass, Family, Isolation, Match, Need, SpaceScope, matches,
 };
 
 /// What syncd is allowed to keep of an account.

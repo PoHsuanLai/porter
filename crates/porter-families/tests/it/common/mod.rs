@@ -5,7 +5,8 @@
 #[cfg(feature = "generic")]
 pub mod mail;
 
-use porter_core::{SecretText, Toggle};
+use porter_capability::Toggle;
+use porter_core::SecretText;
 use porter_http::http::{Request, Response};
 use porter_http::{Http, HttpError};
 use porter_http_reqwest::ReqwestHttp;
@@ -96,7 +97,9 @@ pub fn secret(kind: FieldKind, text: &str) -> FieldAnswer {
 }
 
 /// Every service of a review, on.
-pub fn all_on(kinds: impl IntoIterator<Item = porter_core::CapabilityKind>) -> Vec<ServiceChoice> {
+pub fn all_on(
+    kinds: impl IntoIterator<Item = porter_capability::CapabilityKind>,
+) -> Vec<ServiceChoice> {
     kinds
         .into_iter()
         .map(|kind| ServiceChoice {
@@ -129,9 +132,10 @@ pub async fn drive<S: SignIn>(
 
 // ---- a person at the sheets, and a service to hand them to ----
 
+use porter_capability::CapabilityKind;
 use porter_core::AccountId;
 use porter_core::consent::{ConsentAnswer, ConsentAsk};
-use porter_core::{CapabilityKind, Credential, SecretKey};
+use porter_core::{Credential, SecretKey};
 use porter_fake::{MemoryStore, RecordingAudit, ScriptedSheets};
 use porter_families::FamilyProvider;
 use porter_ids::clock::FixedClock;

@@ -18,9 +18,7 @@
 use super::api::{AlbumId, ApiError, MediaId, PhotosApi};
 use super::ledger::{Entry, Kept, LedgerError};
 use crate::dataset::fingerprint;
-use porter_core::capability::{
-    Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope,
-};
+use porter_capability::{Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope};
 use porter_http::Http;
 use porter_ids::Bytes;
 use porter_sync::DELETED;

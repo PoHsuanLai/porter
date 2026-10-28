@@ -12,6 +12,7 @@ publish.workspace = true
 base64 = { workspace = true }
 httparse = { workspace = true }
 porter-core = { workspace = true }
+porter-capability = { workspace = true }
 porter-ids = { workspace = true }
 rustls-native-certs = { workspace = true, optional = true }
 rustls-pki-types = { workspace = true, optional = true }

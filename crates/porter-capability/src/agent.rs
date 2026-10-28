@@ -6,7 +6,7 @@
 //! protocols it speaks to a model.
 
 use super::terms::Offered;
-use crate::error::CoreError;
+use porter_ids::IdError;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -18,7 +18,7 @@ pub struct AgentProgram(Box<str>);
 
 impl AgentProgram {
     /// The program written as `text`.
-    pub fn parse(text: &str) -> Result<Self, CoreError> {
+    pub fn parse(text: &str) -> Result<Self, IdError> {
         let mut bytes = text.bytes();
         let ok = text.len() <= 48
             && bytes.next().is_some_and(|b| b.is_ascii_lowercase())
@@ -26,10 +26,7 @@ impl AgentProgram {
         if ok {
             Ok(Self(text.into()))
         } else {
-            Err(CoreError::MalformedId {
-                what: "agent program",
-                text: text.to_owned(),
-            })
+            Err(IdError::malformed("agent program", text))
         }
     }
 
@@ -40,8 +37,8 @@ impl AgentProgram {
 }
 
 impl TryFrom<String> for AgentProgram {
-    type Error = CoreError;
-    fn try_from(text: String) -> Result<Self, CoreError> {
+    type Error = IdError;
+    fn try_from(text: String) -> Result<Self, IdError> {
         Self::parse(&text)
     }
 }
@@ -66,7 +63,7 @@ pub struct EnvName(String);
 
 impl EnvName {
     /// The variable name written as `text`.
-    pub fn parse(text: &str) -> Result<Self, CoreError> {
+    pub fn parse(text: &str) -> Result<Self, IdError> {
         let mut bytes = text.bytes();
         let ok = text.len() <= 64
             && bytes
@@ -76,10 +73,7 @@ impl EnvName {
         if ok {
             Ok(Self(text.to_owned()))
         } else {
-            Err(CoreError::MalformedId {
-                what: "environment variable name",
-                text: text.to_owned(),
-            })
+            Err(IdError::malformed("environment variable name", text))
         }
     }
 
@@ -90,8 +84,8 @@ impl EnvName {
 }
 
 impl TryFrom<String> for EnvName {
-    type Error = CoreError;
-    fn try_from(text: String) -> Result<Self, CoreError> {
+    type Error = IdError;
+    fn try_from(text: String) -> Result<Self, IdError> {
         Self::parse(&text)
     }
 }

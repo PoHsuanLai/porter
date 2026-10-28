@@ -423,7 +423,7 @@ async fn only_the_agent_launcher_may_open_an_endpoint() {
         .accounts
         .session(
             &porter_core::Need::Llm(porter_core::need::LlmNeed::new(
-                [porter_core::capability::LlmFeature::Chat].into(),
+                [porter_capability::LlmFeature::Chat].into(),
                 porter_ids::Tokens(10),
             )),
             porter_core::DataClass::Prompt,

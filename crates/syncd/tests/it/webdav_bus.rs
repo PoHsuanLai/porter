@@ -10,13 +10,14 @@ use porter_ids::clock::SystemClock;
 use common::bus::PrivateBus;
 use common::hosted::{Link, host};
 use common::{Known, client};
+use porter_capability::CapabilityKind;
+use porter_capability::StorageScope;
 use porter_client::Accounts;
-use porter_core::capability::StorageScope;
 use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
 use porter_core::{AccountId, GrantId};
 use porter_core::{
-    AppName, AuthKind, CapabilityKind, Credential, DataClass, EndpointUrl, Family, LoginName,
-    SecretKey, SecretPurpose, SecretText, SpaceScope, Tls,
+    AppName, AuthKind, Credential, DataClass, EndpointUrl, Family, LoginName, SecretKey,
+    SecretPurpose, SecretText, SpaceScope, Tls,
 };
 use porter_dbus::SyncProxy;
 use porter_dbus::callers::CallerRole;

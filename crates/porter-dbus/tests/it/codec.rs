@@ -1,7 +1,9 @@
 //! A need and a candidate survive their D-Bus shape, and the shape is what the introspection
 //! says: a kind slug and a vardict for a need, a path, a label and a vardict for a candidate.
 
-use porter_core::capability::{
+use porter_capability::ModelId;
+use porter_capability::Subject;
+use porter_capability::{
     Access, AgentCap, AgentProgram, AgentProtocol, Albums, Capability, CapabilityKind, CuaEnv,
     Delta, HashKind, LibraryRead, LlmCap, LlmFeature, LlmWire, Modality, Offered, QuotaReport,
     SpeechMode, StorageCap, StorageScope,
@@ -10,10 +12,10 @@ use porter_core::need::{
     AgentNeed, CuaNeed, DimsNeed, EmbedNeed, IdentityNeed, ImageGenNeed, KeyValueNeed, LlmNeed,
     MailNeed, NotesNeed, PhotosNeed, PimNeed, PushNeed, RerankNeed, SpeechNeed, StorageNeed,
 };
-use porter_core::{AccountId, GrantId, ModelId};
+use porter_core::{AccountId, GrantId};
 use porter_core::{
     Candidate, EndpointUrl, Family, Limit, LimitReason, LoginName, Need, Restriction,
-    ServiceEndpoint, Subject, TenantConsent, Tls, TokenLifetime, Verification,
+    ServiceEndpoint, TenantConsent, Tls, TokenLifetime, Verification,
 };
 use porter_dbus::names::account_path;
 use porter_dbus::{candidate_from_dbus, candidate_to_dbus, need_from_dbus, need_to_dbus};
@@ -82,7 +84,7 @@ fn every_need() -> Vec<(&'static str, Need)> {
         (
             "image_gen",
             Need::ImageGen(ImageGenNeed::new(
-                [porter_core::capability::ImageMode::Inpaint].into(),
+                [porter_capability::ImageMode::Inpaint].into(),
                 Px(512),
             )),
         ),
@@ -220,7 +222,7 @@ fn an_agent_candidate_with_no_variable_to_set_round_trips() {
         Subject::Agent(AgentProgram::parse("gemini-cli").expect("program")),
         Capability::Agent(Box::new(AgentCap {
             program: AgentProgram::parse("gemini-cli").expect("program"),
-            key_env: Some(porter_core::capability::EnvName::parse("GEMINI_API_KEY").expect("env")),
+            key_env: Some(porter_capability::EnvName::parse("GEMINI_API_KEY").expect("env")),
             base_url_env: None,
             protocols: [AgentProtocol::GenerateContent].into(),
         })),

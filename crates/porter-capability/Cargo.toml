@@ -1,0 +1,23 @@
+[package]
+name = "porter-capability"
+description = "porter's capability vocabulary (what an account can do for an app), what an account offers with its provenance, and the effective set once the person's switches apply."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+porter-ids = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[features]
+# `fixtures`: the capabilities and claims the tests of this crate and of porter-match build from.
+testing = []
+
+[lints]
+workspace = true

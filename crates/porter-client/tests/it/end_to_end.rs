@@ -2,9 +2,9 @@
 //! capability, is asked for consent, and gets a token; a refusal sticks; a once-grant is spent.
 #![cfg(feature = "in-process")]
 
+use porter_capability::{Access, Delta, QuotaReport, StorageScope};
 use porter_client::{Accounts, ClientError, ConsentOffer, Found, InProcess, NoAccount};
 use porter_core::AccountId;
-use porter_core::capability::{Access, Delta, QuotaReport, StorageScope};
 use porter_core::consent::{GrantScope, Usage};
 use porter_core::need::StorageNeed;
 use porter_core::{AppId, AppName, Audience, DataClass, Isolation, Need};
@@ -191,10 +191,11 @@ async fn revoking_a_grant_ends_it() {
 /// `Reauthenticate` over the in-process carrier.
 #[tokio::test]
 async fn an_app_adds_an_account_through_a_family_is_granted_it_and_signs_it_in_again() {
+    use porter_capability::Toggle;
+    use porter_capability::{Access, Delta};
     use porter_core::ProviderId;
-    use porter_core::capability::{Access, Delta};
+    use porter_core::SecretText;
     use porter_core::need::PimNeed;
-    use porter_core::{SecretText, Toggle};
     use porter_fake::NOW;
     use porter_fake_servers::{FakeDav, FakeDns};
     use porter_families::{FamilyProvider, GenericProvider};
@@ -232,11 +233,11 @@ async fn an_app_adds_an_account_through_a_family_is_granted_it_and_signs_it_in_a
     };
     let review = SheetInput::Confirm(vec![
         ServiceChoice {
-            kind: porter_core::CapabilityKind::Calendar,
+            kind: porter_capability::CapabilityKind::Calendar,
             toggle: Toggle::On,
         },
         ServiceChoice {
-            kind: porter_core::CapabilityKind::Contacts,
+            kind: porter_capability::CapabilityKind::Contacts,
             toggle: Toggle::Off,
         },
     ]);
@@ -312,8 +313,9 @@ async fn an_app_adds_an_account_through_a_family_is_granted_it_and_signs_it_in_a
 /// account it is, so it can go on to ask for a grant of it.
 #[tokio::test]
 async fn adding_an_account_that_is_already_here_tells_the_app_which_one_it_is() {
+    use porter_capability::Toggle;
     use porter_core::ProviderId;
-    use porter_core::{SecretText, Toggle};
+    use porter_core::SecretText;
     use porter_fake::NOW;
     use porter_fake_servers::{FakeDav, FakeDns};
     use porter_families::{FamilyProvider, GenericProvider};
@@ -349,7 +351,7 @@ async fn adding_an_account_that_is_already_here_tells_the_app_which_one_it_is() 
         },
     ]);
     let review = SheetInput::Confirm(vec![ServiceChoice {
-        kind: porter_core::CapabilityKind::Calendar,
+        kind: porter_capability::CapabilityKind::Calendar,
         toggle: Toggle::On,
     }]);
     let sheets = ScriptedSheets::answering([]).conversing([
@@ -401,10 +403,11 @@ impl porter_http::Http for NothingPublished {
 /// endpoints and a login name that is not the address.
 #[tokio::test]
 async fn a_typed_pop3_server_is_added_through_the_sheet_and_found_by_a_mail_need() {
+    use porter_capability::Offered;
+    use porter_capability::Toggle;
     use porter_core::ProviderId;
-    use porter_core::capability::Offered;
     use porter_core::need::MailNeed;
-    use porter_core::{Family, SecretText, Toggle};
+    use porter_core::{Family, SecretText};
     use porter_fake::NOW;
     use porter_fake_servers::net::{Bind, port_of};
     use porter_fake_servers::{Accounts as MailAccounts, FakeDns, FakePop3, mailbox};
@@ -455,7 +458,7 @@ async fn a_typed_pop3_server_is_added_through_the_sheet_and_found_by_a_mail_need
         plain(FieldKind::Username, "ada.login"),
     ]);
     let review = SheetInput::Confirm(vec![ServiceChoice {
-        kind: porter_core::CapabilityKind::Mail,
+        kind: porter_capability::CapabilityKind::Mail,
         toggle: Toggle::On,
     }]);
     let sheets =

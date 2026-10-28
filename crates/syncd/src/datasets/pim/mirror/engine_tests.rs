@@ -7,9 +7,7 @@ use crate::clock::ManualClock;
 use crate::datasets::pim::items_in;
 use crate::engine::Engine;
 use crate::testing::scratch;
-use porter_core::capability::{
-    Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope,
-};
+use porter_capability::{Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope};
 use porter_ids::UnixSeconds;
 use porter_sync::RemoteId;
 use porter_sync::{

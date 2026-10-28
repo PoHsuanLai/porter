@@ -1,6 +1,7 @@
 use super::*;
+use porter_capability::ModelId;
+use porter_core::AccountId;
 use porter_core::consent::Usage;
-use porter_core::{AccountId, ModelId};
 use porter_core::{DataClass, Locality, Tier};
 use porter_infer::{
     AttachIndex, Base64Bytes, ChatMessage, ChatRequest, CuaBegin, CuaStepRequest, FrameImage,
@@ -103,7 +104,7 @@ fn the_images_a_request_carries_are_counted_wherever_they_sit() {
             "a begin carries none",
             InferRequest::CuaBegin(CuaBegin::new(
                 "g".into(),
-                porter_core::capability::CuaEnv::Desktop,
+                porter_capability::CuaEnv::Desktop,
             )),
             0,
         ),
@@ -144,7 +145,7 @@ fn audio_produced_is_added_from_the_reply_and_a_transcript_is_not_counted_twice(
     let spoke = InferReply::Spoke(SpeakReply::new(1_200, served()));
     let speak = InferRequest::Speak(SpeakRequest::new(
         "hi".into(),
-        porter_core::capability::LanguageTag::parse("en").expect("tag"),
+        porter_capability::LanguageTag::parse("en").expect("tag"),
         DataClass::Voice,
         Usage::Interactive,
     ));

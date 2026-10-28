@@ -971,8 +971,7 @@ async fn what_named_an_item_made_here_goes_once_it_is_settled() {
 #[tokio::test]
 async fn a_new_file_whose_answer_was_lost_is_taken_as_made_and_never_made_twice() {
     let rig = rig().await;
-    rig.source
-        .set_hashes(porter_core::capability::HashKind::Md5);
+    rig.source.set_hashes(porter_capability::HashKind::Md5);
     rig.sink.lose_next();
     rig.write_new(&NodeId::Top, "a.txt", b"one two").await;
     eventually("it is sent again", || {
@@ -987,8 +986,7 @@ async fn a_new_file_whose_answer_was_lost_is_taken_as_made_and_never_made_twice(
 #[tokio::test]
 async fn new_bytes_whose_answer_was_lost_are_taken_as_sent_not_split_off() {
     let rig = rig().await;
-    rig.source
-        .set_hashes(porter_core::capability::HashKind::Md5);
+    rig.source.set_hashes(porter_capability::HashKind::Md5);
     rig.file("r", None, "r.txt", b"old");
     rig.sink.lose_next();
     rig.write_at("r", 0, b"new bytes").await;
@@ -1004,8 +1002,7 @@ async fn new_bytes_whose_answer_was_lost_are_taken_as_sent_not_split_off() {
 #[tokio::test]
 async fn what_is_made_under_a_reserved_id_is_made_once_however_often_it_is_sent() {
     let rig = rig().await;
-    rig.source
-        .set_hashes(porter_core::capability::HashKind::Md5);
+    rig.source.set_hashes(porter_capability::HashKind::Md5);
     // A drive that takes a second item of a name: only the id tells a retry from a new item.
     rig.sink.twins();
     rig.sink.reserving();
@@ -1192,8 +1189,7 @@ fn meet(hook: &Arc<std::sync::Barrier>) -> tokio::task::JoinHandle<()> {
 #[tokio::test]
 async fn bytes_written_between_two_tries_under_a_reserved_id_are_sent_over_what_the_first_made() {
     let rig = rig().await;
-    rig.source
-        .set_hashes(porter_core::capability::HashKind::Md5);
+    rig.source.set_hashes(porter_capability::HashKind::Md5);
     rig.sink.reserving();
     rig.sink.lose_next();
     let id = rig.write_new(&NodeId::Top, "a.txt", b"first").await;
@@ -1223,8 +1219,7 @@ async fn bytes_written_between_two_tries_under_a_reserved_id_are_sent_over_what_
 #[tokio::test]
 async fn a_new_file_is_never_taken_for_a_drive_item_another_change_here_is_of() {
     let rig = rig().await;
-    rig.source
-        .set_hashes(porter_core::capability::HashKind::Md5);
+    rig.source.set_hashes(porter_capability::HashKind::Md5);
     rig.file("r", None, "a.txt", b"same");
     rig.file("k", None, "Kept.txt", b"k");
     rig.sink.refuse(Some(Refuse::Forbidden));

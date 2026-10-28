@@ -7,11 +7,12 @@ use crate::hosting::bus::PrivateBus;
 
 use inferd::launcher::{LauncherConfig, Launchers, LoginTiming, serve_launcher};
 use inferd::peers::{Caller, Role, TablePeers};
-use porter_core::capability::StorageScope;
+use porter_capability::CapabilityKind;
+use porter_capability::StorageScope;
 use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
 use porter_core::{
-    Account, AccountState, AppId, AppName, AuthKind, CapabilityKind, Credential, DataClass,
-    Isolation, SecretKey, SecretPurpose, SecretText, SpaceScope,
+    Account, AccountState, AppId, AppName, AuthKind, Credential, DataClass, Isolation, SecretKey,
+    SecretPurpose, SecretText, SpaceScope,
 };
 use porter_core::{AccountId, GrantId};
 use porter_dbus::LauncherProxy;

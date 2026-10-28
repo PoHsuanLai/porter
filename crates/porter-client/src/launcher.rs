@@ -30,12 +30,13 @@
 
 use crate::abandon::Abandon;
 use crate::credential::{CredentialHandle, ProcessCredential, Revocations};
+use porter_capability::AgentProgram;
+use porter_capability::{Capability, Subject};
 use porter_core::audit::Handoff;
-use porter_core::capability::AgentProgram;
 use porter_core::{AccountId, KeyPermitId, ProviderId};
 use porter_core::{
-    AccountLabel, Candidate, Capability, CoreError, DataClass, LauncherSession, LoginOutcome,
-    LoginRequestId, ProcessCredentialId, Restriction, Subject,
+    AccountLabel, Candidate, CoreError, DataClass, LauncherSession, LoginOutcome, LoginRequestId,
+    ProcessCredentialId, Restriction,
 };
 use porter_dbus::sheet::{SheetKind, reply_of};
 use porter_dbus::{

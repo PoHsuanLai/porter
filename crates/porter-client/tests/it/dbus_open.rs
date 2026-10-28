@@ -7,12 +7,13 @@ use crate::common;
 
 use common::bus::PrivateBus;
 use common::inferd::{Behaviour, FakeInferd, Seen, slugs};
+use porter_capability::ModelId;
 use porter_client::{
     Accounts, ClientError, DbusSession, DbusTransport, InferSession, SessionError, TransportError,
 };
+use porter_core::AccountId;
 use porter_core::consent::Usage;
 use porter_core::need::{DimsNeed, EmbedNeed, LlmNeed};
-use porter_core::{AccountId, ModelId};
 use porter_core::{DataClass, Need, Tier};
 use porter_ids::{Dims, Permille, Tokens};
 use porter_infer::testing::{Script, ScriptStep};
@@ -34,7 +35,7 @@ fn llm() -> Need {
 fn embeddings() -> Need {
     Need::Embeddings(EmbedNeed::new(
         DimsNeed::Exactly(Dims(3)),
-        [porter_core::capability::Modality::Text].into(),
+        [porter_capability::Modality::Text].into(),
     ))
 }
 

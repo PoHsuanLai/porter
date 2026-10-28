@@ -1,7 +1,6 @@
 use super::*;
-use porter_core::{
-    CapabilityKind, EndpointUrl, Family, LoginName, SecretText, ServiceEndpoint, Tls,
-};
+use porter_capability::CapabilityKind;
+use porter_core::{EndpointUrl, Family, LoginName, SecretText, ServiceEndpoint, Tls};
 
 fn caps(text: &str) -> Vec<String> {
     text.split(' ').map(str::to_owned).collect()

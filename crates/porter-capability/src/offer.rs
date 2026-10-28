@@ -1,7 +1,7 @@
 //! What an account says it can do, and how that is known (design/31 §2.4).
 
 use crate::ModelId;
-use crate::capability::{Capability, CapabilityKind};
+use crate::{Capability, CapabilityKind};
 use serde::{Deserialize, Serialize};
 
 /// A kind an account has, with its parameters, or lacks, with the reason the UI shows (G9).
@@ -56,7 +56,7 @@ pub enum Subject {
     Model(ModelId),
     /// One agent program an account can run (`AgentCap::program`), so an account that may run
     /// several keeps one claim for each.
-    Agent(crate::capability::AgentProgram),
+    Agent(crate::AgentProgram),
 }
 
 /// How a claim is known. Ordered by authority: a later variant corrects an earlier one.

@@ -1,9 +1,8 @@
 use super::*;
 use crate::step::{Effect, Input, RelayEnd, Relaying, Side};
 use crate::testing::{bytewise, sent, whole};
-use porter_core::{
-    CapabilityKind, EndpointUrl, Family, LoginName, RelayAuth, SecretText, ServiceEndpoint, Tls,
-};
+use porter_capability::CapabilityKind;
+use porter_core::{EndpointUrl, Family, LoginName, RelayAuth, SecretText, ServiceEndpoint, Tls};
 
 fn plan(url: &str, tls: Tls, auth: RelayAuth) -> RelayPlan {
     RelayPlan::new(

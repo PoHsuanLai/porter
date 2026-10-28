@@ -14,8 +14,9 @@ mod sign_in;
 use crate::io::{Io, Pacing};
 use crate::password::password_of;
 use discover::Who;
+use porter_capability::Claim;
 use porter_core::AccountId;
-use porter_core::{Account, Audience, Claim, Credential, EndpointUrl, IssuedToken};
+use porter_core::{Account, Audience, Credential, EndpointUrl, IssuedToken};
 use porter_http::{SharedHttp, Sleep};
 use porter_provider::{
     Presented, Provider, ProviderError, ProviderSession, ProviderSpec, RevokeOutcome, SignInStart,

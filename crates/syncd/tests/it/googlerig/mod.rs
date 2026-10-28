@@ -7,13 +7,14 @@
 use crate::common::bus::PrivateBus;
 use crate::common::hosted::{Link, host};
 use crate::common::{Known, PhotosGrant, client};
+use porter_capability::StorageScope;
+use porter_capability::{CapabilityKind, Claim, Offer, Provenance, Subject};
 use porter_client::Accounts;
-use porter_core::capability::StorageScope;
 use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
 use porter_core::{
-    Account, AccountLabel, AccountState, AuthKind, Candidate, CapabilityKind, Claim, Credential,
-    DataClass, EndpointUrl, Family, LoginName, Offer, Provenance, Restriction, SecretKey,
-    SecretPurpose, SecretText, ServiceEndpoint, SpaceScope, Subject, Tls,
+    Account, AccountLabel, AccountState, AuthKind, Candidate, Credential, DataClass, EndpointUrl,
+    Family, LoginName, Restriction, SecretKey, SecretPurpose, SecretText, ServiceEndpoint,
+    SpaceScope, Tls,
 };
 use porter_core::{AccountId, GrantId};
 use porter_dbus::callers::CallerRole;
@@ -272,8 +273,8 @@ async fn build(photos: PhotosGrant, media: Media, picker_only: bool) -> Rig {
             .endpoints
             .retain(|e| e.family != Family::GooglePhotosUpload);
         for claim in &mut account.capabilities {
-            if let Offer::Present(porter_core::Capability::Photos(cap)) = &mut claim.offer {
-                cap.upload = porter_core::capability::Offered::Absent;
+            if let Offer::Present(porter_capability::Capability::Photos(cap)) = &mut claim.offer {
+                cap.upload = porter_capability::Offered::Absent;
             }
         }
     }

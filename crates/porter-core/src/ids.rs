@@ -23,11 +23,6 @@ slug_id!(
     KeyPermitId,
     "key permit id"
 );
-slug_id!(
-    /// One model an AI account serves (`llama3.2`, `claude-sonnet-4-5`).
-    ModelId,
-    "model id"
-);
 
 impl From<GrantId> for KeyPermitId {
     fn from(grant: GrantId) -> Self {

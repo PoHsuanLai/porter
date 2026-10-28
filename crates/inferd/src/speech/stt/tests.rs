@@ -26,7 +26,7 @@ fn ears(scratch: &Scratch) -> LocalModel {
 fn served() -> ServedBy {
     ServedBy {
         account: porter_core::AccountId::parse("local").expect("id"),
-        model: porter_core::ModelId::parse("tiny-ears").expect("id"),
+        model: porter_capability::ModelId::parse("tiny-ears").expect("id"),
         locality: porter_core::Locality::OnDevice,
     }
 }

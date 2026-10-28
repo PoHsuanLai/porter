@@ -4,8 +4,8 @@
 
 use super::refusal::Refusal;
 use crate::settings::Settings;
+use porter_capability::AgentProgram;
 use porter_core::AccountId;
-use porter_core::capability::AgentProgram;
 use porter_core::{AppId, AppName, DataClass, Isolation, Locality};
 use porter_dbus::{MODELS_ANY, MODELS_LISTED, ROUTE_ACCOUNT, ROUTE_MODEL, RouteArg};
 use porter_infer::LocalOnly;

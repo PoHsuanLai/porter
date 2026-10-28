@@ -2,7 +2,7 @@
 //! the secret store only: no wire type carries a [`Credential`].
 
 use crate::AccountId;
-use crate::capability::CapabilityKind;
+use porter_capability::CapabilityKind;
 use porter_ids::UnixSeconds;
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};

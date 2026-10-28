@@ -1,5 +1,5 @@
 use super::*;
-use porter_core::capability::VocabVersion;
+use porter_capability::VocabVersion;
 use porter_fake::{llm_account, mail_account, storage_account};
 use std::path::Path;
 use std::sync::atomic::{AtomicU32, Ordering};

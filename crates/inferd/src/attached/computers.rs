@@ -21,7 +21,7 @@
 //! The words of every refusal are plain: the person reads them in Settings.
 
 use super::book::AttachedBook;
-use porter_core::ModelId;
+use porter_capability::ModelId;
 use porter_core::{NodeId, SecretText};
 use porter_fs::atomic::AtomicWrite;
 use porter_infer::{ComputerName, PlaceId};

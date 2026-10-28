@@ -30,7 +30,7 @@ async fn availability_prepare_and_the_gpu_answer_over_the_bus() {
     );
     // A class nobody has a model for under the floor, and a need nothing here can serve.
     let speech = need_to_dbus(&Need::Speech(porter_core::need::SpeechNeed::new(
-        [porter_core::capability::SpeechMode::Stt].into(),
+        [porter_capability::SpeechMode::Stt].into(),
     )));
     assert_eq!(
         inference

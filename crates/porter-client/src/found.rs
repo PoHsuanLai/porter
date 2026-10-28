@@ -60,9 +60,10 @@ pub fn found(candidates: Vec<Candidate>, availability: Availability, offer: Cons
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_core::capability::{Access, Delta, QuotaReport, StorageScope};
+    use porter_capability::{Access, Delta, QuotaReport, StorageScope};
+    use porter_capability::{Capability, Subject};
     use porter_core::need::StorageNeed;
-    use porter_core::{AccountLabel, Capability, Restriction, Subject};
+    use porter_core::{AccountLabel, Restriction};
     use porter_core::{GrantId, ProviderId};
 
     fn offer() -> ConsentOffer {
@@ -85,8 +86,8 @@ mod tests {
             AccountLabel("Cloud".into()),
             ProviderId::parse("nextcloud").expect("id"),
             Subject::Account,
-            Capability::Push(porter_core::capability::PushCap {
-                channel: porter_core::capability::PushChannel::LongPoll,
+            Capability::Push(porter_capability::PushCap {
+                channel: porter_capability::PushChannel::LongPoll,
             }),
             Restriction::none(),
             GrantId::parse(grant).expect("id"),

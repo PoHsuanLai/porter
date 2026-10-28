@@ -3,7 +3,7 @@
 use super::dbus::{DbusTransport, Rows, bus_error, slug};
 use super::dbus_session::DbusSession;
 use crate::error::TransportError;
-use porter_core::ModelId;
+use porter_capability::ModelId;
 use porter_core::{DataClass, Need, Tier};
 use porter_dbus::names::{
     OPTION_ASKER, OPTION_MODEL, OPTION_PLACE_MODELS, OPTION_PLACES, OPTION_TRACEPARENT,

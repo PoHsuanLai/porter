@@ -2,8 +2,9 @@
 //! directory, and the keyring store over keyring-core's mock. Nothing here touches the user's
 //! keyring: the Secret Service is never opened.
 
+use porter_capability::CapabilityKind;
 use porter_core::AccountId;
-use porter_core::{CapabilityKind, Credential, SecretKey, SecretPurpose, SecretText};
+use porter_core::{Credential, SecretKey, SecretPurpose, SecretText};
 use porter_secrets::{MemorySecrets, Namespace, PutOutcome, Secrets, SecretsError, StoreSecrets};
 use std::sync::Arc;
 

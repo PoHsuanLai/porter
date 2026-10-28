@@ -16,7 +16,7 @@ mod tests;
 
 use crate::dataset::{Dataset, DatasetError, Direction, replica_hash};
 use crate::journal::{Journal, JournalError, Op};
-use porter_core::capability::QuotaReport;
+use porter_capability::QuotaReport;
 use porter_ids::UnixSeconds;
 use porter_ids::clock::Clock;
 use porter_sync::{

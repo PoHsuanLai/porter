@@ -14,7 +14,7 @@ mod backoff;
 
 pub use backoff::{Jitter, exponential, jittered, next_look};
 
-use porter_core::capability::Delta;
+use porter_capability::Delta;
 use porter_ids::UnixSeconds;
 
 /// How the machine is connected.

@@ -7,13 +7,13 @@ use crate::audit::AuditSink;
 use crate::ctx::Ctx;
 use crate::sheets::Sheets;
 use crate::token::secret_purpose;
+use porter_capability::{
+    AbsentReason, CapabilityKind, Claim, Offer, Provenance, Subject, Toggle, effective,
+};
 use porter_core::store::AccountToggle;
 use porter_core::store::RegistryStore;
-use porter_core::{
-    AbsentReason, AppId, CapabilityKind, Claim, Offer, Provenance, SecretKey, Subject, Toggle,
-    effective,
-};
 use porter_core::{AccountId, GrantId};
+use porter_core::{AppId, SecretKey};
 use porter_ids::clock::Clock;
 use porter_provider::{Presented, Provider, ProviderSession, RevokeOutcome};
 use porter_secrets::{Secrets, SecretsError};
@@ -124,7 +124,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                 .toggles
                 .iter()
                 .filter(|t| t.account == *id)
-                .map(|t| porter_core::KindToggle {
+                .map(|t| porter_capability::KindToggle {
                     kind: t.kind,
                     toggle: t.toggle,
                 })
@@ -184,7 +184,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                 .toggles
                 .iter()
                 .filter(|t| t.account == *id)
-                .map(|t| porter_core::KindToggle {
+                .map(|t| porter_capability::KindToggle {
                     kind: t.kind,
                     toggle: t.toggle,
                 })

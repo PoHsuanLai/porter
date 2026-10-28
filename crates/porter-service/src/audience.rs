@@ -3,7 +3,7 @@
 //! the families that serve its kind in the provider file. A mail grant also covers `smtp` when
 //! the account sends, because SMTP submission has no row of its own.
 
-use porter_core::capability::{Capability, CapabilityKind, Offered};
+use porter_capability::{Capability, CapabilityKind, Offered};
 use porter_core::{Audience, Family};
 use porter_provider::ProviderSpec;
 

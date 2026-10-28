@@ -5,9 +5,10 @@ use cua_action::{
     Button, ClickCount, Coord, CuaAction, DeviceSize, PixelFormat, Point, Scale120, Size, Target,
     WindowSpace,
 };
-use porter_core::capability::{CuaEnv, LanguageTag};
+use porter_capability::ModelId;
+use porter_capability::{CuaEnv, LanguageTag};
+use porter_core::AccountId;
 use porter_core::consent::Usage;
-use porter_core::{AccountId, ModelId};
 use porter_core::{DataClass, Locality};
 use porter_ids::{Count, Permille, Tokens};
 use porter_infer::*;

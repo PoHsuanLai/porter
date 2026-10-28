@@ -10,15 +10,11 @@ mod app_id;
 pub mod audit;
 mod auth_kind;
 mod candidate;
-pub mod capability;
 pub mod consent;
 mod data_class;
-mod effective;
 mod endpoint;
 mod error;
 mod family;
-#[cfg(test)]
-mod fixtures;
 mod helper_id;
 mod identities;
 mod identity;
@@ -27,7 +23,6 @@ mod launcher_session;
 pub mod lending;
 mod matching;
 pub mod need;
-mod offer;
 mod process_credential;
 mod protocol;
 mod provider_hint;
@@ -47,9 +42,7 @@ pub use ai_props::{Billing, Locality, PriceTable, Region, Tier};
 pub use app_id::{AppId, AppLabel, AppName, Isolation};
 pub use auth_kind::{AuthKind, SignInWay};
 pub use candidate::Candidate;
-pub use capability::{Capability, CapabilityKind};
 pub use data_class::DataClass;
-pub use effective::{KindToggle, Toggle, effective};
 pub use endpoint::{
     EndpointFault, EndpointUrl, LoginName, PathReach, Reach, ReachMethods, RelayAuth, RelayPlan,
     ServerAddress, ServerAddressFault, ServiceEndpoint, Tls, server_address, server_address_shape,
@@ -59,11 +52,10 @@ pub use family::Family;
 pub use helper_id::HelperId;
 pub use identities::{Identity, IdentityAddress, IdentityId, IdentityKind, IdentityName};
 pub use identity::{CgroupPath, ClaimedId, PeerFacts, PeerIdentity, SandboxFacts, identity_of};
-pub use ids::{AccountId, GrantId, KeyPermitId, ModelId, ProviderId};
+pub use ids::{AccountId, GrantId, KeyPermitId, ProviderId};
 pub use launcher_session::LauncherSession;
 pub use matching::{Match, Shortfall, matches};
 pub use need::Need;
-pub use offer::{AbsentReason, Claim, Offer, Provenance, Subject};
 pub use process_credential::ProcessCredentialId;
 pub use protocol::EndpointProtocol;
 pub use provider_hint::ProviderHint;

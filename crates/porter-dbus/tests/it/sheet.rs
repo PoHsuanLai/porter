@@ -1,12 +1,12 @@
 //! The portal shape of a sheet's answer: the response codes, the results vardict (through the
 //! real `(u, a{sv})` wire encoding), the request path and the handle token.
 
-use porter_core::capability::{Access, Capability, Delta, HashKind, Offered};
-use porter_core::capability::{QuotaReport, StorageCap, StorageScope};
+use porter_capability::Subject;
+use porter_capability::{Access, Capability, Delta, HashKind, Offered};
+use porter_capability::{QuotaReport, StorageCap, StorageScope};
 use porter_core::{AccountId, GrantId, ProviderId};
 use porter_core::{
-    AccountLabel, Candidate, EndpointUrl, Family, LoginName, Restriction, ServiceEndpoint, Subject,
-    Tls,
+    AccountLabel, Candidate, EndpointUrl, Family, LoginName, Restriction, ServiceEndpoint, Tls,
 };
 use porter_dbus::names::account_path;
 use porter_dbus::sheet::{

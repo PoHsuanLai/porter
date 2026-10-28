@@ -32,7 +32,7 @@ pub use graph::{GraphCalendarFeed, GraphCalendarSource};
 
 use super::PimKind;
 use super::discover::{DiscoverError, Found};
-use porter_core::capability::{Capability, PimTransport};
+use porter_capability::{Capability, PimTransport};
 use porter_core::{Candidate, ServiceEndpoint};
 use porter_sync::{More, RemoteItem, ReplicaError, Tombstone};
 use std::future::Future;
@@ -93,8 +93,8 @@ pub trait Feed: Send + Sync + 'static {
 
     /// What the backend offers; the default is a read-only feed whose items the engine compares
     /// by SHA-256.
-    fn features(&self) -> porter_core::capability::StorageCap {
-        use porter_core::capability::{
+    fn features(&self) -> porter_capability::StorageCap {
+        use porter_capability::{
             Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope,
         };
         StorageCap {

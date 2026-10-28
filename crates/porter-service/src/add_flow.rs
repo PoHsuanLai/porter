@@ -13,10 +13,11 @@ use crate::launcher::{Roster, program_of_spec};
 use crate::race::{Raced, race};
 use crate::sheets::{SheetFault, SheetLink, SheetOpen, Sheets};
 use crate::token::refusal_of;
+use porter_capability::CapabilityKind;
 use porter_core::ProviderHint;
 use porter_core::store::RegistryStore;
 use porter_core::{AccountId, ProviderId};
-use porter_core::{AppId, AuthKind, CapabilityKind, Need, ServiceEndpoint};
+use porter_core::{AppId, AuthKind, Need, ServiceEndpoint};
 use porter_ids::clock::Clock;
 use porter_provider::{
     ConsentHistory, LoginHint, Provider, ProviderError, ProviderSpec, Readiness, SignIn,
@@ -601,7 +602,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                 kinds,
                 ..
             } => {
-                let given: Vec<porter_core::Capability> = self
+                let given: Vec<porter_capability::Capability> = self
                     .catalog
                     .get(provider)
                     .map(|spec| {

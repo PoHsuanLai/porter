@@ -5,10 +5,11 @@
 use crate::common;
 
 use common::{Fakes, all_on, plain};
-use porter_core::capability::CapabilityKind;
+use porter_capability::CapabilityKind;
+use porter_capability::Offer;
 use porter_core::{
     Account, AccountLabel, AccountState, AuthKind, Credential, EndpointUrl, Family, LoginName,
-    Offer, Restriction, SecretPurpose, SecretText, ServiceEndpoint, Tls,
+    Restriction, SecretPurpose, SecretText, ServiceEndpoint, Tls,
 };
 use porter_core::{AccountId, ProviderId};
 use porter_fake::FakeServer;

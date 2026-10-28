@@ -3,10 +3,10 @@
 use super::grant::{GrantScope, Usage};
 use crate::account::AccountLabel;
 use crate::app_id::{AppId, AppLabel};
-use crate::capability::CapabilityKind;
 use crate::data_class::DataClass;
 use crate::launcher_session::LauncherSession;
 use crate::{AccountId, ProviderId};
+use porter_capability::CapabilityKind;
 use serde::{Deserialize, Serialize};
 
 /// One consent question: "Photos wants to keep its library in your files", with the fitting

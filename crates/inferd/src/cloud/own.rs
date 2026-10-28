@@ -26,7 +26,8 @@ use model_http::{
     HttpStatus, HttpTarget, Port, Proxy, ResponseHead, RouteRoot, Secret, Timeouts, TlsRoots,
     Transport, UrlPath, Verb, WaitMs,
 };
-use porter_core::{AccountId, ModelId};
+use porter_capability::ModelId;
+use porter_core::AccountId;
 use porter_core::{SecretText, ServiceEndpoint};
 use porter_ids::{UnixSeconds, UrlScheme};
 use porter_infer::Takes;

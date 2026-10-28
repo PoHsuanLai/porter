@@ -9,8 +9,9 @@ use dav_proto::names::{
     ADDRESSBOOK_HOME_SET, CALENDAR_HOME_SET, CURRENT_USER_PRINCIPAL, QUOTA_AVAILABLE, QUOTA_USED,
 };
 use dav_proto::{Depth, parse_multistatus};
-use porter_core::capability::CapabilityKind;
-use porter_core::{Claim, EndpointUrl, Family, LoginName, SecretText, ServiceEndpoint};
+use porter_capability::CapabilityKind;
+use porter_capability::Claim;
+use porter_core::{EndpointUrl, Family, LoginName, SecretText, ServiceEndpoint};
 use porter_dav::{Home, home_set, propfind};
 use porter_discover::parse_ocs_capabilities;
 use porter_http::http::header::{ACCEPT, AUTHORIZATION};

@@ -7,10 +7,8 @@ use crate::common;
 
 use common::bus::PrivateBus;
 use common::{Known, NO_FITTING, client, error_name};
+use porter_capability::{Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope};
 use porter_core::AppName;
-use porter_core::capability::{
-    Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope,
-};
 use porter_dbus::callers::CallerRole;
 use porter_dbus::names::SYNC_ERROR_NOTHING_HELD;
 use porter_dbus::{Details, SyncProxy};

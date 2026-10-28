@@ -1,7 +1,8 @@
 use super::*;
 use crate::testkit::{Scratch, models};
+use porter_capability::ModelId;
+use porter_core::AccountId;
 use porter_core::consent::Usage;
-use porter_core::{AccountId, ModelId};
 use porter_core::{DataClass, Locality};
 use porter_infer::{
     ChatMessage, ChatRequest, ImagePart, ImageSource, MessagePart, Role, SpeakRequest,
@@ -109,7 +110,7 @@ async fn kinds_the_runner_cannot_serve_are_refused_unsupported_and_so_is_a_step_
         InferRequest::Speak(
             SpeakRequest::new(
                 "hi".into(),
-                porter_core::capability::LanguageTag::parse("en").expect("tag"),
+                porter_capability::LanguageTag::parse("en").expect("tag"),
                 DataClass::Voice,
                 Usage::Interactive,
             )

@@ -1,10 +1,11 @@
 use super::*;
-use porter_core::Billing;
-use porter_core::capability::{
+use porter_capability::ModelId;
+use porter_capability::{
     Capability, CuaBatching, CuaCap, CuaEnv, LlmCap, LlmFeature, LlmWire, Offered,
 };
+use porter_core::AccountId;
+use porter_core::Billing;
 use porter_core::need::{CuaNeed, LlmNeed};
-use porter_core::{AccountId, ModelId};
 use porter_ids::{Px, Tokens};
 use porter_infer::{AutoMode, AutoRow, Declined, DeclinedBecause, LocalOnly, TierRow};
 
@@ -281,7 +282,7 @@ fn the_users_tier_choice_decides_between_models_that_fit() {
 
 #[test]
 fn needs_map_to_the_picker_kinds() {
-    use porter_core::capability::SpeechMode;
+    use porter_capability::SpeechMode;
     use porter_core::need::{DimsNeed, EmbedNeed, SpeechNeed};
     let speech =
         |modes: &[SpeechMode]| Need::Speech(SpeechNeed::new(modes.iter().copied().collect()));

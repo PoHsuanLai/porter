@@ -1,12 +1,9 @@
 //! The mail endpoints and claim every mail source builds: autoconfig and SRV name IMAP and
 //! SMTP servers, JMAP names its own.
 
-use porter_core::capability::{
-    Access, Capability, Delta, LabelModel, MailCap, MailTransport, Offered,
-};
-use porter_core::{
-    Claim, EndpointUrl, Family, LoginName, Offer, Provenance, ServiceEndpoint, Subject, Tls,
-};
+use porter_capability::{Access, Capability, Delta, LabelModel, MailCap, MailTransport, Offered};
+use porter_capability::{Claim, Offer, Provenance, Subject};
+use porter_core::{EndpointUrl, Family, LoginName, ServiceEndpoint, Tls};
 
 /// An IMAP endpoint at `host:port`, or `None` when the pieces do not make a coherent one.
 pub(crate) fn imap_endpoint(

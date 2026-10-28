@@ -11,8 +11,8 @@ use hosting::lab::Lab;
 use hosting::rig::{Hosted, Plan, Trust, World};
 use inferd::attached::{Attached, Place, Reach};
 use inferd::peers::{Caller, Role};
+use porter_capability::ModelId;
 use porter_client::{ClientError, TransportError};
-use porter_core::ModelId;
 use porter_core::{AppId, AppName, DataClass, Isolation, Tier};
 use porter_infer::{ComputerName, PlaceKind, PlaceRow, PlaceState, Takes};
 
@@ -189,7 +189,7 @@ async fn the_shell_may_list_the_places_and_ask_for_no_model() {
     let (world, _lab) = world("shell", Role::Shell, "org.quire.Shell").await;
     assert!(world.accounts.places().await.is_ok());
     let need = porter_core::Need::Llm(porter_core::need::LlmNeed::new(
-        [porter_core::capability::LlmFeature::Chat].into(),
+        [porter_capability::LlmFeature::Chat].into(),
         porter_ids::Tokens(1000),
     ));
     let opened = world
@@ -253,9 +253,9 @@ async fn within_generous(work: impl std::future::Future<Output = ()>) -> bool {
 mod routing {
     use super::*;
     use hosting::bus::within;
+    use porter_capability::LlmFeature;
     use porter_client::InferSession;
     use porter_core::Need;
-    use porter_core::capability::LlmFeature;
     use porter_core::consent::Usage;
     use porter_core::need::LlmNeed;
     use porter_dbus::InferenceProxy;
@@ -592,8 +592,8 @@ mod refusals {
     use super::routing::placed_world_with;
     use super::*;
     use hosting::rig::World;
+    use porter_capability::{LlmFeature, Modality};
     use porter_core::Need;
-    use porter_core::capability::{LlmFeature, Modality};
     use porter_core::need::{DimsNeed, EmbedNeed, LlmNeed};
     use porter_dbus::{InferenceProxy, PLACE_ERROR_PREFIX, place_refusal_of};
     use porter_ids::Tokens;
@@ -745,7 +745,7 @@ mod refusals {
         let (world, _lab) = placed_world_with("r-pin", Role::Placer, COMPANION, true).await;
         let options = only(&["this-computer"]).with_place_model(
             PlaceId::this_computer(),
-            porter_core::ModelId::parse("no-such-model").expect("id"),
+            porter_capability::ModelId::parse("no-such-model").expect("id"),
         );
         // The lab machine and the account, outside the set, could have served.
         both_ways(
@@ -1025,7 +1025,7 @@ mod computers {
         let options = OpenOptions::default()
             .with_places(vec![PlaceId::parse("computer:studio-pc").expect("place")]);
         let need = porter_core::Need::Llm(porter_core::need::LlmNeed::new(
-            [porter_core::capability::LlmFeature::Chat].into(),
+            [porter_capability::LlmFeature::Chat].into(),
             porter_ids::Tokens(1000),
         ));
         let mut session = within(

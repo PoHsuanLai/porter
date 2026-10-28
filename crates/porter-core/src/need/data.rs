@@ -2,7 +2,7 @@
 //!
 //! Each need grows by adding a minimum, so each is `#[non_exhaustive]` and built with `new`.
 
-use crate::capability::{Access, Albums, Delta, LibraryRead, Offered, QuotaReport, StorageScope};
+use porter_capability::{Access, Albums, Delta, LibraryRead, Offered, QuotaReport, StorageScope};
 use porter_ids::Bytes;
 use serde::{Deserialize, Serialize};
 

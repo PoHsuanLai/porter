@@ -11,10 +11,11 @@ pub use discovery::{Discovery, Port};
 pub use linked::{AuthOrigin, LinkedOrigin};
 pub use matching::{DomainMatch, DomainName, Matching};
 
+use porter_capability::{Ask, StorageScope};
+use porter_capability::{Capability, CapabilityKind};
 use porter_core::AuthKind;
 use porter_core::ProviderId;
-use porter_core::capability::{Ask, StorageScope};
-use porter_core::{Billing, Capability, CapabilityKind, Family, Locality};
+use porter_core::{Billing, Family, Locality};
 use porter_sheet::{MarkFace, ProviderGroup, ProviderKind, ProviderRow, RowKind};
 use serde::{Deserialize, Serialize};
 

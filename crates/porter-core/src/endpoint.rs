@@ -5,11 +5,11 @@
 //! An endpoint is parsed once where it enters (a provider file, discovery, a legacy record, the
 //! bus); everything past that holds typed values.
 
-use crate::capability::CapabilityKind;
 use crate::error::CoreError;
 use crate::family::Family;
 use crate::protocol::EndpointProtocol;
 use crate::secret::SecretText;
+use porter_capability::CapabilityKind;
 use porter_ids::{IdError, Origin, UrlScheme, WebUrl, split_authority};
 use serde::{Deserialize, Serialize};
 use std::fmt;

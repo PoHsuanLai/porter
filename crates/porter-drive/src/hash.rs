@@ -3,7 +3,7 @@
 //! reports that. Other kinds are not computed here; a fetch of such a drive is checked by its
 //! version instead.
 
-use porter_core::capability::HashKind;
+use porter_capability::HashKind;
 use quickxorhash::QuickXorHash;
 use sha2::Digest;
 use std::io::Read;

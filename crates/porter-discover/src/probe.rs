@@ -6,11 +6,11 @@
 //! first that answers decides; a port that refuses or answers nothing readable is skipped.
 //! Everything is `127.0.0.1`, plain HTTP: the only plain endpoint porter allows is loopback.
 
-use porter_core::ModelId;
-use porter_core::capability::{
+use porter_capability::ModelId;
+use porter_capability::{
     Capability, EmbedCap, EmbedPrompts, LlmCap, LlmFeature, LlmWire, Modality, PrefixText,
 };
-use porter_core::{Claim, Offer, Provenance, Subject};
+use porter_capability::{Claim, Offer, Provenance, Subject};
 use porter_http::http::Method;
 use porter_http::http::header::CONTENT_TYPE;
 use porter_http::{Http, request};

@@ -22,7 +22,7 @@ use crate::settings::{HelperPools, LocalEngines, Reload};
 use crate::tailnet::{Candidate, Tailnet};
 use crate::toolproof::ToolWatch;
 use crate::watch::Probing;
-use porter_core::ModelId;
+use porter_capability::ModelId;
 use porter_core::{DataClass, HelperId, NodeId, SecretText, Tier};
 use porter_dbus::names::{
     CANDIDATE_KEY_MODELS, CANDIDATE_KEY_NAME, CANDIDATE_KEY_NEEDS_APPROVAL, GUEST_KEY_NAME,

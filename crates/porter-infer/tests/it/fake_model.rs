@@ -1,7 +1,8 @@
 //! The fake model echoes the last text.
 
+use porter_capability::ModelId;
+use porter_core::AccountId;
 use porter_core::consent::Usage;
-use porter_core::{AccountId, ModelId};
 use porter_core::{DataClass, Tier};
 use porter_fake::llm_account;
 use porter_infer::testing::FakeModel;

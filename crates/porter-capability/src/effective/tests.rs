@@ -1,7 +1,7 @@
 use super::*;
-use crate::capability::{Access, Delta, StorageScope};
 use crate::fixtures::{claim, storage};
 use crate::offer::{Offer, Provenance, Subject};
+use crate::{Access, Delta, StorageScope};
 
 fn poll() -> crate::Capability {
     storage(Access::ReadWrite, Delta::Poll, StorageScope::Full)

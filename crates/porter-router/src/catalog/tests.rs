@@ -1,7 +1,7 @@
 use super::*;
 use crate::testkit::Scratch;
 use crate::testkit::entries;
-use porter_core::capability::{CuaBatching, Offered};
+use porter_capability::{CuaBatching, Offered};
 use std::path::PathBuf;
 
 fn shipped() -> CatalogDirs {

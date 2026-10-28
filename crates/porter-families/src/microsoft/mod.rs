@@ -18,8 +18,9 @@ pub use scopes::{AccountClass, classify};
 pub use session::MicrosoftSession;
 pub use signin::MicrosoftSignIn;
 
+use porter_capability::Claim;
 use porter_core::AccountId;
-use porter_core::{Account, Claim, Credential, EndpointUrl, Family, SecretText};
+use porter_core::{Account, Credential, EndpointUrl, Family, SecretText};
 use porter_http::Http;
 use porter_http_reqwest::ReqwestHttp;
 use porter_provider::{

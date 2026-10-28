@@ -134,7 +134,7 @@ mod tests {
             },
             ServedBy {
                 account: porter_core::AccountId::parse("local").expect("id"),
-                model: porter_core::ModelId::parse("m").expect("id"),
+                model: porter_capability::ModelId::parse("m").expect("id"),
                 locality: porter_core::Locality::OnDevice,
             },
         )

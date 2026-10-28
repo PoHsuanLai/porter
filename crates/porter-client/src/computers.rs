@@ -10,7 +10,7 @@
 //!     .await?;                                    // PlaceId: computer:studio
 //! ```
 
-use porter_core::ModelId;
+use porter_capability::ModelId;
 use porter_core::SecretText;
 use std::path::PathBuf;
 

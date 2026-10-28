@@ -1,9 +1,11 @@
 //! A local runtime reported as an account: made from its provider file, models as claims, offline
 //! and back, never deleted; and what a runtime may not say.
 
-use porter_core::capability::{Capability, LlmCap, LlmFeature, LlmWire};
-use porter_core::{AbsentReason, AccountState, Claim, Offer, Provenance, Subject};
-use porter_core::{AccountId, ModelId, ProviderId};
+use porter_capability::ModelId;
+use porter_capability::{AbsentReason, Claim, Offer, Provenance, Subject};
+use porter_capability::{Capability, LlmCap, LlmFeature, LlmWire};
+use porter_core::AccountState;
+use porter_core::{AccountId, ProviderId};
 use porter_fake::{MemoryStore, ScriptedSheets, cloud_provider, llm_provider};
 use porter_ids::Tokens;
 use porter_ids::clock::FixedClock;
@@ -113,7 +115,7 @@ async fn a_report_that_is_not_a_runtimes_to_make_is_refused_and_changes_nothing(
     let (service, store) = service();
     let mut absent = discovered("a-model");
     absent.offer = Offer::Absent {
-        kind: porter_core::CapabilityKind::Llm,
+        kind: porter_capability::CapabilityKind::Llm,
         reason: AbsentReason::TurnedOff,
     };
     let mut about_account = discovered("a-model");

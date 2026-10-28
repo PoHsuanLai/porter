@@ -1,7 +1,8 @@
 //! Every stored or wire type of porter-core survives its serde form, and the forms that other
 //! programs read keep their slugs.
 
-use porter_core::capability::{
+use porter_capability::*;
+use porter_capability::{
     Access, AgentCap, AgentProgram, AgentProtocol, Albums, Capability, CapabilityKind, CuaBatching,
     CuaCap, CuaEnv, Delta, EmbedCap, EmbedPrompts, EnvName, HashKind, IdentityCap, ImageGenCap,
     ImageMode, KeyValueCap, LabelModel, LanguageSet, LanguageTag, LibraryRead, LlmCap, LlmFeature,

@@ -24,8 +24,8 @@
 //! environment ([`Delivery::Value`]) puts it back there, readable by processes of the same user.
 
 use crate::launcher::LauncherError;
+use porter_capability::EnvName;
 use porter_core::audit::{CredentialEnd, Handoff};
-use porter_core::capability::EnvName;
 use porter_core::{ProcessCredentialId, SecretText};
 use porter_dbus::{BusStream, ProcessCredentialRevoked, ProcessCredentialRevokedStream};
 use std::io;

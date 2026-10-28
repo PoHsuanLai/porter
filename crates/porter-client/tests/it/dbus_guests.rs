@@ -449,8 +449,8 @@ async fn candidates_decode_with_their_models_and_approval() {
 #[cfg(feature = "infer")]
 mod computers {
     use super::*;
+    use porter_capability::ModelId;
     use porter_client::{ComputerName, ComputerReach, NewComputer, NewComputerModel};
-    use porter_core::ModelId;
     use porter_core::SecretText;
 
     fn place_row(id: &str, kind: &str, name: &str) -> (String, Details) {

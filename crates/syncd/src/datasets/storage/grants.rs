@@ -9,10 +9,8 @@
 //! `google_photos_upload` and `google_photos_picker` endpoints are Google Photos.
 
 use crate::datasets::pim::AccountdUnavailable;
+use porter_capability::{Access, Albums, Delta, LibraryRead, Offered, QuotaReport, StorageScope};
 use porter_client::{Accounts, Found, Transport};
-use porter_core::capability::{
-    Access, Albums, Delta, LibraryRead, Offered, QuotaReport, StorageScope,
-};
 use porter_core::consent::Usage;
 use porter_core::need::{PhotosNeed, StorageNeed};
 use porter_core::{Candidate, DataClass, Family, Need, ServiceEndpoint};

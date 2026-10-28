@@ -7,8 +7,8 @@ use crate::launcher_register::error_name;
 use crate::launcher_rig::*;
 
 use inferd::launcher::LoginTiming;
+use porter_capability::AgentProgram;
 use porter_core::AccountId;
-use porter_core::capability::AgentProgram;
 use porter_core::{AccountState, LoginOutcome};
 use porter_dbus::{LauncherFault, ServiceRoot};
 use porter_ids::clock::Clock;

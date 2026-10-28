@@ -4,9 +4,7 @@ use crate::feed::{Known, Pending};
 use crate::path::Root;
 use crate::requests;
 use dav_proto::parse_multistatus;
-use porter_core::capability::{
-    Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope,
-};
+use porter_capability::{Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope};
 use porter_http::http::header::RANGE;
 use porter_http::http::{Method, Request, Response};
 use porter_http::{Http, request};

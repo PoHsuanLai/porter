@@ -14,10 +14,11 @@ use super::probe::{probe, whoami};
 use super::scopes::{Granted, IDENTITY, on_use_scopes_of, scopes_for};
 use super::{Apis, apis_of};
 use crate::extend::{answered_as, asked_claims};
-use porter_core::capability::{Capability, CapabilityKind};
+use porter_capability::{Capability, CapabilityKind};
+use porter_capability::{Claim, Offer};
 use porter_core::{
-    AccountLabel, Claim, Credential, EndpointUrl, Family, Limit, LimitReason, LoginName, Offer,
-    Restriction, SecretPurpose, ServiceEndpoint, TenantConsent, Tls, TokenLifetime, Verification,
+    AccountLabel, Credential, EndpointUrl, Family, Limit, LimitReason, LoginName, Restriction,
+    SecretPurpose, ServiceEndpoint, TenantConsent, Tls, TokenLifetime, Verification,
 };
 use porter_http::Http;
 use porter_ids::{Count, UnixSeconds, UrlScheme, WebUrl};
@@ -394,7 +395,7 @@ fn endpoints_for(
     let mut out = Vec::new();
     if let Some(Capability::Mail(mail)) = present(CapabilityKind::Mail) {
         out.push(endpoint(Family::Imap, apis.base(Family::Imap)));
-        if let (porter_core::capability::Offered::Present, Ok(smtp)) =
+        if let (porter_capability::Offered::Present, Ok(smtp)) =
             (mail.send, EndpointUrl::parse(SMTP_ORIGIN))
         {
             out.push(endpoint(Family::Smtp, smtp));

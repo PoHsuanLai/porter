@@ -1,9 +1,9 @@
 use super::names::{Listing, id_of, pair};
 use super::testing::{chat, embedding, found};
 use super::*;
+use porter_capability::{Capability, LlmFeature, LlmWire};
 use porter_core::AccountId;
 use porter_core::Locality;
-use porter_core::capability::{Capability, LlmFeature, LlmWire};
 use porter_fake_servers::{FakeModels, ModelDef, Wire};
 use porter_http_reqwest::ReqwestHttp;
 use serde_json::json;

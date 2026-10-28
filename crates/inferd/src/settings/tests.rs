@@ -9,9 +9,10 @@ use crate::supervise::{Ports, Supervised};
 use crate::testkit::{Recorder, Scratch, models};
 use engine_supervisor::{FakeGpu, FakeReadyProbe, GpuMemory, Probe, SupervisorConfig};
 use model_catalog::MiB;
-use porter_core::capability::{Capability, LlmCap, LlmFeature, LlmWire};
+use porter_capability::ModelId;
+use porter_capability::{Capability, LlmCap, LlmFeature, LlmWire};
+use porter_core::AccountId;
 use porter_core::need::LlmNeed;
-use porter_core::{AccountId, ModelId};
 use porter_core::{Billing, DataClass, Locality, Need, Tier};
 use porter_ids::{MicroUsd, Permille, Tokens};
 use porter_infer::{

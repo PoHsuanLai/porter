@@ -1,5 +1,6 @@
 use super::*;
-use porter_core::{AccountId, ModelId};
+use porter_capability::ModelId;
+use porter_core::AccountId;
 use porter_core::{AppName, Isolation, Locality};
 use porter_ids::clock::FixedClock;
 use porter_ids::{Count, UnixSeconds};

@@ -7,8 +7,10 @@ use engine_supervisor::{EngineId, EnginePaths, EngineSpec, ProgramPath, SocketPa
 use model_catalog::EngineKind;
 use model_openai_compat::Flavor;
 use model_provider::{ModelName, Tokens};
-use porter_core::{AccountId, ModelId};
-use porter_core::{Billing, Capability, Locality, Offer};
+use porter_capability::ModelId;
+use porter_capability::{Capability, Offer};
+use porter_core::AccountId;
+use porter_core::{Billing, Locality};
 use porter_infer::ModelCard;
 use porter_router::catalog::parse_entry_text;
 use porter_router::local::LocalModel;

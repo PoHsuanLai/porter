@@ -3,12 +3,13 @@
 //! `caller`, which the transport verified), never the Space id's text alone. A grant over a
 //! desktop-wide Space, outside any Space, or any Space is used as before.
 
+use porter_capability::CapabilityKind;
+use porter_capability::StorageScope;
 use porter_core::GrantId;
-use porter_core::capability::StorageScope;
 use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
 use porter_core::{
-    AppId, AppName, Audience, CapabilityKind, Credential, DataClass, Isolation, SecretKey,
-    SecretPurpose, SecretText, SpaceId, SpaceScope,
+    AppId, AppName, Audience, Credential, DataClass, Isolation, SecretKey, SecretPurpose,
+    SecretText, SpaceId, SpaceScope,
 };
 use porter_fake::{
     FakeProvider, MemoryStore, RecordingAudit, ScriptedSheets, mail_account, mail_provider,

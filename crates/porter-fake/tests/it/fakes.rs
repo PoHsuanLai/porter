@@ -1,6 +1,6 @@
 //! The fakes behave as the seams they stand in for.
 
-use porter_core::Provenance;
+use porter_capability::Provenance;
 use porter_fake::{cloud_provider, storage_account};
 use porter_provider::{Presented, Provider, ProviderError};
 

@@ -2,7 +2,7 @@
 //! envelope carrying the vocabulary version and the body.
 
 use crate::error::FrameError;
-use porter_core::capability::VocabVersion;
+use porter_capability::VocabVersion;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 

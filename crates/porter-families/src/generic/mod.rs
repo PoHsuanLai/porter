@@ -16,8 +16,9 @@ mod sign_in;
 
 use crate::io::{Io, SharedDns};
 use crate::password::{declared, secret_presented};
+use porter_capability::Claim;
 use porter_core::AccountId;
-use porter_core::{Account, Audience, Claim, Credential, IssuedToken};
+use porter_core::{Account, Audience, Credential, IssuedToken};
 use porter_discover::Dns;
 use porter_http::{NoSleep, SharedHttp};
 use porter_provider::{

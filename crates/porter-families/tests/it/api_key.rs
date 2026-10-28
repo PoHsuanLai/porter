@@ -4,11 +4,12 @@
 //! handed to an app.
 #![cfg(feature = "api_key")]
 
+use porter_capability::{Capability, CapabilityKind};
+use porter_capability::{Offer, Provenance};
 use porter_core::AccountId;
-use porter_core::capability::{Capability, CapabilityKind};
 use porter_core::{
-    Account, AccountLabel, AccountState, Audience, AuthKind, Credential, EndpointUrl, Offer,
-    Provenance, Restriction, SecretPurpose, SecretText,
+    Account, AccountLabel, AccountState, Audience, AuthKind, Credential, EndpointUrl, Restriction,
+    SecretPurpose, SecretText,
 };
 use porter_fake_servers::{Auth, Call, FakeLlmApi, LlmApiHandle, Running, shipped};
 use porter_families::ApiKeyProvider;
@@ -112,7 +113,7 @@ fn assert_one_llm_claim(signed: &Signed) {
     let own: Vec<_> = signed
         .claims
         .iter()
-        .filter(|claim| claim.subject == porter_core::Subject::Account)
+        .filter(|claim| claim.subject == porter_capability::Subject::Account)
         .collect();
     assert_eq!(own.len(), 1);
     let claim = own[0];
@@ -171,7 +172,7 @@ async fn a_pasted_key_is_asked_for_hidden_checked_the_documented_way_and_reviewe
             panic!("{id}: a review: {review:?}");
         };
         assert_eq!(label.0, shipped::ai(id).label, "{id}");
-        let own = |c: &&porter_core::Claim| c.subject == porter_core::Subject::Account;
+        let own = |c: &&porter_capability::Claim| c.subject == porter_capability::Subject::Account;
         assert_eq!(claims.iter().filter(own).count(), 1, "{id}");
         let signed = signed_of(signin.next(SignInInput::Confirm(Vec::new())).await);
         assert_eq!(key_of(&signed), PASTED, "{id}");
@@ -270,7 +271,7 @@ async fn discover_checks_the_key_and_a_dead_key_is_unauthorized() {
             .discover(&holder, &live("sk-seeded"))
             .await
             .expect("live");
-        let own = |c: &&porter_core::Claim| c.subject == porter_core::Subject::Account;
+        let own = |c: &&porter_capability::Claim| c.subject == porter_capability::Subject::Account;
         assert_eq!(claims.iter().filter(own).count(), 1, "{id}");
         assert_eq!(claims[0].provenance, Provenance::Probed);
         assert_presented(&fake.calls()[0], *auth, "sk-seeded");
@@ -334,7 +335,7 @@ async fn a_file_with_no_known_keys_page_has_nothing_to_revoke_with() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_key_account_holds_a_claim_for_each_agent_program_its_file_names() {
-    use porter_core::{Provenance, Subject};
+    use porter_capability::{Provenance, Subject};
     // (company, the programs its file names)
     const NAMED: &[(&str, &[&str])] = &[
         ("anthropic", &["claude-code"]),
@@ -445,7 +446,7 @@ async fn a_server_of_the_persons_own_is_asked_for_its_address_and_an_optional_ke
     let signed = signed_of(signin.next(SignInInput::Confirm(Vec::new())).await);
     assert_eq!(key_of(&signed), PASTED);
     assert_eq!(signed.endpoints, *endpoints);
-    let own = |c: &&porter_core::Claim| c.subject == porter_core::Subject::Account;
+    let own = |c: &&porter_capability::Claim| c.subject == porter_capability::Subject::Account;
     assert_eq!(signed.claims.iter().filter(own).count(), 1);
     let calls = fake.calls();
     assert_eq!(calls.len(), 1, "{calls:?}");
