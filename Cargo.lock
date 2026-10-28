@@ -661,7 +661,7 @@ dependencies = [
 [[package]]
 name = "cua-action"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=be6d2095b1864a18755c9f7254ad96d4682c52bd#be6d2095b1864a18755c9f7254ad96d4682c52bd"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=c8fed624534867659448ac417992bac4f0f47e28#c8fed624534867659448ac417992bac4f0f47e28"
 dependencies = [
  "keyboard-types",
  "serde",
@@ -671,7 +671,7 @@ dependencies = [
 [[package]]
 name = "cua-parse"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=be6d2095b1864a18755c9f7254ad96d4682c52bd#be6d2095b1864a18755c9f7254ad96d4682c52bd"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=c8fed624534867659448ac417992bac4f0f47e28#c8fed624534867659448ac417992bac4f0f47e28"
 dependencies = [
  "cua-action",
  "keyboard-types",
@@ -684,7 +684,7 @@ dependencies = [
 [[package]]
 name = "cua-session"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=be6d2095b1864a18755c9f7254ad96d4682c52bd#be6d2095b1864a18755c9f7254ad96d4682c52bd"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=c8fed624534867659448ac417992bac4f0f47e28#c8fed624534867659448ac417992bac4f0f47e28"
 dependencies = [
  "cua-action",
  "cua-parse",
@@ -697,7 +697,7 @@ dependencies = [
 [[package]]
 name = "cua-vendors"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=be6d2095b1864a18755c9f7254ad96d4682c52bd#be6d2095b1864a18755c9f7254ad96d4682c52bd"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=c8fed624534867659448ac417992bac4f0f47e28#c8fed624534867659448ac417992bac4f0f47e28"
 dependencies = [
  "cua-action",
  "cua-parse",
@@ -864,7 +864,7 @@ checksum = "66b7e2430c6dff6a955451e2cfc438f09cea1965a9d6f87f7e3b90decc014099"
 [[package]]
 name = "engine-supervisor"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=be6d2095b1864a18755c9f7254ad96d4682c52bd#be6d2095b1864a18755c9f7254ad96d4682c52bd"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=c8fed624534867659448ac417992bac4f0f47e28#c8fed624534867659448ac417992bac4f0f47e28"
 dependencies = [
  "model-catalog",
  "serde",
@@ -1127,7 +1127,7 @@ dependencies = [
 [[package]]
 name = "genai-names"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=be6d2095b1864a18755c9f7254ad96d4682c52bd#be6d2095b1864a18755c9f7254ad96d4682c52bd"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=c8fed624534867659448ac417992bac4f0f47e28#c8fed624534867659448ac417992bac4f0f47e28"
 
 [[package]]
 name = "generic-array"
@@ -1960,7 +1960,7 @@ dependencies = [
 [[package]]
 name = "model-catalog"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=be6d2095b1864a18755c9f7254ad96d4682c52bd#be6d2095b1864a18755c9f7254ad96d4682c52bd"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=c8fed624534867659448ac417992bac4f0f47e28#c8fed624534867659448ac417992bac4f0f47e28"
 dependencies = [
  "model-provider",
  "serde",
@@ -1972,7 +1972,7 @@ dependencies = [
 [[package]]
 name = "model-extract"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=be6d2095b1864a18755c9f7254ad96d4682c52bd#be6d2095b1864a18755c9f7254ad96d4682c52bd"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=c8fed624534867659448ac417992bac4f0f47e28#c8fed624534867659448ac417992bac4f0f47e28"
 dependencies = [
  "model-provider",
  "serde_json",
@@ -1981,7 +1981,7 @@ dependencies = [
 [[package]]
 name = "model-http"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=be6d2095b1864a18755c9f7254ad96d4682c52bd#be6d2095b1864a18755c9f7254ad96d4682c52bd"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=c8fed624534867659448ac417992bac4f0f47e28#c8fed624534867659448ac417992bac4f0f47e28"
 dependencies = [
  "reqwest 0.13.5",
  "rustls",
@@ -1994,7 +1994,7 @@ dependencies = [
 [[package]]
 name = "model-openai-compat"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=be6d2095b1864a18755c9f7254ad96d4682c52bd#be6d2095b1864a18755c9f7254ad96d4682c52bd"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=c8fed624534867659448ac417992bac4f0f47e28#c8fed624534867659448ac417992bac4f0f47e28"
 dependencies = [
  "log",
  "model-http",
@@ -2010,7 +2010,7 @@ dependencies = [
 [[package]]
 name = "model-provider"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=be6d2095b1864a18755c9f7254ad96d4682c52bd#be6d2095b1864a18755c9f7254ad96d4682c52bd"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=c8fed624534867659448ac417992bac4f0f47e28#c8fed624534867659448ac417992bac4f0f47e28"
 dependencies = [
  "base64 0.22.1",
  "cua-action",
@@ -2026,7 +2026,7 @@ dependencies = [
 [[package]]
 name = "model-replay"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=be6d2095b1864a18755c9f7254ad96d4682c52bd#be6d2095b1864a18755c9f7254ad96d4682c52bd"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=c8fed624534867659448ac417992bac4f0f47e28#c8fed624534867659448ac417992bac4f0f47e28"
 dependencies = [
  "blake3",
  "model-http",
@@ -2041,7 +2041,7 @@ dependencies = [
 [[package]]
 name = "model-wire"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=be6d2095b1864a18755c9f7254ad96d4682c52bd#be6d2095b1864a18755c9f7254ad96d4682c52bd"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=c8fed624534867659448ac417992bac4f0f47e28#c8fed624534867659448ac417992bac4f0f47e28"
 dependencies = [
  "model-http",
  "model-provider",
@@ -3963,7 +3963,7 @@ dependencies = [
 [[package]]
 name = "speech-host-client"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=be6d2095b1864a18755c9f7254ad96d4682c52bd#be6d2095b1864a18755c9f7254ad96d4682c52bd"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=c8fed624534867659448ac417992bac4f0f47e28#c8fed624534867659448ac417992bac4f0f47e28"
 dependencies = [
  "model-provider",
  "serde",
@@ -3974,7 +3974,7 @@ dependencies = [
 [[package]]
 name = "speech-provider"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=be6d2095b1864a18755c9f7254ad96d4682c52bd#be6d2095b1864a18755c9f7254ad96d4682c52bd"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=c8fed624534867659448ac417992bac4f0f47e28#c8fed624534867659448ac417992bac4f0f47e28"
 dependencies = [
  "base64 0.22.1",
  "model-provider",
@@ -4534,7 +4534,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 [[package]]
 name = "vision-prep"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=be6d2095b1864a18755c9f7254ad96d4682c52bd#be6d2095b1864a18755c9f7254ad96d4682c52bd"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=c8fed624534867659448ac417992bac4f0f47e28#c8fed624534867659448ac417992bac4f0f47e28"
 dependencies = [
  "cua-action",
  "fast_image_resize",

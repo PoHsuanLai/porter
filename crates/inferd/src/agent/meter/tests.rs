@@ -1,4 +1,5 @@
 use super::*;
+use rust_decimal::Decimal;
 use serde_json::json;
 
 fn stream(shape: Shape, pieces: &[&str]) -> Seen {

@@ -8,15 +8,13 @@ use super::fail::Shape;
 use super::session::Ctx;
 use crate::cloud::Cloud;
 use model_http::SseDecoder;
+use model_openai_compat::read_charge;
 use model_provider::{Charges, Money};
 use porter_capability::Locality;
 use porter_ids::{Bytes, Count, Tokens};
 use porter_infer::{AuditEntry, ServedBy, TokenUsage, Why};
 use porter_turns::audit::AuditOut;
-use rust_decimal::Decimal;
-use serde::Deserialize;
 use serde_json::Value;
-use serde_json::value::RawValue;
 
 /// A provider's usage figures as they arrive.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -152,7 +150,7 @@ impl Reading {
             self.seen.take(self.shape, &value);
         }
         let wants_charge = self.shape == Shape::OpenAi && self.charges == Charges::PerReply;
-        if let Some(charge) = reported_charge(text).filter(|_| wants_charge) {
+        if let Some(charge) = read_charge(text).filter(|_| wants_charge) {
             self.seen.charge = Some(charge);
         }
     }
@@ -161,31 +159,6 @@ impl Reading {
     pub fn seen(&self) -> Seen {
         self.seen
     }
-}
-
-#[derive(Deserialize)]
-struct Frame<'a> {
-    #[serde(borrow)]
-    usage: Option<UsageText<'a>>,
-}
-
-#[derive(Deserialize)]
-struct UsageText<'a> {
-    #[serde(borrow)]
-    cost: Option<&'a RawValue>,
-}
-
-/// The charge in an OpenAI-shaped document that carries one, `usage.cost` as OpenRouter writes it
-/// (credits, one credit a US dollar), read from the number's own text so no float rounds it. The
-/// same reading stoker's codec gives a turn it runs itself. Absent, not a number, negative or too
-/// large is no charge: a figure that cannot be read is a missing one, never a failed request.
-fn reported_charge(text: &str) -> Option<Money> {
-    let frame: Frame<'_> = serde_json::from_str(text).ok()?;
-    let digits = frame.usage?.cost?.get();
-    let amount = Decimal::from_str_exact(digits)
-        .or_else(|_| Decimal::from_scientific(digits))
-        .ok()?;
-    (!amount.is_sign_negative()).then(|| Money::usd(amount))
 }
 
 /// How a request to the provider ended, as far as its billing goes.
