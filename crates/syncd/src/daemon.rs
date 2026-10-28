@@ -17,12 +17,12 @@ use crate::scheduler::{Network, Settings};
 use crate::service;
 use crate::service::{Access, Hub};
 use crate::settings::{SyncSettings, read_cache_limit, serve_settings};
+use porter_callers::choose_proc_root;
+use porter_callers::{CallerFileError, ProcCallers};
 use porter_client::{Accounts, Identities, IdentitiesError, InProcess, PorterRelays};
 use porter_core::store::RegistryStore;
-use porter_daemon::choose_proc_root;
 use porter_daemon::xdg::PathError;
 use porter_dbus::BusTarget;
-use porter_dbus::callers::{CallerFileError, ProcCallers};
 use porter_drive_fuse::Mounter;
 use porter_families::DynProvider;
 use porter_families::set::{FamilyIo, ProviderNames, load_specs, served};
@@ -165,7 +165,7 @@ impl Config {
         let mut paths = Paths::resolve(|name| std::env::var(name).ok())?;
         // A test build may read another system caller table (a jail cannot write /etc).
         let system =
-            porter_daemon::SystemCallers::choose(HONOURS_PROC_ROOT, |name| std::env::var_os(name));
+            porter_callers::SystemCallers::choose(HONOURS_PROC_ROOT, |name| std::env::var_os(name));
         if let Some(line) = system.notice("syncd") {
             eprintln!("{line}");
         }
@@ -280,7 +280,7 @@ impl Daemon {
         let namespace = Namespace::parse(KEYRING_NAMESPACE).expect("a literal namespace");
         let chosen = Chosen::open(keys, namespace, "syncd")?;
         eprintln!("{}", chosen.said);
-        let table = porter_dbus::callers::load_callers(&paths.callers_system, &paths.callers_user)?;
+        let table = porter_callers::load_callers(&paths.callers_system, &paths.callers_user)?;
         let connection = bus.connect().await.map_err(StartError::Bus)?;
         let callers = Arc::new(match proc_root {
             #[cfg(feature = "test-proc-root")]

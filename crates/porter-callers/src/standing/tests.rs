@@ -1,5 +1,5 @@
 use super::*;
-use crate::callers::CallerRow;
+use crate::CallerRow;
 use peephole_core::{ExePath, Pin, RoleName, WhyNot};
 
 fn key(text: &str) -> AppKey {

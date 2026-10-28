@@ -12,6 +12,7 @@ use porter_ids::word::word as word_of;
 use common::bus::PrivateBus;
 use common::caller as caller_of;
 use common::hosted::host;
+use porter_callers::CallerRole;
 use porter_capability::StorageScope;
 use porter_capability::{CapabilityKind, Claim, Offer, Provenance, Subject};
 use porter_core::{
@@ -23,7 +24,6 @@ use porter_core::{
     GrantKey,
     consent::{Decision, Grant, GrantScope, Usage},
 };
-use porter_dbus::callers::CallerRole;
 use porter_fake::FakeProvider;
 use porter_fake_servers::{FakeGoogle, FakeIssuer, GoogleHandle, IssuerHandle, Running};
 use porter_ids::UnixSeconds;

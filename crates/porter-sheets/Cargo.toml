@@ -13,6 +13,7 @@ porter-core = { workspace = true }
 porter-capability = { workspace = true }
 porter-sheet = { workspace = true }
 porter-wire = { workspace = true }
+porter-callers = { workspace = true }
 porter-dbus = { workspace = true }
 porter-provider = { workspace = true }
 porter-service = { workspace = true }

@@ -14,10 +14,10 @@
 //!   to take it down).
 
 use crate::app_names::AppNames;
+use porter_callers::{CallerRole, Callers};
 use porter_core::consent::{ConsentAnswer, ConsentAsk};
 use porter_dbus::accounts::AccountsSheetProxy;
 use porter_dbus::accounts::SHEET_BUS;
-use porter_dbus::callers::{CallerRole, Callers};
 use porter_service::{SheetFault, SheetLink, SheetOpen, Sheets};
 use porter_sheet::{ReviewView, SheetInput, SheetView};
 use porter_wire::ParentWindow;
@@ -256,11 +256,11 @@ impl<C: Callers> Sheets for BusSheets<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use porter_callers::{AppTitle, CallerRow, CallerTable};
     use porter_capability::CapabilityKind;
     use porter_core::ProviderId;
     use porter_core::consent::{AccountChoice, Usage};
     use porter_core::{AccountLabel, AppId, AppLabel, AppName, DataClass, Isolation};
-    use porter_dbus::callers::{AppTitle, CallerRow, CallerTable};
 
     fn app(name: &str) -> AppId {
         AppId {

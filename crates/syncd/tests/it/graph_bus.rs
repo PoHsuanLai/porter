@@ -14,6 +14,7 @@ use porter_ids::clock::SystemClock;
 use common::bus::PrivateBus;
 use common::hosted::{Link, host};
 use common::{Known, client};
+use porter_callers::CallerRole;
 use porter_capability::StorageScope;
 use porter_capability::{CapabilityKind, Claim, Offer, Provenance, Subject};
 use porter_client::Accounts;
@@ -27,7 +28,6 @@ use porter_core::{
     GrantKey,
     consent::{Decision, Grant, GrantScope, Usage},
 };
-use porter_dbus::callers::CallerRole;
 use porter_dbus::sync::STATUS_KEY_QUOTA;
 use porter_dbus::sync::SyncProxy;
 use porter_fake::FakeProvider;

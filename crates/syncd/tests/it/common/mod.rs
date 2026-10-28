@@ -6,8 +6,8 @@ pub mod bus;
 pub mod hosted;
 
 use bus::PrivateBus;
+use porter_callers::{Caller, CallerRole, Callers};
 use porter_core::{AppId, AppName, Isolation};
-use porter_dbus::callers::{Caller, CallerRole, Callers};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
 

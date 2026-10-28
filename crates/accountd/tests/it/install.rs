@@ -146,7 +146,7 @@ fn the_data_the_daemons_read_lands_where_they_look_for_it() {
     let run = Run::new("data");
     run.install(&[]);
     // accountd reads /usr/share/porter/providers and /etc/porter/callers.toml (paths.rs); inferd
-    // reads /etc/porter/inferd-callers.toml (porter_daemon::INFERD_CALLERS).
+    // reads /etc/porter/inferd-callers.toml (porter_callers::INFERD_CALLERS).
     let shipped: BTreeSet<String> = files_under(&repo().join("providers"))
         .iter()
         .map(|p| p.file_name().expect("name").to_string_lossy().into_owned())
@@ -159,7 +159,7 @@ fn the_data_the_daemons_read_lands_where_they_look_for_it() {
     assert_eq!(installed, shipped);
     for path in [
         "/etc/porter/callers.toml",
-        porter_daemon::INFERD_CALLERS.path,
+        porter_callers::INFERD_CALLERS.path,
         "/usr/share/quire/settings/inferd.settings.toml",
         "/usr/share/doc/porter/examples/inferd.toml",
         "/usr/share/doc/porter/examples/inferd-cloud.conf",
@@ -181,7 +181,7 @@ fn the_data_the_daemons_read_lands_where_they_look_for_it() {
     };
     assert_eq!(mode("/usr/libexec/quire/accountd"), 0o755);
     assert_eq!(mode("/etc/porter/callers.toml"), 0o644);
-    assert_eq!(mode(porter_daemon::INFERD_CALLERS.path), 0o644);
+    assert_eq!(mode(porter_callers::INFERD_CALLERS.path), 0o644);
 }
 
 #[test]

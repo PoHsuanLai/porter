@@ -11,11 +11,12 @@
 //! its keyring namespace is [`NAMESPACE`]. AI keys, agents and sync belong to inferd and syncd.
 
 use crate::paths::{HONOURS_PROC_ROOT, Paths};
-use crate::{FileAudit, Options, SheetsDesk, load_callers, serve_with};
-use porter_daemon::choose_proc_root;
+use crate::{FileAudit, Options, SheetsDesk, serve_with};
+use porter_callers::choose_proc_root;
+use porter_callers::load_callers;
+use porter_callers::{CallerFileError, ProcCallers};
 use porter_daemon::xdg::PathError;
 use porter_dbus::BusTarget;
-use porter_dbus::callers::{CallerFileError, ProcCallers};
 use porter_families::set::{FamilyIo, ProviderNames, load_specs, served};
 use porter_ids::clock::SystemClock;
 use porter_secrets::Namespace;
@@ -95,7 +96,7 @@ impl Config {
         let mut paths = Paths::resolve(|name| std::env::var(name).ok(), provider_dirs)?;
         // A test build may read another system caller table (a jail cannot write /etc).
         let system =
-            porter_daemon::SystemCallers::choose(HONOURS_PROC_ROOT, |name| std::env::var_os(name));
+            porter_callers::SystemCallers::choose(HONOURS_PROC_ROOT, |name| std::env::var_os(name));
         if let Some(line) = system.notice("accountd") {
             eprintln!("{line}");
         }

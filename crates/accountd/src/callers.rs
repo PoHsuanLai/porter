@@ -1,10 +1,10 @@
 //! Who is calling: a bus sender's unique name to a caller, through the one table both daemons
-//! share (`porter_dbus::callers::Callers`, with `ProcCallers` for the real bus). [`TableCallers`] is the
+//! share (`porter_callers::Callers`, with `ProcCallers` for the real bus). [`TableCallers`] is the
 //! table-backed one for tests and for hosts that know their clients.
 
+pub use porter_callers::Callers;
+use porter_callers::{Caller, CallerRole};
 use porter_core::AppId;
-pub use porter_dbus::callers::Callers;
-use porter_dbus::callers::{Caller, CallerRole};
 use std::collections::BTreeMap;
 use std::sync::{Mutex, PoisonError};
 

@@ -9,6 +9,7 @@ use crate::common;
 use common::bus::PrivateBus;
 use common::caller as caller_of;
 use common::hosted::{Link, NoDirectory, Service, host, keep};
+use porter_callers::{Caller, CallerRole};
 use porter_capability::StorageScope;
 use porter_capability::{CapabilityKind, Claim, Offer, Provenance, Subject};
 use porter_client::Accounts;
@@ -21,7 +22,6 @@ use porter_core::{
     GrantKey,
     consent::{Decision, Grant, GrantScope, Usage},
 };
-use porter_dbus::callers::{Caller, CallerRole};
 use porter_fake::FakeProvider;
 use porter_fake_servers::{FakeNextcloud, NextcloudHandle, Running};
 use porter_ids::UnixSeconds;

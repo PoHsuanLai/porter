@@ -6,7 +6,7 @@
 //! [`crate::hosts::LaunchGuard`]). An explicit path in `inferd.toml` always wins and is never
 //! checked here.
 
-use porter_daemon::root_held;
+use porter_callers::root_held;
 use porter_engines::{EngineId, Finder, Place, Roots};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};

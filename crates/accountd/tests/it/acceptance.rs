@@ -11,10 +11,10 @@ use crate::common;
 use common::*;
 use ds_settings::live::{AnyOwner, LiveClient};
 use ds_settings::schema::KeyPath;
+use porter_callers::CallerRole;
 use porter_core::{SecretKey, SecretPurpose};
 use porter_dbus::accounts::account_path;
 use porter_dbus::accounts::{AccountProxy, IdentitiesProxy};
-use porter_dbus::callers::CallerRole;
 use porter_secrets::{Secrets, SecretsError};
 use zbus::zvariant::ObjectPath;
 

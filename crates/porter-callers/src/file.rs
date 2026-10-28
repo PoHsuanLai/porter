@@ -1,9 +1,9 @@
 //! The caller table as files: `/etc/porter/callers.toml` and the user's own, at the paths a
 //! daemon's main passes in. One reader for every daemon (accountd and syncd read the same two
-//! files, PLAN §2.1); the table's type is [`CallerTable`]. Behind the `callers-file` feature,
+//! files, PLAN §2.1); the table's type is [`CallerTable`]. Behind the `file` feature,
 //! which brings the TOML reader in: an app that only calls the daemons does not need it.
 
-use crate::callers::CallerTable;
+use crate::CallerTable;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
@@ -69,7 +69,7 @@ pub fn load_callers(system: &Path, user: &Path) -> Result<CallerTable, CallerFil
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::callers::CallerRole;
+    use crate::CallerRole;
     use porter_core::AppName;
     use test_kit::Scratch;
 
@@ -80,7 +80,7 @@ mod tests {
         [[caller]]\napp = \"org.example.Mine\"\nunit = \"inferd.service\"\nrole = \"app\"\n";
 
     fn scratch(name: &str) -> Scratch {
-        Scratch::new(&format!("callers-file-{name}"))
+        Scratch::new(&format!("caller-files-{name}"))
     }
 
     fn name(text: &str) -> AppName {
@@ -145,7 +145,7 @@ mod tests {
         .expect("table");
         assert_eq!(
             table.title_of(&name("org.quire.Sync")),
-            Some(&crate::callers::AppTitle("Sync".to_owned()))
+            Some(&crate::AppTitle("Sync".to_owned()))
         );
         assert_eq!(table.title_of(&name("org.quire.Settings")), None);
         assert!(

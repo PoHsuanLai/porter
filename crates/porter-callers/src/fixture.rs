@@ -16,7 +16,6 @@
 use super::standing::caller_of;
 use super::translate::peephole_table;
 use super::{Caller, CallerTable, ProcCallers};
-use crate::BusConnection;
 use peephole::{Follow, Pinned, Prober, ProcFs};
 use peephole_bus::{BusPeers, ManagerCheck, UnitError, UnitSource};
 use peephole_core::{
@@ -25,6 +24,7 @@ use peephole_core::{
 };
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
+use zbus::Connection as BusConnection;
 
 /// The image of a process the tree gives no image and that is no unit's main process.
 pub(super) const STAND_IN_IMAGE: &str = "/usr/bin/porter-fixture-app";

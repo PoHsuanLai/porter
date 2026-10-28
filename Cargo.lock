@@ -8,6 +8,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "ds-settings",
+ "porter-callers",
  "porter-capability",
  "porter-core",
  "porter-daemon",
@@ -1583,6 +1584,7 @@ dependencies = [
  "model-replay",
  "model-wire",
  "porter-bridge",
+ "porter-callers",
  "porter-capability",
  "porter-client",
  "porter-core",
@@ -2534,6 +2536,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "porter-callers"
+version = "0.1.0"
+dependencies = [
+ "peephole",
+ "peephole-bus",
+ "peephole-core",
+ "porter-core",
+ "serde",
+ "serde_json",
+ "test-kit",
+ "thiserror",
+ "tokio",
+ "toml",
+ "zbus",
+]
+
+[[package]]
 name = "porter-capability"
 version = "0.1.0"
 dependencies = [
@@ -2555,6 +2574,7 @@ dependencies = [
  "model-provider",
  "model-wire",
  "porter-bridge",
+ "porter-callers",
  "porter-capability",
  "porter-core",
  "porter-dbus",
@@ -2618,9 +2638,6 @@ dependencies = [
 name = "porter-dbus"
 version = "0.1.0"
 dependencies = [
- "peephole",
- "peephole-bus",
- "peephole-core",
  "porter-capability",
  "porter-core",
  "porter-dbus-macros",
@@ -2634,7 +2651,6 @@ dependencies = [
  "test-kit",
  "thiserror",
  "tokio",
- "toml",
  "zbus",
 ]
 
@@ -3032,6 +3048,7 @@ dependencies = [
  "accountd",
  "clap",
  "fake-secret-service",
+ "porter-callers",
  "porter-capability",
  "porter-client",
  "porter-core",
@@ -3141,6 +3158,7 @@ dependencies = [
 name = "porter-sheets"
 version = "0.1.0"
 dependencies = [
+ "porter-callers",
  "porter-capability",
  "porter-core",
  "porter-dbus",
@@ -4219,6 +4237,7 @@ dependencies = [
  "hex",
  "mime_guess",
  "nanohtml2text",
+ "porter-callers",
  "porter-capability",
  "porter-client",
  "porter-core",

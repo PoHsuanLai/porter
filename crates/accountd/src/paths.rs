@@ -2,7 +2,7 @@
 //! place the daemon names a path, so a test can give it scratch directories.
 
 pub use porter_daemon::xdg::PathError;
-use porter_daemon::xdg::{Xdg, absolute};
+use porter_daemon::{xdg::Xdg, xdg::absolute};
 use porter_families::set::Layer;
 use std::path::PathBuf;
 
@@ -14,7 +14,7 @@ pub struct Paths {
     /// `$XDG_STATE_HOME/quire/accountd/audit.jsonl`.
     pub audit: PathBuf,
     /// The system caller table, `/etc/porter/callers.toml` (another file in a test build:
-    /// [`porter_daemon::SystemCallers`]).
+    /// [`porter_callers::SystemCallers`]).
     pub callers_system: PathBuf,
     /// The user's caller table, `$XDG_CONFIG_HOME/porter/callers.toml`; its rows win.
     pub callers_user: PathBuf,
@@ -68,7 +68,7 @@ impl Paths {
         Ok(Self {
             registry_dir: state.join("porter"),
             audit: state.join("quire/accountd/audit.jsonl"),
-            callers_system: PathBuf::from(porter_daemon::SYSTEM_CALLERS),
+            callers_system: PathBuf::from(porter_callers::SYSTEM_CALLERS),
             callers_user: config.join("porter/callers.toml"),
             clients_shipped: xdg.shipped("porter/clients.toml"),
             clients_user: config.join("porter/clients.toml"),

@@ -27,7 +27,7 @@ use crate::toolproof::ToolProofs;
 use crate::watch::Watch;
 use engine_supervisor::EngineId;
 use model_catalog::EngineKind;
-use porter_daemon::{ProcRoot, choose_proc_root, proc_notice};
+use porter_callers::{ProcRoot, choose_proc_root, proc_notice};
 use porter_dbus::BusTarget;
 use porter_dbus::inference::KeysServed;
 use porter_dbus::inference::{INFERENCE_BUS, INFERENCE_PATH};
@@ -83,7 +83,7 @@ pub struct Config {
     pub tailscale: LocalApi,
     /// Where the caller lookup reads processes.
     pub proc_root: ProcRoot,
-    /// The system's caller table ([`porter_daemon::INFERD_CALLERS`], another file in a test
+    /// The system's caller table ([`porter_callers::INFERD_CALLERS`], another file in a test
     /// build).
     pub callers_file: PathBuf,
     /// The bus to serve on.
@@ -108,7 +108,7 @@ impl Config {
             dirs,
             tailscale: LocalApi::system(),
             proc_root: ProcRoot::Unset,
-            callers_file: PathBuf::from(porter_daemon::INFERD_CALLERS.path),
+            callers_file: PathBuf::from(porter_callers::INFERD_CALLERS.path),
             bus,
             keys: Selection::SecretService,
             programs,
@@ -184,8 +184,8 @@ impl Config {
         config.tailscale = tailscale;
         config.proc_root = proc_root;
         // A test build may read another system caller table (a jail cannot write /etc).
-        let callers = porter_daemon::SystemCallers::choose_file(
-            porter_daemon::INFERD_CALLERS,
+        let callers = porter_callers::SystemCallers::choose_file(
+            porter_callers::INFERD_CALLERS,
             HONOURS_PROC_ROOT,
             |name| std::env::var_os(name),
         );
@@ -355,7 +355,7 @@ fn installed_engines(dirs: &Dirs, file: &ConfigFile) -> Installed {
             dirs.engines_own.clone(),
         ),
         porter_engines::Manifest::pinned(),
-        porter_daemon::root_held,
+        porter_callers::root_held,
         Arc::new(move || {
             reading
                 .read()

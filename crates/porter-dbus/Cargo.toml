@@ -15,30 +15,18 @@ porter-match = { workspace = true }
 porter-wire = { workspace = true }
 porter-dbus-macros = { workspace = true }
 porter-ids = { workspace = true }
-peephole = { workspace = true }
-peephole-core = { workspace = true, features = ["toml"] }
-peephole-bus = { workspace = true }
 zbus = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 # `serve_ready`'s deadline; zbus already runs on tokio here.
 tokio = { workspace = true }
-# `callers_file`'s reader, behind the feature that only the daemons turn on.
-toml = { workspace = true, optional = true }
 
 [features]
-# The caller table read from `callers.toml` files (`load_callers`): accountd's and syncd's.
-callers-file = ["dep:toml"]
 # The Photos Picker's proxy and interface (`org.quire.Photos1.Picker`). Off by default: no Photos
 # app ships in v1, so the default bus surface does not declare it. syncd's feature of the same
 # name turns it on for the object it serves.
 photos-picker = []
-# TEST ONLY, never default and never in dist: `ProcCallers::with_proc_root` and `caller_of_pid` read a
-# directory tree standing for /proc (peephole's `fake` seams: a process that is only a claim). A daemon
-# turns it on through its own `test-proc-root` feature; check-boundary.sh checks that no default build
-# has it.
-test-proc-root = ["peephole/fake"]
 
 [lints]
 workspace = true

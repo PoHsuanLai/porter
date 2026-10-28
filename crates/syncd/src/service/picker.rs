@@ -19,11 +19,11 @@ use super::errors::RefusedError;
 use super::hub::Access;
 use crate::datasets::photos::google::{GooglePicker, PickerError, PickerState, SessionId};
 use crate::paths::AccountDir;
+#[cfg(feature = "photos-picker")]
+use porter_callers::Callers;
 use porter_client::Transport;
 #[cfg(feature = "photos-picker")]
 use porter_dbus::Call;
-#[cfg(feature = "photos-picker")]
-use porter_dbus::callers::Callers;
 #[cfg(feature = "photos-picker")]
 use porter_dbus::sync::SYNC_PATH;
 #[cfg(feature = "photos-picker")]

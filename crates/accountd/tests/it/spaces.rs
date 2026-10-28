@@ -6,9 +6,9 @@ use crate::common;
 
 use accountd::{CREATES_PER_WINDOW, Options};
 use common::*;
+use porter_callers::CallerRole;
 use porter_core::DesktopSpace;
 use porter_dbus::accounts::{SpaceChangedStream, SpacesProxy};
-use porter_dbus::callers::CallerRole;
 use porter_service::audit::AuditEvent;
 use test_kit::Scratch;
 
@@ -45,7 +45,7 @@ async fn listed(proxy: &SpacesProxy<'_>) -> Vec<(String, String)> {
         .collect()
 }
 
-fn settings_caller() -> porter_dbus::callers::Caller {
+fn settings_caller() -> porter_callers::Caller {
     caller("org.quire.Settings", CallerRole::Settings)
 }
 

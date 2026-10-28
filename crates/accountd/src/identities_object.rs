@@ -27,6 +27,7 @@ use crate::host::Host;
 use crate::identities::Unsaved;
 use crate::request::departed;
 use crate::state::{Core, Standing, hint};
+use porter_callers::CallerRole;
 use porter_capability::CapabilityKind;
 use porter_core::AccountId;
 use porter_core::ProviderHint;
@@ -35,7 +36,6 @@ use porter_core::{AccountLabel, DataClass, Identity, IdentityId, IdentityKind};
 use porter_dbus::accounts::IDENTITIES_PATH;
 use porter_dbus::accounts::sheet::SheetKind;
 use porter_dbus::accounts::{IdentitiesServed, IdentitiesServer, identity_to_dbus};
-use porter_dbus::callers::CallerRole;
 use porter_dbus::{Call, Details};
 use porter_secrets::sealed_key;
 use porter_service::Registry;
@@ -93,10 +93,7 @@ impl<H: Host, C: Callers> IdentitiesObject<H, C> {
     /// The caller, which must be an app the person uses, Settings, the shell or a porter daemon.
     /// The agent, computer use, the agent launcher, the terminal and the compositor are refused,
     /// and so is a role porter does not know yet.
-    async fn user(
-        &self,
-        header: &Header<'_>,
-    ) -> Result<porter_dbus::callers::Caller, RefusedError> {
+    async fn user(&self, header: &Header<'_>) -> Result<porter_callers::Caller, RefusedError> {
         let caller = self.0.identify(header, Standing::Any).await?;
         match caller.role {
             role if may_use(role) => Ok(caller),
@@ -115,10 +112,7 @@ impl<H: Host, C: Callers> IdentitiesObject<H, C> {
     }
 
     /// The caller, which must be Settings or the shell.
-    async fn manager(
-        &self,
-        header: &Header<'_>,
-    ) -> Result<porter_dbus::callers::Caller, RefusedError> {
+    async fn manager(&self, header: &Header<'_>) -> Result<porter_callers::Caller, RefusedError> {
         let caller = self.user(header).await?;
         match caller.role {
             CallerRole::Settings | CallerRole::SheetHost => Ok(caller),

@@ -246,7 +246,7 @@ pub use session::SessionUnits;
 #[cfg(feature = "dbus")]
 mod session {
     use super::{UnitFailure, UnitManager};
-    use porter_dbus::callers::{SYSTEMD, SYSTEMD_MANAGER, SYSTEMD_PATH};
+    use porter_callers::{SYSTEMD, SYSTEMD_MANAGER, SYSTEMD_PATH};
     use porter_dbus::{BusConnection, BusStream};
     use std::pin::Pin;
     use std::time::Duration;

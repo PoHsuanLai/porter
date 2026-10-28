@@ -5,10 +5,10 @@
 use crate::common;
 
 use common::*;
+use porter_callers::CallerRole;
 use porter_core::AccountState;
 use porter_dbus::Details;
 use porter_dbus::accounts::{AccountProxy, ManagerProxy};
-use porter_dbus::callers::CallerRole;
 use std::time::Duration;
 
 #[tokio::test(flavor = "multi_thread")]

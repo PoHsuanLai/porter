@@ -7,12 +7,12 @@ use crate::common;
 
 use accountd::Options;
 use common::*;
+use porter_callers::CallerRole;
 use porter_capability::CapabilityKind;
 use porter_core::consent::{AskPurpose, ConsentAnswer, GrantScope};
 use porter_core::{AccountId, ProviderId};
 use porter_core::{Identity, IdentityAddress, IdentityId, IdentityKind, IdentityName};
 use porter_dbus::accounts::{IdentitiesProxy, identity_from_dbus};
-use porter_dbus::callers::CallerRole;
 use porter_service::audit::AuditEvent;
 use porter_sheet::{SheetInput, SheetView};
 use porter_wire::Refusal;
@@ -69,7 +69,7 @@ fn mail_identity() -> Identity {
     )
 }
 
-fn settings_caller() -> porter_dbus::callers::Caller {
+fn settings_caller() -> porter_callers::Caller {
     caller("org.quire.Settings", CallerRole::Settings)
 }
 

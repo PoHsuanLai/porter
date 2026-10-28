@@ -81,11 +81,11 @@ mod tests {
         );
         let root = test_kit::Scratch::new("rig-fixture");
         let identity = Identity::write(&root, "org.example.My-App", 4242).expect("write");
-        let table = porter_dbus::callers::CallerTable::default();
-        let caller = porter_dbus::callers::ProcCallers::caller_of_pid(&root, 4242, &table)
-            .expect("a caller");
+        let table = porter_callers::CallerTable::default();
+        let caller =
+            porter_callers::ProcCallers::caller_of_pid(&root, 4242, &table).expect("a caller");
         assert_eq!(caller.app.name.as_str(), "org.example.My-App");
         drop(identity);
-        assert!(porter_dbus::callers::ProcCallers::caller_of_pid(&root, 4242, &table).is_none());
+        assert!(porter_callers::ProcCallers::caller_of_pid(&root, 4242, &table).is_none());
     }
 }

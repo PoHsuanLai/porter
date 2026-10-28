@@ -16,7 +16,7 @@ pub struct Paths {
     /// `$XDG_DATA_HOME/porter/vdir`: the PIM mirrors, one directory per account (W6e).
     pub mirrors: PathBuf,
     /// The system caller table, `/etc/porter/callers.toml` (another file in a test build:
-    /// [`porter_daemon::SystemCallers`]).
+    /// [`porter_callers::SystemCallers`]).
     pub callers_system: PathBuf,
     /// The user's caller table, `$XDG_CONFIG_HOME/porter/callers.toml`; its rows win.
     pub callers_user: PathBuf,
@@ -43,7 +43,7 @@ impl Paths {
         Ok(Self {
             journals: state.join("porter/sync"),
             mirrors: data.join("porter/vdir"),
-            callers_system: PathBuf::from(porter_daemon::SYSTEM_CALLERS),
+            callers_system: PathBuf::from(porter_callers::SYSTEM_CALLERS),
             callers_user: config.join("porter/callers.toml"),
             cloud: home.join("Cloud"),
             drive_cache: cache.join("porter/drives"),

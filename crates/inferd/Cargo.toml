@@ -12,7 +12,7 @@ publish.workspace = true
 # TEST ONLY, off by default and never in dist: `INFERD_PROC_ROOT=<dir>` makes the caller lookup read
 # `<dir>/<pid>/cgroup` instead of `/proc`, for acceptance runs whose processes are in no unit.
 # Without this feature the variable is ignored (with a line on standard error).
-test-proc-root = ["porter-dbus/test-proc-root"]
+test-proc-root = ["porter-callers/test-proc-root"]
 # TEST ONLY, off by default and never in dist: `INFERD_KEYS=file:<absolute path>` keeps the AI keys
 # in one 0600 plain-text file instead of the Secret Service (porter-secrets' `keysel`). Without
 # this feature the variable is ignored (with a line on standard error).
@@ -28,6 +28,7 @@ porter-ids = { workspace = true }
 porter-daemon = { workspace = true, features = ["watch"] }
 porter-fs = { workspace = true }
 cua-action = { workspace = true }
+porter-callers = { workspace = true }
 porter-dbus = { workspace = true }
 # inferd holds the AI keys itself: an `AccountService` hosted in process over its own store
 # (`keys/`), the AI and agent families, its own key namespace and the shared sheet plumbing.

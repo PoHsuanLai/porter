@@ -10,6 +10,7 @@ use crate::common;
 use common::bus::PrivateBus;
 use common::hosted::{Link, host};
 use common::{Known, PhotosGrant, client};
+use porter_callers::CallerRole;
 use porter_capability::StorageScope;
 use porter_capability::{CapabilityKind, Claim, Offer, Provenance, Subject};
 use porter_core::{
@@ -22,7 +23,6 @@ use porter_core::{
     GrantKey,
     consent::{Decision, Grant, GrantScope, Usage},
 };
-use porter_dbus::callers::CallerRole;
 use porter_dbus::sync::SyncProxy;
 use porter_dbus::sync::{CONFLICT_KEY_NUMBER, RESOLVE_KEEP_REMOTE, SYNC_ERROR_NO_SUCH_CONFLICT};
 use porter_fake::FakeProvider;

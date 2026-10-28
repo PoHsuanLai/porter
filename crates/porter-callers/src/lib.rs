@@ -1,4 +1,4 @@
-//! Who is calling: a bus connection's unique name to a [`Caller`] (an app and a role), for both
+//! Who is calling: a bus connection's unique name to a [`Caller`] (an app and a role), for the
 //! daemons (porter PLAN §2.1). The process behind the connection is held and judged by
 //! [peephole](https://github.com/PoHsuanLai/peephole) (`BusPeers`): the bus names the process (a
 //! pidfd), `/proc/<pid>` and the systemd manager state what it is, and the judgement is one of
@@ -30,7 +30,7 @@
 //!
 //! ```ignore
 //! let callers = ProcCallers::new(connection.clone(), load_callers(&system, &user)?);
-//! // In a method, with `#[zbus(header)] header: Header<'_>`:
+//! // In a method, with `Call { header, .. }: Call<'_>`:
 //! let sender = header.sender().ok_or(fdo::Error::AccessDenied("no sender".into()))?;
 //! let caller = callers.caller_of(sender.as_str()).await
 //!     .ok_or(fdo::Error::AccessDenied("unknown caller".into()))?;
@@ -41,6 +41,27 @@
 //! file) can give them, never the user's file. A user row may add a plain app or lower a role;
 //! [`CallerTable::layered`] drops a user row that claims a fixed role.
 //!
+//! Which files and which `/proc` a daemon reads its callers from is here too: the system's table
+//! under `/etc/porter` ([`CALLERS`], [`INFERD_CALLERS`], found by [`SystemCallers`]) and the
+//! `/proc` tree ([`ProcRoot`]). Both can be moved by a variable in a test build only, never in a
+//! shipped one ([`Override`]), because they decide who a caller is. The library reads no
+//! environment variable: the daemon passes in how it looks one up.
+//!
+//! ```
+//! use std::ffi::OsString;
+//! use porter_callers::{choose_proc_root, proc_notice, proc_path};
+//!
+//! // The daemon's own build decides whether it honours the variable; here, a test build.
+//! let lookup = |name: &str| (name == "MYD_PROC_ROOT").then(|| OsString::from("/fixture/proc"));
+//! let root = choose_proc_root(true, "MYD_PROC_ROOT", lookup);
+//! assert_eq!(proc_path(&root), std::path::Path::new("/fixture/proc"));
+//!
+//! // A shipped build ignores the same variable.
+//! let root = choose_proc_root(false, "MYD_PROC_ROOT", lookup);
+//! assert_eq!(proc_path(&root), std::path::Path::new("/proc"));
+//! assert!(proc_notice(&root, "myd", "MYD_PROC_ROOT").is_some());
+//! ```
+//!
 //! What this cannot prove: every process of the person's runs as the same user. A same-user
 //! process that edits the person's own systemd configuration or environment and waits for the
 //! next start of a trusted service rides on that service's role (peephole's README states the
@@ -48,22 +69,29 @@
 //! kept in a home directory. A scope row never carries a fixed role: a scope has no main process,
 //! so the unit manager can only vouch for its program (`Exe`).
 
+#[cfg(feature = "file")]
+mod file;
 mod images;
 mod proc;
+mod proc_root;
 mod standing;
+mod system;
 mod translate;
 
 #[cfg(feature = "test-proc-root")]
 mod fixture;
 
-#[cfg(feature = "callers-file")]
-#[doc = "The caller table as files, from feature `callers-file`."]
-pub use crate::callers_file::{
-    CallerFileError, CallerTomlError, load_callers, table_from_file, table_from_toml,
-};
+#[cfg(feature = "file")]
+#[doc = "The caller table as files, from feature `file`."]
+pub use file::{CallerFileError, CallerTomlError, load_callers, table_from_file, table_from_toml};
 
 pub use images::{Install, installed};
 pub use proc::ProcCallers;
+pub use proc_root::{Override, ProcRoot, choose_proc_root, proc_notice, proc_path};
+pub use system::{
+    CALLERS, INFERD_CALLERS, SYSTEM_CALLERS, SYSTEM_CALLERS_VAR, SystemCallers, SystemFile,
+    TABLE_DIRS, held_by, held_under, root_held,
+};
 
 /// The systemd manager's bus name.
 pub const SYSTEMD: &str = "org.freedesktop.systemd1";

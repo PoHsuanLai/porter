@@ -7,7 +7,7 @@ mod discover;
 
 use crate::probe::ProbeConfig;
 use crate::structured::AiConfig;
-use porter_daemon::xdg::{PathError, Xdg};
+use porter_daemon::{xdg::PathError, xdg::Xdg};
 use porter_infer::{Policy, TierMap};
 use porter_router::catalog::CatalogDirs;
 use porter_router::local::EngineConfig;
@@ -46,7 +46,7 @@ pub struct InferdConfig {
     #[serde(default)]
     pub tiers: TierMap,
     /// A `[callers]` table, which this file no longer gives: who is calling comes only from the
-    /// system's table ([`porter_daemon::INFERD_CALLERS`]), which a person cannot write. Kept
+    /// system's table ([`porter_callers::INFERD_CALLERS`]), which a person cannot write. Kept
     /// only so that the daemon can say once that it is ignored.
     #[serde(default, rename = "callers", skip_serializing)]
     pub ignored_callers: Option<IgnoredTable>,

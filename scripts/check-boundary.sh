@@ -65,6 +65,7 @@ RULES=(
   "porter-mountd: $EFFECTS fuser porter-ids porter-core porter-fs porter-http porter-secrets porter-service porter-client porter-sync porter-drive porter-drive-fuse"
   "porter-drive-fuse: zbus zvariant reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
   "porter-dbus: reqwest hyper ureq oo7 keyring secret-service ds-settings"
+  "porter-callers: reqwest hyper ureq oo7 keyring secret-service ds-settings"
 )
 fail=0
 
@@ -334,10 +335,11 @@ EDGES=(
   "porter-router: porter-core porter-tailnet porter-tailscale porter-match porter-capability porter-ids porter-engines porter-infer cua-action engine-supervisor model-catalog model-http model-openai-compat model-provider speech-provider vision-prep"
   "porter-turns: porter-core porter-match porter-capability porter-ids porter-infer porter-bridge porter-router cua-action cua-parse cua-session cua-vendors engine-supervisor model-extract model-http model-openai-compat model-provider vision-prep"
   "porter-dbus-macros:"
+  "porter-callers: porter-core"
   "porter-dbus: porter-core porter-dbus-macros porter-tailscale porter-match porter-wire porter-ids"
   "porter-bridge: porter-core porter-capability porter-match porter-ids porter-infer model-catalog model-openai-compat model-provider vision-prep"
-  "porter-sheets: porter-core porter-capability porter-sheet porter-wire porter-dbus porter-provider porter-service"
-  "porter-client: porter-bridge porter-core porter-tailnet porter-tailscale porter-match porter-capability porter-wire porter-ids porter-dbus porter-fs porter-infer porter-provider porter-proxy porter-secrets porter-service porter-turns model-http model-openai-compat model-provider model-wire"
+  "porter-sheets: porter-core porter-capability porter-sheet porter-wire porter-callers porter-dbus porter-provider porter-service"
+  "porter-client: porter-bridge porter-core porter-tailnet porter-tailscale porter-match porter-capability porter-wire porter-ids porter-callers porter-dbus porter-fs porter-infer porter-provider porter-proxy porter-secrets porter-service porter-turns model-http model-openai-compat model-provider model-wire"
   "porter-fake: porter-core porter-capability porter-sheet porter-wire porter-ids porter-provider porter-secrets porter-service"
   "test-kit:"
   "porter-fake-servers: dav-proto porter-core porter-ids porter-discover porter-fake porter-provider quickxorhash test-kit"
@@ -360,18 +362,18 @@ EDGES=(
   "porter-family-nextcloud: porter-family-kit nextcloud-proto dav-proto porter-core porter-capability porter-sheet porter-provider porter-http"
   "porter-family-generic: porter-family-kit generic-proto porter-core porter-capability porter-sheet porter-provider porter-http porter-discover porter-proxy"
   "porter-family-oauth: porter-family-kit oauth-probe-proto porter-core porter-capability porter-sheet porter-ids porter-provider porter-http porter-http-reqwest porter-oauth"
-  "accountd: ds-settings porter-core porter-match porter-capability porter-sheet porter-wire porter-ids porter-daemon porter-dbus porter-families porter-family-oauth porter-fs porter-provider porter-secrets porter-service porter-sheets porter-store porter-tailscale"
+  "accountd: ds-settings porter-core porter-match porter-capability porter-sheet porter-wire porter-ids porter-daemon porter-callers porter-dbus porter-families porter-family-oauth porter-fs porter-provider porter-secrets porter-service porter-sheets porter-store porter-tailscale"
   "storage-webdav: dav-proto porter-capability porter-ids porter-http porter-sync"
   "storage-graph: porter-capability porter-ids porter-http porter-sync"
   "storage-gdrive: porter-capability porter-ids porter-http porter-sync"
   "porter-drive: porter-capability porter-ids porter-fs porter-sync quickxorhash"
   "porter-drive-fuse: porter-drive porter-mountd"
   "porter-mountd:"
-  "syncd: dav-proto ds-settings porter-client porter-core porter-match porter-capability porter-sheet porter-wire porter-ids porter-daemon porter-dbus porter-drive porter-drive-fuse porter-families porter-family-oauth porter-fs porter-http porter-http-relay porter-provider porter-secrets porter-service porter-sheets porter-store porter-sync storage-gdrive storage-graph storage-webdav windows-zones"
-  "porter-rig: fake-secret-service porter-client porter-core porter-match porter-capability porter-wire porter-ids porter-dbus porter-fake porter-fake-servers porter-infer test-kit"
+  "syncd: dav-proto ds-settings porter-client porter-core porter-match porter-capability porter-sheet porter-wire porter-ids porter-daemon porter-callers porter-dbus porter-drive porter-drive-fuse porter-families porter-family-oauth porter-fs porter-http porter-http-relay porter-provider porter-secrets porter-service porter-sheets porter-store porter-sync storage-gdrive storage-graph storage-webdav windows-zones"
+  "porter-rig: fake-secret-service porter-client porter-core porter-match porter-capability porter-wire porter-ids porter-callers porter-dbus porter-fake porter-fake-servers porter-infer test-kit"
   "fake-secret-service:"
   "syncd-fakes: porter-dbus"
-  "inferd: ds-settings porter-bridge porter-engines porter-families porter-family-oauth porter-secrets porter-service porter-sheets porter-store porter-router porter-turns porter-core porter-match porter-capability porter-sheet porter-wire porter-ids porter-daemon porter-dbus porter-discover porter-fs porter-http porter-http-reqwest porter-infer porter-provider porter-tailnet porter-tailscale cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-host-client speech-provider vision-prep"
+  "inferd: ds-settings porter-bridge porter-engines porter-families porter-family-oauth porter-secrets porter-service porter-sheets porter-store porter-router porter-turns porter-core porter-match porter-capability porter-sheet porter-wire porter-ids porter-daemon porter-callers porter-dbus porter-discover porter-fs porter-http porter-http-reqwest porter-infer porter-provider porter-tailnet porter-tailscale cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-host-client speech-provider vision-prep"
 )
 for edge in "${EDGES[@]}"; do
   crate="${edge%%:*}"
@@ -416,11 +418,11 @@ else
   echo "test-only: syncd's default features do not include test-proc-root"
 fi
 
-# porter-dbus's test-only caller fixtures (feature `test-proc-root`, which turns on peephole's
+# porter-callers' test-only caller fixtures (feature `test-proc-root`, which turns on peephole's
 # `fake`) are never in a daemon's normal dependency tree.
 for crate in accountd inferd syncd; do
-  if cargo tree -p "$crate" -e normal --prefix none -f '{p} {f}' 2>/dev/null | grep -E '^(porter-dbus|peephole) ' | grep -Eq 'test-proc-root|fake'; then
-    echo "LEAK: $crate's default build enables porter-dbus test-proc-root or peephole fake"
+  if cargo tree -p "$crate" -e normal --prefix none -f '{p} {f}' 2>/dev/null | grep -E '^(porter-callers|peephole) ' | grep -Eq 'test-proc-root|fake'; then
+    echo "LEAK: $crate's default build enables porter-callers test-proc-root or peephole fake"
     fail=1
   else
     echo "test-only: $crate's default build has no caller fixtures"

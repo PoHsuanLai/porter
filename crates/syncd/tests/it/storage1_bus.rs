@@ -7,8 +7,8 @@ use crate::common;
 
 use common::bus::PrivateBus;
 use common::{ACCESS_DENIED, Known, client, error_name, eventually};
+use porter_callers::CallerRole;
 use porter_core::AppName;
-use porter_dbus::callers::CallerRole;
 use porter_dbus::sync::{
     DRIVE_KEY_LOCAL, DRIVE_KEY_PATH, DRIVE_KEY_PROVIDER, DRIVE_KEY_STATE, DRIVE_KEY_WORDS,
     ITEM_KEY_FRACTION, ITEM_KEY_KEPT, ITEM_KEY_KIND, ITEM_KEY_OTHER, ITEM_KEY_STATE, ITEM_KEY_URL,

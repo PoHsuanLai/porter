@@ -25,12 +25,9 @@
 //!
 //! What every group shares is at the root: [`Details`], the call a server method answers, the
 //! failure of a bus call, [`BusTarget`] and [`serve_ready`]. The portal
-//! shape of a sheet's answer is [`accounts::sheet`], and who is calling is [`callers`].
+//! shape of a sheet's answer is [`accounts::sheet`]. Who is calling is `porter-callers`.
 
 mod args;
-pub mod callers;
-#[cfg(feature = "callers-file")]
-mod callers_file;
 mod failure;
 mod json_value;
 mod ready;

@@ -49,7 +49,7 @@ fn the_shipped_table_names_settings_by_its_unit() {
     let settings: Vec<_> = rows
         .callers
         .iter()
-        .filter(|row| row.role == porter_dbus::callers::CallerRole::Settings)
+        .filter(|row| row.role == porter_callers::CallerRole::Settings)
         .map(|row| (row.unit.as_deref(), row.app.to_string()))
         .collect();
     assert_eq!(
@@ -202,7 +202,7 @@ fn the_agent_launcher_is_listed_by_the_machine_that_runs_it_never_by_default() {
             .rows()
             .callers
             .iter()
-            .all(|row| row.role != porter_dbus::callers::CallerRole::AgentLauncher),
+            .all(|row| row.role != porter_callers::CallerRole::AgentLauncher),
         "no launcher by default"
     );
     // The line the table's comment shows is the one a machine writes, uncommented.
@@ -552,7 +552,7 @@ fn the_shipped_table_names_the_settings_app_and_the_samples_example_rows_are_acc
     let app = porter_core::AppName::parse("org.quire.Settings").expect("name");
     assert_eq!(
         callers.rows().role_of(&app),
-        porter_dbus::callers::CallerRole::App
+        porter_callers::CallerRole::App
     );
     assert_eq!(
         callers
@@ -620,7 +620,7 @@ fn the_shipped_table_names_docket_acps_programs() {
         .find(|row| row.unit.as_deref() == Some("docket-acp.scope"))
         .expect("a docket-acp.scope row");
     assert_eq!(acp.app.to_string(), "org.quire.Companion");
-    assert_eq!(acp.role, porter_dbus::callers::CallerRole::App);
+    assert_eq!(acp.role, porter_callers::CallerRole::App);
     assert_eq!(
         acp.exe,
         [
