@@ -17,7 +17,7 @@
 
 use crate::autoconfig::{autoconfig_urls, domain_of, ispdb_url, parse_autoconfig_with};
 use crate::dns::{Dns, DnsFault};
-use crate::found::{DiscoverFault, Found, SearchOptions, Source, StartTlsOnly};
+use crate::found::{DiscoverFault, Found, SearchOptions, Source};
 use crate::mx::{ProviderLead, ispdb_candidates, lookup_mx, provider_leads};
 use crate::srv::{found_from_srv_with, lookup_srv};
 use porter_core::Tls;
@@ -105,9 +105,9 @@ pub async fn discover_mail<H: Http, D: Dns>(
     discover_mail_with(http, dns, providers, address, &SearchOptions::default()).await
 }
 
-/// [`discover_mail`] under `options`. With `StartTlsOnly::TryNext`, a source whose servers need
+/// [`discover_mail`] under `options`. With `starttls_only`, a source whose servers need
 /// `STARTTLS` (a document, or SRV submission) is a miss and the next source is tried, as mailo
-/// did; with `Pop3::Report`, documents' POP3 servers come back on [`Found::pop3`] and a POP3-only
+/// did; with `report_pop3`, documents' POP3 servers come back on [`Found::pop3`] and a POP3-only
 /// document is a finding.
 pub async fn discover_mail_with<H: Http, D: Dns>(
     http: &H,
@@ -154,7 +154,7 @@ async fn search<H: Http, D: Dns>(
 
     // 3. SRV.
     match lookup_srv(dns, &domain).await {
-        Ok(answers) => match found_from_srv_with(address, &answers, options.pop3)
+        Ok(answers) => match found_from_srv_with(address, &answers, options.report_pop3)
             .and_then(|f| tls_ok(f, options))
         {
             Ok(found) => return Some(Outcome::Servers(found)),
@@ -208,11 +208,11 @@ async fn search<H: Http, D: Dns>(
     None
 }
 
-/// Under `TryNext`, a finding with a `STARTTLS` endpoint is not one.
+/// Under `starttls_only`, a finding with a `STARTTLS` endpoint is not one.
 fn tls_ok(found: Found, options: &SearchOptions) -> Result<Found, DiscoverFault> {
     let starttls = found.endpoints.iter().any(|e| e.tls == Tls::StartTls);
     match (options.starttls_only, starttls) {
-        (StartTlsOnly::TryNext, true) => Err(DiscoverFault::NoServers),
+        (true, true) => Err(DiscoverFault::NoServers),
         _ => Ok(found),
     }
 }

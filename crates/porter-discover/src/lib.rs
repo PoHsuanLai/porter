@@ -29,8 +29,7 @@ pub use dns::{Dns, DnsFault, MxRecord, SrvRecord};
 #[cfg(feature = "io")]
 pub use dns_io::HickoryDns;
 pub use found::{
-    Direction, DiscoverFault, Found, OAuthOffer, OAuthOnly, OAuthServer, Pop3, Pop3Server,
-    SearchOptions, Source, StartTlsOnly,
+    Direction, DiscoverFault, Found, OAuthOffer, OAuthServer, Pop3Server, SearchOptions, Source,
 };
 pub use mx::{ProviderLead, ispdb_candidates, lookup_mx, mx_hosts, provider_leads};
 pub use ocs::parse_ocs_capabilities;

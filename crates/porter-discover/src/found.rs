@@ -38,7 +38,7 @@ pub struct Found {
     /// caller (mailo's `issuer_named` and `issuer_for_server`).
     pub oauth: Option<OAuthOffer>,
     /// POP3 servers an autoconfig document lists, never plain, implicit TLS first. Empty unless
-    /// the search was asked to report them ([`crate::Pop3::Report`]); `endpoints` stay IMAP and
+    /// the search was asked to report them ([`SearchOptions::report_pop3`]); `endpoints` stay IMAP and
     /// SMTP whatever this holds.
     pub pop3: Vec<Pop3Server>,
 }
@@ -86,48 +86,23 @@ pub struct Pop3Server {
     pub login: porter_core::LoginName,
 }
 
-/// How the mail search treats a document that is usable only in part.
+/// How the mail search treats a document that is usable only in part. Each option is off by
+/// default (porter's rule); mailo's rule turns `starttls_only` on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct SearchOptions {
-    /// A document whose servers are `STARTTLS` only.
-    pub starttls_only: StartTlsOnly,
-    /// A document's POP3 servers.
-    pub pop3: Pop3,
-    /// A document whose servers take OAuth2 and no password.
-    pub oauth_only: OAuthOnly,
-}
-
-/// What an OAuth2-only document is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum OAuthOnly {
-    /// A miss: no password endpoint can be built (porter's default; providers that know the
-    /// issuer take the address instead).
-    #[default]
-    Miss,
-    /// A finding: a server that lists `OAuth2` serves as an endpoint, and [`Found::oauth`] says
-    /// which. The caller must sign in with OAuth2 or drop the finding; this crate does not say
-    /// the password rule was met.
-    Offer,
-}
-
-/// What a `STARTTLS`-only document is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum StartTlsOnly {
-    /// Usable: the endpoint says `Tls::StartTls` (porter's default).
-    #[default]
-    Accept,
-    /// A miss: only implicit-TLS servers count, and the search tries the next source (mailo's rule).
-    TryNext,
-}
-
-/// What a document's POP3 servers are.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Pop3 {
-    /// Not looked at: a POP3-only document is a miss (porter's default).
-    #[default]
-    Ignore,
-    /// Listed on [`Found::pop3`]; a document with POP3 and SMTP but no IMAP is a finding.
-    Report,
+    /// A document whose servers are `STARTTLS` only is a miss: only implicit-TLS servers count,
+    /// and the search tries the next source (mailo's rule). When off, the endpoint says
+    /// `Tls::StartTls`.
+    pub starttls_only: bool,
+    /// A document's POP3 servers are listed on [`Found::pop3`]; a document with POP3 and SMTP but
+    /// no IMAP is a finding. When off, POP3 is not looked at and a POP3-only document is a miss.
+    pub report_pop3: bool,
+    /// A document whose servers take OAuth2 and no password is a finding: a server that lists
+    /// `OAuth2` serves as an endpoint, and [`Found::oauth`] says which. The caller must sign in
+    /// with OAuth2 or drop the finding; this crate does not say the password rule was met. When
+    /// off, no password endpoint can be built, so it is a miss (providers that know the issuer
+    /// take the address instead).
+    pub oauth_only_ok: bool,
 }
 
 /// Why a step found nothing to offer.

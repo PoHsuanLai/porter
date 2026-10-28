@@ -17,8 +17,7 @@
 
 use crate::config::{self, AuthMethod, ClientConfig, Server, ServerProtocol, SocketType};
 use crate::found::{
-    Direction, DiscoverFault, Found, OAuthOffer, OAuthOnly, OAuthServer, Pop3, Pop3Server,
-    SearchOptions, Source, StartTlsOnly,
+    Direction, DiscoverFault, Found, OAuthOffer, OAuthServer, Pop3Server, SearchOptions, Source,
 };
 use crate::mail::{imap_claim, imap_endpoint, smtp_endpoint};
 use porter_core::{LoginName, ServiceEndpoint, Tls};
@@ -61,9 +60,9 @@ pub fn parse_autoconfig(xml: &str, address: &str) -> Result<Found, DiscoverFault
     parse_autoconfig_with(xml, address, &SearchOptions::default())
 }
 
-/// [`parse_autoconfig`] under `options`: with `OAuthOnly::Offer` a server that lists `OAuth2` is
-/// an endpoint though it takes no password; with `StartTlsOnly::TryNext` only implicit-TLS servers
-/// count (a document of `STARTTLS` servers is `NoServers`); with `Pop3::Report` the document's
+/// [`parse_autoconfig`] under `options`: with `oauth_only_ok` a server that lists `OAuth2` is
+/// an endpoint though it takes no password; with `starttls_only` only implicit-TLS servers
+/// count (a document of `STARTTLS` servers is `NoServers`); with `report_pop3` the document's
 /// POP3 servers are listed, and a document with POP3 and SMTP but no IMAP is a finding whose
 /// `endpoints` hold the SMTP server alone and whose `claims` are empty.
 pub fn parse_autoconfig_with(
@@ -90,13 +89,13 @@ fn select(
     options: &SearchOptions,
 ) -> Result<Found, DiscoverFault> {
     let tries = tries(options.starttls_only);
-    let auth = Auth(options.oauth_only);
+    let oauth_ok = options.oauth_only_ok;
     let incoming = pick(
         &config.incoming,
         &ServerProtocol::Imap,
         address,
         tries,
-        auth,
+        oauth_ok,
         imap_endpoint,
     );
     let outgoing = pick(
@@ -104,12 +103,12 @@ fn select(
         &ServerProtocol::Smtp,
         address,
         tries,
-        auth,
+        oauth_ok,
         smtp_endpoint,
     );
-    let pop3 = match options.pop3 {
-        Pop3::Ignore => Vec::new(),
-        Pop3::Report => pop3_servers(&config.incoming, address, tries, auth),
+    let pop3 = match options.report_pop3 {
+        false => Vec::new(),
+        true => pop3_servers(&config.incoming, address, tries, oauth_ok),
     };
     let oauth = oauth_offer(config, address);
     let (endpoints, claims) = match (incoming, outgoing) {
@@ -127,13 +126,13 @@ fn select(
 }
 
 /// The socket types a search accepts, best first.
-fn tries(starttls: StartTlsOnly) -> &'static [(SocketType, Tls)] {
-    match starttls {
-        StartTlsOnly::Accept => &[
+fn tries(starttls_only: bool) -> &'static [(SocketType, Tls)] {
+    match starttls_only {
+        false => &[
             (SocketType::Ssl, Tls::Implicit),
             (SocketType::StartTls, Tls::StartTls),
         ],
-        StartTlsOnly::TryNext => &[(SocketType::Ssl, Tls::Implicit)],
+        true => &[(SocketType::Ssl, Tls::Implicit)],
     }
 }
 
@@ -168,7 +167,7 @@ fn pop3_servers(
     servers: &[Server],
     address: &str,
     tries: &[(SocketType, Tls)],
-    auth: Auth,
+    oauth_ok: bool,
 ) -> Vec<Pop3Server> {
     tries
         .iter()
@@ -176,7 +175,7 @@ fn pop3_servers(
             servers
                 .iter()
                 .filter(move |s| s.protocol == ServerProtocol::Pop3 && &s.socket == wanted)
-                .filter(|s| auth.accepts(s))
+                .filter(|s| accepts(s, oauth_ok))
                 .map(move |s| Pop3Server {
                     host: expand(&s.hostname, address),
                     port: s.port,
@@ -194,13 +193,13 @@ fn pick(
     protocol: &ServerProtocol,
     address: &str,
     tries: &[(SocketType, Tls)],
-    auth: Auth,
+    oauth_ok: bool,
     build: fn(String, u16, Tls, LoginName) -> Option<ServiceEndpoint>,
 ) -> Option<ServiceEndpoint> {
     let usable = |(wanted, tls): &(SocketType, Tls)| {
         servers
             .iter()
-            .filter(|s| &s.protocol == protocol && &s.socket == wanted && auth.accepts(s))
+            .filter(|s| &s.protocol == protocol && &s.socket == wanted && accepts(s, oauth_ok))
             .find_map(|s| {
                 let host = expand(&s.hostname, address);
                 build(host, s.port, *tls, login(&s.username, address))
@@ -209,15 +208,10 @@ fn pick(
     tries.iter().find_map(usable)
 }
 
-/// The sign-ins a server must offer to be an endpoint.
-#[derive(Clone, Copy)]
-struct Auth(OAuthOnly);
-
-impl Auth {
-    fn accepts(self, server: &Server) -> bool {
-        takes_password(server)
-            || (self.0 == OAuthOnly::Offer && server.auth.contains(&AuthMethod::OAuth2))
-    }
+/// Whether a server offers a sign-in that makes it an endpoint: a password, or with `oauth_ok`
+/// `OAuth2` alone.
+fn accepts(server: &Server, oauth_ok: bool) -> bool {
+    takes_password(server) || (oauth_ok && server.auth.contains(&AuthMethod::OAuth2))
 }
 
 /// No `authentication` element means the format's default, a password.
