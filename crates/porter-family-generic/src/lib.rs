@@ -9,6 +9,7 @@
 //! has no such call: removing the account wipes the password locally.
 
 mod dav;
+mod dns;
 mod jmap;
 mod login;
 mod lookup;
@@ -28,23 +29,22 @@ fn fault(error: generic_proto::Error) -> porter_sheet::SignInFault {
     }
 }
 
-use crate::conversation::Conversation;
-use crate::io::{Io, SharedDns};
-use crate::password::secret_presented;
 use generic_proto::declared;
 use porter_capability::Claim;
 use porter_core::AccountId;
 use porter_core::{Account, Audience, Credential, IssuedToken};
 use porter_discover::Dns;
+use porter_family_kit::Conversation;
+use porter_family_kit::Io;
+use porter_family_kit::password::secret_presented;
 use porter_http::{NoSleep, SharedHttp};
-#[cfg(feature = "set")]
-use porter_provider::Discovery;
 use porter_provider::{
     Presented, Provider, ProviderError, ProviderSession, ProviderSet, ProviderSpec, RevokeOutcome,
     SignInStart,
 };
 use std::marker::PhantomData;
 
+pub use dns::SharedDns;
 pub use lookup::{DavLookup, FixedLookup, MailLookup};
 pub use sign_in::{GenericFlow, Located, Lookup, Mid, Outcome, Seams};
 
@@ -159,30 +159,5 @@ impl ProviderSession for GenericSession {
 
     fn renewed(&self) -> Option<Credential> {
         None
-    }
-}
-
-/// This family for `spec` when it signs in by a password or an app password, else the spec
-/// back. How the servers are found is the lookup its discovery names: an address (autoconfig, or
-/// a JMAP server the person types), a server's name (`.well-known`), or the file's own servers.
-#[cfg(feature = "set")]
-pub(crate) fn build(spec: ProviderSpec, io: &crate::set::FamilyIo) -> crate::set::Built {
-    use porter_core::AuthKind;
-    fn serving<L: Lookup>(spec: ProviderSpec, io: &crate::set::FamilyIo) -> crate::set::Built {
-        let provider = GenericProvider::<L>::new(spec, io.http.clone(), io.dns.clone());
-        Ok(Box::new(provider.with_providers(io.providers.clone())))
-    }
-    match (spec.auth.kind, &spec.discovery) {
-        (
-            AuthKind::Password | AuthKind::AppPassword,
-            Discovery::Autoconfig | Discovery::JmapSession,
-        ) => serving::<MailLookup>(spec, io),
-        (AuthKind::Password | AuthKind::AppPassword, Discovery::WellKnown) => {
-            serving::<DavLookup>(spec, io)
-        }
-        (AuthKind::Password | AuthKind::AppPassword, Discovery::Fixed) => {
-            serving::<FixedLookup>(spec, io)
-        }
-        _ => Err(Box::new(spec)),
     }
 }

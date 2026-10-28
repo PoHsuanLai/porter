@@ -23,6 +23,7 @@ porter-dbus = { workspace = true, features = ["callers-file"] }
 porter-drive = { workspace = true }
 porter-drive-fuse = { workspace = true }
 porter-families = { workspace = true, features = ["set"] }
+porter-family-oauth = { workspace = true }
 porter-http = { workspace = true }
 porter-http-relay = { workspace = true }
 porter-provider = { workspace = true }

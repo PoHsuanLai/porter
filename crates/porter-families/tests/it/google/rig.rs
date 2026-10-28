@@ -6,7 +6,7 @@ use porter_core::Audience;
 use porter_fake_servers::browser::split_loopback;
 use porter_fake_servers::http::{Scheme, send};
 use porter_fake_servers::{Google, shipped};
-use porter_families::{Google as GoogleRules, OAuthEnv, OAuthProvider};
+use porter_family_oauth::{Google as GoogleRules, OAuthEnv, OAuthProvider};
 use porter_http::http::{Request, Response};
 use porter_http::{Http, HttpError};
 use porter_ids::UnixSeconds;

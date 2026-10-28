@@ -4,10 +4,10 @@
 use super::mail::{self, Looked};
 use super::sign_in::{Located, Lookup, Outcome, Seams};
 use super::{dav, jmap};
-use crate::password::{password_for, plain, text_of, typed_password};
 use generic_proto::mail as proto_mail;
 use porter_capability::Claim;
 use porter_core::{Credential, EndpointUrl, Family, LoginName, SecretText, ServiceEndpoint};
+use porter_family_kit::password::{password_for, plain, text_of, typed_password};
 use porter_provider::{ProviderSpec, SignInMode, SignInStep};
 use porter_sheet::{
     FieldAnswer, FieldKind, FieldSpec, Manual, Protocol, SignInFault, manual_form, parse_manual,

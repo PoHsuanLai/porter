@@ -12,7 +12,7 @@
 
 use super::env::OAuthEnv;
 use super::issuer::BrowserIssuer;
-use crate::conversation::{Flow, Move};
+use porter_family_kit::{Flow, Move};
 use porter_http::Http;
 use porter_ids::WebUrl;
 use porter_oauth::{

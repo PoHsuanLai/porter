@@ -2,9 +2,9 @@
 //! confirms, ends in a `Signed` with no credential at all. (Signing in again goes through the
 //! same two steps; the sheet confirms the review itself.)
 
-use crate::conversation::{Flow, Move};
 use porter_core::AccountLabel;
 use porter_core::Restriction;
+use porter_family_kit::{Flow, Move};
 use porter_provider::{ProviderSpec, Signed};
 use porter_sheet::{SignInFault, SignInInput};
 

@@ -1,11 +1,11 @@
 //! Taking an app password back, sent. The request and the reading of the answer are
 //! nextcloud-proto's.
 
-use crate::io::Io;
-use crate::password::{basic, sensitive};
 use nextcloud_proto::Error;
 use nextcloud_proto::revoke::{self, Revoked};
 use porter_core::{EndpointUrl, LoginName, SecretText};
+use porter_family_kit::Io;
+use porter_family_kit::password::{basic, sensitive};
 use porter_http::Http;
 use porter_provider::{ProviderError, RevokeOutcome};
 

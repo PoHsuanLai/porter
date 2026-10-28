@@ -38,6 +38,10 @@ members = [
   "crates/generic-proto",
   "crates/oauth-probe-proto",
   "crates/porter-families",
+  "crates/porter-family-kit",
+  "crates/porter-family-nextcloud",
+  "crates/porter-family-generic",
+  "crates/porter-family-oauth",
   "crates/porter-tailscale",
   "crates/porter-tailnet",
   "crates/porter-router",
@@ -105,6 +109,10 @@ nextcloud-proto = { path = "crates/nextcloud-proto" }
 generic-proto   = { path = "crates/generic-proto" }
 oauth-probe-proto = { path = "crates/oauth-probe-proto" }
 porter-families = { path = "crates/porter-families" }
+porter-family-kit = { path = "crates/porter-family-kit" }
+porter-family-nextcloud = { path = "crates/porter-family-nextcloud" }
+porter-family-generic = { path = "crates/porter-family-generic" }
+porter-family-oauth = { path = "crates/porter-family-oauth" }
 porter-tailscale = { path = "crates/porter-tailscale" }
 porter-tailnet  = { path = "crates/porter-tailnet" }
 porter-router   = { path = "crates/porter-router" }

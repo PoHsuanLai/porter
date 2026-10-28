@@ -19,6 +19,7 @@ porter-daemon = { workspace = true, features = ["watch"] }
 porter-fs = { workspace = true }
 porter-dbus = { workspace = true, features = ["callers-file"] }
 porter-families = { workspace = true, features = ["set"] }
+porter-family-oauth = { workspace = true }
 porter-provider = { workspace = true }
 porter-secrets = { workspace = true, features = ["oo7"] }
 porter-service = { workspace = true }

@@ -25,9 +25,9 @@ pub use standard::Standard;
 pub(crate) use flow::{exchange_fault, provider_fault};
 pub(crate) use identity::{failure, get, userinfo_address};
 
-use crate::conversation::Conversation;
 use porter_capability::Claim;
 use porter_core::{Account, AccountId, Credential, SecretText};
+use porter_family_kit::Conversation;
 use porter_http::Http;
 use porter_http_reqwest::ReqwestHttp;
 use porter_oauth::{ExchangeFault, endpoints_of, revoke};
@@ -195,32 +195,5 @@ impl<R: BrowserIssuer, H: Http + 'static> Provider for OAuthProvider<R, H> {
             // unreadable, and a fault a later porter-oauth adds
             Err(_) => Ok(RevokeOutcome::Unsupported),
         }
-    }
-}
-
-/// This family for `spec` when it signs in by OAuth PKCE at an issuer it has rules for (Google,
-/// Microsoft) or one whose data says who answered ([`Standard`]), else the spec back.
-#[cfg(feature = "set")]
-pub(crate) fn build(spec: ProviderSpec, io: &crate::set::FamilyIo) -> crate::set::Built {
-    use crate::google::Google;
-    use crate::microsoft::Microsoft;
-    use porter_core::AuthKind;
-    use porter_provider::Issuer;
-    fn serving<R: BrowserIssuer>(
-        rules: R,
-        spec: ProviderSpec,
-        io: &crate::set::FamilyIo,
-    ) -> crate::set::Built {
-        let clock = std::sync::Arc::clone(&io.clock);
-        let env = OAuthEnv::<ReqwestHttp>::with_client_files(io.clients.clone(), clock);
-        Ok(Box::new(OAuthProvider::with_env(rules, spec, env)))
-    }
-    match (spec.auth.kind, spec.auth.issuer) {
-        (AuthKind::OAuthPkce, Some(Issuer::Google)) => serving(Google, spec, io),
-        (AuthKind::OAuthPkce, Some(Issuer::Microsoft)) => serving(Microsoft, spec, io),
-        (AuthKind::OAuthPkce, Some(issuer)) if Standard::serves(issuer) => {
-            serving(Standard::of(issuer), spec, io)
-        }
-        _ => Err(Box::new(spec)),
     }
 }

@@ -199,7 +199,8 @@ async fn an_app_adds_an_account_through_a_family_is_granted_it_and_signs_it_in_a
     use porter_core::SecretText;
     use porter_fake::NOW;
     use porter_fake_servers::{FakeDav, FakeDns};
-    use porter_families::{DavLookup, DynProvider, GenericProvider};
+    use porter_families::DynProvider;
+    use porter_family_generic::{DavLookup, GenericProvider};
     use porter_http::SharedHttp;
     use porter_http_reqwest::ReqwestHttp;
     use porter_ids::clock::FixedClock;
@@ -321,7 +322,8 @@ async fn adding_an_account_that_is_already_here_tells_the_app_which_one_it_is() 
     use porter_core::SecretText;
     use porter_fake::NOW;
     use porter_fake_servers::{FakeDav, FakeDns};
-    use porter_families::{DavLookup, DynProvider, GenericProvider};
+    use porter_families::DynProvider;
+    use porter_family_generic::{DavLookup, GenericProvider};
     use porter_http::SharedHttp;
     use porter_http_reqwest::ReqwestHttp;
     use porter_ids::clock::FixedClock;
@@ -413,7 +415,8 @@ async fn a_typed_pop3_server_is_added_through_the_sheet_and_found_by_a_mail_need
     use porter_fake::NOW;
     use porter_fake_servers::net::{Bind, port_of};
     use porter_fake_servers::{Accounts as MailAccounts, FakeDns, FakePop3, mailbox};
-    use porter_families::{DynProvider, GenericProvider, MailLookup};
+    use porter_families::DynProvider;
+    use porter_family_generic::{GenericProvider, MailLookup};
     use porter_http::SharedHttp;
     use porter_ids::clock::FixedClock;
     use porter_match::MailNeed;

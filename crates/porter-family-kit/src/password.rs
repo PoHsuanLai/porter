@@ -15,7 +15,7 @@ use porter_provider::{Presented, ProviderError, ProviderSpec};
 use porter_sheet::{Entry, FieldAnswer, FieldKind, FieldSpec, FieldValue, Presence, SignInFault};
 
 /// A form field.
-pub(crate) fn field(kind: FieldKind, entry: Entry, presence: Presence) -> FieldSpec {
+pub fn field(kind: FieldKind, entry: Entry, presence: Presence) -> FieldSpec {
     FieldSpec {
         kind,
         entry,
@@ -25,20 +25,19 @@ pub(crate) fn field(kind: FieldKind, entry: Entry, presence: Presence) -> FieldS
 }
 
 /// The required, shown field of this kind.
-pub(crate) fn plain(kind: FieldKind) -> FieldSpec {
+pub fn plain(kind: FieldKind) -> FieldSpec {
     field(kind, Entry::Plain, Presence::Required)
 }
 
 /// The required, hidden password field.
-pub(crate) fn password() -> FieldSpec {
+pub fn password() -> FieldSpec {
     field(FieldKind::Password, Entry::Secret, Presence::Required)
 }
 
 /// The password field a provider asks for: an app password when its sign-in is `app_password`
 /// (iCloud, Fastmail, Yahoo: the service takes no account password from a mail app), else a
 /// password.
-#[cfg(feature = "generic")]
-pub(crate) fn password_for(spec: &ProviderSpec) -> FieldSpec {
+pub fn password_for(spec: &ProviderSpec) -> FieldSpec {
     match spec.auth.kind {
         porter_core::AuthKind::AppPassword => {
             field(FieldKind::AppPassword, Entry::Secret, Presence::Required)
@@ -49,13 +48,12 @@ pub(crate) fn password_for(spec: &ProviderSpec) -> FieldSpec {
 
 /// The password typed, in either field: an app password, else a password (a host may send
 /// either kind for the field it was shown).
-#[cfg(feature = "generic")]
-pub(crate) fn typed_password(answers: &[FieldAnswer]) -> Option<SecretText> {
+pub fn typed_password(answers: &[FieldAnswer]) -> Option<SecretText> {
     secret_of(answers, FieldKind::AppPassword).or_else(|| secret_of(answers, FieldKind::Password))
 }
 
 /// What a request that went nowhere says about the sign-in.
-pub(crate) fn fault_of(error: HttpError) -> SignInFault {
+pub fn fault_of(error: HttpError) -> SignInFault {
     match error {
         HttpError::Unreachable | HttpError::Tls | HttpError::TimedOut | HttpError::NotGranted => {
             SignInFault::Unreachable
@@ -66,7 +64,7 @@ pub(crate) fn fault_of(error: HttpError) -> SignInFault {
 }
 
 /// The plain text typed for `kind`, trimmed, when it is not empty.
-pub(crate) fn text_of(answers: &[FieldAnswer], kind: FieldKind) -> Option<String> {
+pub fn text_of(answers: &[FieldAnswer], kind: FieldKind) -> Option<String> {
     answers
         .iter()
         .find(|a| a.kind == kind)
@@ -78,7 +76,7 @@ pub(crate) fn text_of(answers: &[FieldAnswer], kind: FieldKind) -> Option<String
 }
 
 /// The secret typed for `kind`, exactly as typed (a password may start or end with a space).
-pub(crate) fn secret_of(answers: &[FieldAnswer], kind: FieldKind) -> Option<SecretText> {
+pub fn secret_of(answers: &[FieldAnswer], kind: FieldKind) -> Option<SecretText> {
     answers
         .iter()
         .find(|a| a.kind == kind)
@@ -90,7 +88,7 @@ pub(crate) fn secret_of(answers: &[FieldAnswer], kind: FieldKind) -> Option<Secr
 }
 
 /// The `Authorization` value of HTTP Basic.
-pub(crate) fn basic(login: &str, password: &SecretText) -> String {
+pub fn basic(login: &str, password: &SecretText) -> String {
     let token =
         base64::engine::general_purpose::STANDARD.encode(format!("{login}:{}", password.expose()));
     format!("Basic {token}")
@@ -98,7 +96,7 @@ pub(crate) fn basic(login: &str, password: &SecretText) -> String {
 
 /// `value` as a header value marked sensitive, so a request's `Debug` never shows it. A value
 /// that cannot be a header's is `Malformed`.
-pub(crate) fn sensitive(value: &str) -> Result<HeaderValue, HttpError> {
+pub fn sensitive(value: &str) -> Result<HeaderValue, HttpError> {
     let mut value = HeaderValue::from_str(value).map_err(|_| HttpError::Malformed)?;
     value.set_sensitive(true);
     Ok(value)
@@ -106,7 +104,7 @@ pub(crate) fn sensitive(value: &str) -> Result<HeaderValue, HttpError> {
 
 /// Puts `value` on a built request as its `Authorization`, marked sensitive so the request's
 /// `Debug` never shows it. A value that cannot be a header's is `Malformed`.
-pub(crate) fn authorize(request: &mut Request<Vec<u8>>, value: &str) -> Result<(), HttpError> {
+pub fn authorize(request: &mut Request<Vec<u8>>, value: &str) -> Result<(), HttpError> {
     request
         .headers_mut()
         .insert(AUTHORIZATION, sensitive(value)?);
@@ -114,7 +112,7 @@ pub(crate) fn authorize(request: &mut Request<Vec<u8>>, value: &str) -> Result<(
 }
 
 /// The password an account presents: the credential, when it is one.
-pub(crate) fn password_of(presented: &Presented) -> Result<&SecretText, ProviderError> {
+pub fn password_of(presented: &Presented) -> Result<&SecretText, ProviderError> {
     match presented {
         Presented::Credential(Credential::Password(password)) => Ok(password),
         Presented::Anonymous => Err(ProviderError::Unauthorized),
@@ -123,7 +121,7 @@ pub(crate) fn password_of(presented: &Presented) -> Result<&SecretText, Provider
 }
 
 /// The secret a generic account presents: a password, or a bearer token the person pasted.
-pub(crate) fn secret_presented(presented: &Presented) -> Result<&SecretText, ProviderError> {
+pub fn secret_presented(presented: &Presented) -> Result<&SecretText, ProviderError> {
     match presented {
         Presented::Credential(Credential::Bearer(token)) => Ok(token),
         other => password_of(other),

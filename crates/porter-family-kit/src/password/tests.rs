@@ -44,7 +44,6 @@ fn what_was_typed_is_read_by_field_and_a_password_keeps_its_spaces() {
 
 /// ship-5: the password is read from the app password field, or from a password field (a host
 /// may answer an app password form with either kind).
-#[cfg(feature = "generic")]
 #[test]
 fn the_typed_password_is_the_app_password_else_the_password() {
     let answer = |kind, text: &str| FieldAnswer {

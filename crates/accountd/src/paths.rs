@@ -97,8 +97,8 @@ impl Paths {
     }
 
     /// The clients files the OAuth families read: the shipped one and the one Settings writes.
-    pub fn client_files(&self) -> porter_families::ClientFiles {
-        porter_families::ClientFiles {
+    pub fn client_files(&self) -> porter_family_oauth::ClientFiles {
+        porter_family_oauth::ClientFiles {
             shipped: self.clients_shipped.clone(),
             own: self.clients_user.clone(),
         }

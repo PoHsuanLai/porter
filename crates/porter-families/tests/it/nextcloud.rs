@@ -16,7 +16,7 @@ use porter_fake::FakeServer;
 use porter_fake_servers::browser::split_loopback;
 use porter_fake_servers::http::{Request, Scheme, send};
 use porter_fake_servers::{FakeNextcloud, LoginPolicy, NextcloudHandle, Running, shipped};
-use porter_families::{NextcloudProvider, NextcloudSession};
+use porter_family_nextcloud::{NextcloudProvider, NextcloudSession};
 use porter_http::{NoSleep, SharedHttp};
 use porter_ids::WebUrl;
 use porter_provider::{
@@ -42,7 +42,7 @@ impl World {
 
 fn provider(spec: porter_provider::ProviderSpec) -> NextcloudProvider {
     NextcloudProvider::new(spec, SharedHttp::new(Fakes::loopback()), NoSleep).with_pacing(
-        porter_families::Pacing {
+        porter_family_kit::Pacing {
             first: Duration::from_secs(1),
             step: Duration::from_secs(10),
             limit: Duration::from_secs(120),

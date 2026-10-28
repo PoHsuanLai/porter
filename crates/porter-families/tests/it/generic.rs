@@ -18,7 +18,7 @@ use porter_fake_servers::{
     Accounts, AutoconfigHandle, DavHandle, FakeAutoconfig, FakeDav, FakeDns, FakeImap, FakeSmtp,
     Running, autoconfig_xml, mailbox,
 };
-use porter_families::{DavLookup, FixedLookup, GenericProvider, MailLookup};
+use porter_family_generic::{DavLookup, FixedLookup, GenericProvider, MailLookup};
 use porter_http::SharedHttp;
 use porter_provider::{
     Presented, Provider, ProviderError, ProviderSession, ProviderSpec, SignInMode, SignInStart,

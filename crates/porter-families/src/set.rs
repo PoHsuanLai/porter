@@ -12,14 +12,17 @@
 //! (through [`ProviderNames`]) and serves those. The module is built with the `set` feature,
 //! which turns on every family it can map.
 
+mod build;
 mod provider_names;
 
 pub use provider_names::ProviderNames;
 
 use crate::dispatch::DynProvider;
-use crate::{ClientFiles, SharedDns, agent_login, api_key, generic, nextcloud, oauth, tailnet};
+use crate::{agent_login, api_key, tailnet};
 use porter_core::{AuthKind, EndpointUrl};
 use porter_discover::{Dns, DnsFault, HickoryDns, MxRecord, SrvRecord};
+use porter_family_generic::SharedDns;
+use porter_family_oauth::ClientFiles;
 use porter_http::SharedHttp;
 use porter_http_reqwest::ReqwestHttp;
 use porter_ids::clock::Clock;
@@ -271,9 +274,9 @@ type Build = fn(ProviderSpec, &FamilyIo) -> Built;
 /// (OpenRouter's browser sign-in) has no family, so a file asking for it lands in `unserved`
 /// with its logged reason.
 static FAMILIES: &[Build] = &[
-    nextcloud::build,
-    generic::build,
-    oauth::build,
+    build::nextcloud,
+    build::generic,
+    build::oauth,
     api_key::build,
     agent_login::build,
     tailnet::build,

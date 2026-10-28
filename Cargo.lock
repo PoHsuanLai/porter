@@ -15,6 +15,7 @@ dependencies = [
  "porter-fake",
  "porter-fake-servers",
  "porter-families",
+ "porter-family-oauth",
  "porter-fs",
  "porter-http",
  "porter-http-reqwest",
@@ -1592,6 +1593,7 @@ dependencies = [
  "porter-fake",
  "porter-fake-servers",
  "porter-families",
+ "porter-family-oauth",
  "porter-fs",
  "porter-http",
  "porter-http-reqwest",
@@ -2559,6 +2561,7 @@ dependencies = [
  "porter-fake",
  "porter-fake-servers",
  "porter-families",
+ "porter-family-generic",
  "porter-fs",
  "porter-http",
  "porter-http-reqwest",
@@ -2764,14 +2767,15 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "dav-proto",
- "generic-proto",
- "nextcloud-proto",
- "oauth-probe-proto",
  "porter-capability",
  "porter-core",
  "porter-discover",
  "porter-fake",
  "porter-fake-servers",
+ "porter-family-generic",
+ "porter-family-kit",
+ "porter-family-nextcloud",
+ "porter-family-oauth",
  "porter-http",
  "porter-http-reqwest",
  "porter-ids",
@@ -2788,6 +2792,69 @@ dependencies = [
  "serde_json",
  "test-kit",
  "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "porter-family-generic"
+version = "0.1.0"
+dependencies = [
+ "generic-proto",
+ "porter-capability",
+ "porter-core",
+ "porter-discover",
+ "porter-family-kit",
+ "porter-http",
+ "porter-provider",
+ "porter-proxy",
+ "porter-sheet",
+ "tokio",
+]
+
+[[package]]
+name = "porter-family-kit"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "porter-core",
+ "porter-http",
+ "porter-provider",
+ "porter-sheet",
+ "test-kit",
+ "tokio",
+]
+
+[[package]]
+name = "porter-family-nextcloud"
+version = "0.1.0"
+dependencies = [
+ "dav-proto",
+ "nextcloud-proto",
+ "porter-capability",
+ "porter-core",
+ "porter-family-kit",
+ "porter-http",
+ "porter-provider",
+ "porter-sheet",
+]
+
+[[package]]
+name = "porter-family-oauth"
+version = "0.1.0"
+dependencies = [
+ "oauth-probe-proto",
+ "porter-capability",
+ "porter-core",
+ "porter-family-kit",
+ "porter-http",
+ "porter-http-reqwest",
+ "porter-ids",
+ "porter-oauth",
+ "porter-provider",
+ "porter-sheet",
+ "serde",
+ "serde_json",
+ "test-kit",
  "tokio",
 ]
 
@@ -4152,6 +4219,7 @@ dependencies = [
  "porter-fake",
  "porter-fake-servers",
  "porter-families",
+ "porter-family-oauth",
  "porter-fs",
  "porter-http",
  "porter-http-relay",

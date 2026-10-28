@@ -180,8 +180,8 @@ impl KeepPaths {
     }
 
     /// The clients files the sign-in families read.
-    pub fn client_files(&self) -> porter_families::ClientFiles {
-        porter_families::ClientFiles {
+    pub fn client_files(&self) -> porter_family_oauth::ClientFiles {
+        porter_family_oauth::ClientFiles {
             shipped: self.clients_shipped.clone(),
             own: self.clients_user.clone(),
         }

@@ -1,11 +1,12 @@
 //! Finding a generic mail server from an address: the search of `porter-discover`. The servers a
 //! person types when it finds none, and the ones a provider file names, are generic-proto's.
 
-use crate::io::{Io, SharedDns};
+use crate::dns::SharedDns;
 use generic_proto::mail::domain_of;
 use porter_capability::Claim;
 use porter_core::ServiceEndpoint;
 use porter_discover::{Found, Outcome, Source, discover_mail};
+use porter_family_kit::Io;
 use porter_provider::{DomainName, ProviderSet};
 
 /// What looking for a mail server came to.

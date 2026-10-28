@@ -12,11 +12,11 @@
 
 mod sign_in;
 
-use crate::conversation::Conversation;
 use crate::key::{asks_server, check, check_server, key_of, own_server};
 use porter_capability::Claim;
 use porter_core::AccountId;
 use porter_core::{Account, EndpointUrl};
+use porter_family_kit::Conversation;
 use porter_http::Http;
 use porter_http_reqwest::ReqwestHttp;
 use porter_provider::{

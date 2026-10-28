@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### porter-families is the registry, and each family is a crate
+
+- New crates porter-family-kit, porter-family-nextcloud, porter-family-generic and
+  porter-family-oauth. porter-families keeps `DynProvider`, `set` and the small families, and its
+  `nextcloud`, `generic` and `oauth` features turn the crates on. The paths moved:
+  `porter_families::{Conversation, Flow, Move, Pacing}` are `porter_family_kit::..`;
+  `{NextcloudProvider, NextcloudFlow, NextcloudSession}` are `porter_family_nextcloud::..`;
+  `{GenericProvider, GenericFlow, GenericSession, MailLookup, DavLookup, FixedLookup, Lookup,
+  Located, Mid, Outcome, Seams, SharedDns}` are `porter_family_generic::..`; `{OAuthProvider,
+  OAuthSession, OAuthEnv, BrowserFlow, BrowserIssuer, Browser, Cx, Grant, Standard, Google,
+  Microsoft, GoogleState, ClientFiles, Clock, Random}` are `porter_family_oauth::..`.
+
 ### The OAuth probes
 
 - New crate oauth-probe-proto: the bearer read and the readings of Google's and Graph's answers as

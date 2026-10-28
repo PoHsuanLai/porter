@@ -2,9 +2,9 @@
 //! file that names no server (`openai-compatible`) also asks for the server's address, and its
 //! key may be left empty.
 
-use crate::conversation::{Flow, Move};
 use crate::key::{asks_server, check, check_server, fault_of, own_server, signed, signed_server};
 use porter_core::{Family, LoginName, SecretText, ServiceEndpoint, Tls, server_address_shape};
+use porter_family_kit::{Flow, Move};
 use porter_http::Http;
 use porter_http_reqwest::ReqwestHttp;
 use porter_ids::UrlScheme;

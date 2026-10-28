@@ -34,7 +34,9 @@ fn seeded(rig: &Rig) -> Presented {
     })
 }
 
-async fn open(rig: &Rig) -> porter_families::OAuthSession<porter_families::Microsoft, Wire> {
+async fn open(
+    rig: &Rig,
+) -> porter_family_oauth::OAuthSession<porter_family_oauth::Microsoft, Wire> {
     rig.provider
         .open(&account(), seeded(rig))
         .await

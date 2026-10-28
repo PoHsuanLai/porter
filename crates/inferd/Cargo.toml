@@ -32,6 +32,7 @@ porter-dbus = { workspace = true }
 # inferd holds the AI keys itself: an `AccountService` hosted in process over its own store
 # (`keys/`), the AI and agent families, its own key namespace and the shared sheet plumbing.
 porter-families = { workspace = true, features = ["set"] }
+porter-family-oauth = { workspace = true }
 porter-secrets = { workspace = true, features = ["oo7"] }
 porter-service = { workspace = true }
 porter-sheets = { workspace = true }

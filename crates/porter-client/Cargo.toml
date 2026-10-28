@@ -52,7 +52,8 @@ porter-fake = { workspace = true }
 porter-fake-servers = { workspace = true }
 # The scripted inference session the session tests play (`porter_infer::testing`).
 porter-infer = { workspace = true, features = ["testing"] }
-porter-families = { workspace = true, features = ["generic"] }
+porter-families = { workspace = true }
+porter-family-generic = { workspace = true }
 porter-http = { workspace = true }
 porter-http-reqwest = { workspace = true }
 tokio = { workspace = true }

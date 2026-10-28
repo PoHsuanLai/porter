@@ -8,8 +8,8 @@
 //! The page is Tailscale's (`https://login.tailscale.com/...`); porter opens nothing itself and
 //! takes no password, key or code.
 
-use crate::conversation::{Flow, Move};
 use porter_core::{AccountLabel, Restriction};
+use porter_family_kit::{Flow, Move};
 use porter_http::{SharedSleep, Sleep};
 use porter_ids::WebUrl;
 use porter_provider::{SignInStep, Signed};

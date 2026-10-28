@@ -454,7 +454,7 @@ async fn a_google_key_and_its_secret_set_in_settings_are_the_families_google_cli
         settings.get(&secret_row).await.expect("get"),
         toml::Value::String("GOCSPX-mine".into())
     );
-    let families = porter_families::ClientFiles {
+    let families = porter_family_oauth::ClientFiles {
         shipped: dir.join("none.toml"),
         own: file.clone(),
     }

@@ -27,7 +27,9 @@ fn grant_types(rig: &Rig) -> Vec<String> {
 async fn to_review(
     rig: &Rig,
 ) -> (
-    porter_families::Conversation<porter_families::BrowserFlow<porter_families::Microsoft, Wire>>,
+    porter_family_kit::Conversation<
+        porter_family_oauth::BrowserFlow<porter_family_oauth::Microsoft, Wire>,
+    >,
     SignInStep,
 ) {
     to_review_from(rig, start()).await
@@ -38,7 +40,9 @@ async fn to_review_from(
     rig: &Rig,
     begun: SignInStart,
 ) -> (
-    porter_families::Conversation<porter_families::BrowserFlow<porter_families::Microsoft, Wire>>,
+    porter_family_kit::Conversation<
+        porter_family_oauth::BrowserFlow<porter_family_oauth::Microsoft, Wire>,
+    >,
     SignInStep,
 ) {
     let mut signin = rig.provider.sign_in(begun).expect("sign in");
@@ -266,11 +270,11 @@ async fn a_build_with_no_client_id_says_so_before_opening_anything() {
 async fn a_client_id_written_after_start_is_used_by_the_next_sign_in() {
     let rig = Rig::new(false).await;
     let dir = test_kit::Scratch::new("families-ux2");
-    let files = porter_families::ClientFiles {
+    let files = porter_family_oauth::ClientFiles {
         shipped: dir.join("shipped.toml"),
         own: dir.join("clients.toml"),
     };
-    let env = porter_families::OAuthEnv::new(
+    let env = porter_family_oauth::OAuthEnv::new(
         Wire {
             graph: std::sync::Arc::clone(&rig.graph),
         },
@@ -280,7 +284,7 @@ async fn a_client_id_written_after_start_is_used_by_the_next_sign_in() {
     .with_channel(porter_provider::ClientChannel::Development)
     .with_files(files.clone());
     let provider =
-        porter_families::OAuthProvider::with_env(porter_families::Microsoft, spec(), env);
+        porter_family_oauth::OAuthProvider::with_env(porter_family_oauth::Microsoft, spec(), env);
 
     // ux-1: the add list leaves it out until then.
     assert_eq!(

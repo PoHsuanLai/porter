@@ -5,7 +5,7 @@ use porter_core::Audience;
 use porter_fake_servers::browser::split_loopback;
 use porter_fake_servers::http::{Scheme, send};
 use porter_fake_servers::{FakeIssuer, IssuerHandle, Running, shipped};
-use porter_families::{Microsoft, OAuthEnv, OAuthProvider};
+use porter_family_oauth::{Microsoft, OAuthEnv, OAuthProvider};
 use porter_http::http::{Request, Response};
 use porter_http::{Http, HttpError};
 use porter_ids::UnixSeconds;
