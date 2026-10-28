@@ -1,6 +1,6 @@
-//! A hand-written inferd for the client's key and launcher tests: `org.quire.Inference1.Keys` and
-//! `org.quire.Inference1.Launcher` on inferd's name, with Request objects under
-//! `/org/quire/Inference1/request`. How its sheets end is a `Sheets` the test sets, so the
+//! A hand-written accountd for the client's key and launcher tests: `org.quire.Accounts1.Keys` and
+//! `org.quire.Accounts1.Launcher` on accountd's name, with Request objects under
+//! `/org/quire/Accounts1/request`. How its sheets end is a `Sheets` the test sets, so the
 //! client's paths all run: an answer that beats the method's reply, a forged one from a
 //! connection that does not own the name, a sheet nobody answers, a refusal. It records what it
 //! was asked.
@@ -13,11 +13,10 @@ use porter_dbus::accounts::ServiceRoot;
 use porter_dbus::accounts::sheet::{REQUEST_INTERFACE, SheetKind, request_path_in, response_of};
 use porter_wire::AccountsReply;
 use porter_wire::Refusal;
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use zbus::message::Header;
-use zbus::zvariant::{Fd, OwnedObjectPath, OwnedValue, Value};
+use zbus::zvariant::{OwnedFd, OwnedObjectPath};
 use zbus::{Connection, DBusError};
 
 /// The key every credential this fake issues holds.
@@ -28,10 +27,6 @@ pub const KEY: &str = "sk-ant-test-0123456789abcdef";
 pub enum Sheets {
     /// The person says yes: the chosen key, with this permit.
     Permit(&'static str),
-    /// The person adds this account.
-    Added(&'static str),
-    /// The person tried to add an account they already have.
-    AlreadyAdded(&'static str),
     /// The sheet ends with this refusal.
     Refuse(Refusal),
     /// Nobody answers: the sheet stays open until it is closed.
@@ -43,8 +38,6 @@ pub enum Sheets {
 pub struct Seen {
     /// `(class, usage, parent_window)` of each `RequestKey`.
     pub key_requests: Vec<(String, String, String)>,
-    /// `(provider_hint)` of each `AddAccount`.
-    pub add_requests: Vec<String>,
     /// How many Request objects were closed by their caller.
     pub closed: usize,
     /// The programs registered, and the connection that registered them.
@@ -55,8 +48,8 @@ pub struct Seen {
     pub sessions: Vec<String>,
     /// `(program, class, session)` of each `RequestAgentKey`.
     pub agent_key_requests: Vec<(String, String, String)>,
-    /// `(permit, program, target)` of each `IssueProcessCredential`.
-    pub issued: Vec<(String, String, String)>,
+    /// `(permit, program)` of each `IssueProcessCredential`.
+    pub issued: Vec<(String, String)>,
     /// The ids of the credentials revoked by their launcher.
     pub revoked: Vec<String>,
 }
@@ -66,20 +59,19 @@ struct Shared {
     seen: Mutex<Seen>,
     sheets: Mutex<Sheets>,
     stranger: Mutex<Option<Connection>>,
-    runtime: PathBuf,
     next: AtomicU32,
     launcher: Mutex<Option<String>>,
 }
 
 /// The fake daemon: build it, `serve` it, and read `seen`.
 #[derive(Debug, Clone)]
-pub struct FakeInferd {
+pub struct FakeAccountd {
     shared: Arc<Shared>,
 }
 
 /// What the fake answers a call with when it refuses.
 #[derive(Debug, DBusError)]
-#[zbus(prefix = "org.quire.Inference1.Error")]
+#[zbus(prefix = "org.quire.Accounts1.Error")]
 pub enum Fault {
     #[zbus(error)]
     ZBus(zbus::Error),
@@ -108,15 +100,14 @@ pub fn candidate(permit: &str) -> Candidate {
     )
 }
 
-impl FakeInferd {
-    /// A fake whose credentials are files under `runtime`, with its sheets ending as `sheets`.
-    pub fn new(runtime: PathBuf, sheets: Sheets) -> Self {
+impl FakeAccountd {
+    /// A fake with its sheets ending as `sheets`.
+    pub fn new(sheets: Sheets) -> Self {
         Self {
             shared: Arc::new(Shared {
                 seen: Mutex::new(Seen::default()),
                 sheets: Mutex::new(sheets),
                 stranger: Mutex::new(None),
-                runtime,
                 next: AtomicU32::new(0),
                 launcher: Mutex::new(None),
             }),
@@ -135,12 +126,12 @@ impl FakeInferd {
         read(&self.shared.seen.lock().expect("lock"))
     }
 
-    /// Serves Keys and Launcher on `connection` under inferd's name and path.
+    /// Serves Keys and Launcher on `connection` under accountd's name and path.
     pub async fn serve(&self, connection: &Connection) {
         let server = connection.object_server();
         server
             .at(
-                porter_dbus::inference::INFERENCE_PATH,
+                porter_dbus::accounts::ACCOUNTS_PATH,
                 Keys {
                     shared: Arc::clone(&self.shared),
                 },
@@ -149,7 +140,7 @@ impl FakeInferd {
             .expect("serve Keys");
         server
             .at(
-                porter_dbus::inference::INFERENCE_PATH,
+                porter_dbus::accounts::ACCOUNTS_PATH,
                 Launcher {
                     shared: Arc::clone(&self.shared),
                 },
@@ -157,7 +148,7 @@ impl FakeInferd {
             .await
             .expect("serve Launcher");
         connection
-            .request_name(porter_dbus::inference::INFERENCE_BUS)
+            .request_name(porter_dbus::accounts::ACCOUNTS_BUS)
             .await
             .expect("own the name");
     }
@@ -179,8 +170,8 @@ impl FakeInferd {
         connection
             .emit_signal(
                 Some(to),
-                porter_dbus::inference::INFERENCE_PATH,
-                "org.quire.Inference1.Launcher",
+                porter_dbus::accounts::ACCOUNTS_PATH,
+                "org.quire.Accounts1.Launcher",
                 signal,
                 &body,
             )
@@ -200,8 +191,8 @@ impl FakeInferd {
         connection
             .emit_signal(
                 Some(to),
-                porter_dbus::inference::INFERENCE_PATH,
-                "org.quire.Inference1.Launcher",
+                porter_dbus::accounts::ACCOUNTS_PATH,
+                "org.quire.Accounts1.Launcher",
                 "ProcessCredentialRevoked",
                 &(id, reason),
             )
@@ -235,7 +226,7 @@ async fn sheet(
     let sender = header.sender().expect("a sender").to_owned();
     let token = String::try_from(options["handle_token"].try_clone().expect("clone"))
         .map_err(|e| zbus::fdo::Error::InvalidArgs(e.to_string()))?;
-    let path = request_path_in(ServiceRoot::Inference, sender.as_str(), &token)
+    let path = request_path_in(ServiceRoot::Accounts, sender.as_str(), &token)
         .ok_or_else(|| zbus::fdo::Error::InvalidArgs("handle_token".into()))?;
     let owned = OwnedObjectPath::try_from(path.clone())
         .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
@@ -290,7 +281,7 @@ struct Keys {
     shared: Arc<Shared>,
 }
 
-#[zbus::interface(name = "org.quire.Inference1.Keys")]
+#[zbus::interface(name = "org.quire.Accounts1.Keys")]
 impl Keys {
     async fn request_key(
         &self,
@@ -317,45 +308,13 @@ impl Keys {
         )
         .await
     }
-
-    async fn add_account(
-        &self,
-        #[zbus(header)] header: Header<'_>,
-        #[zbus(connection)] connection: &Connection,
-        provider_hint: String,
-        _parent_window: String,
-        options: Details,
-    ) -> zbus::fdo::Result<OwnedObjectPath> {
-        self.shared
-            .seen
-            .lock()
-            .expect("lock")
-            .add_requests
-            .push(provider_hint);
-        sheet(
-            &self.shared,
-            &header,
-            connection,
-            &options,
-            SheetKind::AddAccount,
-            |sheets| match sheets {
-                Sheets::Added(id) => Some(AccountsReply::Added(AccountId::parse(id).expect("id"))),
-                Sheets::AlreadyAdded(id) => Some(AccountsReply::AlreadyAdded(
-                    AccountId::parse(id).expect("id"),
-                )),
-                Sheets::Refuse(refusal) => Some(AccountsReply::Refused(*refusal)),
-                _ => None,
-            },
-        )
-        .await
-    }
 }
 
 struct Launcher {
     shared: Arc<Shared>,
 }
 
-#[zbus::interface(name = "org.quire.Inference1.Launcher")]
+#[zbus::interface(name = "org.quire.Accounts1.Launcher")]
 impl Launcher {
     async fn register_launcher(
         &self,
@@ -372,8 +331,6 @@ impl Launcher {
             .extend(programs);
         Ok(())
     }
-
-    async fn set_agent_state(&self, _account: String, _state: String) {}
 
     async fn begin_session(&self, session: String) {
         self.shared
@@ -439,15 +396,13 @@ impl Launcher {
         self.report(request, outcome, reason)
     }
 
-    /// A credential of the key `KEY`: a memfd-like anonymous file for `memfd`, a 0600 file under
-    /// the fake's runtime directory for `tmpfs_file`. The permits `g-once` and `g-gone` are
-    /// refused as inferd refuses them.
+    /// A credential of the key `KEY`, on a sealed memfd. The permits `g-once` and `g-gone` are
+    /// refused as accountd refuses them.
     async fn issue_process_credential(
         &self,
         permit: String,
         program: String,
-        target: String,
-    ) -> Result<(String, OwnedValue), Fault> {
+    ) -> Result<(String, OwnedFd), Fault> {
         match permit.as_str() {
             "g-once" => return Err(Fault::OnceGrant(String::new())),
             "g-gone" => return Err(Fault::UnknownGrant(String::new())),
@@ -459,29 +414,10 @@ impl Launcher {
             .lock()
             .expect("lock")
             .issued
-            .push((permit, program, target.clone()));
-        let path = self.shared.runtime.join(&id);
-        let io = |e: std::io::Error| Fault::ZBus(zbus::Error::Failure(e.to_string()));
-        let mut file = std::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create_new(true)
-            .open(&path)
-            .map_err(io)?;
-        std::io::Write::write_all(&mut file, KEY.as_bytes()).map_err(io)?;
-        // Handed over at the start, as inferd hands its memfd: the holders share the position.
-        std::io::Seek::rewind(&mut file).map_err(io)?;
-        let handle = if target == "memfd" {
-            // Anonymous: nothing is left on disk, as with a memfd.
-            std::fs::remove_file(&path).map_err(io)?;
-            OwnedValue::try_from(Fd::from(std::os::fd::OwnedFd::from(file)))
-        } else {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).map_err(io)?;
-            OwnedValue::try_from(Value::from(path.to_string_lossy().into_owned()))
-        }
-        .map_err(|e| Fault::ZBus(zbus::Error::Failure(e.to_string())))?;
-        Ok((id, handle))
+            .push((permit, program));
+        let key = porter_secrets::sealed_key(KEY)
+            .map_err(|e| Fault::ZBus(zbus::Error::Failure(e.to_string())))?;
+        Ok((id, OwnedFd::from(key)))
     }
 
     async fn revoke_process_credential(&self, id: String) -> Result<(), Fault> {
@@ -489,9 +425,7 @@ impl Launcher {
         if seen.revoked.contains(&id) {
             return Err(Fault::UnknownCredential(String::new()));
         }
-        seen.revoked.push(id.clone());
-        let path = self.shared.runtime.join(&id);
-        let _ = std::fs::remove_file(path);
+        seen.revoked.push(id);
         Ok(())
     }
 }

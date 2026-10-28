@@ -6,13 +6,12 @@
 //! - `identities offer [<provider>]`: "Continue as": the person picks in a sheet
 //!   (`{"result":"picked","identity":..,"address":..}`, or `refused` / `none`).
 //! - `identities register-use <identity>`: says this app signed in with it.
-//! - `ai-keys request [--class C] [--usage U]`: asks inferd for a permit to use the person's AI
-//!   keys (`{"result":"granted","permit":..}` or `refused`).
-//! - `ai-keys add [<provider>]`: inferd's add-a-key sheet (`{"result":"added","account":..}`).
+//! - `ai-keys request [--class C] [--usage U]`: asks accountd for a permit to use the person's AI
+//!   keys (`{"result":"granted","permit":..}` or `refused`); adding a key is `add-account`.
 //! - `launcher request-key <program> [--class C] [--session S]`: as the agent launcher, asks which
 //!   key the agent may use (`{"result":"granted","permit":..,"account":..}`).
-//! - `launcher issue <permit> <program> [--target memfd|tmpfs_file]`: as the agent launcher, asks
-//!   for a process credential (`{"result":"issued","id":..}`; the key is never printed).
+//! - `launcher issue <permit> <program>`: as the agent launcher, asks for a process credential on a
+//!   memfd (`{"result":"issued","id":..}`; the key is never printed).
 //! - `open <need> [--class C] [--tier T] [--usage U] [--prompt TEXT]`: opens an AI session
 //!   (`{"result":"opened"}`) and, with a prompt, runs one chat turn, one `{"event":..}` line
 //!   per event.

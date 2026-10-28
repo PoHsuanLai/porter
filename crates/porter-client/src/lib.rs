@@ -77,6 +77,8 @@
 mod abandon;
 mod accounts;
 #[cfg(feature = "dbus")]
+mod ai_accounts;
+#[cfg(feature = "dbus")]
 mod ai_keys;
 mod authenticated;
 #[cfg(feature = "dbus")]
@@ -112,6 +114,8 @@ mod transport;
 
 pub use accounts::Accounts;
 #[cfg(feature = "dbus")]
+pub use ai_accounts::{AiAccounts, AiAccountsError, Changes};
+#[cfg(feature = "dbus")]
 pub use ai_keys::{AiKeys, AiKeysError};
 pub use authenticated::{AuthenticatedStream, Relayed};
 #[cfg(feature = "dbus")]
@@ -120,8 +124,7 @@ pub use call_failure::CallFailure;
 pub use computers::{ComputerReach, NewComputer, NewComputerModel};
 #[cfg(feature = "dbus")]
 pub use credential::{
-    ChildKey, ChildKeyError, CredentialHandle, Delivery, Inherit, ProcessCredential, Revocations,
-    Revoked,
+    ChildKey, ChildKeyError, Delivery, Inherit, ProcessCredential, Revocations, Revoked,
 };
 #[cfg(feature = "dbus")]
 pub use destination::Destination;

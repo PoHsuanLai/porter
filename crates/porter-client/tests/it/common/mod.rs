@@ -8,7 +8,7 @@ pub mod accountd;
 #[cfg(feature = "dbus")]
 pub mod bus;
 #[cfg(feature = "dbus")]
-pub mod fake_inferd;
+pub mod fake_accountd;
 #[cfg(all(feature = "dbus", feature = "infer"))]
 pub mod inferd;
 #[cfg(feature = "infer")]

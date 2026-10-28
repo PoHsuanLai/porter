@@ -17,14 +17,12 @@ use porter_client::{
 };
 use porter_core::ProviderHint;
 use porter_core::SessionToken;
-use porter_core::audit::Handoff;
 use porter_core::consent::Usage;
 use porter_core::{AccountId, GrantId, ProviderId};
 use porter_core::{DataClass, IdentityId};
 use porter_dbus::from_vardict;
 use porter_dbus::sync::SyncProxy;
 use porter_ids::Tokens;
-use porter_ids::word::word as word_of;
 use porter_infer::{
     ChatControl, ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRequest, MessagePart,
     Role, ToolParallelism,
@@ -91,7 +89,7 @@ pub enum Command {
     /// The identities signed in on this machine, and "Continue as".
     #[command(subcommand)]
     Identities(IdentitiesCommand),
-    /// The person's AI keys: ask for a permit to use them, or add one.
+    /// The person's AI keys: ask for a permit to use them (adding one is `add-account`).
     #[command(subcommand)]
     AiKeys(AiKeysCommand),
     /// The agent launcher's calls to inferd.
@@ -182,10 +180,10 @@ pub enum IdentitiesCommand {
     },
 }
 
-/// The person's AI keys: ask for a permit to use them, or add one.
+/// The person's AI keys: ask for a permit to use them (adding one is `add-account`).
 #[derive(Debug, Clone, Subcommand)]
 pub enum AiKeysCommand {
-    /// Asks inferd for a permit to use the person's AI keys (`Inference1.Keys.RequestKey`).
+    /// Asks accountd for a permit to use the person's AI keys (`Accounts1.Keys.RequestKey`).
     Request {
         /// The data class.
         #[arg(long, default_value = "files", value_parser = word::<DataClass>)]
@@ -194,15 +192,9 @@ pub enum AiKeysCommand {
         #[arg(long, default_value = "interactive", value_parser = word::<Usage>)]
         usage: Usage,
     },
-    /// Shows inferd's add-a-key sheet (`Inference1.Keys.AddAccount`) and waits for the answer.
-    Add {
-        /// The provider whose form opens first (its file id); none: the list.
-        #[arg(value_parser = provider)]
-        provider: Option<ProviderId>,
-    },
 }
 
-/// The agent launcher's calls to inferd.
+/// The agent launcher's calls to accountd.
 #[derive(Debug, Clone, Subcommand)]
 pub enum LauncherCommand {
     /// As the agent launcher: registers `program`, optionally opens `session`, and asks the person
@@ -219,7 +211,7 @@ pub enum LauncherCommand {
         session: Option<SessionToken>,
     },
     /// As the agent launcher: registers `program` and asks for a process credential under
-    /// `permit` (`Launcher.IssueProcessCredential`). Prints its id, never the key.
+    /// `permit` (`Launcher.IssueProcessCredential`, on a memfd). Prints its id, never the key.
     Issue {
         /// The permit.
         #[arg(value_parser = permit)]
@@ -227,9 +219,6 @@ pub enum LauncherCommand {
         /// The agent program.
         #[arg(value_parser = program)]
         program: AgentProgram,
-        /// How the key is handed over: `memfd` or `tmpfs_file`.
-        #[arg(long, default_value = "tmpfs_file", value_parser = handoff)]
-        target: Handoff,
     },
 }
 
@@ -257,14 +246,6 @@ fn session(text: &str) -> Result<SessionToken, String> {
     SessionToken::parse(text).map_err(|e| format!("`{text}` is not a session: {e}"))
 }
 
-fn handoff(text: &str) -> Result<Handoff, String> {
-    match text {
-        "memfd" => Ok(Handoff::Memfd),
-        "tmpfs_file" => Ok(Handoff::TmpfsFile),
-        other => Err(format!("`{other}` is not memfd or tmpfs_file")),
-    }
-}
-
 fn seconds(text: &str) -> Result<Duration, String> {
     text.parse::<u64>()
         .map(Duration::from_secs)
@@ -287,9 +268,6 @@ pub async fn run(
         Command::Identities(IdentitiesCommand::RegisterUse { identity }) => {
             identities_register_use(connection, &identity, emit).await
         }
-        Command::AiKeys(AiKeysCommand::Add { provider }) => {
-            ai_keys_add(connection, provider, emit).await
-        }
         Command::AiKeys(AiKeysCommand::Request { class, usage }) => {
             ai_keys_request(connection, &Ask { class, usage }, emit).await
         }
@@ -298,11 +276,9 @@ pub async fn run(
             class,
             session,
         }) => launcher_request_key(connection, &program, class, session.as_ref(), emit).await,
-        Command::Launcher(LauncherCommand::Issue {
-            permit,
-            program,
-            target,
-        }) => launcher_issue(connection, &permit, &program, target, emit).await,
+        Command::Launcher(LauncherCommand::Issue { permit, program }) => {
+            launcher_issue(connection, &permit, &program, emit).await
+        }
         Command::Open {
             need,
             class,
@@ -433,36 +409,6 @@ async fn identities_register_use(
     }
 }
 
-async fn ai_keys_add(
-    connection: &zbus::Connection,
-    provider: Option<ProviderId>,
-    emit: &mut impl FnMut(Value),
-) -> bool {
-    let hint = provider.map_or(ProviderHint::Any, ProviderHint::Provider);
-    let added = async {
-        AiKeys::connect(connection)
-            .await?
-            .add_account(hint, &ParentWindow::Unparented)
-            .await
-    }
-    .await;
-    match added {
-        Ok(account) => {
-            emit(json!({ "result": "added", "account": account.as_str() }));
-            true
-        }
-        Err(AiKeysError::AlreadyAdded(account)) => {
-            emit(json!({ "result": "already_added", "account": account.as_str() }));
-            false
-        }
-        Err(AiKeysError::Refused(refusal)) => refused(refusal, emit),
-        Err(why) => {
-            emit(failure(why));
-            false
-        }
-    }
-}
-
 async fn ai_keys_request(
     connection: &zbus::Connection,
     ask: &Ask,
@@ -534,21 +480,19 @@ async fn launcher_issue(
     connection: &zbus::Connection,
     permit: &GrantId,
     program: &AgentProgram,
-    target: Handoff,
     emit: &mut impl FnMut(Value),
 ) -> bool {
     let credential = async {
         let launcher = launcher_for(connection, program).await?;
-        launcher.issue_credential(permit, program, target).await
+        launcher.issue_credential(permit, program).await
     }
     .await;
     match credential {
-        // The id and the way it was handed over; the key itself is never printed.
+        // The id; the key itself is never printed.
         Ok(credential) => {
             emit(json!({
                 "result": "issued",
                 "id": credential.id().as_str(),
-                "handoff": word_of(&target),
             }));
             true
         }

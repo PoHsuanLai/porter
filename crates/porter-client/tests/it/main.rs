@@ -7,6 +7,7 @@
 mod common;
 #[cfg(all(feature = "dbus", feature = "infer"))]
 mod connect;
+mod dbus_ai_accounts;
 mod dbus_guests;
 mod dbus_keys;
 mod dbus_open;
