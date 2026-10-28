@@ -1422,7 +1422,7 @@ impl porter_proxy::Connect for Counted {
         &self,
         origin: &porter_ids::Origin,
         tls: Tls,
-    ) -> Result<porter_proxy::NetStream, porter_proxy::ConnectFault> {
+    ) -> Result<porter_proxy::NetStream, porter_proxy::RelayFault> {
         self.dials.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         self.wire.dial(origin, tls).await
     }
@@ -1431,7 +1431,7 @@ impl porter_proxy::Connect for Counted {
         &self,
         stream: porter_proxy::NetStream,
         host: &str,
-    ) -> Result<porter_proxy::NetStream, porter_proxy::ConnectFault> {
+    ) -> Result<porter_proxy::NetStream, porter_proxy::RelayFault> {
         self.wire.upgrade(stream, host).await
     }
 }

@@ -39,7 +39,7 @@ mod tls;
 #[cfg(feature = "io")]
 mod tokio_stream;
 
-pub use connect::{Connect, ConnectFault};
+pub use connect::Connect;
 pub use fault::RelayFault;
 pub use http1::{ChunkParser, Chunked, HttpPhase, HttpRelay, rewrite_head};
 pub use imap::{ImapAuth, ImapPhase, ImapRelay, app_capabilities, preauth_greeting};

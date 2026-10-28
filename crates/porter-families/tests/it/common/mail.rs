@@ -8,7 +8,7 @@ use porter_core::{EndpointProtocol, Tls};
 use porter_fake_servers::net::{Bind, port_of};
 use porter_fake_servers::{Accounts, FakeImap, FakePop3, MailHandle, Running, mailbox, tls};
 use porter_ids::Origin;
-use porter_proxy::{Connect, ConnectFault, NetStream, RustlsConnect};
+use porter_proxy::{Connect, NetStream, RelayFault, RustlsConnect};
 
 /// The fakes, kept running for as long as this is held.
 pub struct MailWorld {
@@ -119,11 +119,11 @@ impl Wire {
 impl Connect for Wire {
     type Stream = NetStream;
 
-    async fn dial(&self, origin: &Origin, tls: Tls) -> Result<NetStream, ConnectFault> {
+    async fn dial(&self, origin: &Origin, tls: Tls) -> Result<NetStream, RelayFault> {
         self.inner.dial(&self.here(origin, tls), tls).await
     }
 
-    async fn upgrade(&self, stream: NetStream, _host: &str) -> Result<NetStream, ConnectFault> {
+    async fn upgrade(&self, stream: NetStream, _host: &str) -> Result<NetStream, RelayFault> {
         self.inner.upgrade(stream, "127.0.0.1").await
     }
 }
