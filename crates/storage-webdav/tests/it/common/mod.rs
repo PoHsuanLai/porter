@@ -2,7 +2,7 @@
 //! the credential added the way accountd's relay would add it. No network beyond loopback.
 #![allow(dead_code)]
 
-use porter_fake_servers::dav::{Behaviour, Propagation, SyncCollection};
+use porter_fake_servers::dav::Behaviour;
 use porter_fake_servers::{DavHandle, FakeDav, Running};
 use porter_http::http::header::{AUTHORIZATION, HeaderValue};
 use porter_http::http::{Request, Response};
@@ -67,8 +67,8 @@ pub fn behaviour(flavor: Flavor) -> Behaviour {
     match flavor {
         Flavor::Sync => Behaviour::default(),
         Flavor::Tree => Behaviour {
-            etag_propagation: Propagation::Up,
-            sync_collection: SyncCollection::NotImplemented,
+            propagate_etags: true,
+            serves_sync_collection: false,
         },
     }
 }

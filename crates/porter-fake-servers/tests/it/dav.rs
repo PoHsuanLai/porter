@@ -328,7 +328,7 @@ async fn a_limit_makes_a_put_past_it_507_and_shrinks_what_quota_reports() {
 
 #[tokio::test]
 async fn the_report_can_be_infinite_deep_and_the_server_can_decline_it() {
-    use porter_fake_servers::dav::{Behaviour, SyncCollection};
+    use porter_fake_servers::dav::Behaviour;
     let (running, address) = nextcloud().await;
     running.seed_app_password("pw");
     running.mkdir("d");
@@ -345,7 +345,7 @@ async fn the_report_can_be_infinite_deep_and_the_server_can_decline_it() {
     assert_eq!(shallow.len(), 2, "{shallow:?}");
     assert_eq!(deep.len(), 3, "{deep:?}");
     running.set_behaviour(Behaviour {
-        sync_collection: SyncCollection::NotImplemented,
+        serves_sync_collection: false,
         ..Behaviour::default()
     });
     assert_eq!(call(&address, report("1")).await.status, 501);
@@ -353,7 +353,7 @@ async fn the_report_can_be_infinite_deep_and_the_server_can_decline_it() {
 
 #[tokio::test]
 async fn with_propagation_a_folder_etag_follows_what_is_below_it() {
-    use porter_fake_servers::dav::{Behaviour, Propagation};
+    use porter_fake_servers::dav::Behaviour;
     let (running, address) = nextcloud().await;
     running.seed_app_password("pw");
     running.mkdir("d");
@@ -376,7 +376,7 @@ async fn with_propagation_a_folder_etag_follows_what_is_below_it() {
         "off: the folder's etag is its own"
     );
     running.set_behaviour(Behaviour {
-        etag_propagation: Propagation::Up,
+        propagate_etags: true,
         ..Behaviour::default()
     });
     running.put_file("d/b", b"x");
