@@ -31,53 +31,45 @@ pub enum UrlScheme {
     Pop3s,
 }
 
+/// Each scheme with its text and the port used when the URL names none: the one table `parse`,
+/// `text` and `default_port` read.
+const SCHEMES: [(UrlScheme, &str, u16); 10] = [
+    (UrlScheme::Http, "http", 80),
+    (UrlScheme::Https, "https", 443),
+    (UrlScheme::Imap, "imap", 143),
+    (UrlScheme::Imaps, "imaps", 993),
+    (UrlScheme::Smtp, "smtp", 587),
+    (UrlScheme::Smtps, "smtps", 465),
+    (UrlScheme::Sieve, "sieve", 4190),
+    (UrlScheme::Sieves, "sieves", 4190),
+    (UrlScheme::Pop3, "pop3", 110),
+    (UrlScheme::Pop3s, "pop3s", 995),
+];
+
 impl UrlScheme {
     /// The scheme `text` names, if it is one of these.
     pub fn parse(text: &str) -> Option<Self> {
-        match text {
-            "http" => Some(UrlScheme::Http),
-            "https" => Some(UrlScheme::Https),
-            "imap" => Some(UrlScheme::Imap),
-            "imaps" => Some(UrlScheme::Imaps),
-            "smtp" => Some(UrlScheme::Smtp),
-            "smtps" => Some(UrlScheme::Smtps),
-            "sieve" => Some(UrlScheme::Sieve),
-            "sieves" => Some(UrlScheme::Sieves),
-            "pop3" => Some(UrlScheme::Pop3),
-            "pop3s" => Some(UrlScheme::Pop3s),
-            _ => None,
-        }
+        SCHEMES
+            .iter()
+            .find(|(_, name, _)| *name == text)
+            .map(|(scheme, ..)| *scheme)
+    }
+
+    fn row(self) -> &'static (UrlScheme, &'static str, u16) {
+        SCHEMES
+            .iter()
+            .find(|(scheme, ..)| *scheme == self)
+            .unwrap_or_else(|| unreachable!("every scheme has a row in SCHEMES"))
     }
 
     /// The scheme's text (`https`).
     pub fn text(self) -> &'static str {
-        match self {
-            UrlScheme::Http => "http",
-            UrlScheme::Https => "https",
-            UrlScheme::Imap => "imap",
-            UrlScheme::Imaps => "imaps",
-            UrlScheme::Smtp => "smtp",
-            UrlScheme::Smtps => "smtps",
-            UrlScheme::Sieve => "sieve",
-            UrlScheme::Sieves => "sieves",
-            UrlScheme::Pop3 => "pop3",
-            UrlScheme::Pop3s => "pop3s",
-        }
+        self.row().1
     }
 
     /// The port used when the URL names none.
     pub fn default_port(self) -> u16 {
-        match self {
-            UrlScheme::Http => 80,
-            UrlScheme::Https => 443,
-            UrlScheme::Imap => 143,
-            UrlScheme::Imaps => 993,
-            UrlScheme::Smtp => 587,
-            UrlScheme::Smtps => 465,
-            UrlScheme::Sieve | UrlScheme::Sieves => 4190,
-            UrlScheme::Pop3 => 110,
-            UrlScheme::Pop3s => 995,
-        }
+        self.row().2
     }
 }
 
@@ -146,5 +138,39 @@ impl Origin {
 impl fmt::Display for Origin {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}://{}:{}", self.scheme.text(), self.host, self.port)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Names every variant, so a new scheme fails to compile here until it has a row.
+    fn is_a_scheme(scheme: UrlScheme) -> bool {
+        match scheme {
+            UrlScheme::Http
+            | UrlScheme::Https
+            | UrlScheme::Imap
+            | UrlScheme::Imaps
+            | UrlScheme::Smtp
+            | UrlScheme::Smtps
+            | UrlScheme::Sieve
+            | UrlScheme::Sieves
+            | UrlScheme::Pop3
+            | UrlScheme::Pop3s => true,
+        }
+    }
+
+    #[test]
+    fn every_scheme_has_its_text_and_port_and_reads_back() {
+        for (scheme, text, port) in SCHEMES {
+            assert!(is_a_scheme(scheme));
+            assert_eq!(scheme.text(), text);
+            assert_eq!(scheme.default_port(), port);
+            assert_eq!(UrlScheme::parse(text), Some(scheme));
+        }
+        assert_eq!(SCHEMES.len(), 10);
+        assert_eq!(UrlScheme::parse("ftp"), None);
+        assert_eq!(UrlScheme::parse("HTTPS"), None);
     }
 }
