@@ -20,9 +20,11 @@ porter-tailscale = { workspace = true }
 porter-match = { workspace = true }
 porter-capability = { workspace = true }
 porter-ids = { workspace = true }
-porter-engines = { workspace = true }
 porter-infer = { workspace = true }
 cua-action = { workspace = true }
+# Which program an engine kind runs (`Engine`), and the folder a person pointed at (Strata).
+engine-spec = { workspace = true }
+engine-probe = { workspace = true }
 engine-supervisor = { workspace = true }
 model-catalog = { workspace = true }
 # The types of an engine's address and token only: no `client`, no `tls`, so no runtime.

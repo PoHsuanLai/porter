@@ -21,11 +21,6 @@
 #   PREFIX/lib/systemd/user/porter-mountd.{service,socket}   its user units; the socket is enabled for
 #                                                            every user by the link
 #                                                            sockets.target.wants/porter-mountd.socket
-#   PREFIX/libexec/quire/porter-engine-helper                the helper `pkexec` runs as root to install
-#                                                            an AI engine for everyone (Settings starts it)
-#   PREFIX/share/polkit-1/actions/org.quire.porter.engines.policy
-#                                                            the polkit action that asks for the
-#                                                            administrator's password for it
 #   PREFIX/lib/systemd/user/{accountd,syncd,inferd}.service  the user units
 #   PREFIX/lib/systemd/user/{accountd,syncd,inferd}.service.d/sandbox.conf
 #                                                            the part of each unit's sandbox that needs a
@@ -188,7 +183,7 @@ else
                     export RUSTUP_TOOLCHAIN
                 fi &&
                 cargo build --release --manifest-path "$root/Cargo.toml" \
-                    --config net.git-fetch-with-cli=true -p accountd -p syncd -p inferd -p porter-mountd -p porter-engines-install
+                    --config net.git-fetch-with-cli=true -p accountd -p syncd -p inferd -p porter-mountd
         )
     fi
     built=$target_dir/release
@@ -200,10 +195,10 @@ for daemon in $daemons; do
     fi
 done
 
-# The helper that installs an engine for everyone, and the one that shows drives in ~/Cloud, built
-# beside the daemons. Neither is a daemon on the bus (`pkexec` starts the first, its socket the
-# second), so they are not in the list above.
-for helper in porter-engine-helper porter-mountd; do
+# The helper that shows drives in ~/Cloud, built beside the daemons. It is not a daemon on the bus
+# (its socket starts it), so it is not in the list above. The helper that installs an engine for
+# everyone is stoker's (its scripts/install.sh puts it and its polkit action in place).
+for helper in porter-mountd; do
     if [ ! -x "$built/$helper" ]; then
         echo "install.sh: $built/$helper is not there; build first or point --bin-dir at it" >&2
         exit 1
@@ -212,8 +207,6 @@ done
 
 # The files in dist/ name /usr/libexec/quire; a different prefix changes that one path.
 libexec=$prefix/libexec/quire
-put 755 "$built/porter-engine-helper" "$libexec/porter-engine-helper"
-put 644 "$dist/org.quire.porter.engines.policy" "$prefix/share/polkit-1/actions/org.quire.porter.engines.policy" /usr/libexec/quire "$libexec"
 for daemon in $daemons; do
     put 755 "$built/$daemon" "$libexec/$daemon"
     put 644 "$dist/$daemon.service" "$prefix/lib/systemd/user/$daemon.service" /usr/libexec/quire "$libexec"

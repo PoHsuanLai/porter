@@ -3,11 +3,13 @@
 //! so the two agree; an engine of ours that was installed also says which release and where from,
 //! and one whose install was changed since says so.
 
-use super::missing::Engine;
+use super::missing::{engine_name, serves, state};
 use crate::installed::{Installed, Standing};
 use crate::supervise::Programs;
+use engine_probe::Place;
+use engine_spec::{ENGINES, engine};
+use model_catalog::EngineKind;
 use porter_dbus::inference::{EnginePlace, EngineState, LocalEngine};
-use porter_engines::{EngineId, Place};
 use porter_infer::Slot;
 use porter_router::local::EngineConfig;
 
@@ -54,29 +56,29 @@ impl LocalEngines {
             Some(programs) => programs.over(&self.config),
             None => self.config.clone(),
         };
-        Engine::ALL
+        ENGINES
             .into_iter()
-            .map(|engine| self.row(engine, &config))
+            .map(|kind| self.row(kind, &config))
             .collect()
     }
 
-    fn row(&self, engine: Engine, config: &EngineConfig) -> LocalEngine {
+    fn row(&self, kind: EngineKind, config: &EngineConfig) -> LocalEngine {
         let mut row = LocalEngine {
-            id: engine.slug().to_owned(),
-            name: engine.name().to_owned(),
-            state: engine.state(config),
+            id: engine(kind).bus_word().to_owned(),
+            name: engine_name(kind).to_owned(),
+            state: state(kind, config),
             slots: Slot::ALL
                 .into_iter()
-                .filter(|slot| engine.serves(*slot))
+                .filter(|slot| serves(kind, *slot))
                 .map(|slot| slot.slug().to_owned())
                 .collect(),
             version: None,
             place: None,
         };
-        let (Some(installed), Some(id)) = (&self.installed, installable(engine)) else {
+        let Some(installed) = &self.installed else {
             return row;
         };
-        match installed.standing(id) {
+        match installed.standing(kind) {
             Standing::Ready(found) => {
                 row.state = EngineState::Found(found.program);
                 row.version = found.version;
@@ -90,16 +92,6 @@ impl LocalEngines {
             Standing::NotInstalled => {}
         }
         row
-    }
-}
-
-/// The engine the installs know by this name, when they do.
-fn installable(engine: Engine) -> Option<EngineId> {
-    match engine {
-        Engine::LlamaCpp => Some(EngineId::LlamaCpp),
-        Engine::Vllm => Some(EngineId::Vllm),
-        Engine::Strata => Some(EngineId::Strata),
-        Engine::Speech | Engine::Kokoro => None,
     }
 }
 

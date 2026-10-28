@@ -3,7 +3,8 @@
 //! the real `ProcessHost`. The engine is a shell that forks a grandchild ignoring `SIGTERM` and
 //! records both pids in a scratch directory. Only pids this test started are signalled.
 
-use engine_supervisor::{EngineHost, EngineId, GpuAccess, Network, ProgramPath, Sandbox, UnitSpec};
+use engine_spec::ProgramPath;
+use engine_supervisor::{EngineHost, EngineId, GpuAccess, Network, Sandbox, UnitSpec};
 use inferd::hosts::ProcessHost;
 use model_catalog::{EngineArg, MiB};
 use rustix::process::{Pid, Signal, kill_process};

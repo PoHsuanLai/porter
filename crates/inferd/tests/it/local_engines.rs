@@ -3,6 +3,8 @@
 
 use crate::hosting::bus::{PrivateBus, within};
 
+use engine_manifest::{Arch, Artifact, Backend, Delivery, Manifest, Row};
+use engine_probe::{Record, Roots, Scope, seal_of};
 use inferd::config::{Dirs, InferdConfig, ProgramSearch};
 use inferd::engines::Engines;
 use inferd::installed::Installed;
@@ -11,12 +13,10 @@ use inferd::service::{Inference, serve_on};
 use inferd::settings::LocalEngines;
 use inferd::settings::{ConfigFile, Reload};
 use inferd::supervise::Supervised;
+use model_catalog::EngineKind;
 use porter_core::{AppId, AppName, Isolation};
 use porter_dbus::inference::{
     EnginePlace, EngineState, InferenceProxy, LocalEngine, local_engine_from_dbus,
-};
-use porter_engines::{
-    Arch, Artifact, Backend, Delivery, EngineId, Manifest, Record, Roots, Row, Scope, seal_of,
 };
 use porter_ids::UnixSeconds;
 use porter_ids::clock::FixedClock;
@@ -148,7 +148,7 @@ static NO_FILES: [Artifact; 0] = [];
 /// record, and the manifest that pins it.
 fn made_install(roots: &Roots) -> (Manifest, PathBuf) {
     let dir = roots
-        .engine_dir(Scope::JustMe, EngineId::LlamaCpp)
+        .engine_dir(Scope::JustMe, EngineKind::LlamaServer)
         .join("b-test-cpu");
     let tree = dir.join("engine");
     std::fs::create_dir_all(&tree).expect("tree");
@@ -167,7 +167,7 @@ fn made_install(roots: &Roots) -> (Manifest, PathBuf) {
     .write(&dir.join("installed.json"))
     .expect("record");
     let row = Row {
-        engine: EngineId::LlamaCpp,
+        engine: EngineKind::LlamaServer,
         arch: Arch::X86_64,
         backend: Backend::Cpu,
         version: "b-test",

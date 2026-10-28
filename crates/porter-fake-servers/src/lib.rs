@@ -10,7 +10,6 @@
 //! app"). The servers implement `porter_fake::FakeServer`; this crate is never a dependency of a
 //! non-test crate. Nothing here touches a network beyond loopback.
 
-pub mod artifacts;
 pub mod autoconfig;
 pub mod browser;
 pub mod dav;
@@ -34,7 +33,6 @@ pub mod smtp;
 pub mod tailscale;
 pub mod tls;
 
-pub use artifacts::{ArtifactsHandle, RunningArtifacts, start_artifacts};
 pub use autoconfig::{AutoconfigHandle, FakeAutoconfig, FakeDns, Route, autoconfig_xml};
 pub use browser::{Visit, follow};
 pub use dav_server::{DavHandle, FakeDav};

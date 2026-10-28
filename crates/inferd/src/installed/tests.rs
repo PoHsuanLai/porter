@@ -1,5 +1,6 @@
 use super::*;
-use porter_engines::{Arch, Artifact, Backend, Delivery, Record, Row, Scope, seal_of};
+use engine_manifest::{Arch, Artifact, Backend, Delivery, Row};
+use engine_probe::{Record, Scope, seal_of};
 use std::os::unix::fs::PermissionsExt;
 use test_kit::Scratch;
 
@@ -12,7 +13,7 @@ fn held(_: &Path) -> bool {
 /// An install of a pinned row made by hand under `roots`: its tree, its seal and its record.
 fn installed_row(roots: &Roots) -> (Row, PathBuf) {
     let dir = roots
-        .engine_dir(Scope::JustMe, EngineId::LlamaCpp)
+        .engine_dir(Scope::JustMe, EngineKind::LlamaServer)
         .join("b-test-cpu");
     let tree = dir.join("engine");
     std::fs::create_dir_all(&tree).expect("tree");
@@ -21,7 +22,7 @@ fn installed_row(roots: &Roots) -> (Row, PathBuf) {
     std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).expect("mode");
     let seal = seal_of(&tree).expect("seal").as_hex().to_owned();
     let row = Row {
-        engine: EngineId::LlamaCpp,
+        engine: EngineKind::LlamaServer,
         arch: Arch::X86_64,
         backend: Backend::Cpu,
         version: "b-test",
@@ -59,7 +60,7 @@ fn an_install_of_ours_stands_ready_until_a_check_finds_its_tree_changed() {
     let (installed, program) = installed(&dir);
     let guard = installed.guard();
     assert!(matches!(
-        installed.standing(EngineId::LlamaCpp),
+        installed.standing(EngineKind::LlamaServer),
         Standing::Ready(found) if found.version.as_deref() == Some("b-test")
     ));
     assert_eq!(guard.check(&program), Ok(()));
@@ -71,7 +72,7 @@ fn an_install_of_ours_stands_ready_until_a_check_finds_its_tree_changed() {
         })
     );
     assert!(matches!(
-        installed.standing(EngineId::LlamaCpp),
+        installed.standing(EngineKind::LlamaServer),
         Standing::Changed(_)
     ));
 }
@@ -84,8 +85,11 @@ fn a_program_that_is_not_a_persons_install_passes_and_an_engine_with_no_install_
         installed.guard().check(Path::new("/usr/bin/llama-server")),
         Ok(())
     );
-    assert_eq!(installed.standing(EngineId::Vllm), Standing::NotInstalled);
-    assert_eq!(installed.standing(EngineId::Strata), Standing::NotInstalled);
+    assert_eq!(installed.standing(EngineKind::Vllm), Standing::NotInstalled);
+    assert_eq!(
+        installed.standing(EngineKind::Strata),
+        Standing::NotInstalled
+    );
 }
 
 #[test]
@@ -107,7 +111,7 @@ fn a_strata_folder_the_person_pointed_at_counts_as_installed() {
         Arc::new(move || Some(at.clone())),
     );
     assert!(matches!(
-        installed.standing(EngineId::Strata),
+        installed.standing(EngineKind::Strata),
         Standing::Ready(found) if found.program == python
     ));
 }

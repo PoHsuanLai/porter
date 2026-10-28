@@ -648,10 +648,10 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> InferenceServe
     ) -> Result<(), InferError> {
         self.settings_caller(&header).await?;
         let path = std::path::PathBuf::from(&folder);
-        let holds = porter_engines::EngineId::from_slug(&engine)
-            == Some(porter_engines::EngineId::Strata)
-            && path.is_absolute()
-            && porter_engines::pointed_strata(&path).is_some();
+        // Only an engine run from a folder the person pointed at (Strata) can be counted.
+        let holds = path.is_absolute()
+            && engine_manifest::engine_from_slug(&engine)
+                .is_some_and(|kind| engine_probe::pointed(kind, &path).is_some());
         if !holds {
             return Err(fdo::Error::InvalidArgs(
                 "inferd: that folder does not hold the engine".into(),

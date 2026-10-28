@@ -4,8 +4,9 @@
 //! runtime on its loopback port, its engine id names no process, and its card says `OnDevice`.
 
 use super::{Probed, Runtime};
-use engine_supervisor::{EngineId, EnginePaths, EngineSpec, ProgramPath, SocketPath, command};
-use model_catalog::MiB;
+use engine_spec::{EnginePaths, ProgramPath};
+use engine_supervisor::{EngineId, EngineSpec, SocketPath, command};
+use model_catalog::{EngineKind, MiB};
 use model_http::Port;
 use model_openai_compat::Flavor;
 use model_provider::ModelName;
@@ -143,14 +144,10 @@ pub fn local_model(
     let profile = entry.engines.first()?.clone();
     let provider = runtime.provider();
     let socket = SocketPath(sockets.join(format!("probed-{provider}-{}.sock", model.id.as_str())));
-    let paths = EnginePaths {
-        vllm_python: ProgramPath(PathBuf::new()),
-        llama_server: ProgramPath(PathBuf::from("probed")),
-        speech_host: ProgramPath(PathBuf::new()),
-        kokoro_python: ProgramPath(PathBuf::new()),
-        strata_python: ProgramPath(PathBuf::new()),
-        hf_cache: PathBuf::new(),
-    };
+    let paths = EnginePaths::new(PathBuf::new()).with_program(
+        EngineKind::LlamaServer,
+        ProgramPath(PathBuf::from("probed")),
+    );
     Some(LocalModel {
         card: ModelCard {
             account: AccountId::parse(provider).ok()?,
@@ -163,7 +160,7 @@ pub fn local_model(
         spec: EngineSpec {
             id: EngineId(format!("probed:{provider}:{}", model.id.as_str())),
             need: MiB(0),
-            unit: command(&entry, &profile, &paths, &socket),
+            unit: command(&entry, &profile, &paths, &socket).ok()?,
         },
         socket,
         flavor: Some(Flavor::LlamaServer),

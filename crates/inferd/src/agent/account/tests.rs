@@ -7,6 +7,8 @@ fn head(status: u16, retry: Option<u32>) -> ResponseHead {
         body: model_http::BodyKind::Json,
         retry_after: retry.map(model_http::WaitSeconds),
         request_id: RequestId::new("req").ok(),
+        location: None,
+        content_range: None,
     }
 }
 

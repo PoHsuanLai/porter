@@ -11,9 +11,8 @@
 
 use crate::attached::{Attached, AttachedEntry, AttachedError, Target};
 use crate::catalog::claims_of;
-use engine_supervisor::{
-    EnginePaths, EngineSpec, EnvPair, ProgramPath, SocketPath, UnitSpec, command,
-};
+use engine_spec::{ENGINES, EnginePaths, ProgramPath, engine};
+use engine_supervisor::{EngineSpec, EnvPair, SocketPath, UnitSpec, command};
 use model_catalog::{EngineKind, EngineProfile, ModelEntry};
 use model_http::{AuthHeader, HostName, HttpEndpoint, HttpTarget, Port, Proxy, Timeouts, UrlPath};
 use model_openai_compat::Flavor;
@@ -90,31 +89,40 @@ impl EngineConfig {
             .collect()
     }
 
-    fn program(&self, kind: EngineKind) -> Option<PathBuf> {
-        match kind {
-            EngineKind::Vllm => self.vllm_python.clone(),
-            EngineKind::LlamaServer => self.llama_server.clone(),
-            EngineKind::SpeechHost => self.speech_host.clone(),
-            EngineKind::KokoroFastApi => self.kokoro_python.clone(),
-            // The Python of the folder the person pointed at, once it holds Strata's server.
-            EngineKind::Strata => self
-                .strata_folder
-                .as_deref()
-                .and_then(porter_engines::pointed_strata)
-                .map(|found| found.program),
+    /// What the file names for an engine kind: its program, or for an engine run from a folder
+    /// the person pointed at (Strata) that folder.
+    pub fn named_path(&self, kind: EngineKind) -> Option<&Path> {
+        let by_kind = [
+            (EngineKind::Vllm, &self.vllm_python),
+            (EngineKind::LlamaServer, &self.llama_server),
+            (EngineKind::SpeechHost, &self.speech_host),
+            (EngineKind::KokoroFastApi, &self.kokoro_python),
+            (EngineKind::Strata, &self.strata_folder),
+        ];
+        by_kind
+            .into_iter()
+            .find(|(one, _)| *one == kind)
+            .and_then(|(_, path)| path.as_deref())
+    }
+
+    /// The program that runs an engine of `kind`: the one the file names, or, for an engine
+    /// run from a folder the person pointed at, the program of that folder once it holds the
+    /// engine's server.
+    pub fn program(&self, kind: EngineKind) -> Option<PathBuf> {
+        let named = self.named_path(kind)?;
+        match engine(kind).pointed() {
+            Some(_) => engine_probe::pointed(kind, named).map(|found| found.program),
+            None => Some(named.to_path_buf()),
         }
     }
 
     fn paths(&self) -> EnginePaths {
-        let program = |kind| ProgramPath(self.program(kind).unwrap_or_default());
-        EnginePaths {
-            vllm_python: program(EngineKind::Vllm),
-            llama_server: program(EngineKind::LlamaServer),
-            speech_host: program(EngineKind::SpeechHost),
-            kokoro_python: program(EngineKind::KokoroFastApi),
-            strata_python: program(EngineKind::Strata),
-            hf_cache: self.hf_cache.clone(),
-        }
+        ENGINES
+            .into_iter()
+            .fold(EnginePaths::new(self.hf_cache.clone()), |paths, kind| {
+                let program = self.program(kind).unwrap_or_default();
+                paths.with_program(kind, ProgramPath(program))
+            })
     }
 }
 
@@ -234,35 +242,18 @@ impl LocalModel {
     }
 }
 
-/// The speech host's unit with its libraries: `LD_LIBRARY_PATH` names the configured directory
-/// and the sandbox reads it. Any other engine's unit is as `command` made it.
-fn host_libs(mut unit: UnitSpec, kind: EngineKind, engines: &EngineConfig) -> UnitSpec {
-    if kind == EngineKind::Vllm {
-        // An environment of ours is sealed with its bytecode caches in it, so Python must not
-        // write more of them there (and reads of a changed one are caught before the start).
-        unit.env.push(EnvPair {
-            name: "PYTHONDONTWRITEBYTECODE".to_owned(),
-            value: "1".to_owned(),
-        });
-    }
-    if let (EngineKind::SpeechHost, Some(libs)) = (kind, &engines.speech_host_libs) {
-        unit.env.push(EnvPair {
-            name: "LD_LIBRARY_PATH".to_owned(),
-            value: libs.to_string_lossy().into_owned(),
-        });
-        unit.sandbox.read.push(libs.clone());
-    }
+/// The unit with what its engine adds to it (the speech host's libraries: `LD_LIBRARY_PATH`
+/// names the configured directory and the sandbox reads it). An engine that adds nothing keeps
+/// the unit as `command` made it.
+fn host_env(mut unit: UnitSpec, kind: EngineKind, engines: &EngineConfig) -> UnitSpec {
+    let added = engine(kind).env(engines.speech_host_libs.as_deref());
+    unit.env
+        .extend(added.vars.into_iter().map(|(name, value)| EnvPair {
+            name: name.to_owned(),
+            value,
+        }));
+    unit.sandbox.read.extend(added.reads);
     unit
-}
-
-fn kind_slug(kind: EngineKind) -> &'static str {
-    match kind {
-        EngineKind::Vllm => "vllm",
-        EngineKind::LlamaServer => "llama_server",
-        EngineKind::SpeechHost => "speech_host",
-        EngineKind::KokoroFastApi => "kokoro_fast_api",
-        EngineKind::Strata => "strata",
-    }
 }
 
 pub(crate) fn flavor_of(kind: EngineKind) -> Option<Flavor> {
@@ -300,11 +291,11 @@ fn one(entry: &ModelEntry, engines: &EngineConfig, sockets: &Path) -> Option<Loc
         .iter()
         .find(|profile| engines.program(profile.kind).is_some())?
         .clone();
-    let id = engine_supervisor::EngineId(format!("{}:{}", kind_slug(profile.kind), entry.id.0));
-    let socket =
-        SocketPath(sockets.join(format!("{}-{}.sock", kind_slug(profile.kind), entry.id.0)));
-    let unit = host_libs(
-        command(entry, &profile, &engines.paths(), &socket),
+    let slug = engine(profile.kind).slug();
+    let id = engine_supervisor::EngineId(format!("{slug}:{}", entry.id.0));
+    let socket = SocketPath(sockets.join(format!("{slug}-{}.sock", entry.id.0)));
+    let unit = host_env(
+        command(entry, &profile, &engines.paths(), &socket).ok()?,
         profile.kind,
         engines,
     );

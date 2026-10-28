@@ -1,5 +1,6 @@
 use super::*;
-use engine_supervisor::{GpuAccess, Network, ProgramPath, Sandbox, UnitSpec};
+use engine_spec::ProgramPath;
+use engine_supervisor::{GpuAccess, Network, Sandbox, UnitSpec};
 use model_catalog::MiB;
 use porter_capability::ModelId;
 use porter_core::AccountId;

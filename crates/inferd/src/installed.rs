@@ -2,20 +2,23 @@
 //! and whether a person's own install is still the pinned one.
 //!
 //! inferd does not install anything: its unit has no network and no write access to the person's
-//! files, and it holds their AI keys. Settings installs (`porter-engines-install`); inferd finds
+//! files, and it holds their AI keys. Settings installs (stoker's `engine-install`); inferd finds
 //! what was installed and, before each start of a program of a person's own install, checks it
 //! against the manifest's pins ([`Installed::guard`]). What a check finds changed it remembers: the
 //! engine then stands as [`Standing::Changed`] and is not started until it is installed again.
 
 use crate::hosts::LaunchGuard;
-use porter_engines::{EngineId, Finder, Found, Manifest, Roots, Verdict, Verifier, pointed_strata};
+use engine_manifest::Manifest;
+use engine_probe::{Finder, Found, Roots, Verdict, Verifier, pointed};
+use engine_spec::engine;
+use model_catalog::EngineKind;
 use porter_router::startup::Cause;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 /// The engines whose person-owned install was found changed.
-type Tripped = Arc<Mutex<BTreeSet<EngineId>>>;
+type Tripped = Arc<Mutex<BTreeSet<EngineKind>>>;
 
 /// Where one engine stands.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -66,18 +69,18 @@ impl Installed {
         }
     }
 
-    fn tripped(&self) -> MutexGuard<'_, BTreeSet<EngineId>> {
+    fn tripped(&self) -> MutexGuard<'_, BTreeSet<EngineKind>> {
         self.tripped.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Where `engine` stands now: the folder of a Strata the person pointed at counts first.
-    pub fn standing(&self, engine: EngineId) -> Standing {
-        let pointed = (engine == EngineId::Strata)
-            .then(|| (self.strata_folder)())
-            .flatten()
-            .and_then(|folder| pointed_strata(&folder));
-        match pointed.or_else(|| self.finder.find(engine)) {
-            Some(found) if self.tripped().contains(&engine) => Standing::Changed(found),
+    /// Where `kind` stands now: the folder of a Strata the person pointed at counts first.
+    pub fn standing(&self, kind: EngineKind) -> Standing {
+        let folder_found = engine(kind)
+            .pointed()
+            .and_then(|_| (self.strata_folder)())
+            .and_then(|folder| pointed(kind, &folder));
+        match folder_found.or_else(|| self.finder.find(kind)) {
+            Some(found) if self.tripped().contains(&kind) => Standing::Changed(found),
             Some(found) => Standing::Ready(found),
             None => Standing::NotInstalled,
         }
@@ -100,7 +103,7 @@ struct PinnedPrograms {
     tripped: Tripped,
 }
 
-fn trip(tripped: &Tripped, engine: EngineId) {
+fn trip(tripped: &Tripped, engine: EngineKind) {
     tripped
         .lock()
         .unwrap_or_else(PoisonError::into_inner)

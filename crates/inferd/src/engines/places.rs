@@ -4,7 +4,8 @@
 
 use super::*;
 use crate::cloud::models::{known_providers, provider_of, remote_models};
-use crate::settings::Engine;
+use crate::settings::engine_name;
+use engine_spec::engine;
 use porter_capability::LlmFeature;
 use porter_capability::ModelId;
 use porter_core::AccountState;
@@ -63,10 +64,10 @@ impl Engines {
             .local
             .iter()
             .find(|one| one.model_ref() == *model)?;
-        let engine = Engine::of(local.profile.kind);
+        let kind = local.profile.kind;
         Some(PlaceEngine {
-            id: engine.slug().to_owned(),
-            name: engine.name().to_owned(),
+            id: engine(kind).bus_word().to_owned(),
+            name: engine_name(kind).to_owned(),
         })
     }
 

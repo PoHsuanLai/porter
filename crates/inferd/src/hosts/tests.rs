@@ -1,5 +1,6 @@
 use super::*;
-use engine_supervisor::{EnvPair, GpuAccess, Network, ProgramPath, Sandbox};
+use engine_spec::ProgramPath;
+use engine_supervisor::{EnvPair, GpuAccess, Network, Sandbox};
 use model_catalog::EngineArg;
 use std::path::Path;
 use test_kit::Scratch;

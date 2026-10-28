@@ -7,7 +7,7 @@
 //! Everything here is pure: the numbers come in, a number comes out. Who reads the card's free
 //! memory, and when, is the engine starter's (inferd's `supervise`).
 
-use super::{EngineConfig, LocalModel, host_libs};
+use super::{EngineConfig, LocalModel, host_env};
 use engine_supervisor::{UnitSpec, Window, command_with_window};
 use model_catalog::{ContextArg, EngineArg, MiB, TextOut, VramEstimate};
 use model_provider::Tokens;
@@ -155,19 +155,17 @@ impl LocalModel {
     }
 
     /// The unit that starts this model's engine with `window`; the same as the one in `spec`
-    /// for `Window::Serve`.
-    pub fn unit_with(&self, engines: &EngineConfig, window: Window) -> UnitSpec {
-        host_libs(
-            command_with_window(
-                &self.entry,
-                &self.profile,
-                &engines.paths(),
-                &self.socket,
-                window,
-            ),
-            self.profile.kind,
-            engines,
+    /// for `Window::Serve`. `None` when `engines` lists no program for its kind.
+    pub fn unit_with(&self, engines: &EngineConfig, window: Window) -> Option<UnitSpec> {
+        let unit = command_with_window(
+            &self.entry,
+            &self.profile,
+            &engines.paths(),
+            &self.socket,
+            window,
         )
+        .ok()?;
+        Some(host_env(unit, self.profile.kind, engines))
     }
 
     /// The most a reply of this model may write when its engine runs with `window`: see

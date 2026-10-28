@@ -108,6 +108,6 @@ impl Sizing {
         let model = self.shared.plans.get(id)?;
         let window = model.window(self.lengths(), free, total)?;
         held(&self.shared.chosen).insert(id.clone(), window);
-        Some(model.unit_with(&self.shared.engines, Window::Chosen(window)))
+        model.unit_with(&self.shared.engines, Window::Chosen(window))
     }
 }

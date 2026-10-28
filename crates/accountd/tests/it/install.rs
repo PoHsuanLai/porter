@@ -22,7 +22,7 @@ fn stand_ins(root: &Path) -> PathBuf {
         "accountd",
         "syncd",
         "inferd",
-        "porter-engine-helper",
+        "engine-helper",
         "porter-mountd",
     ] {
         let file = bins.join(daemon);

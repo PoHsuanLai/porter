@@ -91,8 +91,8 @@ impl Config {
     /// A configuration over `dirs` on `bus`: the configuration file at `dirs.config`, Tailscale
     /// at its usual socket, callers read from `/proc`.
     pub fn new(dirs: Dirs, bus: BusTarget) -> Self {
-        let programs = ProgramSearch::system_with_installs(porter_engines::Roots::new(
-            PathBuf::from(porter_engines::Roots::SYSTEM),
+        let programs = ProgramSearch::system_with_installs(engine_probe::Roots::new(
+            PathBuf::from(engine_probe::Roots::SYSTEM),
             dirs.engines_own.clone(),
         ));
         Self {
@@ -333,11 +333,11 @@ fn attached_models(
 fn installed_engines(dirs: &Dirs, file: &ConfigFile) -> Installed {
     let reading = file.clone();
     Installed::new(
-        porter_engines::Roots::new(
-            PathBuf::from(porter_engines::Roots::SYSTEM),
+        engine_probe::Roots::new(
+            PathBuf::from(engine_probe::Roots::SYSTEM),
             dirs.engines_own.clone(),
         ),
-        porter_engines::Manifest::pinned(),
+        engine_manifest::Manifest::pinned(),
         porter_callers::root_held,
         Arc::new(move || {
             reading

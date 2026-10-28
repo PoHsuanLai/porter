@@ -7,7 +7,8 @@
 //! The program is the only thing of a unit this touches; the host still checks it as it starts
 //! the engine (`hosts::LaunchGuard`), whichever program it is.
 
-use engine_supervisor::{ProgramPath, UnitSpec};
+use engine_spec::ProgramPath;
+use engine_supervisor::UnitSpec;
 use porter_router::local::EngineConfig;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};

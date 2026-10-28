@@ -4,8 +4,9 @@
 //! words, and neither is listed.
 
 use super::*;
+use engine_spec::engine;
 use engine_supervisor::EngineFailure;
-use model_catalog::{EngineKind, MiB};
+use model_catalog::MiB;
 use porter_dbus::inference::{RunState, RunningModel};
 use zbus::fdo;
 
@@ -103,17 +104,6 @@ fn cause_of(failure: EngineFailure) -> Cause {
     }
 }
 
-/// The word for an engine kind on the bus.
-fn engine_word(kind: EngineKind) -> &'static str {
-    match kind {
-        EngineKind::Vllm => "vllm",
-        EngineKind::LlamaServer => "llama-server",
-        EngineKind::SpeechHost => "speech-host",
-        EngineKind::KokoroFastApi => "kokoro",
-        EngineKind::Strata => "strata",
-    }
-}
-
 impl Engines {
     /// The model `text` (`account/model`) when inferd runs it itself.
     fn run_by_us(&self, text: &str) -> Result<Arc<LocalModel>, RunError> {
@@ -179,7 +169,7 @@ impl Engines {
                 let mut row = RunningModel::new(
                     model.model_ref().to_string(),
                     run,
-                    engine_word(model.profile.kind),
+                    engine(model.profile.kind).running_word(),
                     memory.0,
                 );
                 if let Some(date) = began.and_then(|since| self.supervised.wall_clock(since)) {

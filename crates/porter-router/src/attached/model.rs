@@ -6,7 +6,8 @@ use super::config::{Attached, AttachedError};
 use super::target::Target;
 use crate::catalog::claims_of;
 use crate::local::{LOCAL_ACCOUNT, LocalModel, flavor_of};
-use engine_supervisor::{EngineId, EnginePaths, EngineSpec, ProgramPath, SocketPath, command};
+use engine_spec::{EnginePaths, ProgramPath};
+use engine_supervisor::{EngineId, EngineSpec, SocketPath, command};
 use model_catalog::{EngineKind, EngineProfile, MiB, ModelEntry, Serving, WeightFiles};
 use model_openai_compat::Flavor;
 use model_provider::ModelName;
@@ -93,14 +94,9 @@ pub fn local_model(
         Some(path) => path.clone(),
         None => sockets.join(format!("attached-{name}.sock")),
     });
-    let nothing = EnginePaths {
-        vllm_python: ProgramPath(PathBuf::new()),
-        llama_server: ProgramPath(PathBuf::new()),
-        speech_host: ProgramPath(PathBuf::new()),
-        kokoro_python: ProgramPath(PathBuf::new()),
-        strata_python: ProgramPath(PathBuf::new()),
-        hf_cache: PathBuf::new(),
-    };
+    let nothing =
+        EnginePaths::new(PathBuf::new()).with_program(profile.kind, ProgramPath(PathBuf::new()));
+    let unit = command(entry, &profile, &nothing, &socket).map_err(|_| no_chat())?;
     Ok(LocalModel {
         card: ModelCard {
             account: AccountId::parse(LOCAL_ACCOUNT).map_err(|_| no_chat())?,
@@ -115,7 +111,7 @@ pub fn local_model(
         spec: EngineSpec {
             id: engine_id(name),
             need: MiB(0),
-            unit: command(entry, &profile, &nothing, &socket),
+            unit,
         },
         socket,
         flavor: Some(flavor),

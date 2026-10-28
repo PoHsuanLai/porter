@@ -7,6 +7,7 @@
 use ds_settings::schema::{
     AgentSetting, Exposure, Help, KeyKind, KeyPath, KeySpec, Label, Page, Section,
 };
+use model_catalog::EngineKind;
 use porter_callers::held_under;
 use porter_router::local::EngineConfig;
 use std::collections::BTreeMap;
@@ -19,73 +20,66 @@ const SECTION: &str = "Local models";
 /// The table of the file the rows live in.
 pub(super) const TABLE: &str = "engines";
 
-/// An engine program the person can name.
+/// The row that names the program of one engine: the Python of vLLM's environment, llama.cpp's
+/// server.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Program {
-    /// The Python of vLLM's environment.
-    VllmPython,
-    /// llama.cpp's server.
-    LlamaServer,
+pub(super) struct Row {
+    /// The engine whose program the row names.
+    kind: EngineKind,
+    /// The key in the `engines` table.
+    key: &'static str,
+    label: &'static str,
+    help: &'static str,
 }
 
-impl Program {
-    /// Every program with a row, in the order the rows are listed.
-    pub(super) const ALL: [Program; 2] = [Program::VllmPython, Program::LlamaServer];
+/// Every row, in the order they are listed.
+pub(super) const ROWS: [Row; 2] = [
+    Row {
+        kind: EngineKind::Vllm,
+        key: "vllm_python",
+        label: "vLLM's Python",
+        help: "The Python program that runs vLLM. Leave it empty and this computer finds it itself.",
+    },
+    Row {
+        kind: EngineKind::LlamaServer,
+        key: "llama_server",
+        label: "llama-server",
+        help: "The program that runs llama.cpp models. Leave it empty and this computer finds it itself.",
+    },
+];
 
-    /// The program a row's path names.
-    pub(super) fn of_path(path: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|one| one.path() == path)
-    }
+/// The row a settings path names.
+pub(super) fn row_at(path: &str) -> Option<&'static Row> {
+    ROWS.iter().find(|row| row.path() == path)
+}
 
+impl Row {
     /// The key in the `engines` table.
-    pub(super) fn key(self) -> &'static str {
-        match self {
-            Self::VllmPython => "vllm_python",
-            Self::LlamaServer => "llama_server",
-        }
+    pub(super) fn key(&self) -> &'static str {
+        self.key
     }
 
     /// The row's settings path.
-    pub(super) fn path(self) -> String {
-        format!("{TABLE}.{}", self.key())
-    }
-
-    fn label(self) -> &'static str {
-        match self {
-            Self::VllmPython => "vLLM's Python",
-            Self::LlamaServer => "llama-server",
-        }
-    }
-
-    fn help(self) -> &'static str {
-        match self {
-            Self::VllmPython => {
-                "The Python program that runs vLLM. Leave it empty and this computer finds it itself."
-            }
-            Self::LlamaServer => {
-                "The program that runs llama.cpp models. Leave it empty and this computer finds it itself."
-            }
-        }
+    pub(super) fn path(&self) -> String {
+        format!("{TABLE}.{}", self.key)
     }
 
     /// What the file names for this program; empty when it names none.
-    pub(super) fn named(self, engines: &EngineConfig) -> String {
-        let program = match self {
-            Self::VllmPython => engines.vllm_python.as_deref(),
-            Self::LlamaServer => engines.llama_server.as_deref(),
-        };
-        program.map_or_else(String::new, |path| path.to_string_lossy().into_owned())
+    pub(super) fn named(&self, engines: &EngineConfig) -> String {
+        engines
+            .named_path(self.kind)
+            .map_or_else(String::new, |path| path.to_string_lossy().into_owned())
     }
 
     /// The row.
-    pub(super) fn spec(self) -> KeySpec {
+    pub(super) fn spec(&self) -> KeySpec {
         KeySpec {
             control: None,
             path: KeyPath(self.path()),
             kind: KeyKind::Text,
             default: toml::Value::String(String::new()),
-            label: Label(self.label().to_owned()),
-            help: Help(self.help().to_owned()),
+            label: Label(self.label.to_owned()),
+            help: Help(self.help.to_owned()),
             page: Page::Intelligence,
             section: Section(SECTION.to_owned()),
             exposure: Exposure::Advanced,
@@ -164,12 +158,12 @@ mod tests {
 
     #[test]
     fn every_program_has_a_row_at_its_own_path_in_the_engines_table() {
-        for program in Program::ALL {
-            let spec = program.spec();
-            assert_eq!(spec.path.0, format!("engines.{}", program.key()));
-            assert_eq!(Program::of_path(&spec.path.0), Some(program));
+        for row in &ROWS {
+            let spec = row.spec();
+            assert_eq!(spec.path.0, format!("engines.{}", row.key()));
+            assert_eq!(row_at(&spec.path.0), Some(row));
             assert_eq!(spec.kind, KeyKind::Text);
         }
-        assert_eq!(Program::of_path("engines.strata_folder"), None);
+        assert_eq!(row_at("engines.strata_folder"), None);
     }
 }

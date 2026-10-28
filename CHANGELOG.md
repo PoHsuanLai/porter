@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+### Engines go through stoker's `Engine` trait
+
+- `porter-engines` and `porter-engines-install` are deleted. inferd and porter-router use stoker's
+  `engine-spec`, `engine-manifest`, `engine-probe` and `engine-install` (stoker 80bf1239 and the
+  commit that adds the trait methods below). The mirror enums are gone too: `porter_engines::EngineId`,
+  inferd's `settings::missing::Engine` and `settings::programs::Program`. `model_catalog::EngineKind`
+  is the one engine type.
+- Words are unchanged: the bus ids (`llama_cpp`, `vllm`, `strata`, `speech`, `kokoro`), the running
+  list's engine words (`vllm`, `llama-server`, `speech-host`, `kokoro`, `strata`), the `engines.*`
+  settings keys, the install folders, the unit names and sockets (`llama_server:<model>`), the
+  helper's arguments and each engine's command line and environment.
+- The catalogue loader runs `engine_spec::check_entry` after the parser: a vLLM line with no GPU
+  estimate or a llama-server line whose weights are not GGUF is skipped, as before, with the check's
+  own message. `porter_router::catalog::parse_entry_text` returns `EntryError`.
+- The privileged helper is stoker's `engine-helper` (it was `porter-engine-helper`), at
+  `/usr/libexec/quire/engine-helper` under the polkit action `org.quire.engines.install`; stoker's
+  `scripts/install.sh` installs both, and porter's no longer builds a helper or ships
+  `dist/org.quire.porter.engines.policy` (stoker's install removes the old file). A caller of
+  `engine_install::EngineInstalls` passes `HelperProgram { pkexec: "/usr/bin/pkexec", program:
+  "/usr/libexec/quire/engine-helper" }`.
+- `EngineConfig::program` is public and `EngineConfig::named_path` is new; `LocalModel::unit_with`
+  returns an `Option`.
+
 ### AI keys are accountd's
 
 - accountd keeps the AI keys, the agent logins and the local runtimes with the identities: one

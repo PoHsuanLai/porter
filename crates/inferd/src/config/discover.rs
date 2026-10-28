@@ -6,13 +6,12 @@
 //! [`crate::hosts::LaunchGuard`]). An explicit path in `inferd.toml` always wins and is never
 //! checked here.
 
+use engine_probe::{Finder, Place, Roots};
+use engine_spec::engine;
+use model_catalog::EngineKind;
 use porter_callers::root_held;
-use porter_engines::{EngineId, Finder, Place, Roots};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-
-/// Where a distro package puts llama.cpp's server, first choice first.
-const LLAMA_SERVER_PATHS: [&str; 2] = ["/usr/bin/llama-server", "/usr/local/bin/llama-server"];
 
 /// Where to look for the programs a package installs, and how to tell a path is trustworthy.
 #[derive(Debug, Clone)]
@@ -25,8 +24,10 @@ pub struct ProgramSearch {
 impl ProgramSearch {
     /// The system's fixed paths, held by root.
     pub fn system() -> Self {
+        // Where a distro package puts llama.cpp's server, first choice first.
+        let llama_server = engine(EngineKind::LlamaServer).package_paths();
         Self::in_paths(
-            LLAMA_SERVER_PATHS.iter().map(PathBuf::from).collect(),
+            llama_server.iter().map(PathBuf::from).collect(),
             system_held,
         )
     }
@@ -66,14 +67,17 @@ impl ProgramSearch {
                     .find(|path| (self.held)(path))
                     .cloned()
             })
-            .or_else(|| self.found(EngineId::LlamaCpp).map(|found| found.program))
+            .or_else(|| {
+                self.found(EngineKind::LlamaServer)
+                    .map(|found| found.program)
+            })
     }
 
     /// The Python of vLLM's environment: the explicit path when there is one, else the Python of
     /// an install of ours, else the interpreter a packaged `vllm` command names.
     pub fn vllm_python(&self, explicit: Option<&Path>) -> Option<PathBuf> {
         explicit.map(Path::to_path_buf).or_else(|| {
-            let found = self.found(EngineId::Vllm)?;
+            let found = self.found(EngineKind::Vllm)?;
             match found.place {
                 Place::Package => interpreter_of(&found.program, self.held),
                 Place::System | Place::Person | Place::Pointed => Some(found.program),
@@ -81,8 +85,8 @@ impl ProgramSearch {
         })
     }
 
-    fn found(&self, engine: EngineId) -> Option<porter_engines::Found> {
-        self.installs.as_ref()?.find(engine)
+    fn found(&self, kind: EngineKind) -> Option<engine_probe::Found> {
+        self.installs.as_ref()?.find(kind)
     }
 }
 

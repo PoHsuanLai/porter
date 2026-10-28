@@ -2951,3 +2951,35 @@ Nothing here was compiled or run (no-build lane); the coordinator gates the merg
   reply with a key and check where `usage.cost` sits.
 - A ledger file written before this (no `format`) is read for its token counts; its dollar amounts
   were worked out from prices and are dropped, with a note on stderr.
+
+## Engines through stoker's `Engine` trait (2026-10-29, lane `tr2`)
+
+Trait audit `~/rs-wt/trait-audit/stoker.md` step (e) and steward-split step 2. Nothing was built or
+run in this lane (no cargo build, check, test or clippy) and Cargo.lock is not relocked, so the first
+gate is the first compile and the relock.
+
+- Deleted: `porter-engines`, `porter-engines-install`, `porter_engines::EngineId`, inferd's
+  `settings::missing::Engine` (mirror enum with `of`, `slug`, `name`, `serves`, `state`) and
+  `settings::programs::Program`. The functions that were methods of the mirror are now
+  `missing::{engine_name, serves, state}` over `EngineKind`; the two program rows are the data
+  `programs::ROWS`.
+- Matches on `EngineKind` that picked behaviour are gone: `engine_word` (`running_word`),
+  `has_seats` and `seats_in` (`seat_flags`), `host_libs` (`env`), `kind_slug` (`slug`),
+  `EngineConfig::program` and `paths` (`named_path` plus `EnginePaths`, Strata through
+  `engine_probe::pointed`), catalog.rs `any LlamaServer` (`caches_prompts`), `Engine::of`/`slug`
+  (`bus_word`) and `installable`.
+- Left on purpose: `local::flavor_of` and `attached/model.rs` (engine to `Flavor`: `Flavor` lives in
+  `model-openai-compat`, which `engine-spec` cannot name), `missing::engine_name` (copy text a person
+  reads, which a pure crate should not hold), `kind == SpeechHost` in daemon.rs and stt.rs (asks whether
+  a model is the speech host), the debug assert in replay/model.rs, `AttachedEngine.engine` (Vllm for
+  LiteLLM: a steward follow-up).
+- Two tables that were one fact: the bus id of an engine (`llama_cpp`, `speech`, `kokoro`) and the
+  word of a running-models row (`llama-server`, `speech-host`, `kokoro`) differ, so the trait has
+  `bus_word` and `running_word`; both are what porter sent before.
+- `LocalEngines` now asks `Installed::standing` for all five kinds (it asked for the three that have
+  install rows). The speech engines have no rows, so they stand as not installed, as before.
+- `parse_entry_text` is stoker's parser followed by `check_entry` (stoker's `parse_entry` no longer
+  runs those two checks). The text of a skipped file's reason for them is `SpecError`'s.
+- Nothing in porter uses `engine-install`, so porter neither depends on it nor builds its helper:
+  stoker's `scripts/install.sh` builds `engine-helper` and installs it with its polkit action.
+

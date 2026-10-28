@@ -3,7 +3,8 @@
 //! card like any other, and the engine's spec and socket like any other. Its figures are zero:
 //! it takes no GPU memory and no weights.
 
-use engine_supervisor::{EngineId, EnginePaths, EngineSpec, ProgramPath, SocketPath, command};
+use engine_spec::{EnginePaths, ProgramPath};
+use engine_supervisor::{EngineId, EngineSpec, SocketPath, command};
 use model_catalog::EngineKind;
 use model_openai_compat::Flavor;
 use model_provider::{ModelName, Tokens};
@@ -63,14 +64,10 @@ pub fn model(name: &str, cassette: &Path, context: Tokens, sockets: &Path) -> Op
         .collect();
     let profile = entry.engines.first()?.clone();
     let socket = SocketPath(sockets.join(format!("replay-{name}.sock")));
-    let paths = EnginePaths {
-        vllm_python: ProgramPath(PathBuf::new()),
-        llama_server: ProgramPath(PathBuf::from("replay")),
-        speech_host: ProgramPath(PathBuf::new()),
-        kokoro_python: ProgramPath(PathBuf::new()),
-        strata_python: ProgramPath(PathBuf::new()),
-        hf_cache: PathBuf::new(),
-    };
+    let paths = EnginePaths::new(PathBuf::new()).with_program(
+        EngineKind::LlamaServer,
+        ProgramPath(PathBuf::from("replay")),
+    );
     debug_assert_eq!(profile.kind, EngineKind::LlamaServer);
     Some(LocalModel {
         card: ModelCard {
@@ -84,7 +81,7 @@ pub fn model(name: &str, cassette: &Path, context: Tokens, sockets: &Path) -> Op
         spec: EngineSpec {
             id: EngineId(format!("replay:{name}")),
             need: model_catalog::MiB(0),
-            unit: command(&entry, &profile, &paths, &socket),
+            unit: command(&entry, &profile, &paths, &socket).ok()?,
         },
         socket,
         flavor: Some(Flavor::LlamaServer),

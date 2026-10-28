@@ -6,6 +6,7 @@
 //! The lock is held for a few map operations and never across an await.
 
 use crate::admit::{Admission, Lane, Place, Priority, Promoted, Seats, Ticket};
+use engine_spec::engine;
 use engine_supervisor::EngineId;
 use model_catalog::{EngineArg, EngineKind};
 use porter_ids::Count;
@@ -39,11 +40,7 @@ impl From<Place> for Standing {
 /// llama.cpp's `--parallel` (or `-np`), as written in the launch arguments; one when they say
 /// nothing or the engine is not a chat engine.
 pub fn seats_in(kind: EngineKind, args: &[EngineArg]) -> Seats {
-    let names: &[&str] = match kind {
-        EngineKind::Vllm => &["--max-num-seqs"],
-        EngineKind::LlamaServer => &["--parallel", "-np"],
-        _ => &[],
-    };
+    let names = engine(kind).seat_flags().unwrap_or_default();
     let value = args.iter().enumerate().find_map(|(index, arg)| {
         names
             .iter()

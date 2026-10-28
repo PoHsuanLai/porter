@@ -7,8 +7,8 @@ use super::{Job, Seating};
 use crate::admit::{Priority, Seats};
 use crate::failure::{EngineView, Retry, Spoke, Tried, explain, log_line, retry};
 use crate::seats::{Pass, Standing, seats_in};
+use engine_spec::engine;
 use engine_supervisor::EngineId;
-use model_catalog::EngineKind;
 use porter_infer::{InferEvent, InferReply, InferRequest, ModelError, QueueFact, ServedBy, answer};
 use porter_router::local::LocalModel;
 use porter_router::seams::TurnStep;
@@ -23,10 +23,7 @@ fn has_seats(model: &LocalModel) -> bool {
     model.attached.is_none()
         && model.loopback.is_none()
         && model.cassette.is_none()
-        && matches!(
-            model.profile.kind,
-            EngineKind::Vllm | EngineKind::LlamaServer
-        )
+        && engine(model.profile.kind).seat_flags().is_some()
 }
 
 /// The error of a reply that failed, if it did.

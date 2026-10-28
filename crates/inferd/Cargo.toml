@@ -31,7 +31,6 @@ porter-client = { workspace = true, features = ["dbus"] }
 porter-settings = { workspace = true }
 porter-store = { workspace = true }
 porter-discover = { workspace = true }
-porter-engines = { workspace = true }
 porter-http = { workspace = true }
 porter-http-reqwest = { workspace = true }
 porter-provider = { workspace = true }
@@ -50,6 +49,10 @@ model-provider = { workspace = true }
 rust_decimal = { workspace = true }
 iso_currency = { workspace = true }
 model-catalog = { workspace = true }
+# What differs between the engines, what is installed and pinned, and where an engine is found.
+engine-spec = { workspace = true }
+engine-manifest = { workspace = true }
+engine-probe = { workspace = true }
 engine-supervisor = { workspace = true }
 model-http = { workspace = true, features = ["client", "tls"] }
 model-openai-compat = { workspace = true }

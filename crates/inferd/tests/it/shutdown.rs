@@ -10,7 +10,8 @@
 
 use crate::hosting::bus;
 
-use engine_supervisor::{EngineHost, EngineId, GpuAccess, Network, ProgramPath, Sandbox, UnitSpec};
+use engine_spec::ProgramPath;
+use engine_supervisor::{EngineHost, EngineId, GpuAccess, Network, Sandbox, UnitSpec};
 use inferd::hosts::ProcessHost;
 use inferd::shutdown::{Ended, Signals, on_signal};
 use model_catalog::{EngineArg, MiB};

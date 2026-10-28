@@ -54,8 +54,6 @@ members = [
   "crates/porter-tailnet",
   "crates/porter-router",
   "crates/porter-turns",
-  "crates/porter-engines",
-  "crates/porter-engines-install",
   "crates/porter-daemon",
   "crates/accountd",
   "crates/syncd",
@@ -133,8 +131,6 @@ porter-tailscale = { path = "crates/porter-tailscale" }
 porter-tailnet  = { path = "crates/porter-tailnet" }
 porter-router   = { path = "crates/porter-router" }
 porter-turns    = { path = "crates/porter-turns" }
-porter-engines  = { path = "crates/porter-engines" }
-porter-engines-install = { path = "crates/porter-engines-install" }
 # Without the settings-file watch: a daemon that watches asks for `features = ["watch"]`, so
 # porter-dbus (and every bus client through it) never pulls a file watcher in.
 porter-daemon   = { path = "crates/porter-daemon", default-features = false }
@@ -155,28 +151,33 @@ peephole-bus    = { git = "https://github.com/PoHsuanLai/peephole", tag = "v0.1.
 
 # stoker's computer-use vocabulary, by git at stoker's pinned rev (quire
 # CONSUMING.md section 1; a local checkout overrides it, ARCHITECTURE section 1). stoker has no porter dependency, so there is no cycle.
-cua-action      = { git = "https://github.com/PoHsuanLai/stoker", rev = "c8fed624534867659448ac417992bac4f0f47e28" }
+cua-action      = { git = "https://github.com/PoHsuanLai/stoker", rev = "98621a2f3730ea1c3e0b8abce00f8e4fe91fe7d7" }
 # inferd's other stoker edges (it is the one place porter's types and stoker's meet), by git at
 # the same rev. `model-http` carries the reqwest client behind its `client` feature;
 # `vision-prep` the frame resize behind `pixels`; the testing features hold stoker's scripted
 # fakes of the supervisor's seams.
-model-provider      = { git = "https://github.com/PoHsuanLai/stoker", rev = "c8fed624534867659448ac417992bac4f0f47e28" }
-model-catalog       = { git = "https://github.com/PoHsuanLai/stoker", rev = "c8fed624534867659448ac417992bac4f0f47e28" }
-engine-supervisor   = { git = "https://github.com/PoHsuanLai/stoker", rev = "c8fed624534867659448ac417992bac4f0f47e28" }
-model-http          = { git = "https://github.com/PoHsuanLai/stoker", rev = "c8fed624534867659448ac417992bac4f0f47e28" }
-model-openai-compat = { git = "https://github.com/PoHsuanLai/stoker", rev = "c8fed624534867659448ac417992bac4f0f47e28" }
-speech-provider     = { git = "https://github.com/PoHsuanLai/stoker", rev = "c8fed624534867659448ac417992bac4f0f47e28" }
+model-provider      = { git = "https://github.com/PoHsuanLai/stoker", rev = "98621a2f3730ea1c3e0b8abce00f8e4fe91fe7d7" }
+model-catalog       = { git = "https://github.com/PoHsuanLai/stoker", rev = "98621a2f3730ea1c3e0b8abce00f8e4fe91fe7d7" }
+engine-supervisor   = { git = "https://github.com/PoHsuanLai/stoker", rev = "98621a2f3730ea1c3e0b8abce00f8e4fe91fe7d7" }
+model-http          = { git = "https://github.com/PoHsuanLai/stoker", rev = "98621a2f3730ea1c3e0b8abce00f8e4fe91fe7d7" }
+model-openai-compat = { git = "https://github.com/PoHsuanLai/stoker", rev = "98621a2f3730ea1c3e0b8abce00f8e4fe91fe7d7" }
+speech-provider     = { git = "https://github.com/PoHsuanLai/stoker", rev = "98621a2f3730ea1c3e0b8abce00f8e4fe91fe7d7" }
 # the client of the speech host (the STT engine process): inferd's `SttBackend::SpeechHost`.
-speech-host-client  = { git = "https://github.com/PoHsuanLai/stoker", rev = "c8fed624534867659448ac417992bac4f0f47e28" }
-vision-prep         = { git = "https://github.com/PoHsuanLai/stoker", rev = "c8fed624534867659448ac417992bac4f0f47e28" }
-cua-parse           = { git = "https://github.com/PoHsuanLai/stoker", rev = "c8fed624534867659448ac417992bac4f0f47e28" }
-cua-session         = { git = "https://github.com/PoHsuanLai/stoker", rev = "c8fed624534867659448ac417992bac4f0f47e28" }
-cua-vendors         = { git = "https://github.com/PoHsuanLai/stoker", rev = "c8fed624534867659448ac417992bac4f0f47e28" }
-model-extract       = { git = "https://github.com/PoHsuanLai/stoker", rev = "c8fed624534867659448ac417992bac4f0f47e28" }
-model-replay        = { git = "https://github.com/PoHsuanLai/stoker", rev = "c8fed624534867659448ac417992bac4f0f47e28" }
+speech-host-client  = { git = "https://github.com/PoHsuanLai/stoker", rev = "98621a2f3730ea1c3e0b8abce00f8e4fe91fe7d7" }
+vision-prep         = { git = "https://github.com/PoHsuanLai/stoker", rev = "98621a2f3730ea1c3e0b8abce00f8e4fe91fe7d7" }
+cua-parse           = { git = "https://github.com/PoHsuanLai/stoker", rev = "98621a2f3730ea1c3e0b8abce00f8e4fe91fe7d7" }
+cua-session         = { git = "https://github.com/PoHsuanLai/stoker", rev = "98621a2f3730ea1c3e0b8abce00f8e4fe91fe7d7" }
+cua-vendors         = { git = "https://github.com/PoHsuanLai/stoker", rev = "98621a2f3730ea1c3e0b8abce00f8e4fe91fe7d7" }
+model-extract       = { git = "https://github.com/PoHsuanLai/stoker", rev = "98621a2f3730ea1c3e0b8abce00f8e4fe91fe7d7" }
+model-replay        = { git = "https://github.com/PoHsuanLai/stoker", rev = "98621a2f3730ea1c3e0b8abce00f8e4fe91fe7d7" }
+# The engines: what differs between them (`Engine`), the pinned manifest, the reads of this computer
+# and the installer with its privileged helper (`engine-helper`).
+engine-spec         = { git = "https://github.com/PoHsuanLai/stoker", rev = "98621a2f3730ea1c3e0b8abce00f8e4fe91fe7d7" }
+engine-manifest     = { git = "https://github.com/PoHsuanLai/stoker", rev = "98621a2f3730ea1c3e0b8abce00f8e4fe91fe7d7" }
+engine-probe        = { git = "https://github.com/PoHsuanLai/stoker", rev = "98621a2f3730ea1c3e0b8abce00f8e4fe91fe7d7" }
 # the codec-over-transport `Driver`: inferd's TLS transport to a cloud model is a `model_http::Transport`
 # of its own (stoker's hyper client does not speak TLS yet), so it names the driver that takes one.
-model-wire          = { git = "https://github.com/PoHsuanLai/stoker", rev = "c8fed624534867659448ac417992bac4f0f47e28" }
+model-wire          = { git = "https://github.com/PoHsuanLai/stoker", rev = "98621a2f3730ea1c3e0b8abce00f8e4fe91fe7d7" }
 
 # From quire's pinned block (`docs/workspace-deps.toml`), copied verbatim: only the lines porter
 # names itself, as mailo does.
@@ -241,11 +242,6 @@ digest = "0.10"
 # Apache-2.0) and a constant-time compare (BSD-3-Clause).
 getrandom = "0.4.3"
 subtle = "2.6.1"
-# porter-engines-install unpacks the pinned engine archives (`tar.gz`) in process instead of
-# running the system's `tar` (both MIT OR Apache-2.0). flate2 is already in Cargo.lock through
-# png; tar's `xattr` default is off, nothing reads extended attributes.
-flate2 = "1.1.10"
-tar = { version = "0.4.46", default-features = false }
 md-5 = "0.10"
 # Lower-case hex of a digest or a byte string (MIT OR Apache-2.0; already in Cargo.lock).
 hex = "0.4"

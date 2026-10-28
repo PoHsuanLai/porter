@@ -8,9 +8,9 @@
 
 use super::file::Reload;
 use super::keys::{SLOTS, TIERS, model_path, parse_model_path, parse_pool_path, pool_path};
-use super::missing::Engine;
+use super::missing;
 use super::pool;
-use super::programs::{self, Program};
+use super::programs::{self, ROWS, Row, row_at};
 use super::resolve::{model_text, parse_model, slot_value};
 use crate::cloud::picker::{Availability, Choice, NEEDS_ACCOUNT};
 use crate::peers::{Peers, Role};
@@ -348,7 +348,7 @@ impl<P: Peers> InferdSettings<P> {
 
     /// Names the program of an engine, or with an empty text takes the name away (inferd then
     /// finds the program itself). A name is taken only when `programs::checked` allows it.
-    async fn set_program(&self, program: Program, value: toml::Value) -> Result<(), LiveError> {
+    async fn set_program(&self, program: &Row, value: toml::Value) -> Result<(), LiveError> {
         let toml::Value::String(text) = value else {
             return Err(LiveError::BadValue("a program is a path".into()));
         };
@@ -407,7 +407,9 @@ struct ModelChoices {
 /// LM Studio) is not one of ours to name.
 fn engine_of(model: &LocalModel) -> Option<EngineName> {
     match model.loopback {
-        None => Some(EngineName(Engine::of(model.profile.kind).name().to_owned())),
+        None => Some(EngineName(
+            missing::engine_name(model.profile.kind).to_owned(),
+        )),
         Some(_) => None,
     }
 }
@@ -451,7 +453,7 @@ impl<P: Peers> LiveModule for InferdSettings<P> {
                 key.push(self.pool_spec(kind, &hosted));
             }
         }
-        key.extend(Program::ALL.map(Program::spec));
+        key.extend(ROWS.iter().map(Row::spec));
         if let Some(spend) = &self.spend {
             key.extend(spend.schema());
         }
@@ -459,7 +461,7 @@ impl<P: Peers> LiveModule for InferdSettings<P> {
     }
 
     async fn get(&self, key: &KeyPath) -> Result<toml::Value, LiveError> {
-        if let Some(program) = Program::of_path(&key.0) {
+        if let Some(program) = row_at(&key.0) {
             let config = self.reload.file().read().map_err(failed)?;
             return Ok(toml::Value::String(program.named(&config.engines)));
         }
@@ -479,7 +481,7 @@ impl<P: Peers> LiveModule for InferdSettings<P> {
     }
 
     async fn set(&self, key: &KeyPath, value: toml::Value) -> Result<(), LiveError> {
-        if let Some(program) = Program::of_path(&key.0) {
+        if let Some(program) = row_at(&key.0) {
             return self.set_program(program, value).await;
         }
         if let Some((kind, chooser)) = parse_pool_path(&key.0) {

@@ -10,7 +10,8 @@
 //! catalog file of the same id in `$XDG_DATA_HOME/stoker/catalog`.
 
 use cua_action::CuaDialect;
-use model_catalog::{CatalogKind, ModelEntry, merge_catalogs, parse_entry};
+use engine_spec::{SpecError, check_entry, engine};
+use model_catalog::{CatalogError, CatalogKind, ModelEntry, merge_catalogs, parse_entry};
 use model_provider::{
     Caps, Constraint, CuaSupport, EmbedCaps, InputKind, Support, ToolSupport, Zoom,
 };
@@ -53,9 +54,24 @@ pub struct Catalog {
     pub skipped: Vec<Skipped>,
 }
 
-/// One entry's text as an entry (stoker's parser, so a test or a caller need not name it).
-pub fn parse_entry_text(text: &str) -> Result<ModelEntry, model_catalog::CatalogError> {
-    parse_entry(text)
+/// Why an entry's text is not an entry: it does not parse, or an engine it names cannot run it.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum EntryError {
+    /// Stoker's parser refused it.
+    #[error("{0}")]
+    Parse(#[from] CatalogError),
+    /// It parses, but one of its engines cannot run it (`engine_spec::check_entry`).
+    #[error("{0}")]
+    Engine(#[from] SpecError),
+}
+
+/// One entry's text as an entry: stoker's parser, then the checks of the engines the entry names
+/// (a vLLM line needs a GPU estimate, a llama-server line GGUF weights).
+pub fn parse_entry_text(text: &str) -> Result<ModelEntry, EntryError> {
+    let entry = parse_entry(text)?;
+    check_entry(&entry)?;
+    Ok(entry)
 }
 
 /// Reads the system and user directories and merges them (a user file replaces the system file
@@ -84,7 +100,7 @@ fn read_dir(dir: &Path) -> (Vec<ModelEntry>, Vec<Skipped>) {
     for path in files {
         let parsed = std::fs::read_to_string(&path)
             .map_err(|e| e.to_string())
-            .and_then(|text| parse_entry(&text).map_err(|e| e.to_string()));
+            .and_then(|text| parse_entry_text(&text).map_err(|e| e.to_string()));
         match parsed {
             Ok(entry) => entries.push(entry),
             Err(why) => skipped.push(Skipped {
@@ -146,10 +162,10 @@ pub fn capabilities_of(entry: &ModelEntry) -> Vec<Capability> {
 }
 
 fn llm_cap(caps: &Caps, entry: &ModelEntry) -> LlmCap {
-    let llama = entry
+    let caches_prompts = entry
         .engines
         .iter()
-        .any(|engine| engine.kind == model_catalog::EngineKind::LlamaServer);
+        .any(|profile| engine(profile.kind).caches_prompts());
     let features: [(bool, LlmFeature); 6] = [
         (true, LlmFeature::Chat),
         (caps.tools != ToolSupport::Absent, LlmFeature::Tools),
@@ -162,7 +178,7 @@ fn llm_cap(caps: &Caps, entry: &ModelEntry) -> LlmCap {
             LlmFeature::StructuredOutput,
         ),
         (caps.reasoning == Support::Present, LlmFeature::Reasoning),
-        (llama, LlmFeature::PromptCache),
+        (caches_prompts, LlmFeature::PromptCache),
     ];
     LlmCap {
         features: features
