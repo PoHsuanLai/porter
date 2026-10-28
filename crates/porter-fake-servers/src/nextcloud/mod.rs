@@ -13,7 +13,7 @@ use crate::shipped::point;
 use login::Logins;
 use notes::Notes;
 use porter_core::Family;
-use porter_fake::{FakeAddress, FakeProtocol, FakeServer};
+use porter_fake::{FakeAddress, FakeServer};
 use porter_provider::ProviderSpec;
 use std::future::Future;
 use std::io;
@@ -293,10 +293,6 @@ impl NextcloudHandle {
 }
 
 impl FakeServer for FakeNextcloud {
-    fn protocol(&self) -> FakeProtocol {
-        FakeProtocol::Nextcloud
-    }
-
     fn address(&self) -> &FakeAddress {
         self.listener.address()
     }

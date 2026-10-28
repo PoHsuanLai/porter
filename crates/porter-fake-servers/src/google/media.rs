@@ -7,7 +7,7 @@ use super::{Shared, denied};
 use crate::http::{Hit, Request, Response, serve};
 use crate::net::{Bind, Listener};
 use crate::seen::{Running, Seen, lock};
-use porter_fake::{FakeAddress, FakeProtocol, FakeServer};
+use porter_fake::{FakeAddress, FakeServer};
 use porter_provider::ProviderSpec;
 use std::future::Future;
 use std::io;
@@ -63,10 +63,6 @@ fn answer(shared: &Shared, request: &Request) -> Response {
 }
 
 impl FakeServer for MediaServer {
-    fn protocol(&self) -> FakeProtocol {
-        FakeProtocol::Google
-    }
-
     fn address(&self) -> &FakeAddress {
         self.listener.address()
     }

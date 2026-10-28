@@ -18,7 +18,7 @@ use crate::net::{Bind, Listener};
 use crate::oauth::IssuerHandle;
 use crate::seen::{Running, Seen, lock};
 use drive::Body;
-use porter_fake::{FakeAddress, FakeProtocol, FakeServer};
+use porter_fake::{FakeAddress, FakeServer};
 use porter_provider::ProviderSpec;
 use routes::{Origins, State, answer, answer_link};
 use std::future::Future;
@@ -401,10 +401,6 @@ fn path_of(drive: &Drive, id: &str) -> String {
 }
 
 impl FakeServer for FakeGraph {
-    fn protocol(&self) -> FakeProtocol {
-        FakeProtocol::Graph
-    }
-
     fn address(&self) -> &FakeAddress {
         self.listener.address()
     }

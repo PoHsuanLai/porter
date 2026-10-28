@@ -6,7 +6,7 @@ use crate::http::{Hit, Request, Response, serve};
 use crate::net::{Bind, Listener};
 use crate::seen::{Running, Seen, lock};
 use porter_discover::{Dns, DnsFault, MxRecord, SrvRecord};
-use porter_fake::{FakeAddress, FakeProtocol, FakeServer};
+use porter_fake::{FakeAddress, FakeServer};
 use porter_provider::{DomainName, ProviderSpec};
 use std::collections::HashMap;
 use std::future::Future;
@@ -129,10 +129,6 @@ impl AutoconfigHandle {
 }
 
 impl FakeServer for FakeAutoconfig {
-    fn protocol(&self) -> FakeProtocol {
-        FakeProtocol::Autoconfig
-    }
-
     fn address(&self) -> &FakeAddress {
         self.listener.address()
     }

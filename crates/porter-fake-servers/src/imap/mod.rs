@@ -15,7 +15,7 @@ use crate::shipped::point;
 use crate::tls;
 use commands::{fetch, read_args, select};
 use porter_core::{Family, Tls};
-use porter_fake::{FakeAddress, FakeProtocol, FakeServer};
+use porter_fake::{FakeAddress, FakeServer};
 use porter_provider::ProviderSpec;
 use std::future::Future;
 use std::io;
@@ -92,10 +92,6 @@ impl FakeImap {
 }
 
 impl FakeServer for FakeImap {
-    fn protocol(&self) -> FakeProtocol {
-        FakeProtocol::Imap
-    }
-
     fn address(&self) -> &FakeAddress {
         self.listener.address()
     }

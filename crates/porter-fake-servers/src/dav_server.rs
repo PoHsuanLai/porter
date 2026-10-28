@@ -7,7 +7,7 @@ use crate::net::{Bind, Listener};
 use crate::seen::{Running, Seen, lock};
 use crate::shipped::point;
 use porter_core::Family;
-use porter_fake::{FakeAddress, FakeProtocol, FakeServer};
+use porter_fake::{FakeAddress, FakeServer};
 use porter_provider::ProviderSpec;
 use std::future::Future;
 use std::io;
@@ -131,10 +131,6 @@ impl DavHandle {
 }
 
 impl FakeServer for FakeDav {
-    fn protocol(&self) -> FakeProtocol {
-        FakeProtocol::Dav
-    }
-
     fn address(&self) -> &FakeAddress {
         self.listener.address()
     }

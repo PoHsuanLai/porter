@@ -36,7 +36,7 @@ use crate::net::{Bind, Listener};
 use crate::oauth::{FakeIssuer, IssuerHandle, Style};
 use crate::seen::{Running, Seen, lock};
 use porter_core::Family;
-use porter_fake::{FakeAddress, FakeProtocol, FakeServer};
+use porter_fake::{FakeAddress, FakeServer};
 use porter_provider::{Endpoint, ProviderSpec};
 use serde_json::json;
 use std::collections::HashMap;
@@ -342,10 +342,6 @@ fn answer(shared: &Shared, request: &Request) -> Response {
 }
 
 impl FakeServer for FakeGoogle {
-    fn protocol(&self) -> FakeProtocol {
-        FakeProtocol::Google
-    }
-
     fn address(&self) -> &FakeAddress {
         self.listener.address()
     }

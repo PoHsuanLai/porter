@@ -13,7 +13,7 @@ use crate::seen::{Running, Seen, lock};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use porter_core::EndpointUrl;
-use porter_fake::{FakeAddress, FakeProtocol, FakeServer};
+use porter_fake::{FakeAddress, FakeServer};
 use porter_provider::{IssuerEndpoints, ProviderSpec};
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -337,10 +337,6 @@ impl IssuerHandle {
 }
 
 impl FakeServer for FakeIssuer {
-    fn protocol(&self) -> FakeProtocol {
-        FakeProtocol::OAuthIssuer
-    }
-
     fn address(&self) -> &FakeAddress {
         self.listener.address()
     }
