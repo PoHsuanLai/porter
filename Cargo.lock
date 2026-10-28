@@ -2949,6 +2949,7 @@ dependencies = [
  "porter-ids",
  "porter-secrets",
  "porter-service-core",
+ "porter-sheet",
  "porter-wire",
  "serde",
  "serde_json",
@@ -3161,6 +3162,7 @@ dependencies = [
  "porter-service-accounts",
  "porter-service-core",
  "porter-service-grants",
+ "porter-sheet",
  "porter-wire",
 ]
 
@@ -3209,6 +3211,7 @@ dependencies = [
  "porter-secrets",
  "porter-service-accounts",
  "porter-service-core",
+ "porter-sheet",
  "porter-wire",
 ]
 
@@ -3235,6 +3238,7 @@ dependencies = [
  "porter-core",
  "porter-ids",
  "porter-tailscale",
+ "porter-wire",
  "proptest",
  "serde",
  "serde_json",

@@ -14,6 +14,7 @@
 
 mod fields;
 mod group;
+pub mod host;
 mod input;
 mod manual;
 mod mark;

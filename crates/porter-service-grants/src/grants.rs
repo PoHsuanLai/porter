@@ -15,7 +15,7 @@ use porter_service_core::Ports;
 use porter_service_core::audit::AuditEvent;
 use porter_service_core::consent::{ask_for, settle};
 use porter_service_core::registry::Asker;
-use porter_service_core::sheets::Sheets;
+use porter_sheet::host::Sheets;
 use porter_wire::AccountsReply;
 use porter_wire::{ParentWindow, Refusal};
 

@@ -21,7 +21,7 @@ use porter_provider::{
 };
 use porter_service_core::Ports;
 use porter_service_core::refusal::refusal_of;
-use porter_service_core::sheets::{SheetFault, SheetLink, SheetOpen, Sheets};
+use porter_sheet::host::{SheetFault, SheetLink, SheetOpen, Sheets};
 use porter_sheet::{
     Progress, ProviderRow, Purpose, RowKind, Sheet, SheetEffect, SheetEnd, SheetEvent, SignInFault,
     SignInInput, Stage, step,

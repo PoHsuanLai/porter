@@ -29,7 +29,7 @@ use porter_service::AccountService;
 use porter_service_accounts::SignInAs;
 use porter_service_core::audit::AuditEvent;
 use porter_service_core::registry::Registry;
-use porter_service_core::sheets::{SheetFault, SheetLink, SheetOpen, Sheets};
+use porter_sheet::host::{SheetFault, SheetLink, SheetOpen, Sheets};
 use porter_sheet::{
     Entry, FieldAnswer, FieldKind, FieldSpec, FieldValue, Presence, SheetInput, SheetView,
     SignInFault, SignInInput, UserCode,

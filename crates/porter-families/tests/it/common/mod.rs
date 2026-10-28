@@ -142,7 +142,7 @@ use porter_families::DynProvider;
 use porter_ids::clock::FixedClock;
 use porter_secrets::{MemorySecrets, Secrets, SecretsError};
 use porter_service::AccountService;
-use porter_service_core::sheets::{SheetFault, SheetLink, SheetOpen, Sheets};
+use porter_sheet::host::{SheetFault, SheetLink, SheetOpen, Sheets};
 use porter_wire::ParentWindow;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 

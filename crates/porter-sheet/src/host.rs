@@ -3,8 +3,8 @@
 //! views and reads the person's inputs from. accountd serves it over `org.quire.AccountsSheet1`
 //! (sill draws), an app hosting porter in process draws it itself, tests script it.
 
+use crate::{SheetInput, SheetView};
 use porter_core::consent::{ConsentAnswer, ConsentAsk};
-use porter_sheet::{SheetInput, SheetView};
 use porter_wire::ParentWindow;
 use std::future::Future;
 

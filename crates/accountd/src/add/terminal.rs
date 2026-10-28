@@ -11,7 +11,7 @@ use porter_capability::Toggle;
 use porter_core::AccountId;
 use porter_core::SecretText;
 use porter_core::consent::{ConsentAnswer, ConsentAsk, GrantScope};
-use porter_service_core::sheets::{SheetFault, SheetLink, SheetOpen, Sheets};
+use porter_sheet::host::{SheetFault, SheetLink, SheetOpen, Sheets};
 use porter_sheet::{
     Entry, FieldAnswer, FieldKind, FieldSpec, FieldValue, Presence, ServiceState, SheetInput,
     SheetView, refit,

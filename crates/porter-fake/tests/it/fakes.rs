@@ -36,7 +36,7 @@ async fn an_account_that_needs_a_secret_cannot_open_without_one() {
 #[tokio::test]
 async fn a_scripted_conversation_shows_its_views_and_reads_its_inputs_then_closes() {
     use porter_fake::ScriptedSheets;
-    use porter_service_core::sheets::{SheetFault, SheetLink, SheetOpen, Sheets};
+    use porter_sheet::host::{SheetFault, SheetLink, SheetOpen, Sheets};
     use porter_sheet::{SheetInput, SheetView};
     use porter_wire::ParentWindow;
     let sheets =

@@ -25,6 +25,12 @@
 - `EngineConfig::program` is public and `EngineConfig::named_path` is new; `LocalModel::unit_with`
   returns an `Option`.
 
+### The sheet host seam is porter-sheet's
+
+- `{Sheets, SheetLink, SheetOpen, SheetFault}` are `porter_sheet::host::*` (they were
+  `porter_service_core::sheets::*`). `porter-sheet` depends on `porter-wire` for `ParentWindow`. A host
+  that draws a sheet no longer names a service crate.
+
 ### AI keys are accountd's
 
 - accountd keeps the AI keys, the agent logins and the local runtimes with the identities: one

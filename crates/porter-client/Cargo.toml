@@ -28,6 +28,7 @@ porter-provider = { workspace = true, optional = true }
 porter-secrets = { workspace = true, optional = true }
 porter-service = { workspace = true, optional = true }
 porter-service-core = { workspace = true, optional = true }
+porter-sheet = { workspace = true, optional = true }
 porter-callers = { workspace = true, optional = true }
 porter-dbus = { workspace = true, optional = true }
 porter-fs = { workspace = true, optional = true }
@@ -84,7 +85,7 @@ infer = ["dep:porter-infer"]
 # provider catalogue). A consumer that only talks to accountd over a bus leaves it off and builds
 # none of them: `cargo tree -p porter-client --features dbus` reaches none
 # (scripts/check-boundary.sh).
-in-process = ["dep:porter-provider", "dep:porter-secrets", "dep:porter-service", "dep:porter-service-core"]
+in-process = ["dep:porter-provider", "dep:porter-secrets", "dep:porter-service", "dep:porter-service-core", "dep:porter-sheet"]
 # Inference with no inferd: `EngineHost`, a `SessionHost` that routes need -> engine over a table
 # the app gives and drives the OpenAI-compatible engines it points at (Ollama, llama.cpp, LM
 # Studio, vLLM, a company's API), with keys from a `KeySource` the app implements. Off by
