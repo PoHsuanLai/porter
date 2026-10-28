@@ -5,8 +5,9 @@
 //! machine, which this one replaces.
 
 use super::input::SheetInput;
-use super::progress::{Progress, Review, ServiceChoice, SignInFault, SignInInput, UserCode};
+use super::progress::{Progress, Review, SignInFault, SignInInput, UserCode};
 use super::view::{FieldProblem, ProviderRow, ReviewView, SheetView, SignInView};
+use porter_capability::KindToggle;
 use porter_core::AppId;
 use porter_core::EndpointUrl;
 use porter_core::ProviderHint;
@@ -82,7 +83,7 @@ pub enum Stage {
         /// The provider.
         provider: ProviderId,
         /// The person's service choices.
-        choices: Vec<ServiceChoice>,
+        choices: Vec<KindToggle>,
     },
     /// What was found, shown and not used yet.
     Reviewing {
@@ -154,7 +155,7 @@ pub enum SheetEffect {
     /// Tell the provider's sign-in this.
     Feed(SignInInput),
     /// Store the account the sign-in produced, with these service choices.
-    Store(Vec<ServiceChoice>),
+    Store(Vec<KindToggle>),
     /// Open the browser page again (`OpenAgain`), through the portal path.
     OpenBrowser(WebUrl),
     /// Close the sheet.

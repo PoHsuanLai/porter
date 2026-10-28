@@ -5,13 +5,14 @@
 #[cfg(feature = "generic")]
 pub mod mail;
 
+use porter_capability::KindToggle;
 use porter_capability::Toggle;
 use porter_core::SecretText;
 use porter_http::http::{Request, Response};
 use porter_http::{Http, HttpError};
 use porter_http_reqwest::ReqwestHttp;
 use porter_provider::{SignIn, SignInStep};
-use porter_sheet::{FieldAnswer, FieldKind, FieldValue, ServiceChoice, SheetInput, SheetView};
+use porter_sheet::{FieldAnswer, FieldKind, FieldValue, SheetInput, SheetView};
 use std::sync::{Arc, Mutex};
 
 /// One place a name is served: `host`'s paths under `prefix` go to `port` on loopback.
@@ -99,10 +100,10 @@ pub fn secret(kind: FieldKind, text: &str) -> FieldAnswer {
 /// Every service of a review, on.
 pub fn all_on(
     kinds: impl IntoIterator<Item = porter_capability::CapabilityKind>,
-) -> Vec<ServiceChoice> {
+) -> Vec<KindToggle> {
     kinds
         .into_iter()
-        .map(|kind| ServiceChoice {
+        .map(|kind| KindToggle {
             kind,
             toggle: Toggle::On,
         })
@@ -206,7 +207,7 @@ impl TestLink {
                     .review
                     .services
                     .iter()
-                    .map(|row| ServiceChoice {
+                    .map(|row| KindToggle {
                         kind: row.kind,
                         toggle: match self.person.off.contains(&row.kind) {
                             true => Toggle::Off,

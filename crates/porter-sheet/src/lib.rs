@@ -31,7 +31,7 @@ pub use manual::{
 };
 pub use mark::{MarkColour, MarkFace, MarkFaceError, MarkLetter};
 pub use progress::{
-    Progress, Review, ServiceChoice, ServiceRow, ServiceState, SignInFault, SignInInput, UserCode,
+    Progress, Review, ServiceRow, ServiceState, SignInFault, SignInInput, UserCode,
 };
 pub use stage::{Purpose, Sheet, SheetEffect, SheetEnd, SheetEvent, Stage, step};
 pub use view::{

@@ -1,11 +1,12 @@
 use super::rig::*;
 use porter_capability::CapabilityKind as K;
+use porter_capability::KindToggle;
 use porter_capability::{AbsentReason, Offer, Provenance, Toggle};
 use porter_core::AccountId;
 use porter_core::{Credential, Family, SecretPurpose, TenantConsent};
 use porter_fake_servers::{Consent, IssuerEvent, TokenResult};
 use porter_provider::{LoginHint, Provider, SignIn, SignInMode, SignInStart, SignInStep};
-use porter_sheet::{ServiceChoice, SignInFault, SignInInput};
+use porter_sheet::{SignInFault, SignInInput};
 
 fn grant_types(rig: &Rig) -> Vec<String> {
     rig.issuer
@@ -123,7 +124,7 @@ async fn a_loopback_sign_in_reviews_what_graph_allows_then_hands_over_the_creden
     // Nothing is handed over before the person confirms.
     let again = signin.next(SignInInput::Poll).await;
     assert!(matches!(again, SignInStep::Review { .. }));
-    let choices = vec![ServiceChoice {
+    let choices = vec![KindToggle {
         kind: K::Notes,
         toggle: Toggle::Off,
     }];
@@ -440,7 +441,7 @@ async fn asking_for_the_whole_drive_asks_it_alone_and_records_it_with_the_rest()
             .iter()
             .all(|e| e.login.0 == "ada@contoso.onmicrosoft.com")
     );
-    let choices = vec![ServiceChoice {
+    let choices = vec![KindToggle {
         kind: K::Storage,
         toggle: Toggle::On,
     }];

@@ -4,6 +4,7 @@
 use super::fields::{FieldAnswer, FieldSpec};
 use porter_capability::AbsentReason;
 use porter_capability::CapabilityKind;
+use porter_capability::KindToggle;
 use porter_capability::Toggle;
 use porter_core::AccountLabel;
 use porter_core::LimitReason;
@@ -119,15 +120,6 @@ pub enum Progress {
     Failed(SignInFault),
 }
 
-/// One of the person's choices on the review step.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct ServiceChoice {
-    /// The kind.
-    pub kind: CapabilityKind,
-    /// Their choice.
-    pub toggle: Toggle,
-}
-
 /// What the host tells a sign-in. It may hold secret text, so it is never serialised; its
 /// `Debug` redacts.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -137,7 +129,7 @@ pub enum SignInInput {
     /// The answers to the fields it asked for.
     Fields(Vec<FieldAnswer>),
     /// The person confirmed the review, with their service choices.
-    Confirm(Vec<ServiceChoice>),
+    Confirm(Vec<KindToggle>),
     /// Carry on waiting.
     Poll,
     /// Stop.

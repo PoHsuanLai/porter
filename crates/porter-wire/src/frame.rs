@@ -18,15 +18,6 @@ pub struct Envelope<T> {
     pub body: T,
 }
 
-/// The result of reading a buffer that may hold a partial frame.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FrameRead<T> {
-    /// A whole frame, and how many bytes of the buffer it used.
-    Complete(Envelope<T>, usize),
-    /// Not enough bytes yet.
-    Partial,
-}
-
 /// One frame for `body`, at this build's vocabulary version.
 pub fn encode_frame<T: Serialize>(body: &T) -> Result<Vec<u8>, FrameError> {
     let envelope = Envelope {
@@ -41,21 +32,24 @@ pub fn encode_frame<T: Serialize>(body: &T) -> Result<Vec<u8>, FrameError> {
     Ok(len.to_be_bytes().into_iter().chain(json).collect())
 }
 
-/// The first frame in `buffer`, if it is all there.
-pub fn decode_frame<T: DeserializeOwned>(buffer: &[u8]) -> Result<FrameRead<T>, FrameError> {
+/// The first frame in `buffer` and how many bytes of the buffer it used, or `None` while the
+/// buffer holds only part of one.
+pub fn decode_frame<T: DeserializeOwned>(
+    buffer: &[u8],
+) -> Result<Option<(Envelope<T>, usize)>, FrameError> {
     let Some((head, rest)) = buffer.split_first_chunk::<4>() else {
-        return Ok(FrameRead::Partial);
+        return Ok(None);
     };
     let len = u32::from_be_bytes(*head) as usize;
     if len > MAX_FRAME {
         return Err(FrameError::TooLong(len));
     }
     let Some(json) = rest.get(..len) else {
-        return Ok(FrameRead::Partial);
+        return Ok(None);
     };
     let envelope =
         serde_json::from_slice(json).map_err(|e| FrameError::Malformed(e.to_string()))?;
-    Ok(FrameRead::Complete(envelope, 4 + len))
+    Ok(Some((envelope, 4 + len)))
 }
 
 #[cfg(test)]
@@ -71,7 +65,7 @@ mod tests {
             vocab: VocabVersion::CURRENT,
             body: AccountsRequest::ListGrants,
         };
-        assert_eq!(read, FrameRead::Complete(expected, bytes.len()));
+        assert_eq!(read, Some((expected, bytes.len())));
     }
 
     #[test]
@@ -79,7 +73,7 @@ mod tests {
         let bytes = encode_frame(&AccountsRequest::ListGrants).expect("encodes");
         for cut in [0, 3, bytes.len() - 1] {
             let read = decode_frame::<AccountsRequest>(&bytes[..cut]).expect("no error");
-            assert_eq!(read, FrameRead::Partial, "cut at {cut}");
+            assert_eq!(read, None, "cut at {cut}");
         }
     }
 

@@ -7,7 +7,7 @@ use super::*;
 use crate::fields::{Entry, FieldAnswer, FieldKind, FieldSpec, FieldValue, Presence};
 use crate::input::SheetInput;
 use crate::progress::{
-    Progress, Review, ServiceChoice, ServiceRow, ServiceState, SignInFault, SignInInput, UserCode,
+    Progress, Review, ServiceRow, ServiceState, SignInFault, SignInInput, UserCode,
 };
 use crate::view::{FieldProblem, ProblemKind, ProviderKind, ProviderRow, RowKind, SheetView};
 use porter_capability::CapabilityKind;
@@ -83,8 +83,8 @@ fn review() -> Review {
     }
 }
 
-fn choices() -> Vec<ServiceChoice> {
-    vec![ServiceChoice {
+fn choices() -> Vec<KindToggle> {
+    vec![KindToggle {
         kind: CapabilityKind::Storage,
         toggle: Toggle::Off,
     }]

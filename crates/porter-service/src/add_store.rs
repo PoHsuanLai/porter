@@ -25,7 +25,7 @@ use porter_ids::clock::Clock;
 use porter_match::Need;
 use porter_provider::{Provider, ProviderSpec, SignInStep, Signed};
 use porter_secrets::Secrets;
-use porter_sheet::ServiceChoice;
+
 use porter_wire::AccountsReply;
 use std::collections::HashSet;
 use std::sync::{Mutex, MutexGuard};
@@ -170,7 +170,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         caller: &AppId,
         spec: &ProviderSpec,
         signed: &Signed,
-        choices: &[ServiceChoice],
+        choices: &[KindToggle],
         allow: Option<&AllowFor>,
     ) -> Result<AccountId, ()> {
         if signed.endpoints.iter().any(|e| e.check().is_err()) {

@@ -24,6 +24,7 @@ use super::view::{FieldProblem, ProblemKind};
 use porter_core::SecretText;
 use porter_core::{EndpointUrl, server_address, server_address_shape};
 use porter_ids::UrlScheme;
+use porter_ids::word::{from_word, word};
 use porter_tailscale::{Machine, MachineOwner};
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
@@ -48,19 +49,9 @@ pub const PROTOCOL_CHOICES: &[&str] = &["imap", "pop3", "jmap"];
 pub const SECURITY_CHOICES: &[&str] = &["tls", "starttls"];
 
 impl Protocol {
-    fn slug(self) -> &'static str {
-        match self {
-            Protocol::Imap => "imap",
-            Protocol::Pop3 => "pop3",
-            Protocol::Jmap => "jmap",
-        }
-    }
-
     /// The protocol `text` names, when `choices` includes it.
     fn offered(text: &str, choices: &[&str]) -> Option<Protocol> {
-        let all = [Protocol::Imap, Protocol::Pop3, Protocol::Jmap];
-        all.into_iter()
-            .find(|p| p.slug() == text && choices.contains(&text))
+        from_word::<Protocol>(text).filter(|_| choices.contains(&text))
     }
 }
 
@@ -203,7 +194,7 @@ pub fn manual_form(protocol: Protocol, domain: Option<&str>) -> Vec<FieldSpec> {
     let mut fields = vec![spec(
         FieldKind::Protocol,
         Presence::Required,
-        Some(protocol.slug().to_owned()),
+        Some(word(&protocol).to_owned()),
     )];
     let port = |direction| Some(usual_port(protocol, direction, Security::Tls).to_string());
     match protocol {
@@ -349,7 +340,7 @@ fn refit_in(fields: &[FieldSpec], answers: &[FieldAnswer], choices: &[&str]) -> 
                 .and_then(|f| f.prefill.clone())
                 .or_else(|| field.prefill.clone());
             field.prefill = match field.kind {
-                FieldKind::Protocol => Some(protocol.slug().to_owned()),
+                FieldKind::Protocol => Some(word(&protocol).to_owned()),
                 FieldKind::Security | FieldKind::OutgoingSecurity => {
                     Some(security(field.kind).slug().to_owned())
                 }

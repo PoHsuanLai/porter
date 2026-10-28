@@ -2,6 +2,7 @@
 //! half of the conversation (what is drawn, what the sign-in is told, what is stored, when).
 
 use porter_capability::CapabilityKind;
+use porter_capability::KindToggle;
 use porter_capability::StorageScope;
 use porter_capability::{Access, Capability, Delta, LabelModel, MailCap, MailTransport};
 use porter_capability::{Claim, Offer, Provenance, Subject, Toggle};
@@ -29,8 +30,8 @@ use porter_service::{
     AccountService, Registry, SheetFault, SheetLink, SheetOpen, Sheets, SignInAs,
 };
 use porter_sheet::{
-    Entry, FieldAnswer, FieldKind, FieldSpec, FieldValue, Presence, ServiceChoice, SheetInput,
-    SheetView, SignInFault, SignInInput, UserCode,
+    Entry, FieldAnswer, FieldKind, FieldSpec, FieldValue, Presence, SheetInput, SheetView,
+    SignInFault, SignInInput, UserCode,
 };
 use porter_wire::{AccountsReply, AccountsRequest};
 use porter_wire::{ParentWindow, Refusal};
@@ -305,7 +306,7 @@ fn typist() -> Reactor {
                 .review
                 .services
                 .iter()
-                .map(|r| ServiceChoice {
+                .map(|r| KindToggle {
                     kind: r.kind,
                     toggle: Toggle::On,
                 })
@@ -588,7 +589,7 @@ async fn a_service_turned_off_on_the_review_is_stored_off() {
             r.review
                 .services
                 .iter()
-                .map(|row| ServiceChoice {
+                .map(|row| KindToggle {
                     kind: row.kind,
                     toggle: Toggle::Off,
                 })

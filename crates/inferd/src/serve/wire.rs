@@ -6,7 +6,7 @@
 //! descriptors nobody named, is a protocol error and ends the session.
 
 use porter_infer::{ClientFrame, InferEvent};
-use porter_wire::{FrameRead, decode_frame, encode_frame};
+use porter_wire::{decode_frame, encode_frame};
 use rustix::net::{RecvAncillaryBuffer, RecvAncillaryMessage, RecvFlags, recvmsg};
 use std::collections::VecDeque;
 use std::io::IoSliceMut;
@@ -47,11 +47,11 @@ impl Wire {
     pub async fn next_frame(&mut self) -> Result<Option<Framed>, Broken> {
         loop {
             match decode_frame::<ClientFrame>(&self.inbox) {
-                Ok(FrameRead::Complete(envelope, used)) => {
+                Ok(Some((envelope, used))) => {
                     self.inbox.drain(..used);
                     return self.claim(envelope.body);
                 }
-                Ok(FrameRead::Partial) => {}
+                Ok(None) => {}
                 Err(_) => return Err(Broken),
             }
             match self.read_some().await {

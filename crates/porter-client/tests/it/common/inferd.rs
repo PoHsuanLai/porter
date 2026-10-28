@@ -9,7 +9,7 @@ use porter_dbus::{Details, NeedArg, need_from_dbus};
 use porter_infer::testing::{FakeInferSession, Script};
 use porter_infer::{ClientFrame, InferEvent, InferRefusal, InferReply, InferSession};
 use porter_match::Need;
-use porter_wire::{FrameRead, decode_frame, encode_frame};
+use porter_wire::{decode_frame, encode_frame};
 use rustix::net::{RecvAncillaryBuffer, RecvAncillaryMessage, RecvFlags, recvmsg};
 use std::io::IoSliceMut;
 use std::mem::MaybeUninit;
@@ -275,7 +275,7 @@ async fn serve_session(mut stream: UnixStream, behaviour: Behaviour, seen: Arc<M
     let mut session = FakeInferSession::scripted(scripts);
     let mut buffer = Vec::new();
     loop {
-        while let Ok(FrameRead::Complete(envelope, used)) = decode_frame::<ClientFrame>(&buffer) {
+        while let Ok(Some((envelope, used))) = decode_frame::<ClientFrame>(&buffer) {
             buffer.drain(..used);
             seen.lock()
                 .expect("lock")

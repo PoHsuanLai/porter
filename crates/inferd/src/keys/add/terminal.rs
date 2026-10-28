@@ -6,14 +6,15 @@
 //! The terminal itself is a seam (`Terminal`): standard input and output in the binary, a script
 //! in tests.
 
+use porter_capability::KindToggle;
 use porter_capability::Toggle;
 use porter_core::AccountId;
 use porter_core::SecretText;
 use porter_core::consent::{ConsentAnswer, ConsentAsk, GrantScope};
 use porter_service::{SheetFault, SheetLink, SheetOpen, Sheets};
 use porter_sheet::{
-    Entry, FieldAnswer, FieldKind, FieldSpec, FieldValue, Presence, ServiceChoice, ServiceState,
-    SheetInput, SheetView, refit,
+    Entry, FieldAnswer, FieldKind, FieldSpec, FieldValue, Presence, ServiceState, SheetInput,
+    SheetView, refit,
 };
 use porter_wire::ParentWindow;
 use std::io::{BufRead, IsTerminal, Write};
@@ -284,7 +285,7 @@ impl<T: Terminal> TerminalLink<T> {
                     .services
                     .iter()
                     .filter(|row| matches!(row.state, ServiceState::Offered(_)))
-                    .map(|row| ServiceChoice {
+                    .map(|row| KindToggle {
                         kind: row.kind,
                         toggle: Toggle::On,
                     })

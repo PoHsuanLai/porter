@@ -1,5 +1,6 @@
 use super::rig::*;
 use porter_capability::CapabilityKind as K;
+use porter_capability::KindToggle;
 use porter_capability::{AbsentReason, Offer, Provenance, Toggle};
 use porter_core::{Credential, Family, LimitReason, SecretPurpose, TokenLifetime, Verification};
 use porter_fake_servers::{Consent, IssuerEvent, TokenResult};
@@ -7,7 +8,7 @@ use porter_ids::Count;
 use porter_provider::{
     ConsentHistory, LoginHint, Provider, SignIn, SignInMode, SignInStart, SignInStep,
 };
-use porter_sheet::{ServiceChoice, SignInFault, SignInInput};
+use porter_sheet::{SignInFault, SignInInput};
 
 /// Signs in by loopback up to the review, with the browser answering.
 async fn to_review(rig: &Rig) -> (porter_families::GoogleSignIn<Wire>, SignInStep) {
@@ -148,7 +149,7 @@ async fn a_loopback_sign_in_reviews_what_google_allows_then_hands_over_the_crede
         signin.next(SignInInput::Poll).await,
         SignInStep::Review { .. }
     ));
-    let choices = vec![ServiceChoice {
+    let choices = vec![KindToggle {
         kind: K::Tasks,
         toggle: Toggle::Off,
     }];
@@ -479,7 +480,7 @@ async fn asking_for_the_whole_drive_asks_it_alone_and_records_it_with_the_rest()
     assert_eq!(kinds, [K::Storage]);
     assert_eq!(endpoints.len(), stored.len());
     assert!(endpoints.iter().all(|e| e.login.0 == "ada@gmail.com"));
-    let choices = vec![ServiceChoice {
+    let choices = vec![KindToggle {
         kind: K::Storage,
         toggle: Toggle::On,
     }];

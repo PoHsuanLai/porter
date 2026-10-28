@@ -14,6 +14,7 @@ use crate::race::{Raced, race};
 use crate::sheets::{SheetFault, SheetLink, SheetOpen, Sheets};
 use crate::token::refusal_of;
 use porter_capability::CapabilityKind;
+use porter_capability::KindToggle;
 use porter_core::ProviderHint;
 use porter_core::store::RegistryStore;
 use porter_core::{AccountId, ProviderId};
@@ -562,7 +563,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         job: &Job,
         sheet: &Sheet,
         run: &mut Run<P::SignIn>,
-        choices: &[porter_sheet::ServiceChoice],
+        choices: &[KindToggle],
     ) -> SheetEvent {
         let Some(signed) = run.signed.take() else {
             return SheetEvent::StoreFailed;

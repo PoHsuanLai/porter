@@ -3,7 +3,7 @@
 //! `InferEvent`s, a memfd riding on the frame that names it as SCM_RIGHTS.
 
 use crate::error::TransportError;
-use porter_wire::{FrameRead, decode_frame, encode_frame};
+use porter_wire::{decode_frame, encode_frame};
 use std::mem::MaybeUninit;
 use std::os::fd::OwnedFd;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, Interest};
@@ -47,11 +47,11 @@ impl FramedSession {
     ) -> Result<T, TransportError> {
         loop {
             match decode_frame::<T>(&self.inbox) {
-                Ok(FrameRead::Complete(envelope, used)) => {
+                Ok(Some((envelope, used))) => {
                     self.inbox.drain(..used);
                     return Ok(envelope.body);
                 }
-                Ok(FrameRead::Partial) => {}
+                Ok(None) => {}
                 Err(error) => return Err(TransportError::Malformed(error.to_string())),
             }
             match self.stream.read_buf(&mut self.inbox).await {

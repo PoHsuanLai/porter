@@ -2,7 +2,7 @@
 //! programs read keep their slugs.
 
 use porter_capability::CapabilityKind;
-use porter_capability::{AbsentReason, Toggle};
+use porter_capability::{AbsentReason, KindToggle, Toggle};
 use porter_core::LauncherSession;
 use porter_core::consent::{AccountChoice, ConsentAnswer, ConsentAsk, Usage};
 use porter_core::{AccountId, ProviderId};
@@ -14,8 +14,8 @@ use porter_ids::WebUrl;
 use porter_sheet::{
     Entry, FieldAnswer, FieldKind, FieldProblem, FieldSpec, FieldValue, MarkColour, MarkFace,
     MarkLetter, Presence, ProblemKind, Progress, ProviderGroup, ProviderKind, ProviderRow, Review,
-    ReviewView, RowKind, ServiceChoice, ServiceRow, ServiceState, SheetInput, SheetView,
-    SignInFault, SignInView, UserCode,
+    ReviewView, RowKind, ServiceRow, ServiceState, SheetInput, SheetView, SignInFault, SignInView,
+    UserCode,
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -294,7 +294,7 @@ fn every_sheet_input_and_progress_round_trips() {
                 value: FieldValue::Secret(SecretText::new("pw")),
             },
         ]),
-        SheetInput::Confirm(vec![ServiceChoice {
+        SheetInput::Confirm(vec![KindToggle {
             kind: CapabilityKind::Notes,
             toggle: Toggle::Off,
         }]),

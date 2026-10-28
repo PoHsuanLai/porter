@@ -3,7 +3,7 @@
 //! sender, not this value.
 
 use super::fields::FieldAnswer;
-use super::progress::ServiceChoice;
+use porter_capability::KindToggle;
 use porter_core::ProviderId;
 use porter_core::consent::ConsentAnswer;
 use serde::{Deserialize, Serialize};
@@ -20,7 +20,7 @@ pub enum SheetInput {
     /// The form submitted, every field at once.
     Submit(Vec<FieldAnswer>),
     /// The review confirmed with these choices ("Add", or "Add, and allow").
-    Confirm(Vec<ServiceChoice>),
+    Confirm(Vec<KindToggle>),
     /// One step back.
     Back,
     /// Try the failed step again.

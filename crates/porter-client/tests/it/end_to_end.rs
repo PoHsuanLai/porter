@@ -192,6 +192,7 @@ async fn revoking_a_grant_ends_it() {
 /// `Reauthenticate` over the in-process carrier.
 #[tokio::test]
 async fn an_app_adds_an_account_through_a_family_is_granted_it_and_signs_it_in_again() {
+    use porter_capability::KindToggle;
     use porter_capability::Toggle;
     use porter_capability::{Access, Delta};
     use porter_core::ProviderId;
@@ -206,7 +207,7 @@ async fn an_app_adds_an_account_through_a_family_is_granted_it_and_signs_it_in_a
     use porter_provider::parse_provider;
     use porter_secrets::MemorySecrets;
     use porter_service::{AccountService, Registry};
-    use porter_sheet::{FieldAnswer, FieldKind, FieldValue, ServiceChoice, SheetInput};
+    use porter_sheet::{FieldAnswer, FieldKind, FieldValue, SheetInput};
 
     let dav = FakeDav::start("bob", "hunter2").await.expect("dav");
     let spec =
@@ -233,11 +234,11 @@ async fn an_app_adds_an_account_through_a_family_is_granted_it_and_signs_it_in_a
         ])
     };
     let review = SheetInput::Confirm(vec![
-        ServiceChoice {
+        KindToggle {
             kind: porter_capability::CapabilityKind::Calendar,
             toggle: Toggle::On,
         },
-        ServiceChoice {
+        KindToggle {
             kind: porter_capability::CapabilityKind::Contacts,
             toggle: Toggle::Off,
         },
@@ -314,6 +315,7 @@ async fn an_app_adds_an_account_through_a_family_is_granted_it_and_signs_it_in_a
 /// account it is, so it can go on to ask for a grant of it.
 #[tokio::test]
 async fn adding_an_account_that_is_already_here_tells_the_app_which_one_it_is() {
+    use porter_capability::KindToggle;
     use porter_capability::Toggle;
     use porter_core::ProviderId;
     use porter_core::SecretText;
@@ -326,7 +328,7 @@ async fn adding_an_account_that_is_already_here_tells_the_app_which_one_it_is() 
     use porter_provider::parse_provider;
     use porter_secrets::MemorySecrets;
     use porter_service::{AccountService, Registry};
-    use porter_sheet::{FieldAnswer, FieldKind, FieldValue, ServiceChoice, SheetInput};
+    use porter_sheet::{FieldAnswer, FieldKind, FieldValue, SheetInput};
 
     let dav = FakeDav::start("bob", "hunter2").await.expect("dav");
     let spec =
@@ -351,7 +353,7 @@ async fn adding_an_account_that_is_already_here_tells_the_app_which_one_it_is() 
             value: FieldValue::Secret(SecretText::new("hunter2")),
         },
     ]);
-    let review = SheetInput::Confirm(vec![ServiceChoice {
+    let review = SheetInput::Confirm(vec![KindToggle {
         kind: porter_capability::CapabilityKind::Calendar,
         toggle: Toggle::On,
     }]);
@@ -404,6 +406,7 @@ impl porter_http::Http for NothingPublished {
 /// endpoints and a login name that is not the address.
 #[tokio::test]
 async fn a_typed_pop3_server_is_added_through_the_sheet_and_found_by_a_mail_need() {
+    use porter_capability::KindToggle;
     use porter_capability::Toggle;
     use porter_core::ProviderId;
     use porter_core::{Family, SecretText};
@@ -417,7 +420,7 @@ async fn a_typed_pop3_server_is_added_through_the_sheet_and_found_by_a_mail_need
     use porter_provider::parse_provider;
     use porter_secrets::MemorySecrets;
     use porter_service::{AccountService, Registry};
-    use porter_sheet::{FieldAnswer, FieldKind, FieldValue, ServiceChoice, SheetInput};
+    use porter_sheet::{FieldAnswer, FieldKind, FieldValue, SheetInput};
 
     // The password is tried at the POP3 server before the review, so one is running.
     let pop3 = FakePop3::start(
@@ -457,7 +460,7 @@ async fn a_typed_pop3_server_is_added_through_the_sheet_and_found_by_a_mail_need
         plain(FieldKind::OutgoingPort, "2525"),
         plain(FieldKind::Username, "ada.login"),
     ]);
-    let review = SheetInput::Confirm(vec![ServiceChoice {
+    let review = SheetInput::Confirm(vec![KindToggle {
         kind: porter_capability::CapabilityKind::Mail,
         toggle: Toggle::On,
     }]);

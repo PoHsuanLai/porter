@@ -8,6 +8,6 @@ mod reply;
 mod request;
 
 pub use error::FrameError;
-pub use frame::{Envelope, FrameRead, MAX_FRAME, decode_frame, encode_frame};
+pub use frame::{Envelope, MAX_FRAME, decode_frame, encode_frame};
 pub use reply::{AccountsReply, Refusal};
 pub use request::{AccountsRequest, ParentWindow};

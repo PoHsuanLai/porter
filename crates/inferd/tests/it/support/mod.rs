@@ -16,7 +16,7 @@ use porter_router::seams::{
     AuditSink, EngineFailed, EngineHost, Router, RunningTurn, TurnRunner, TurnStep,
 };
 use porter_router::session::{RouteDecision, SessionSpec};
-use porter_wire::{FrameRead, decode_frame, encode_frame};
+use porter_wire::{decode_frame, encode_frame};
 use rustix::net::{SendAncillaryBuffer, SendAncillaryMessage, SendFlags, sendmsg};
 use std::io::{IoSlice, Read, Seek};
 use std::mem::MaybeUninit;
@@ -251,8 +251,7 @@ impl Client {
 
     async fn event_inner(&mut self) -> Option<InferEvent> {
         loop {
-            if let Ok(FrameRead::Complete(envelope, used)) = decode_frame::<InferEvent>(&self.inbox)
-            {
+            if let Ok(Some((envelope, used))) = decode_frame::<InferEvent>(&self.inbox) {
                 self.inbox.drain(..used);
                 return Some(envelope.body);
             }

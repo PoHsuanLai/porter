@@ -16,6 +16,7 @@ use common::hosted::{Hosted, Link, NoDirectory, Service, host_with};
 use common::{Known, client};
 use ds_settings::live::{AnyOwner, LiveClient};
 use ds_settings::schema::KeyPath;
+use porter_capability::KindToggle;
 use porter_capability::{CapabilityKind, StorageScope};
 use porter_capability::{Claim, Offer, Provenance, Subject, Toggle};
 use porter_core::AccountId;
@@ -33,7 +34,7 @@ use porter_ids::UnixSeconds;
 use porter_provider::Provider;
 use porter_secrets::{MemorySecrets, Secrets};
 use porter_service::Registry;
-use porter_sheet::{ServiceChoice, SheetInput};
+use porter_sheet::SheetInput;
 use porter_sync::ItemPath;
 use std::sync::Arc;
 use std::time::Duration;
@@ -236,7 +237,7 @@ async fn build(
 
 /// Sheets whose one sign-in the person goes through: they review the whole drive and allow it.
 fn agreeing() -> ScriptedSheets {
-    ScriptedSheets::default().conversing([vec![SheetInput::Confirm(vec![ServiceChoice {
+    ScriptedSheets::default().conversing([vec![SheetInput::Confirm(vec![KindToggle {
         kind: CapabilityKind::Storage,
         toggle: Toggle::On,
     }])]])
