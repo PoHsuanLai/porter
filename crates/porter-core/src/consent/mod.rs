@@ -4,6 +4,6 @@ mod decide;
 mod grant;
 mod prompt;
 
-pub use decide::{Availability, Catalog, Verdict, availability, decide, decide_key};
-pub use grant::{Decision, Grant, GrantKey, GrantScope, Usage};
+pub use decide::{Availability, Catalog, Verdict, availability, decide};
+pub use grant::{Decision, Grant, GrantScope, Usage};
 pub use prompt::{AccountChoice, AskPurpose, ConsentAnswer, ConsentAsk};

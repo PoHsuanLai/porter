@@ -6,10 +6,13 @@
 use porter_capability::CapabilityKind;
 use porter_capability::StorageScope;
 use porter_core::GrantId;
-use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
 use porter_core::{
     AppId, AppName, Audience, Credential, DataClass, Isolation, SecretKey, SecretPurpose,
     SecretText, SpaceId, SpaceScope,
+};
+use porter_core::{
+    GrantKey,
+    consent::{Decision, Grant, GrantScope, Usage},
 };
 use porter_fake::{
     FakeProvider, MemoryStore, RecordingAudit, ScriptedSheets, mail_account, mail_provider,

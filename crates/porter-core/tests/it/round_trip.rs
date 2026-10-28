@@ -10,12 +10,15 @@ use porter_capability::{
     PimCap, PimTransport, PrefixText, PushCap, PushChannel, QuotaReport, RerankCap, SpeechCap,
     SpeechMode, StorageCap, StorageScope, VocabVersion,
 };
-use porter_core::consent::{
-    AccountChoice, AskPurpose, Availability, ConsentAnswer, ConsentAsk, Decision, Grant, GrantKey,
-    GrantScope, Usage, Verdict,
-};
 use porter_core::store::{AccountToggle, Persisted};
 use porter_core::*;
+use porter_core::{
+    GrantKey,
+    consent::{
+        AccountChoice, AskPurpose, Availability, ConsentAnswer, ConsentAsk, Decision, Grant,
+        GrantScope, Usage, Verdict,
+    },
+};
 use porter_ids::*;
 use porter_match::{
     AgentNeed, CuaNeed, DimsNeed, EmbedNeed, IdentityNeed, ImageGenNeed, KeyValueNeed, LlmNeed,

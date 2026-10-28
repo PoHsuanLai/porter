@@ -1,49 +1,9 @@
 //! A consent decision and what it covers (design/31 §4.5).
 
+use crate::GrantId;
 use crate::LauncherSession;
-use crate::app_id::AppId;
-use crate::data_class::DataClass;
-use crate::space::SpaceScope;
-use crate::{AccountId, GrantId};
-use porter_capability::{CapabilityKind, StorageScope};
 use porter_ids::UnixSeconds;
 use serde::{Deserialize, Serialize};
-
-/// What one decision covers: this app, this account, this kind, this data class, this use, and
-/// for Storage how far into the store.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct GrantKey {
-    /// The app.
-    pub app: AppId,
-    /// The account.
-    pub account: AccountId,
-    /// The capability kind.
-    pub kind: CapabilityKind,
-    /// The data class.
-    pub class: DataClass,
-    /// Interactive or background use.
-    pub usage: Usage,
-    /// The Spaces it covers: account grants made from the sheet cover `Any`.
-    pub space: SpaceScope,
-    /// How far a Storage grant reaches, from the need it was made for (`Need::reach`): the app
-    /// folder, or the whole store, whose token carries the provider's on-use row. The app folder
-    /// for every other kind, and for a grant stored before grants had a reach.
-    #[serde(default = "app_folder")]
-    pub reach: StorageScope,
-}
-
-fn app_folder() -> StorageScope {
-    StorageScope::AppFolder
-}
-
-impl GrantKey {
-    /// Whether the key's Space may be decided for its app: an app's own Space belongs to that
-    /// app alone, so a key of one app over another's own Space is never granted. Checked against
-    /// the key's `app`, which is the caller's verified identity, never against a request's text.
-    pub fn space_is_open(&self) -> bool {
-        self.space.open_to(&self.app.name)
-    }
-}
 
 /// Whether the app acts for a person at the screen or on its own (indexing, backup).
 /// Background use is a separate grant (design/31 §5.5).
@@ -116,10 +76,10 @@ impl GrantScope {
     }
 }
 
-/// One stored consent decision, over any key type: accounts use [`GrantKey`], the action
+/// One stored consent decision, over any key type: accounts use [`crate::GrantKey`], the action
 /// router its own key (an action, a caller and a Space).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct Grant<K = GrantKey> {
+pub struct Grant<K = crate::GrantKey> {
     /// Its id.
     pub id: GrantId,
     /// What it covers.

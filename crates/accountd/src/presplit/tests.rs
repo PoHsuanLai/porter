@@ -2,9 +2,12 @@ use super::*;
 use porter_capability::StorageScope;
 use porter_capability::{CapabilityKind, Toggle};
 use porter_core::GrantId;
-use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
 use porter_core::store::{AccountToggle, Persisted};
 use porter_core::{AppId, AppName, AuthKind, DataClass, Isolation, SpaceScope};
+use porter_core::{
+    GrantKey,
+    consent::{Decision, Grant, GrantScope, Usage},
+};
 use porter_fake::{llm_account, mail_account, storage_account};
 use porter_ids::UnixSeconds;
 use std::sync::atomic::{AtomicU32, Ordering};

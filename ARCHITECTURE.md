@@ -153,7 +153,7 @@ reaches `reqwest`, `hyper` and `tokio` (porter-http-reqwest); `tailnet` reaches 
 | `porter-sheet` | `fields`, `group`, `input`, `mark`, `manual`, `progress`, `view` < `stage` (`machine`) ; `words` |
 | `porter-capability` | `terms`, `mail`, `pim`, `storage`, `photos`, `ai`, `agent`, `cua`, `sync_kinds`, `kind`, `model_id`, `ai_props`, `agent_login` < `offer` < `effective` ; `fixtures` (feature `testing`) |
 | `porter-match` | `need` (`data`, `ai`, `agent`) < `matching` |
-| `porter-core` | `ids`, `app_id`, `space`, `error`, `family`, `stream` < `restriction`, `data_class`, `auth_kind`, `endpoint`, `account` < `identities` (an identity is an account of a sign-in kind), `consent` (`grant`, `decide`, `prompt`) < `secret`, `token`, `candidate`, `audit`, `store` |
+| `porter-core` | `ids`, `app_id`, `space`, `error`, `family`, `stream` < `restriction`, `data_class`, `auth_kind`, `endpoint`, `account` < `identities` (an identity is an account of a sign-in kind), `consent` (`grant`, `decide`, `prompt`; it names no `space`) < `grant_key` (the accounts' key, which names `space`), `secret`, `token`, `candidate`, `audit`, `store` |
 | `porter-provider` | `error` < `spec` (`auth`, `discovery`, `matching`, `linked`), `clients` < `parse`, `set` < `sign_in` < `provider` |
 | `porter-secrets` | `error`, `namespace` < `attributes` < `secrets` < `memory`, `oo7`, `keyring`, `file` (`test-keys`); `keysel` over `oo7` and `file`; `sealed` (Linux, Android) |
 | `porter-sync` | `anchor`, `item`, `transfer`, `quota` < `change`, `refusal`, `dataset` < `journal` < `journal_reconcile`, `replica` < `memory` |
@@ -196,7 +196,7 @@ reaches `reqwest`, `hyper` and `tokio` (porter-http-reqwest); `tailnet` reaches 
 | does an offer meet a need | `porter-match::matches` (the only place) |
 | effective capabilities (provenance, toggles) | `porter-capability::effective` |
 | why an account is limited | `porter-core::restriction` |
-| consent decisions | `porter-core::consent::decide`, `availability` |
+| consent decisions | `porter-core::consent::decide`, `availability`; the accounts' key (`GrantKey`) and the Space ownership rule (`decide_key`) are `porter-core::grant_key`, so `consent` names no Space and is generic over the key it decides on |
 | credentials, where they are filed | `porter-core::secret`; attributes in `porter-secrets::attributes` |
 | the wire protocol and its framing | `porter-wire` |
 | a Space's id and scope | `porter-core::space` |

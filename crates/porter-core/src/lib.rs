@@ -13,6 +13,7 @@ mod data_class;
 mod endpoint;
 mod error;
 mod family;
+mod grant_key;
 mod helper_id;
 mod identities;
 mod identity;
@@ -41,6 +42,7 @@ pub use endpoint::{
 };
 pub use error::CoreError;
 pub use family::Family;
+pub use grant_key::{GrantKey, decide_key};
 pub use helper_id::HelperId;
 pub use identities::{Identity, IdentityAddress, IdentityId, IdentityKind, IdentityName};
 pub use identity::{CgroupPath, ClaimedId, PeerFacts, PeerIdentity, SandboxFacts, identity_of};

@@ -125,8 +125,11 @@ fn probe() -> porter_core::AppId {
 /// account), an AI key, a grant for the probe app and a switch.
 fn seed(home: &Path) {
     use porter_core::GrantId;
-    use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
     use porter_core::{DataClass, SpaceScope};
+    use porter_core::{
+        GrantKey,
+        consent::{Decision, Grant, GrantScope, Usage},
+    };
     use porter_ids::UnixSeconds;
     let mut account = porter_fake::storage_account();
     account.auth = AuthKind::Password;

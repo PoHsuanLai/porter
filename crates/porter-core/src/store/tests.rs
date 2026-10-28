@@ -1,12 +1,15 @@
 use super::*;
 use crate::LauncherSession;
 use crate::app_id::{AppName, Isolation};
-use crate::consent::{Decision, GrantKey, GrantScope, Usage};
 use crate::endpoint::{LoginName, ServiceEndpoint, Tls};
 use crate::restriction::{Restriction, TokenLifetime};
 use crate::space::SpaceScope;
 use crate::{AccountLabel, AccountState, AppId, AuthKind, DataClass, EndpointUrl, Family};
 use crate::{GrantId, ProviderId};
+use crate::{
+    GrantKey,
+    consent::{Decision, GrantScope, Usage},
+};
 use porter_capability::{Claim, Offer, Provenance, Subject};
 use porter_ids::UnixSeconds;
 

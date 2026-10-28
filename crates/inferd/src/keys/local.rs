@@ -12,9 +12,13 @@ use crate::probed::Standing;
 use crate::report::{ReportFault, Reports};
 use porter_capability::StorageScope;
 use porter_capability::{CapabilityKind, Claim, Offer};
-use porter_core::consent::{Decision, GrantKey, Usage, decide_key};
 use porter_core::{AccountId, GrantId, ProviderId};
 use porter_core::{AccountState, AppId, DataClass, SecretText, SpaceScope};
+use porter_core::{
+    GrantKey,
+    consent::{Decision, Usage},
+    decide_key,
+};
 use porter_families::set::ProviderNames;
 use porter_match::{Match, matches};
 use porter_service::LocalFault;

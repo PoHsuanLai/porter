@@ -39,7 +39,7 @@ use crate::service::Hub;
 use porter_capability::{CapabilityKind, Toggle};
 use porter_client::IdentitiesError;
 use porter_core::AccountId;
-use porter_core::consent::GrantKey;
+use porter_core::GrantKey;
 use porter_core::consent::Usage;
 use porter_core::{Account, DataClass};
 use porter_provider::{ConsentHistory, LoginHint};

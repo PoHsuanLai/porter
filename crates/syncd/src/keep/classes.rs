@@ -13,8 +13,11 @@ use crate::datasets::storage::{drive_need, photos_need, storage_need};
 use porter_capability::{Capability, CapabilityKind, Offer};
 use porter_capability::{Offered, StorageScope};
 use porter_core::AccountId;
-use porter_core::consent::{Decision, Grant, GrantKey, Usage};
 use porter_core::{Account, AppId, AppName, DataClass, Family, Isolation, SpaceScope};
+use porter_core::{
+    GrantKey,
+    consent::{Decision, Grant, Usage},
+};
 use porter_match::{Match, Need, matches};
 
 /// What syncd is allowed to keep of an account.
