@@ -15,7 +15,7 @@ use porter_core::{Account, AccountState};
 use porter_dbus::callers::{Caller, CallerRole};
 use porter_dbus::names::{ACCOUNTS_PATH, account_path};
 use porter_dbus::sheet::SheetKind;
-use porter_dbus::{Details, to_vardict};
+use porter_dbus::{AccountServed, AccountServer, Call, Details, to_vardict};
 use porter_ids::object_segment;
 use porter_ids::word::word as word_of;
 use porter_wire::AccountsRequest;
@@ -78,48 +78,40 @@ fn sees(caller: &Caller) -> bool {
     matches!(caller.role, CallerRole::SheetHost | CallerRole::Settings)
 }
 
-#[zbus::interface(name = "org.quire.Accounts1.Account")]
-impl<H: Host, C: Callers> AccountObject<H, C> {
-    #[zbus(property)]
-    async fn id(&self, #[zbus(header)] header: Option<Header<'_>>) -> fdo::Result<String> {
+impl<H: Host, C: Callers> AccountServer for AccountObject<H, C> {
+    type Error = RefusedError;
+
+    async fn id(&self, header: Option<Header<'_>>) -> fdo::Result<String> {
         Ok(visible(&self.0, header.as_ref()).await?.id.to_string())
     }
 
-    #[zbus(property)]
-    async fn provider(&self, #[zbus(header)] header: Option<Header<'_>>) -> fdo::Result<String> {
+    async fn provider(&self, header: Option<Header<'_>>) -> fdo::Result<String> {
         Ok(visible(&self.0, header.as_ref())
             .await?
             .provider
             .to_string())
     }
 
-    #[zbus(property)]
-    async fn label(&self, #[zbus(header)] header: Option<Header<'_>>) -> fdo::Result<String> {
+    async fn label(&self, header: Option<Header<'_>>) -> fdo::Result<String> {
         Ok(visible(&self.0, header.as_ref()).await?.label.0)
     }
 
-    #[zbus(property)]
-    async fn state(&self, #[zbus(header)] header: Option<Header<'_>>) -> fdo::Result<String> {
+    async fn state(&self, header: Option<Header<'_>>) -> fdo::Result<String> {
         Ok(state_slug(visible(&self.0, header.as_ref()).await?.state).to_owned())
     }
 
     /// Why the account has to be signed in again, when porter knows: a word of
     /// `ReauthReason`, else empty.
-    #[zbus(property)]
-    async fn reauth_reason(
-        &self,
-        #[zbus(header)] header: Option<Header<'_>>,
-    ) -> fdo::Result<String> {
+    async fn reauth_reason(&self, header: Option<Header<'_>>) -> fdo::Result<String> {
         let account = visible(&self.0, header.as_ref()).await?;
         let now = self.0.clock.now();
         Ok(reauth_reason_word(&account, now).to_owned())
     }
 
     /// The account's effective capabilities: each kind's slug and the claim's fields by name.
-    #[zbus(property)]
     async fn capabilities(
         &self,
-        #[zbus(header)] header: Option<Header<'_>>,
+        header: Option<Header<'_>>,
     ) -> fdo::Result<Vec<(String, Details)>> {
         let account = visible(&self.0, header.as_ref()).await?;
         Ok(account
@@ -138,7 +130,7 @@ impl<H: Host, C: Callers> AccountObject<H, C> {
 
     async fn reauthenticate(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         parent_window: String,
         options: Details,
     ) -> Result<OwnedObjectPath, RefusedError> {
@@ -166,7 +158,10 @@ pub(crate) async fn publish_accounts<H: Host, C: Callers>(
 ) -> zbus::Result<()> {
     for account in core.host.registry().accounts {
         server
-            .at(account_path(&account.id), AccountObject(Arc::clone(core)))
+            .at(
+                account_path(&account.id),
+                AccountServed(AccountObject(Arc::clone(core))),
+            )
             .await?;
     }
     Ok(())

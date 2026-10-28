@@ -8,11 +8,11 @@
 //! is `AccessDenied`, as is a sender accountd does not know.
 
 use crate::args::Details;
-use zbus::fdo;
-use zbus::object_server::SignalEmitter;
+use porter_dbus_macros::bus_interface;
 
-/// The caller's side.
-#[zbus::proxy(
+/// The interface, written once. `#[bus_interface]` makes [`SpacesProxy`] for its callers from this
+/// trait, [`SpacesServer`] for the daemon to implement and [`SpacesServed`] to register.
+#[bus_interface(
     interface = "org.quire.Spaces1",
     default_service = "org.quire.Accounts1",
     default_path = "/org/quire/Spaces1"
@@ -49,49 +49,4 @@ pub trait Spaces {
     /// identified connection that has called accountd, so a client calls `List` once to be told.
     #[zbus(signal)]
     fn changed(&self, id: &str, what: &str) -> zbus::Result<()>;
-}
-
-/// The daemon's side.
-#[derive(Debug, Default)]
-pub struct SpacesSkeleton;
-
-#[zbus::interface(name = "org.quire.Spaces1")]
-impl SpacesSkeleton {
-    fn list(&self) -> fdo::Result<Vec<(String, Details)>> {
-        Err(crate::frozen::error())
-    }
-
-    fn create(&self, name: String, look: String) -> fdo::Result<String> {
-        let _ = (name, look);
-        Err(crate::frozen::error())
-    }
-
-    fn register(&self, id: String, name: String, look: String) -> fdo::Result<()> {
-        let _ = (id, name, look);
-        Err(crate::frozen::error())
-    }
-
-    fn rename(&self, id: String, name: String) -> fdo::Result<()> {
-        let _ = (id, name);
-        Err(crate::frozen::error())
-    }
-
-    fn set_look(&self, id: String, look: String) -> fdo::Result<()> {
-        let _ = (id, look);
-        Err(crate::frozen::error())
-    }
-
-    fn remove(&self, id: String) -> fdo::Result<()> {
-        let _ = id;
-        Err(crate::frozen::error())
-    }
-
-    #[zbus(signal)]
-    async fn changed(emitter: &SignalEmitter<'_>, id: &str, what: &str) -> zbus::Result<()>;
-}
-
-/// Writes this interface's introspection into `xml`, as an `<interface>` element one level in:
-/// the bus's introspection collects each interface's own.
-pub(crate) fn introspect(xml: &mut String) {
-    zbus::object_server::Interface::introspect_to_writer(&SpacesSkeleton, xml, 1);
 }

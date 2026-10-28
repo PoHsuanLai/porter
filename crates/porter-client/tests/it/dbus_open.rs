@@ -427,18 +427,12 @@ async fn no_daemon_on_the_bus_is_unreachable() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_daemon_that_errors_on_open_is_not_unreachable() {
-    // The frozen skeleton answers every method NotSupported: the daemon is there but does not
-    // speak this call, which is not "unreachable".
+    // A daemon that owns the name but serves no such object answers `UnknownObject`: it is there
+    // but does not speak this call, which is not "unreachable".
     let bus = PrivateBus::start();
     let daemon = bus.connect().await;
-    daemon
-        .object_server()
-        .at(
-            porter_dbus::names::INFERENCE_PATH,
-            porter_dbus::InferenceSkeleton,
-        )
-        .await
-        .expect("serve");
+    // The connection answers for the objects it serves, none here, once its object server runs.
+    let _ = daemon.object_server();
     daemon
         .request_name(porter_dbus::names::INFERENCE_BUS)
         .await

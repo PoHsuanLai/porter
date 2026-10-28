@@ -28,8 +28,8 @@ use crate::watch::Watch;
 use engine_supervisor::EngineId;
 use model_catalog::EngineKind;
 use porter_daemon::{ProcRoot, choose_proc_root, proc_notice};
-use porter_dbus::BusTarget;
 use porter_dbus::names::{INFERENCE_BUS, INFERENCE_PATH};
+use porter_dbus::{BusTarget, KeysServed};
 use porter_http_reqwest::{Limits, ReqwestHttp};
 use porter_ids::{clock::Clock, clock::SystemClock};
 use porter_router::catalog::read_catalog;
@@ -556,11 +556,11 @@ impl Daemon {
             .object_server()
             .at(
                 INFERENCE_PATH,
-                KeysObject::new(
+                KeysServed(KeysObject::new(
                     Arc::clone(&opened.service),
                     peers.shared(),
                     connection.clone(),
-                ),
+                )),
             )
             .await?;
         let rows = AccountRows::new(

@@ -7,7 +7,7 @@
 //! Google Photos (the account's Photos row in Settings); only the Photos app (`org.quire.Photos`)
 //! may call it. No token, no URL of Google's bytes, and no picked file's content ever crosses it.
 
-use zbus::fdo;
+use porter_dbus_macros::bus_interface;
 
 /// The prefix of the errors this interface names itself (a refusal of accountd's vocabulary
 /// keeps its `org.quire.Accounts1.Error.` name).
@@ -21,8 +21,9 @@ pub const PICKER_WAITING: &str = "waiting";
 /// `Poll`'s answer once the person has finished.
 pub const PICKER_PICKED: &str = "picked";
 
-/// The caller's side.
-#[zbus::proxy(
+/// The interface, written once. `#[bus_interface]` makes [`PhotosPickerProxy`] for its callers from this
+/// trait, [`PhotosPickerServer`] for the daemon to implement and [`PhotosPickerServed`] to register.
+#[bus_interface(
     interface = "org.quire.Photos1.Picker",
     default_service = "org.quire.Sync1",
     default_path = "/org/quire/Sync1"
@@ -40,37 +41,4 @@ pub trait PhotosPicker {
     fn import(&self, account: &str, session: &str) -> zbus::Result<Vec<String>>;
     /// Ends a session without importing.
     fn cancel(&self, account: &str, session: &str) -> zbus::Result<()>;
-}
-
-/// The daemon's side.
-#[derive(Debug, Default)]
-pub struct PickerSkeleton;
-
-#[zbus::interface(name = "org.quire.Photos1.Picker")]
-impl PickerSkeleton {
-    fn start(&self, account: String) -> fdo::Result<(String, String, u32)> {
-        let _ = account;
-        Err(crate::frozen::error())
-    }
-
-    fn poll(&self, account: String, session: String) -> fdo::Result<String> {
-        let _ = (account, session);
-        Err(crate::frozen::error())
-    }
-
-    fn import(&self, account: String, session: String) -> fdo::Result<Vec<String>> {
-        let _ = (account, session);
-        Err(crate::frozen::error())
-    }
-
-    fn cancel(&self, account: String, session: String) -> fdo::Result<()> {
-        let _ = (account, session);
-        Err(crate::frozen::error())
-    }
-}
-
-/// Writes this interface's introspection into `xml`, as an `<interface>` element one level in:
-/// the bus's introspection collects each interface's own.
-pub(crate) fn introspect(xml: &mut String) {
-    zbus::object_server::Interface::introspect_to_writer(&PickerSkeleton, xml, 1);
 }

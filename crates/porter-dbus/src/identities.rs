@@ -15,9 +15,8 @@ use crate::args::Details;
 use crate::json_value::bad;
 use porter_core::ProviderId;
 use porter_core::{CoreError, Identity, IdentityAddress, IdentityId, IdentityKind, IdentityName};
+use porter_dbus_macros::bus_interface;
 use porter_ids::word::{from_word, word as word_of};
-use zbus::fdo;
-use zbus::object_server::SignalEmitter;
 use zbus::zvariant::{OwnedFd, OwnedValue, Value};
 
 /// The vardict key of an identity's address (`s`).
@@ -79,8 +78,9 @@ pub fn identity_from_dbus(row: &(String, Details)) -> Result<Identity, CoreError
     ))
 }
 
-/// The caller's side.
-#[zbus::proxy(
+/// The interface, written once. `#[bus_interface]` makes [`IdentitiesProxy`] for its callers from this
+/// trait, [`IdentitiesServer`] for the daemon to implement and [`IdentitiesServed`] to register.
+#[bus_interface(
     interface = "org.quire.Identities1",
     default_service = "org.quire.Accounts1",
     default_path = "/org/quire/Identities1"
@@ -125,50 +125,6 @@ pub trait Identities {
     /// nothing.
     #[zbus(signal)]
     fn identity_removed(&self, identity_id: &str) -> zbus::Result<()>;
-}
-
-/// The daemon's side.
-#[derive(Debug, Default)]
-pub struct IdentitiesSkeleton;
-
-#[zbus::interface(name = "org.quire.Identities1")]
-impl IdentitiesSkeleton {
-    fn list(&self) -> fdo::Result<Vec<(String, Details)>> {
-        Err(crate::frozen::error())
-    }
-
-    fn offer(
-        &self,
-        provider_hint: String,
-        parent_window: String,
-    ) -> fdo::Result<(String, String, String)> {
-        let _ = (provider_hint, parent_window);
-        Err(crate::frozen::error())
-    }
-
-    fn take_password(&self, identity_id: String) -> fdo::Result<OwnedFd> {
-        let _ = identity_id;
-        Err(crate::frozen::error())
-    }
-
-    fn register_use(&self, identity_id: String) -> fdo::Result<()> {
-        let _ = identity_id;
-        Err(crate::frozen::error())
-    }
-
-    fn uses(&self, identity_id: String) -> fdo::Result<Vec<String>> {
-        let _ = identity_id;
-        Err(crate::frozen::error())
-    }
-
-    #[zbus(signal)]
-    async fn identity_removed(emitter: &SignalEmitter<'_>, identity_id: &str) -> zbus::Result<()>;
-}
-
-/// Writes this interface's introspection into `xml`, as an `<interface>` element one level in:
-/// the bus's introspection collects each interface's own.
-pub(crate) fn introspect(xml: &mut String) {
-    zbus::object_server::Interface::introspect_to_writer(&IdentitiesSkeleton, xml, 1);
 }
 
 #[cfg(test)]

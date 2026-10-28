@@ -5,9 +5,9 @@ use super::hub::{DatasetName, Event, Hub};
 use super::resolve::{ConfirmError, ConflictNumber, How, SettleError, SyncNowError};
 use super::status::{conflict_details, held_details, progress_details, status_details};
 use crate::scheduler::Pausing;
-use porter_dbus::Details;
 use porter_dbus::callers::{Caller, Callers};
 use porter_dbus::names::{SYNC_BUS, SYNC_PATH};
+use porter_dbus::{Call, Details, SyncServed, SyncServer};
 use porter_wire::Refusal;
 use std::collections::BTreeMap;
 use std::pin::Pin;
@@ -93,15 +93,20 @@ impl<C: Callers> Core<C> {
                 uploaded,
             } => {
                 let details = progress_details(*fetched, *uploaded);
-                SyncObject::<C>::progress(&emitter, &dataset.to_string(), details).await
+                SyncServed::<SyncObject<C>>::progress(&emitter, &dataset.to_string(), details).await
             }
             Event::Conflict { dataset, conflict } => {
                 let details = conflict_details(conflict);
-                SyncObject::<C>::conflict(&emitter, &dataset.to_string(), details).await
+                SyncServed::<SyncObject<C>>::conflict(&emitter, &dataset.to_string(), details).await
             }
             Event::Held { dataset, held } => {
                 let details = held_details(dataset, held.as_ref());
-                SyncObject::<C>::needs_confirmation(&emitter, &dataset.to_string(), details).await
+                SyncServed::<SyncObject<C>>::needs_confirmation(
+                    &emitter,
+                    &dataset.to_string(),
+                    details,
+                )
+                .await
             }
         }
     }
@@ -111,19 +116,17 @@ impl<C: Callers> Core<C> {
 #[derive(Debug)]
 struct SyncObject<C>(Arc<Core<C>>);
 
-#[zbus::interface(name = "org.quire.Sync1")]
-impl<C: Callers> SyncObject<C> {
-    async fn datasets(
-        &self,
-        #[zbus(header)] header: Header<'_>,
-    ) -> Result<Vec<String>, RefusedError> {
+impl<C: Callers> SyncServer for SyncObject<C> {
+    type Error = RefusedError;
+
+    async fn datasets(&self, Call { header, .. }: Call<'_>) -> Result<Vec<String>, RefusedError> {
         let caller = self.0.identify(&header).await?;
         Ok(self.0.hub.names_for(&caller))
     }
 
     async fn status(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         dataset: String,
     ) -> Result<Details, RefusedError> {
         let caller = self.0.identify(&header).await?;
@@ -137,7 +140,7 @@ impl<C: Callers> SyncObject<C> {
 
     async fn pause(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         dataset: String,
     ) -> Result<(), RefusedError> {
         self.0.pausing(&header, &dataset, Pausing::Paused).await
@@ -145,7 +148,7 @@ impl<C: Callers> SyncObject<C> {
 
     async fn resume(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         dataset: String,
     ) -> Result<(), RefusedError> {
         self.0.pausing(&header, &dataset, Pausing::Running).await
@@ -161,7 +164,7 @@ impl<C: Callers> SyncObject<C> {
     /// unknown or already settled.
     async fn resolve(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         dataset: String,
         conflict: i64,
         how: String,
@@ -193,7 +196,7 @@ impl<C: Callers> SyncObject<C> {
     /// `org.quire.Sync1.Error.NothingHeld` when nothing is held (never, or already confirmed).
     async fn confirm_discard(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         dataset: String,
     ) -> Result<(), RefusedError> {
         let caller = self.0.identify(&header).await?;
@@ -218,7 +221,7 @@ impl<C: Callers> SyncObject<C> {
     /// `org.quire.Sync1.Error.Paused` when the person paused it (`Resume` first).
     async fn sync_now(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         dataset: String,
     ) -> Result<(), RefusedError> {
         let caller = self.0.identify(&header).await?;
@@ -234,7 +237,7 @@ impl<C: Callers> SyncObject<C> {
     /// the shell calls this once at start. The shell (`CallerRole::SheetHost`) is then told
     /// `NeedsConfirmation` for every dataset, the holds already on at once, and nothing else of
     /// a dataset it does not own. Errors: `AccessDenied` for a sender syncd does not know.
-    async fn watch(&self, #[zbus(header)] header: Header<'_>) -> Result<(), RefusedError> {
+    async fn watch(&self, Call { header, .. }: Call<'_>) -> Result<(), RefusedError> {
         let caller = self.0.identify(&header).await?;
         let sender = header
             .sender()
@@ -249,31 +252,6 @@ impl<C: Callers> SyncObject<C> {
         }
         Ok(())
     }
-
-    #[zbus(signal)]
-    async fn progress(
-        emitter: &SignalEmitter<'_>,
-        dataset: &str,
-        progress: Details,
-    ) -> zbus::Result<()>;
-
-    #[zbus(signal)]
-    async fn conflict(
-        emitter: &SignalEmitter<'_>,
-        dataset: &str,
-        conflict: Details,
-    ) -> zbus::Result<()>;
-
-    /// A hold started or ended. The details are those of `Status`'s `needs_confirmation` key
-    /// (`discard` and `held`, both `t`) plus `account` (`s`, the account's object path under
-    /// `/org/quire/Accounts1/account/`) when the dataset is now held, and empty when the hold
-    /// ended (confirmed and done, or the replica listed its items again).
-    #[zbus(signal)]
-    async fn needs_confirmation(
-        emitter: &SignalEmitter<'_>,
-        dataset: &str,
-        held: Details,
-    ) -> zbus::Result<()>;
 }
 
 /// Serves `org.quire.Sync1` on `connection` over `hub`, with `callers` saying who calls, and
@@ -288,7 +266,7 @@ pub async fn serve<C: Callers>(connection: &Connection, hub: Hub, callers: C) ->
     });
     connection
         .object_server()
-        .at(SYNC_PATH, SyncObject(Arc::clone(&core)))
+        .at(SYNC_PATH, SyncServed(SyncObject(Arc::clone(&core))))
         .await?;
     let mut owners = DBusProxy::new(connection)
         .await?

@@ -18,11 +18,10 @@
 //! its details rather than reading the file; an app that opens the file directly reads `url`.
 
 use crate::args::Details;
+use porter_dbus_macros::bus_interface;
 use porter_ids::word::{from_word, word};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use zbus::fdo;
-use zbus::object_server::SignalEmitter;
 
 /// A drive row's account: its object path under `/org/quire/Accounts1/account/` (`o`).
 pub const DRIVE_KEY_ACCOUNT: &str = "account";
@@ -173,8 +172,9 @@ pub type Refused = HashMap<String, String>;
 /// Each online document `SaveCopy` saved, by its path, with the path of the file it saved (`a{ss}`).
 pub type Saved = HashMap<String, String>;
 
-/// The caller's side.
-#[zbus::proxy(
+/// The interface, written once. `#[bus_interface]` makes [`StorageProxy`] for its callers from this
+/// trait, [`StorageServer`] for the daemon to implement and [`StorageServed`] to register.
+#[bus_interface(
     interface = "org.quire.Storage1",
     default_service = "org.quire.Sync1",
     default_path = "/org/quire/Storage1"
@@ -210,6 +210,7 @@ pub trait Storage {
     /// taken. The copy is a downloaded file of the drive. Answers `saved`, each document's path
     /// with its copy's, and `refused`: a path that is not an online document, a Form, Site or
     /// Map (which have no file format), and a path on no drive.
+    #[bus(out_args("saved", "refused"))]
     fn save_copy(&self, paths: Vec<String>) -> zbus::Result<(Saved, Refused)>;
     /// "Pause Syncing" (`paused` true) or "Resume Syncing" (false) for each drive id of
     /// `drives`. A paused drive sends nothing and reads no changes; a file the person opens or
@@ -229,68 +230,6 @@ pub trait Storage {
     /// are sent together up to ten times a second, so a progress pie fills smoothly.
     #[zbus(signal)]
     fn items_changed(&self, drive: &str, items: ItemDetails) -> zbus::Result<()>;
-}
-
-/// The daemon's side.
-#[derive(Debug, Default)]
-pub struct StorageSkeleton;
-
-#[zbus::interface(name = "org.quire.Storage1")]
-impl StorageSkeleton {
-    fn drives(&self) -> fdo::Result<Vec<(String, Details)>> {
-        Err(crate::frozen::error())
-    }
-
-    fn items(&self, paths: Vec<String>) -> fdo::Result<ItemDetails> {
-        let _ = paths;
-        Err(crate::frozen::error())
-    }
-
-    fn download(&self, paths: Vec<String>) -> fdo::Result<Refused> {
-        let _ = paths;
-        Err(crate::frozen::error())
-    }
-
-    fn keep(&self, paths: Vec<String>, keep: bool) -> fdo::Result<Refused> {
-        let _ = (paths, keep);
-        Err(crate::frozen::error())
-    }
-
-    fn remove_download(&self, paths: Vec<String>) -> fdo::Result<Refused> {
-        let _ = paths;
-        Err(crate::frozen::error())
-    }
-
-    #[zbus(out_args("saved", "refused"))]
-    fn save_copy(&self, paths: Vec<String>) -> fdo::Result<(Saved, Refused)> {
-        let _ = paths;
-        Err(crate::frozen::error())
-    }
-
-    fn set_paused(&self, drives: Vec<String>, paused: bool) -> fdo::Result<Refused> {
-        let _ = (drives, paused);
-        Err(crate::frozen::error())
-    }
-
-    fn watch(&self) -> fdo::Result<()> {
-        Err(crate::frozen::error())
-    }
-
-    #[zbus(signal)]
-    async fn drives_changed(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
-
-    #[zbus(signal)]
-    async fn items_changed(
-        emitter: &SignalEmitter<'_>,
-        drive: &str,
-        items: ItemDetails,
-    ) -> zbus::Result<()>;
-}
-
-/// Writes this interface's introspection into `xml`, as an `<interface>` element one level in:
-/// the bus's introspection collects each interface's own.
-pub(crate) fn introspect(xml: &mut String) {
-    zbus::object_server::Interface::introspect_to_writer(&StorageSkeleton, xml, 1);
 }
 
 #[cfg(test)]

@@ -10,10 +10,10 @@
 
 use porter_dbus::names::STORAGE_PATH;
 use porter_dbus::{
-    DRIVE_KEY_ACCOUNT, DRIVE_KEY_LABEL, DRIVE_KEY_LOCAL, DRIVE_KEY_PATH, DRIVE_KEY_PROVIDER,
+    Call, DRIVE_KEY_ACCOUNT, DRIVE_KEY_LABEL, DRIVE_KEY_LOCAL, DRIVE_KEY_PATH, DRIVE_KEY_PROVIDER,
     DRIVE_KEY_STATE, DRIVE_KEY_TOTAL, DRIVE_KEY_USED, DRIVE_KEY_WORDS, Details, DriveState,
     ITEM_KEY_FRACTION, ITEM_KEY_KEPT, ITEM_KEY_KIND, ITEM_KEY_OTHER, ITEM_KEY_STATE, ITEM_KEY_URL,
-    ITEM_KEY_WORDS, ItemDetails, ItemKind, ItemState, Refused, Saved,
+    ITEM_KEY_WORDS, ItemDetails, ItemKind, ItemState, Refused, Saved, StorageServed, StorageServer,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -1047,10 +1047,10 @@ impl FakeStorage {
         };
         let (items, drives) = signals;
         for (drive, details) in items {
-            let _ = FakeStorage::items_changed(emitter, &drive, details).await;
+            let _ = StorageServed::<FakeStorage>::items_changed(emitter, &drive, details).await;
         }
         if drives {
-            let _ = FakeStorage::drives_changed(emitter).await;
+            let _ = StorageServed::<FakeStorage>::drives_changed(emitter).await;
         }
         out
     }
@@ -1062,20 +1062,21 @@ impl FakeStorage {
     }
 }
 
-#[zbus::interface(name = "org.quire.Storage1")]
-impl FakeStorage {
-    fn drives(&self) -> fdo::Result<Vec<(String, Details)>> {
+impl StorageServer for FakeStorage {
+    type Error = fdo::Error;
+
+    async fn drives(&self, _: Call<'_>) -> fdo::Result<Vec<(String, Details)>> {
         Ok(self.lock().drives())
     }
 
-    fn items(&self, paths: Vec<String>) -> fdo::Result<ItemDetails> {
+    async fn items(&self, _: Call<'_>, paths: Vec<String>) -> fdo::Result<ItemDetails> {
         Ok(self.lock().items(&paths))
     }
 
     async fn download(
         &self,
+        Call { emitter, .. }: Call<'_>,
         paths: Vec<String>,
-        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> fdo::Result<Refused> {
         Ok(self
             .apply(&emitter, |world, changed| {
@@ -1086,9 +1087,9 @@ impl FakeStorage {
 
     async fn keep(
         &self,
+        Call { emitter, .. }: Call<'_>,
         paths: Vec<String>,
         keep: bool,
-        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> fdo::Result<Refused> {
         Ok(self
             .apply(&emitter, |world, changed| {
@@ -1099,8 +1100,8 @@ impl FakeStorage {
 
     async fn remove_download(
         &self,
+        Call { emitter, .. }: Call<'_>,
         paths: Vec<String>,
-        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> fdo::Result<Refused> {
         Ok(self
             .apply(&emitter, |world, changed| {
@@ -1109,11 +1110,10 @@ impl FakeStorage {
             .await)
     }
 
-    #[zbus(out_args("saved", "refused"))]
     async fn save_copy(
         &self,
+        Call { emitter, .. }: Call<'_>,
         paths: Vec<String>,
-        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> fdo::Result<(Saved, Refused)> {
         Ok(self
             .apply(&emitter, |world, changed| {
@@ -1124,9 +1124,9 @@ impl FakeStorage {
 
     async fn set_paused(
         &self,
+        Call { emitter, .. }: Call<'_>,
         drives: Vec<String>,
         paused: bool,
-        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> fdo::Result<Refused> {
         Ok(self
             .apply(&emitter, |world, changed| {
@@ -1137,19 +1137,9 @@ impl FakeStorage {
 
     /// The fake tells every connection; it takes the call so Files can make it as it will to
     /// syncd.
-    fn watch(&self) -> fdo::Result<()> {
+    async fn watch(&self, _: Call<'_>) -> fdo::Result<()> {
         Ok(())
     }
-
-    #[zbus(signal)]
-    async fn drives_changed(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
-
-    #[zbus(signal)]
-    async fn items_changed(
-        emitter: &SignalEmitter<'_>,
-        drive: &str,
-        items: ItemDetails,
-    ) -> zbus::Result<()>;
 }
 
 /// Serves `storage` at `/org/quire/Storage1` on `connection` under `name`, and steps its
@@ -1157,7 +1147,7 @@ impl FakeStorage {
 pub async fn serve(connection: &Connection, name: &str, storage: FakeStorage) -> zbus::Result<()> {
     connection
         .object_server()
-        .at(STORAGE_PATH, storage.clone())
+        .at(STORAGE_PATH, StorageServed(storage.clone()))
         .await?;
     connection.request_name(name.to_owned()).await?;
     let emitter = SignalEmitter::new(connection, STORAGE_PATH)?.into_owned();

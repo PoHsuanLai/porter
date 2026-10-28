@@ -4,12 +4,12 @@
 //! asks `Identities1.Offer`, and one that wants an AI key asks inferd's `Keys`.
 
 use crate::args::Details;
-use zbus::fdo;
-use zbus::object_server::SignalEmitter;
+use porter_dbus_macros::bus_interface;
 use zbus::zvariant::{ObjectPath, OwnedObjectPath};
 
-/// The caller's side.
-#[zbus::proxy(
+/// The interface, written once. `#[bus_interface]` makes [`ManagerProxy`] for its callers from this
+/// trait, [`ManagerServer`] for the daemon to implement and [`ManagerServed`] to register.
+#[bus_interface(
     interface = "org.quire.Accounts1.Manager",
     default_service = "org.quire.Accounts1",
     default_path = "/org/quire/Accounts1"
@@ -35,47 +35,4 @@ pub trait Manager {
     /// An account must be signed in again.
     #[zbus(signal)]
     fn needs_reauth(&self, account: ObjectPath<'_>) -> zbus::Result<()>;
-}
-
-/// The daemon's side: the interface's shape, every method answering `NotSupported`.
-#[derive(Debug, Default)]
-pub struct ManagerSkeleton;
-
-#[zbus::interface(name = "org.quire.Accounts1.Manager")]
-impl ManagerSkeleton {
-    fn add_account(
-        &self,
-        provider_hint: String,
-        parent_window: String,
-        options: Details,
-    ) -> fdo::Result<OwnedObjectPath> {
-        let _ = (provider_hint, parent_window, options);
-        Err(crate::frozen::error())
-    }
-
-    fn needing_reauth(&self) -> fdo::Result<Vec<(OwnedObjectPath, String)>> {
-        Err(crate::frozen::error())
-    }
-
-    #[zbus(signal)]
-    async fn account_added(
-        emitter: &SignalEmitter<'_>,
-        account: ObjectPath<'_>,
-    ) -> zbus::Result<()>;
-
-    #[zbus(signal)]
-    async fn account_removed(
-        emitter: &SignalEmitter<'_>,
-        account: ObjectPath<'_>,
-    ) -> zbus::Result<()>;
-
-    #[zbus(signal)]
-    async fn needs_reauth(emitter: &SignalEmitter<'_>, account: ObjectPath<'_>)
-    -> zbus::Result<()>;
-}
-
-/// Writes this interface's introspection into `xml`, as an `<interface>` element one level in:
-/// the bus's introspection collects each interface's own.
-pub(crate) fn introspect(xml: &mut String) {
-    zbus::object_server::Interface::introspect_to_writer(&ManagerSkeleton, xml, 1);
 }

@@ -23,13 +23,14 @@ use super::errors::RefusedError;
 use crate::datasets::drive::{DriveEvent, DriveSet, LiveDrive};
 use crate::service::Access;
 use crate::words;
+use porter_dbus::Call;
 use porter_dbus::callers::{Caller, CallerRole, Callers};
 use porter_dbus::names::STORAGE_PATH;
 use porter_dbus::{
     DRIVE_KEY_ACCOUNT, DRIVE_KEY_LABEL, DRIVE_KEY_LOCAL, DRIVE_KEY_PATH, DRIVE_KEY_PROVIDER,
     DRIVE_KEY_STATE, DRIVE_KEY_TOTAL, DRIVE_KEY_USED, DRIVE_KEY_WORDS, Details, ITEM_KEY_FRACTION,
     ITEM_KEY_KEPT, ITEM_KEY_KIND, ITEM_KEY_OTHER, ITEM_KEY_STATE, ITEM_KEY_URL, ITEM_KEY_WORDS,
-    ItemDetails, ItemKind, ItemState, Refused, Saved,
+    ItemDetails, ItemKind, ItemState, Refused, Saved, StorageServed, StorageServer,
 };
 use porter_drive::{Node, NodeId, NodeKind, Reason, Status};
 use std::collections::{BTreeMap, BTreeSet};
@@ -270,8 +271,12 @@ impl<C: Callers> Core<C> {
         }
         for name in self.watcher_names() {
             if let Ok(emitter) = self.emitter(&name) {
-                let _ =
-                    StorageObject::<C>::items_changed(&emitter, &drive.id, details.clone()).await;
+                let _ = StorageServed::<StorageObject<C>>::items_changed(
+                    &emitter,
+                    &drive.id,
+                    details.clone(),
+                )
+                .await;
             }
         }
     }
@@ -279,7 +284,7 @@ impl<C: Callers> Core<C> {
     async fn tell_drives(&self) {
         for name in self.watcher_names() {
             if let Ok(emitter) = self.emitter(&name) {
-                let _ = StorageObject::<C>::drives_changed(&emitter).await;
+                let _ = StorageServed::<StorageObject<C>>::drives_changed(&emitter).await;
             }
         }
     }
@@ -298,11 +303,12 @@ impl<C: Callers> Core<C> {
 /// The interface object.
 struct StorageObject<C>(Arc<Core<C>>);
 
-#[zbus::interface(name = "org.quire.Storage1")]
-impl<C: Callers> StorageObject<C> {
+impl<C: Callers> StorageServer for StorageObject<C> {
+    type Error = RefusedError;
+
     async fn drives(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
     ) -> Result<Vec<(String, Details)>, RefusedError> {
         self.0.identify(&header).await?;
         Ok(self
@@ -316,7 +322,7 @@ impl<C: Callers> StorageObject<C> {
 
     async fn items(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         paths: Vec<String>,
     ) -> Result<ItemDetails, RefusedError> {
         self.0.identify(&header).await?;
@@ -332,7 +338,7 @@ impl<C: Callers> StorageObject<C> {
 
     async fn download(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         paths: Vec<String>,
     ) -> Result<Refused, RefusedError> {
         self.0.identify(&header).await?;
@@ -341,7 +347,7 @@ impl<C: Callers> StorageObject<C> {
 
     async fn keep(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         paths: Vec<String>,
         keep: bool,
     ) -> Result<Refused, RefusedError> {
@@ -351,7 +357,7 @@ impl<C: Callers> StorageObject<C> {
 
     async fn remove_download(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         paths: Vec<String>,
     ) -> Result<Refused, RefusedError> {
         self.0.identify(&header).await?;
@@ -360,10 +366,9 @@ impl<C: Callers> StorageObject<C> {
             .each(&paths, |drive, id| drive.drive.remove_download(id)))
     }
 
-    #[zbus(out_args("saved", "refused"))]
     async fn save_copy(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         paths: Vec<String>,
     ) -> Result<(Saved, Refused), RefusedError> {
         self.0.identify(&header).await?;
@@ -393,7 +398,7 @@ impl<C: Callers> StorageObject<C> {
 
     async fn set_paused(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         drives: Vec<String>,
         paused: bool,
     ) -> Result<Refused, RefusedError> {
@@ -414,7 +419,7 @@ impl<C: Callers> StorageObject<C> {
         Ok(refused)
     }
 
-    async fn watch(&self, #[zbus(header)] header: Header<'_>) -> Result<(), RefusedError> {
+    async fn watch(&self, Call { header, .. }: Call<'_>) -> Result<(), RefusedError> {
         let caller = self.0.identify(&header).await?;
         let sender = header
             .sender()
@@ -434,16 +439,6 @@ impl<C: Callers> StorageObject<C> {
         }
         Ok(())
     }
-
-    #[zbus(signal)]
-    async fn drives_changed(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
-
-    #[zbus(signal)]
-    async fn items_changed(
-        emitter: &SignalEmitter<'_>,
-        drive: &str,
-        items: ItemDetails,
-    ) -> zbus::Result<()>;
 }
 
 /// Serves `org.quire.Storage1` at [`STORAGE_PATH`] on `connection` over `drives`, with
@@ -464,7 +459,10 @@ pub async fn serve_storage<C: Callers>(
     });
     connection
         .object_server()
-        .at(STORAGE_PATH, StorageObject(Arc::clone(&core)))
+        .at(
+            STORAGE_PATH,
+            StorageServed(StorageObject(Arc::clone(&core))),
+        )
         .await?;
     let mut owners = DBusProxy::new(connection)
         .await?

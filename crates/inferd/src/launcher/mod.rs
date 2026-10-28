@@ -28,8 +28,8 @@ use self::credentials::Credentials;
 use self::object::LauncherObject;
 use self::shared::{Changed, Core};
 use crate::peers::Peers;
-use porter_dbus::ServiceRoot;
 use porter_dbus::names::INFERENCE_PATH;
+use porter_dbus::{LauncherServed, ServiceRoot};
 use porter_service::AuditSink;
 use porter_sheets::{OpenSheets, RequestObjects};
 use std::path::PathBuf;
@@ -130,7 +130,10 @@ pub async fn serve_launcher<H: LauncherHost, P: Peers>(
     }));
     connection
         .object_server()
-        .at(INFERENCE_PATH, LauncherObject(Arc::clone(&core)))
+        .at(
+            INFERENCE_PATH,
+            LauncherServed(LauncherObject(Arc::clone(&core))),
+        )
         .await?;
     watch(connection, &core).await?;
     Ok(launchers)

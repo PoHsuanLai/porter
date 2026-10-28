@@ -35,7 +35,7 @@ use porter_core::{AccountLabel, DataClass, Identity, IdentityId, IdentityKind};
 use porter_dbus::callers::CallerRole;
 use porter_dbus::names::IDENTITIES_PATH;
 use porter_dbus::sheet::SheetKind;
-use porter_dbus::{Details, identity_to_dbus};
+use porter_dbus::{Call, Details, IdentitiesServed, IdentitiesServer, identity_to_dbus};
 use porter_secrets::sealed_key;
 use porter_service::Registry;
 use porter_wire::Refusal;
@@ -141,11 +141,12 @@ impl<H: Host, C: Callers> IdentitiesObject<H, C> {
     }
 }
 
-#[zbus::interface(name = "org.quire.Identities1")]
-impl<H: Host, C: Callers> IdentitiesObject<H, C> {
+impl<H: Host, C: Callers> IdentitiesServer for IdentitiesObject<H, C> {
+    type Error = RefusedError;
+
     async fn list(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
     ) -> Result<Vec<(String, Details)>, RefusedError> {
         self.user(&header).await?;
         Ok(self
@@ -157,7 +158,7 @@ impl<H: Host, C: Callers> IdentitiesObject<H, C> {
 
     async fn offer(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         provider_hint: String,
         parent_window: String,
     ) -> Result<(String, String, String), RefusedError> {
@@ -236,7 +237,7 @@ impl<H: Host, C: Callers> IdentitiesObject<H, C> {
 
     async fn take_password(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         identity_id: String,
     ) -> Result<OwnedFd, RefusedError> {
         let caller = self.user(&header).await?;
@@ -273,7 +274,7 @@ impl<H: Host, C: Callers> IdentitiesObject<H, C> {
 
     async fn register_use(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         identity_id: String,
     ) -> Result<(), RefusedError> {
         let caller = self.user(&header).await?;
@@ -289,7 +290,7 @@ impl<H: Host, C: Callers> IdentitiesObject<H, C> {
 
     async fn uses(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         identity_id: String,
     ) -> Result<Vec<String>, RefusedError> {
         self.manager(&header).await?;
@@ -304,9 +305,6 @@ impl<H: Host, C: Callers> IdentitiesObject<H, C> {
             .map(ToString::to_string)
             .collect())
     }
-
-    #[zbus(signal)]
-    async fn identity_removed(emitter: &SignalEmitter<'_>, identity_id: &str) -> zbus::Result<()>;
 }
 
 impl<H: Host, C: Callers> Core<H, C> {
@@ -331,8 +329,11 @@ impl<H: Host, C: Callers> Core<H, C> {
                     continue;
                 };
                 let emitter = emitter.set_destination(destination);
-                let _ =
-                    IdentitiesObject::<H, C>::identity_removed(&emitter, identity.as_str()).await;
+                let _ = IdentitiesServed::<IdentitiesObject<H, C>>::identity_removed(
+                    &emitter,
+                    identity.as_str(),
+                )
+                .await;
             }
         }
     }

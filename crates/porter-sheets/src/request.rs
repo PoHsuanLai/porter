@@ -20,7 +20,7 @@ use porter_core::AppId;
 use porter_dbus::sheet::{
     OPTION_HANDLE_TOKEN, SheetKind, is_handle_token, request_path_in, response_of,
 };
-use porter_dbus::{Details, ServiceRoot};
+use porter_dbus::{Call, Details, RequestServed, RequestServer, ServiceRoot};
 use porter_wire::AccountsReply;
 use porter_wire::Refusal;
 use std::collections::HashSet;
@@ -31,7 +31,6 @@ use std::sync::{Arc, Mutex, PoisonError};
 use tokio::task::{AbortHandle, JoinHandle};
 use zbus::export::futures_core::Stream;
 use zbus::fdo::{self, DBusProxy, NameOwnerChangedStream};
-use zbus::message::Header;
 use zbus::names::{BusName, UniqueName};
 use zbus::object_server::SignalEmitter;
 use zbus::zvariant::{ObjectPath, OwnedObjectPath};
@@ -94,10 +93,11 @@ struct RequestObject {
     task: AbortSlot,
 }
 
-#[zbus::interface(name = "org.quire.Accounts1.Request")]
-impl RequestObject {
+impl RequestServer for RequestObject {
+    type Error = fdo::Error;
+
     /// Closes the sheet; no `Response` follows. Only the caller that started it may.
-    async fn close(&self, #[zbus(header)] header: Header<'_>) -> fdo::Result<()> {
+    async fn close(&self, Call { header, .. }: Call<'_>) -> fdo::Result<()> {
         match header.sender().map(UniqueName::as_str) == Some(self.owner.as_str()) {
             true => {
                 if let Some(task) = self
@@ -115,13 +115,6 @@ impl RequestObject {
             )),
         }
     }
-
-    #[zbus(signal)]
-    async fn response(
-        emitter: &SignalEmitter<'_>,
-        response: u32,
-        results: Details,
-    ) -> zbus::Result<()>;
 }
 
 /// The Request objects of one daemon on one connection: makes their paths under the daemon's
@@ -208,7 +201,7 @@ impl RequestObjects {
             task: Arc::clone(&slot),
         };
         let server = connection.object_server();
-        match server.at(&path, object).await {
+        match server.at(&path, RequestServed(object)).await {
             Ok(true) => {}
             Ok(false) => {
                 return Err(fdo::Error::InvalidArgs(
@@ -272,7 +265,9 @@ async fn answer(
         )
         .await;
     }
-    let _ = server.remove::<RequestObject, _>(&path).await;
+    let _ = server
+        .remove::<RequestServed<RequestObject>, _>(&path)
+        .await;
 }
 
 async fn send(
@@ -284,7 +279,7 @@ async fn send(
 ) -> zbus::Result<()> {
     let emitter = SignalEmitter::new(connection, path.clone())?
         .set_destination(BusName::from(sender.clone()));
-    RequestObject::response(&emitter, code, results).await
+    RequestServed::<RequestObject>::response(&emitter, code, results).await
 }
 
 /// Resolves when the caller's connection leaves the bus.

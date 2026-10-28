@@ -25,7 +25,7 @@ use porter_dbus::callers::Callers;
 #[cfg(feature = "photos-picker")]
 use porter_dbus::names::SYNC_PATH;
 #[cfg(feature = "photos-picker")]
-use porter_dbus::{PICKER_PICKED, PICKER_WAITING};
+use porter_dbus::{Call, PICKER_PICKED, PICKER_WAITING, PhotosPickerServed, PhotosPickerServer};
 #[cfg(feature = "photos-picker")]
 use porter_wire::Refusal;
 use std::collections::BTreeMap;
@@ -223,11 +223,12 @@ fn none_here() -> RefusedError {
 struct PickerObject<C, D>(Arc<Core<C, D>>);
 
 #[cfg(feature = "photos-picker")]
-#[zbus::interface(name = "org.quire.Photos1.Picker")]
-impl<C: Callers, D: PickerDesk> PickerObject<C, D> {
+impl<C: Callers, D: PickerDesk> PhotosPickerServer for PickerObject<C, D> {
+    type Error = RefusedError;
+
     async fn start(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         account: String,
     ) -> Result<(String, String, u32), RefusedError> {
         let (account, _) = self.0.admit(&header, &account, None).await?;
@@ -243,7 +244,7 @@ impl<C: Callers, D: PickerDesk> PickerObject<C, D> {
 
     async fn poll(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         account: String,
         session: String,
     ) -> Result<String, RefusedError> {
@@ -265,7 +266,7 @@ impl<C: Callers, D: PickerDesk> PickerObject<C, D> {
 
     async fn import(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         account: String,
         session: String,
     ) -> Result<Vec<String>, RefusedError> {
@@ -281,7 +282,7 @@ impl<C: Callers, D: PickerDesk> PickerObject<C, D> {
 
     async fn cancel(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         account: String,
         session: String,
     ) -> Result<(), RefusedError> {
@@ -310,7 +311,7 @@ pub async fn serve_picker<C: Callers, D: PickerDesk>(
     });
     connection
         .object_server()
-        .at(SYNC_PATH, PickerObject(core))
+        .at(SYNC_PATH, PhotosPickerServed(PickerObject(core)))
         .await?;
     Ok(())
 }

@@ -19,9 +19,9 @@ use crate::host::Host;
 use crate::spaces::{CREATES_PER_WINDOW, SpaceFault};
 use crate::state::{Core, Standing};
 use porter_core::{DesktopSpace, SpaceChange, SpaceLook, SpaceName};
-use porter_dbus::Details;
 use porter_dbus::callers::CallerRole;
 use porter_dbus::names::SPACES_PATH;
+use porter_dbus::{Call, Details, SpacesServed, SpacesServer};
 use porter_ids::clock::Clock;
 use porter_ids::word::word as word_of;
 use porter_service::audit::AuditEvent;
@@ -135,16 +135,17 @@ impl<H: Host, C: Callers> SpacesObject<H, C> {
                 continue;
             };
             let emitter = emitter.set_destination(destination);
-            let _ = Self::changed(&emitter, id.as_str(), word_of(&change)).await;
+            let _ = SpacesServed::<Self>::changed(&emitter, id.as_str(), word_of(&change)).await;
         }
     }
 }
 
-#[zbus::interface(name = "org.quire.Spaces1")]
-impl<H: Host, C: Callers> SpacesObject<H, C> {
+impl<H: Host, C: Callers> SpacesServer for SpacesObject<H, C> {
+    type Error = RefusedError;
+
     async fn list(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
     ) -> Result<Vec<(String, Details)>, RefusedError> {
         self.0.identify(&header, Standing::Spaces).await?;
         let book = self.0.spaces.lock().await;
@@ -168,7 +169,7 @@ impl<H: Host, C: Callers> SpacesObject<H, C> {
 
     async fn create(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         name: String,
         look: String,
     ) -> Result<String, RefusedError> {
@@ -199,7 +200,7 @@ impl<H: Host, C: Callers> SpacesObject<H, C> {
 
     async fn register(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         id: String,
         name: String,
         look: String,
@@ -237,7 +238,7 @@ impl<H: Host, C: Callers> SpacesObject<H, C> {
 
     async fn rename(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         id: String,
         name: String,
     ) -> Result<(), RefusedError> {
@@ -259,7 +260,7 @@ impl<H: Host, C: Callers> SpacesObject<H, C> {
 
     async fn set_look(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         id: String,
         look: String,
     ) -> Result<(), RefusedError> {
@@ -276,11 +277,7 @@ impl<H: Host, C: Callers> SpacesObject<H, C> {
         Ok(())
     }
 
-    async fn remove(
-        &self,
-        #[zbus(header)] header: Header<'_>,
-        id: String,
-    ) -> Result<(), RefusedError> {
+    async fn remove(&self, Call { header, .. }: Call<'_>, id: String) -> Result<(), RefusedError> {
         let caller = self.manager(&header).await?;
         let id = space_arg(&id)?;
         self.0
@@ -296,7 +293,4 @@ impl<H: Host, C: Callers> SpacesObject<H, C> {
         self.tell(&id, SpaceChange::Removed).await;
         Ok(())
     }
-
-    #[zbus(signal)]
-    async fn changed(emitter: &SignalEmitter<'_>, id: &str, what: &str) -> zbus::Result<()>;
 }

@@ -33,7 +33,9 @@ use porter_dbus::names::{
     PLACE_KEY_KIND, PLACE_KEY_MODELS, PLACE_KEY_NAME, PLACE_KEY_PROVIDER, PLACE_KEY_READY,
     PLACE_KEY_TAKES,
 };
-use porter_dbus::{Details, NeedArg, need_from_dbus};
+use porter_dbus::{
+    AgentsServed, Call, Details, InferenceServed, InferenceServer, NeedArg, need_from_dbus,
+};
 use porter_ids::clock::Clock;
 use porter_infer::{InferRefusal, PlaceId, PlaceRow, PlaceState};
 use porter_router::router::placed::{Allowed, Unplaced};
@@ -49,7 +51,6 @@ use std::sync::Arc;
 use tokio::net::UnixStream;
 use zbus::fdo;
 use zbus::message::Header;
-use zbus::object_server::SignalEmitter;
 use zbus::zvariant::OwnedFd;
 
 /// The daemon's state, shared by every call.
@@ -447,11 +448,14 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
     }
 }
 
-#[zbus::interface(name = "org.quire.Inference1")]
-impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O, C> {
+impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> InferenceServer
+    for Inference<P, O, C>
+{
+    type Error = InferError;
+
     async fn availability(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         need: NeedArg,
         class: String,
         options: Details,
@@ -477,7 +481,7 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
 
     async fn open(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         need: NeedArg,
         class: String,
         tier: String,
@@ -501,7 +505,7 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
 
     async fn prepare(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         need: NeedArg,
         class: String,
         tier: String,
@@ -533,12 +537,11 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         }
     }
 
-    // The facts about this computer that bear on a session like the one Open would make (a plain
-    // comment: a doc comment on a member would change the introspection XML). A fact is never a
-    // refusal.
+    /// The facts about this computer that bear on a session like the one Open would make. A fact
+    /// is never a refusal.
     async fn hardware_notes(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         need: NeedArg,
         class: String,
         tier: String,
@@ -561,11 +564,11 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         Ok(notes.iter().map(note_row).collect())
     }
 
-    // What the caller used this period, by name: the tokens of today, the charges providers
-    // reported for today and the month (an amount and its currency, as text) and the turns that
-    // reported none, and each spend cap that is set; empty on a daemon that serves no hosted
-    // model. (Plain comments: a doc comment on a member would change the introspection XML.)
-    async fn usage(&self, #[zbus(header)] header: Header<'_>) -> fdo::Result<Details> {
+    /// What the caller used this period, by name: the tokens of today, the charges providers
+    /// reported for today and the month (an amount and its currency, as text) and the turns that
+    /// reported none, and each spend cap that is set; empty on a daemon that serves no hosted
+    /// model.
+    async fn usage(&self, Call { header, .. }: Call<'_>) -> Result<Details, InferError> {
         let caller = self.caller(&header).await?;
         Ok(self
             .engines
@@ -581,14 +584,15 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
             .collect())
     }
 
-    // Looks again: weights that arrived, engines that stopped, and the settings file (a file that
-    // does not read keeps the settings in force and is the error). Readiness is read live, so
-    // for it this only tells listeners to re-read.
+    /// Looks again: weights that arrived, engines that stopped, and the settings file (a file that
+    /// does not read keeps the settings in force and is the error). Readiness is read live, so
+    /// for it this only tells listeners to re-read.
     async fn rescan(
         &self,
-        #[zbus(header)] header: Header<'_>,
-        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
-    ) -> fdo::Result<()> {
+        Call {
+            header, emitter, ..
+        }: Call<'_>,
+    ) -> Result<(), InferError> {
         self.caller(&header).await?;
         if let Some(reload) = &self.reload {
             reload.now().map_err(failed)?;
@@ -596,16 +600,16 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         if let Some(probing) = &self.probing {
             probing.now().await;
         }
-        Self::engines_changed(&emitter).await.map_err(failed)
+        Ok(InferenceServed::<Self>::engines_changed(&emitter)
+            .await
+            .map_err(failed)?)
     }
 
-    // The places the assistant could run, one row each (a plain comment: a doc comment on a
-    // member would change the introspection XML). The members follow the order of the checked-in
-    // XML: Places, then AddComputer and RemoveComputer.
+    /// The places the assistant could run, one row each.
     async fn places(
         &self,
-        #[zbus(header)] header: Header<'_>,
-    ) -> fdo::Result<Vec<(String, Details)>> {
+        Call { header, .. }: Call<'_>,
+    ) -> Result<Vec<(String, Details)>, InferError> {
         let caller = self.place_lister(&header).await?;
         self.follow_names().await;
         Ok(self
@@ -617,12 +621,12 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
             .collect())
     }
 
-    // The engine kinds and whether each has a program here (Settings, the shell and the
-    // companion): data for the client to say why local AI is absent. (A plain comment, as above.)
+    /// The engine kinds and whether each has a program here (Settings, the shell and the
+    /// companion): data for the client to say why local AI is absent.
     async fn local_engines(
         &self,
-        #[zbus(header)] header: Header<'_>,
-    ) -> fdo::Result<Vec<(String, Details)>> {
+        Call { header, .. }: Call<'_>,
+    ) -> Result<Vec<(String, Details)>, InferError> {
         self.engine_lister(&header).await?;
         Ok(self
             .local_engines
@@ -632,14 +636,15 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
             .collect())
     }
 
-    // Counts a Strata the person already has, in a folder they chose (Settings only).
+    /// Counts a Strata the person already has, in a folder they chose (Settings only).
     async fn point_engine(
         &self,
-        #[zbus(header)] header: Header<'_>,
-        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+        Call {
+            header, emitter, ..
+        }: Call<'_>,
         engine: String,
         folder: String,
-    ) -> fdo::Result<()> {
+    ) -> Result<(), InferError> {
         self.settings_caller(&header).await?;
         let path = std::path::PathBuf::from(&folder);
         let holds = porter_engines::EngineId::from_slug(&engine)
@@ -649,38 +654,45 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         if !holds {
             return Err(fdo::Error::InvalidArgs(
                 "inferd: that folder does not hold the engine".into(),
-            ));
+            )
+            .into());
         }
         let reload = self.reload.as_ref().ok_or_else(not_configurable)?;
         reload
             .file()
             .set("engines.strata_folder", toml::Value::String(folder))
             .map_err(failed)?;
-        Self::engines_changed(&emitter).await.map_err(failed)
+        Ok(InferenceServed::<Self>::engines_changed(&emitter)
+            .await
+            .map_err(failed)?)
     }
 
-    // Adds a computer of the person's own (Settings only) and answers its place id; the models
-    // arrive with how each is reached and, if it has one, its key, which is kept in a file only
-    // the owner reads and never comes back.
+    /// Adds a computer of the person's own (Settings only) and answers its place id; the models
+    /// arrive with how each is reached and, if it has one, its key, which is kept in a file only
+    /// the owner reads and never comes back.
     async fn add_computer(
         &self,
-        #[zbus(header)] header: Header<'_>,
-        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+        Call {
+            header, emitter, ..
+        }: Call<'_>,
         name: String,
         models: Vec<(String, Details)>,
     ) -> Result<String, InferError> {
         self.settings_caller(&header).await?;
         let computers = self.computers.as_ref().ok_or(ComputerError::Unavailable)?;
         let placed = computers.add(new_computer(name, models)?)?;
-        Self::engines_changed(&emitter).await.map_err(failed)?;
+        InferenceServed::<Self>::engines_changed(&emitter)
+            .await
+            .map_err(failed)?;
         Ok(placed.to_string())
     }
 
-    // Removes a computer Settings added (Settings only).
+    /// Removes a computer Settings added (Settings only).
     async fn remove_computer(
         &self,
-        #[zbus(header)] header: Header<'_>,
-        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+        Call {
+            header, emitter, ..
+        }: Call<'_>,
         name: String,
     ) -> Result<(), InferError> {
         self.settings_caller(&header).await?;
@@ -688,16 +700,18 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         if let (Some(node), Some(tailnet)) = (computers.remove(&name)?, &self.tailnet) {
             tailnet.drop_relay(&node);
         }
-        Ok(Self::engines_changed(&emitter).await.map_err(failed)?)
+        Ok(InferenceServed::<Self>::engines_changed(&emitter)
+            .await
+            .map_err(failed)?)
     }
 
-    // The person's own computers on their Tailscale network that lend their models and are not
-    // added yet (Settings only). Looking is done now for the computers whose look is due, and
-    // never while Tailscale is not an account (accountd lists none then).
+    /// The person's own computers on their Tailscale network that lend their models and are not
+    /// added yet (Settings only). Looking is done now for the computers whose look is due, and
+    /// never while Tailscale is not an account (accountd lists none then).
     async fn candidates(
         &self,
-        #[zbus(header)] header: Header<'_>,
-    ) -> fdo::Result<Vec<(String, Details)>> {
+        Call { header, .. }: Call<'_>,
+    ) -> Result<Vec<(String, Details)>, InferError> {
         self.settings_caller(&header).await?;
         let Some(tailnet) = &self.tailnet else {
             return Ok(Vec::new());
@@ -716,13 +730,14 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
             .collect())
     }
 
-    // Adds one of those computers (Settings only): the models it lends that the assistant knows
-    // and this computer does not run itself, reached through a relay that asks Tailscale who is
-    // there on every connection. Answers its place id.
+    /// Adds one of those computers (Settings only): the models it lends that the assistant knows
+    /// and this computer does not run itself, reached through a relay that asks Tailscale who is
+    /// there on every connection. Answers its place id.
     async fn add_tailnet_computer(
         &self,
-        #[zbus(header)] header: Header<'_>,
-        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+        Call {
+            header, emitter, ..
+        }: Call<'_>,
         node: String,
     ) -> Result<String, InferError> {
         self.settings_caller(&header).await?;
@@ -776,16 +791,18 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
             let _ = computers.remove(placed.as_str());
             return Err(ComputerError::Unavailable.into());
         }
-        Self::engines_changed(&emitter).await.map_err(failed)?;
+        InferenceServed::<Self>::engines_changed(&emitter)
+            .await
+            .map_err(failed)?;
         Ok(placed.to_string())
     }
 
-    // The computers that asked to use this one and were answered, and those asking now (Settings
-    // and the shell).
+    /// The computers that asked to use this one and were answered, and those asking now (Settings
+    /// and the shell).
     async fn guests(
         &self,
-        #[zbus(header)] header: Header<'_>,
-    ) -> fdo::Result<Vec<(String, Details)>> {
+        Call { header, .. }: Call<'_>,
+    ) -> Result<Vec<(String, Details)>, InferError> {
         self.guest_caller(&header).await?;
         Ok(self
             .tailnet
@@ -797,12 +814,12 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
             .collect())
     }
 
-    // The person's answer about a computer: the shell answers one that is asking, Settings any
-    // computer of the person's network (also one that is never asked about, a server or another
-    // person's), and a yes can be taken back by a no.
+    /// The person's answer about a computer: the shell answers one that is asking, Settings any
+    /// computer of the person's network (also one that is never asked about, a server or another
+    /// person's), and a yes can be taken back by a no.
     async fn answer_guest(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         node: String,
         answer: String,
     ) -> Result<(), InferError> {
@@ -834,11 +851,11 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         Ok(())
     }
 
-    // Forgets the answer about a computer, and any question it has waiting (Settings only): it
-    // is asked about again the next time it wants a model.
+    /// Forgets the answer about a computer, and any question it has waiting (Settings only): it
+    /// is asked about again the next time it wants a model.
     async fn forget_guest(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         node: String,
     ) -> Result<(), InferError> {
         self.settings_caller(&header).await?;
@@ -851,17 +868,18 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         Ok(())
     }
 
-    // The models Automatic chooses among for one helper in one slot (Settings and the shell). An
-    // empty list takes the helper off Automatic for the slot. Every model must be one inferd
-    // knows for the slot, as the assistant's pool is checked.
+    /// The models Automatic chooses among for one helper in one slot (Settings and the shell). An
+    /// empty list takes the helper off Automatic for the slot. Every model must be one inferd
+    /// knows for the slot, as the assistant's pool is checked.
     async fn set_helper_pool(
         &self,
-        #[zbus(header)] header: Header<'_>,
-        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+        Call {
+            header, emitter, ..
+        }: Call<'_>,
         slot: String,
         helper: String,
         models: Vec<String>,
-    ) -> fdo::Result<()> {
+    ) -> Result<(), InferError> {
         self.helper_pool_caller(&header).await?;
         let slot = porter_infer::Slot::from_slug(&slot)
             .ok_or_else(|| fdo::Error::InvalidArgs(format!("{slot}: not a slot")))?;
@@ -875,30 +893,36 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
                 ds_settings::live::LiveError::BadValue(why) => fdo::Error::InvalidArgs(why),
                 other => failed(other),
             })?;
-        Self::engines_changed(&emitter).await.map_err(failed)
+        Ok(InferenceServed::<Self>::engines_changed(&emitter)
+            .await
+            .map_err(failed)?)
     }
 
-    // Starts the engine of a model this computer runs itself and waits until it answers
-    // (Settings only; plain comments, as above). The model is `account/model`. A model the
-    // person attached or runs in a program of their own is refused in plain words, as is one
-    // inferd does not know; a failure to start is the reason in plain words.
-    async fn start(&self, #[zbus(header)] header: Header<'_>, model: String) -> fdo::Result<()> {
+    /// Starts the engine of a model this computer runs itself and waits until it answers
+    /// (Settings only). The model is `account/model`. A model the
+    /// person attached or runs in a program of their own is refused in plain words, as is one
+    /// inferd does not know; a failure to start is the reason in plain words.
+    async fn start(&self, Call { header, .. }: Call<'_>, model: String) -> Result<(), InferError> {
         self.settings_caller(&header).await?;
-        Ok(self.engines.start_model(&model).await?)
+        Ok(self
+            .engines
+            .start_model(&model)
+            .await
+            .map_err(fdo::Error::from)?)
     }
 
-    // Stops the engine of such a model and keeps it stopped until it is wanted again (Settings
-    // only). A model already stopped is not an error.
-    async fn stop(&self, #[zbus(header)] header: Header<'_>, model: String) -> fdo::Result<()> {
+    /// Stops the engine of such a model and keeps it stopped until it is wanted again (Settings
+    /// only). A model already stopped is not an error.
+    async fn stop(&self, Call { header, .. }: Call<'_>, model: String) -> Result<(), InferError> {
         self.settings_caller(&header).await?;
-        Ok(self.engines.stop_model(&model)?)
+        Ok(self.engines.stop_model(&model).map_err(fdo::Error::from)?)
     }
 
-    // The models this computer runs itself and what each engine is doing (Settings only).
+    /// The models this computer runs itself and what each engine is doing (Settings only).
     async fn running(
         &self,
-        #[zbus(header)] header: Header<'_>,
-    ) -> fdo::Result<Vec<(String, Details)>> {
+        Call { header, .. }: Call<'_>,
+    ) -> Result<Vec<(String, Details)>, InferError> {
         self.settings_caller(&header).await?;
         Ok(self
             .engines
@@ -908,25 +932,8 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
             .collect())
     }
 
-    #[zbus(signal)]
-    async fn guest_asks(
-        emitter: &SignalEmitter<'_>,
-        node: &str,
-        details: Details,
-    ) -> zbus::Result<()>;
-
-    #[zbus(signal)]
-    async fn guests_changed(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
-
-    #[zbus(signal)]
-    async fn engines_changed(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
-
-    #[zbus(signal)]
-    async fn running_changed(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
-
-    #[zbus(property)]
-    async fn gpu(&self) -> String {
-        self.engines.gpu().slug().to_owned()
+    async fn gpu(&self, _: Option<Header<'_>>) -> fdo::Result<String> {
+        Ok(self.engines.gpu().slug().to_owned())
     }
 }
 
@@ -1155,12 +1162,12 @@ where
     });
     connection
         .object_server()
-        .at(INFERENCE_PATH, daemon)
+        .at(INFERENCE_PATH, InferenceServed(daemon))
         .await?;
     if let Some(agents) = agents {
         connection
             .object_server()
-            .at(INFERENCE_PATH, agents)
+            .at(INFERENCE_PATH, AgentsServed(agents))
             .await?;
     }
     also.await?;
@@ -1168,17 +1175,17 @@ where
     // once they are.
     porter_dbus::serve_ready(connection).await?;
     connection.request_name(INFERENCE_BUS).await?;
-    let iface: zbus::object_server::InterfaceRef<Inference<P, O, C>> =
+    let iface: zbus::object_server::InterfaceRef<InferenceServed<Inference<P, O, C>>> =
         connection.object_server().interface(INFERENCE_PATH).await?;
     tokio::spawn(async move {
-        let mut told = iface.get().await.engines.gpu();
+        let mut told = iface.get().await.0.engines.gpu();
         let mut changes = supervised.changes();
         while changes.next().await.is_ok() {
             let emitter = iface.signal_emitter();
-            let _ = Inference::<P, O, C>::engines_changed(emitter).await;
-            let _ = Inference::<P, O, C>::running_changed(emitter).await;
+            let _ = InferenceServed::<Inference<P, O, C>>::engines_changed(emitter).await;
+            let _ = InferenceServed::<Inference<P, O, C>>::running_changed(emitter).await;
             let guard = iface.get().await;
-            let now = guard.engines.gpu();
+            let now = guard.0.engines.gpu();
             // The property changes only when its value did.
             if now != told {
                 told = now;
@@ -1189,13 +1196,13 @@ where
     // A computer of the person's asks to use this one, or an answer changed: the shell and
     // Settings are told.
     if let Some(mut asking) = asking {
-        let iface: zbus::object_server::InterfaceRef<Inference<P, O, C>> =
+        let iface: zbus::object_server::InterfaceRef<InferenceServed<Inference<P, O, C>>> =
             connection.object_server().interface(INFERENCE_PATH).await?;
         tokio::spawn(async move {
             loop {
                 match asking.recv().await {
                     Ok(porter_tailnet::GuestEvent::Asked(ask)) => {
-                        let _ = Inference::<P, O, C>::guest_asks(
+                        let _ = InferenceServed::<Inference<P, O, C>>::guest_asks(
                             iface.signal_emitter(),
                             ask.node.as_str(),
                             ask_details(&ask),
@@ -1205,7 +1212,10 @@ where
                     // Missed some news: say the answers changed so a listener reads them all.
                     // Also a kind of news a newer porter adds: a listener re-reads them all.
                     Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
-                        let _ = Inference::<P, O, C>::guests_changed(iface.signal_emitter()).await;
+                        let _ = InferenceServed::<Inference<P, O, C>>::guests_changed(
+                            iface.signal_emitter(),
+                        )
+                        .await;
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
                 }
@@ -1214,23 +1224,26 @@ where
     }
     // A runtime the person runs came up, went away or changed its models.
     let probed = probed.changed();
-    let iface: zbus::object_server::InterfaceRef<Inference<P, O, C>> =
+    let iface: zbus::object_server::InterfaceRef<InferenceServed<Inference<P, O, C>>> =
         connection.object_server().interface(INFERENCE_PATH).await?;
     tokio::spawn(async move {
         loop {
             probed.notified().await;
-            let _ = Inference::<P, O, C>::engines_changed(iface.signal_emitter()).await;
+            let _ = InferenceServed::<Inference<P, O, C>>::engines_changed(iface.signal_emitter())
+                .await;
         }
     });
     // An AI account appeared, went or changed state (the key host says so): a listener re-reads
     // `Places`. Only a daemon that hosts the keys has accounts to hear.
     if let Some(news) = keys_news {
-        let iface: zbus::object_server::InterfaceRef<Inference<P, O, C>> =
+        let iface: zbus::object_server::InterfaceRef<InferenceServed<Inference<P, O, C>>> =
             connection.object_server().interface(INFERENCE_PATH).await?;
         tokio::spawn(async move {
             loop {
                 news.notified().await;
-                let _ = Inference::<P, O, C>::engines_changed(iface.signal_emitter()).await;
+                let _ =
+                    InferenceServed::<Inference<P, O, C>>::engines_changed(iface.signal_emitter())
+                        .await;
             }
         });
     }

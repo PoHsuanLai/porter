@@ -2,11 +2,12 @@
 //! with a grant for it.
 
 use crate::args::Details;
-use zbus::fdo;
+use porter_dbus_macros::bus_interface;
 use zbus::zvariant::OwnedObjectPath;
 
-/// The caller's side.
-#[zbus::proxy(
+/// The interface, written once. `#[bus_interface]` makes [`AccountProxy`] for its callers from this
+/// trait, [`AccountServer`] for the daemon to implement and [`AccountServed`] to register.
+#[bus_interface(
     interface = "org.quire.Accounts1.Account",
     default_service = "org.quire.Accounts1"
 )]
@@ -37,56 +38,4 @@ pub trait Account {
         parent_window: &str,
         options: &Details,
     ) -> zbus::Result<OwnedObjectPath>;
-}
-
-/// The daemon's side.
-#[derive(Debug, Default)]
-pub struct AccountSkeleton;
-
-#[zbus::interface(name = "org.quire.Accounts1.Account")]
-impl AccountSkeleton {
-    #[zbus(property)]
-    fn id(&self) -> fdo::Result<String> {
-        Err(crate::frozen::error())
-    }
-
-    #[zbus(property)]
-    fn provider(&self) -> fdo::Result<String> {
-        Err(crate::frozen::error())
-    }
-
-    #[zbus(property)]
-    fn label(&self) -> fdo::Result<String> {
-        Err(crate::frozen::error())
-    }
-
-    #[zbus(property)]
-    fn state(&self) -> fdo::Result<String> {
-        Err(crate::frozen::error())
-    }
-
-    #[zbus(property)]
-    fn reauth_reason(&self) -> fdo::Result<String> {
-        Err(crate::frozen::error())
-    }
-
-    #[zbus(property)]
-    fn capabilities(&self) -> fdo::Result<Vec<(String, Details)>> {
-        Err(crate::frozen::error())
-    }
-
-    fn reauthenticate(
-        &self,
-        parent_window: String,
-        options: Details,
-    ) -> fdo::Result<OwnedObjectPath> {
-        let _ = (parent_window, options);
-        Err(crate::frozen::error())
-    }
-}
-
-/// Writes this interface's introspection into `xml`, as an `<interface>` element one level in:
-/// the bus's introspection collects each interface's own.
-pub(crate) fn introspect(xml: &mut String) {
-    zbus::object_server::Interface::introspect_to_writer(&AccountSkeleton, xml, 1);
 }

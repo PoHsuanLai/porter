@@ -1,11 +1,12 @@
-//! The introspection XML of each bus, from the skeletons: the checked-in `dbus/*.xml` must
-//! equal it.
+//! The introspection XML of each bus, from the interfaces' own declarations: the checked-in
+//! `dbus/*.xml` must equal it.
 
 #[cfg(feature = "photos-picker")]
-use crate::photos_picker;
+use crate::PhotosPickerServed;
 use crate::{
-    account, agents, identities, inference, keys, launcher_iface, manager, request, sheet_backend,
-    spaces, storage, sync, tailnet,
+    AccountServed, AccountsSheetServed, AgentsServed, IdentitiesServed, InferenceServed,
+    KeysServed, LauncherServed, ManagerServed, RequestServed, SpacesServed, StorageServed,
+    SyncServed, TailnetServed, Unserved,
 };
 
 /// One of porter's buses.
@@ -71,20 +72,20 @@ pub fn introspection(bus: Bus) -> String {
     );
     let interfaces: &[fn(&mut String)] = match bus {
         Bus::Accounts => &[
-            manager::introspect,
-            account::introspect,
-            request::introspect,
+            ManagerServed::<Unserved>::introspect,
+            AccountServed::<Unserved>::introspect,
+            RequestServed::<Unserved>::introspect,
         ],
-        Bus::AccountsSheet => &[sheet_backend::introspect],
+        Bus::AccountsSheet => &[AccountsSheetServed::<Unserved>::introspect],
         Bus::Sync => SYNC,
-        Bus::Inference => &[inference::introspect],
-        Bus::InferenceAgents => &[agents::introspect],
-        Bus::InferenceLauncher => &[launcher_iface::introspect],
-        Bus::InferenceKeys => &[keys::introspect],
-        Bus::Spaces => &[spaces::introspect],
-        Bus::Identities => &[identities::introspect],
-        Bus::Tailnet => &[tailnet::introspect],
-        Bus::Storage => &[storage::introspect],
+        Bus::Inference => &[InferenceServed::<Unserved>::introspect],
+        Bus::InferenceAgents => &[AgentsServed::<Unserved>::introspect],
+        Bus::InferenceLauncher => &[LauncherServed::<Unserved>::introspect],
+        Bus::InferenceKeys => &[KeysServed::<Unserved>::introspect],
+        Bus::Spaces => &[SpacesServed::<Unserved>::introspect],
+        Bus::Identities => &[IdentitiesServed::<Unserved>::introspect],
+        Bus::Tailnet => &[TailnetServed::<Unserved>::introspect],
+        Bus::Storage => &[StorageServed::<Unserved>::introspect],
     };
     for introspect in interfaces {
         introspect(&mut xml);
@@ -95,7 +96,10 @@ pub fn introspection(bus: Bus) -> String {
 
 /// Sync1, and the Photos Picker beside it only with the `photos-picker` feature.
 #[cfg(feature = "photos-picker")]
-const SYNC: &[fn(&mut String)] = &[sync::introspect, photos_picker::introspect];
+const SYNC: &[fn(&mut String)] = &[
+    SyncServed::<Unserved>::introspect,
+    PhotosPickerServed::<Unserved>::introspect,
+];
 
 #[cfg(not(feature = "photos-picker"))]
-const SYNC: &[fn(&mut String)] = &[sync::introspect];
+const SYNC: &[fn(&mut String)] = &[SyncServed::<Unserved>::introspect];

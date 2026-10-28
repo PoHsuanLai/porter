@@ -8,6 +8,7 @@ use crate::host::Host;
 use crate::manager::Manager;
 use crate::state::Core;
 use porter_dbus::names::{ACCOUNTS_BUS, ACCOUNTS_PATH};
+use porter_dbus::{IdentitiesServed, ManagerServed, SpacesServed, TailnetServed};
 use porter_families::set::ProviderNames;
 use porter_ids::{clock::Clock, clock::SystemClock};
 use porter_sheets::{AppNames, RequestObjects};
@@ -109,24 +110,29 @@ pub async fn serve_with<H: Host, C: Callers>(
     crate::publish::start(&core);
     let server: &ObjectServer = connection.object_server();
     server
-        .at(ACCOUNTS_PATH, Manager::new(Arc::clone(&core)))
+        .at(
+            ACCOUNTS_PATH,
+            ManagerServed(Manager::new(Arc::clone(&core))),
+        )
         .await?;
     server
         .at(
             porter_dbus::names::SPACES_PATH,
-            crate::spaces_object::SpacesObject::new(Arc::clone(&core)),
+            SpacesServed(crate::spaces_object::SpacesObject::new(Arc::clone(&core))),
         )
         .await?;
     server
         .at(
             porter_dbus::names::IDENTITIES_PATH,
-            crate::identities_object::IdentitiesObject::new(Arc::clone(&core)),
+            IdentitiesServed(crate::identities_object::IdentitiesObject::new(Arc::clone(
+                &core,
+            ))),
         )
         .await?;
     server
         .at(
             porter_dbus::names::TAILNET_PATH,
-            crate::tailnet_object::TailnetObject::new(Arc::clone(&core)),
+            TailnetServed(crate::tailnet_object::TailnetObject::new(Arc::clone(&core))),
         )
         .await?;
     publish_accounts(server, &core).await?;

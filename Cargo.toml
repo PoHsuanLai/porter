@@ -22,6 +22,7 @@ members = [
   "crates/porter-service",
   "crates/porter-store",
   "crates/porter-dbus",
+  "crates/porter-dbus-macros",
   "crates/porter-sheets",
   "crates/porter-client",
   "crates/porter-fake",
@@ -91,6 +92,7 @@ porter-bridge   = { path = "crates/porter-bridge" }
 porter-service  = { path = "crates/porter-service" }
 porter-store    = { path = "crates/porter-store" }
 porter-dbus     = { path = "crates/porter-dbus" }
+porter-dbus-macros = { path = "crates/porter-dbus-macros" }
 porter-sheets   = { path = "crates/porter-sheets" }
 porter-client   = { path = "crates/porter-client" }
 porter-fake     = { path = "crates/porter-fake" }
@@ -201,6 +203,11 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 zbus = { version = "5.19", default-features = false, features = ["tokio"] }  # shell repos only; they also enable ds-settings/tokio. quire itself builds zbus with its async-io default so app consumers keep their own executor.
 toml = "1"
+# porter-dbus-macros, the one attribute that writes a bus interface once (MIT OR Apache-2.0; all three
+# already in Cargo.lock through zbus). syn needs `full` for a trait item.
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["full"] }
 base64 = "0.22"
 # stoker's `Money` (model-provider) is an exact decimal amount in an ISO 4217 currency; the crates
 # that make or read one name these two (both MIT, which deny.toml allows).

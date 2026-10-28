@@ -20,12 +20,12 @@
 //! launcher's own, [`crate::LauncherFault`].
 
 use crate::args::Details;
-use zbus::fdo;
-use zbus::object_server::SignalEmitter;
+use porter_dbus_macros::bus_interface;
 use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 
-/// The launcher's side of the conversation.
-#[zbus::proxy(
+/// The interface, written once. `#[bus_interface]` makes [`LauncherProxy`] for its callers from this
+/// trait, [`LauncherServer`] for the daemon to implement and [`LauncherServed`] to register.
+#[bus_interface(
     interface = "org.quire.Inference1.Launcher",
     default_service = "org.quire.Inference1",
     default_path = "/org/quire/Inference1"
@@ -106,107 +106,4 @@ pub trait Launcher {
     /// `CredentialEnd` word. Not sent when the launcher itself ended it or left the bus.
     #[zbus(signal)]
     fn process_credential_revoked(&self, id: String, reason: String) -> zbus::Result<()>;
-}
-
-/// inferd's side: the interface's shape, every method answering `NotSupported`.
-#[derive(Debug, Default)]
-pub struct LauncherSkeleton;
-
-#[zbus::interface(name = "org.quire.Inference1.Launcher")]
-impl LauncherSkeleton {
-    fn set_agent_state(&self, account: String, state: String) -> fdo::Result<()> {
-        let _ = (account, state);
-        Err(crate::frozen::error())
-    }
-
-    fn register_launcher(&self, programs: Vec<String>) -> fdo::Result<()> {
-        let _ = programs;
-        Err(crate::frozen::error())
-    }
-
-    fn begin_session(&self, session: String) -> fdo::Result<()> {
-        let _ = session;
-        Err(crate::frozen::error())
-    }
-
-    fn end_session(&self, session: String) -> fdo::Result<()> {
-        let _ = session;
-        Err(crate::frozen::error())
-    }
-
-    fn request_agent_key(
-        &self,
-        program: String,
-        class: String,
-        session: String,
-        parent_window: String,
-        options: Details,
-    ) -> fdo::Result<OwnedObjectPath> {
-        let _ = (program, class, session, parent_window, options);
-        Err(crate::frozen::error())
-    }
-
-    fn report_agent_login(
-        &self,
-        request: String,
-        outcome: String,
-        reason: String,
-    ) -> fdo::Result<()> {
-        let _ = (request, outcome, reason);
-        Err(crate::frozen::error())
-    }
-
-    fn report_agent_logout(
-        &self,
-        request: String,
-        outcome: String,
-        reason: String,
-    ) -> fdo::Result<()> {
-        let _ = (request, outcome, reason);
-        Err(crate::frozen::error())
-    }
-
-    fn issue_process_credential(
-        &self,
-        permit: String,
-        program: String,
-        target: String,
-    ) -> fdo::Result<(String, OwnedValue)> {
-        let _ = (permit, program, target);
-        Err(crate::frozen::error())
-    }
-
-    fn revoke_process_credential(&self, id: String) -> fdo::Result<()> {
-        let _ = id;
-        Err(crate::frozen::error())
-    }
-
-    #[zbus(signal)]
-    async fn agent_login_requested(
-        emitter: &SignalEmitter<'_>,
-        request: &str,
-        account: &str,
-        program: &str,
-    ) -> zbus::Result<()>;
-
-    #[zbus(signal)]
-    async fn agent_logout_requested(
-        emitter: &SignalEmitter<'_>,
-        request: &str,
-        account: &str,
-        program: &str,
-    ) -> zbus::Result<()>;
-
-    #[zbus(signal)]
-    async fn process_credential_revoked(
-        emitter: &SignalEmitter<'_>,
-        id: &str,
-        reason: &str,
-    ) -> zbus::Result<()>;
-}
-
-/// Writes this interface's introspection into `xml`, as an `<interface>` element one level in:
-/// the bus's introspection collects each interface's own.
-pub(crate) fn introspect(xml: &mut String) {
-    zbus::object_server::Interface::introspect_to_writer(&LauncherSkeleton, xml, 1);
 }

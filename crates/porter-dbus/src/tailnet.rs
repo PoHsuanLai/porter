@@ -9,11 +9,11 @@
 //! `AccessDenied`.
 
 use crate::args::Details;
-use zbus::fdo;
-use zbus::object_server::SignalEmitter;
+use porter_dbus_macros::bus_interface;
 
-/// The caller's side.
-#[zbus::proxy(
+/// The interface, written once. `#[bus_interface]` makes [`TailnetProxy`] for its callers from this
+/// trait, [`TailnetServer`] for the daemon to implement and [`TailnetServed`] to register.
+#[bus_interface(
     interface = "org.quire.Tailnet1",
     default_service = "org.quire.Accounts1",
     default_path = "/org/quire/Tailnet1"
@@ -34,24 +34,4 @@ pub trait Tailnet {
     /// has called accountd.
     #[zbus(signal)]
     fn changed(&self) -> zbus::Result<()>;
-}
-
-/// The daemon's side.
-#[derive(Debug, Default)]
-pub struct TailnetSkeleton;
-
-#[zbus::interface(name = "org.quire.Tailnet1")]
-impl TailnetSkeleton {
-    fn machines(&self) -> fdo::Result<Vec<(String, Details)>> {
-        Err(crate::frozen::error())
-    }
-
-    #[zbus(signal)]
-    async fn changed(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
-}
-
-/// Writes this interface's introspection into `xml`, as an `<interface>` element one level in:
-/// the bus's introspection collects each interface's own.
-pub(crate) fn introspect(xml: &mut String) {
-    zbus::object_server::Interface::introspect_to_writer(&TailnetSkeleton, xml, 1);
 }

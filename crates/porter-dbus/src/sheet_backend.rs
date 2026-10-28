@@ -7,11 +7,11 @@
 //! sender of each signal. An `Input` may carry secret text (a typed password) from the sheet
 //! into accountd, the one place secret text flows into the daemon; nothing here flows outward.
 
-use zbus::fdo;
-use zbus::object_server::SignalEmitter;
+use porter_dbus_macros::bus_interface;
 
-/// accountd's side: it drives the host.
-#[zbus::proxy(
+/// The interface, written once. `#[bus_interface]` makes [`AccountsSheetProxy`] for its callers from this
+/// trait, [`AccountsSheetServer`] for the daemon to implement and [`AccountsSheetServed`] to register.
+#[bus_interface(
     interface = "org.quire.AccountsSheet1",
     default_service = "org.quire.AccountsSheet1",
     default_path = "/org/quire/AccountsSheet1"
@@ -26,35 +26,4 @@ pub trait AccountsSheet {
     /// What the person did on the sheet of `handle`.
     #[zbus(signal)]
     fn input(&self, handle: &str, input: &str) -> zbus::Result<()>;
-}
-
-/// The sheet host's side.
-#[derive(Debug, Default)]
-pub struct AccountsSheetSkeleton;
-
-#[zbus::interface(name = "org.quire.AccountsSheet1")]
-impl AccountsSheetSkeleton {
-    fn open(&self, handle: String, parent_window: String, view: String) -> fdo::Result<()> {
-        let _ = (handle, parent_window, view);
-        Err(crate::frozen::error())
-    }
-
-    fn update(&self, handle: String, view: String) -> fdo::Result<()> {
-        let _ = (handle, view);
-        Err(crate::frozen::error())
-    }
-
-    fn close(&self, handle: String) -> fdo::Result<()> {
-        let _ = handle;
-        Err(crate::frozen::error())
-    }
-
-    #[zbus(signal)]
-    async fn input(emitter: &SignalEmitter<'_>, handle: &str, input: &str) -> zbus::Result<()>;
-}
-
-/// Writes this interface's introspection into `xml`, as an `<interface>` element one level in:
-/// the bus's introspection collects each interface's own.
-pub(crate) fn introspect(xml: &mut String) {
-    zbus::object_server::Interface::introspect_to_writer(&AccountsSheetSkeleton, xml, 1);
 }

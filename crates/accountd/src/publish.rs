@@ -10,6 +10,8 @@ use crate::hub::{Event, events, hears, settings_news};
 use crate::manager::Manager;
 use crate::state::{Core, held};
 use porter_core::AccountId;
+use porter_dbus::AccountServed;
+use porter_dbus::ManagerServed;
 use porter_dbus::names::{ACCOUNTS_PATH, account_path};
 use porter_service::Registry;
 use std::borrow::Cow;
@@ -48,12 +50,15 @@ impl<H: Host, C: Callers> Core<H, C> {
             match event {
                 Event::Added(id) => {
                     let _ = server
-                        .at(account_path(id), AccountObject::new(Arc::clone(self)))
+                        .at(
+                            account_path(id),
+                            AccountServed(AccountObject::new(Arc::clone(self))),
+                        )
                         .await;
                 }
                 Event::Removed(id) => {
                     let _ = server
-                        .remove::<AccountObject<H, C>, _>(account_path(id))
+                        .remove::<AccountServed<AccountObject<H, C>>, _>(account_path(id))
                         .await;
                 }
                 _ => {}
@@ -93,9 +98,15 @@ impl<H: Host, C: Callers> Core<H, C> {
             .set_destination(BusName::try_from(name.to_owned())?);
         let path = |id: &AccountId| ObjectPath::try_from(account_path(id));
         match event {
-            Event::Added(id) => Manager::<H, C>::account_added(&emitter, path(id)?).await,
-            Event::Removed(id) => Manager::<H, C>::account_removed(&emitter, path(id)?).await,
-            Event::NeedsReauth(id) => Manager::<H, C>::needs_reauth(&emitter, path(id)?).await,
+            Event::Added(id) => {
+                ManagerServed::<Manager<H, C>>::account_added(&emitter, path(id)?).await
+            }
+            Event::Removed(id) => {
+                ManagerServed::<Manager<H, C>>::account_removed(&emitter, path(id)?).await
+            }
+            Event::NeedsReauth(id) => {
+                ManagerServed::<Manager<H, C>>::needs_reauth(&emitter, path(id)?).await
+            }
             Event::StateChanged(id) => {
                 // The new value is read by the receiver, which `State` lets only the shell and
                 // Settings do.

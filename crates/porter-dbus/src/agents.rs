@@ -9,8 +9,7 @@
 //! bus name and object.
 
 use crate::args::Details;
-use zbus::fdo;
-use zbus::zvariant::OwnedValue;
+use porter_dbus_macros::bus_interface;
 
 /// A route (`(sssas)`): its kind (`account` or `model`), its id (an account id, or a catalogue
 /// model id), which model ids it serves (`listed` or `any`) and, for `listed`, the ids.
@@ -34,8 +33,9 @@ pub const MODELS_ANY: &str = "any";
 /// The prefix of the errors this interface names itself.
 pub const AGENT_ERROR_PREFIX: &str = "org.quire.Inference1.Error.";
 
-/// The caller's side.
-#[zbus::proxy(
+/// The interface, written once. `#[bus_interface]` makes [`AgentsProxy`] for its callers from this
+/// trait, [`AgentsServer`] for the daemon to implement and [`AgentsServed`] to register.
+#[bus_interface(
     interface = "org.quire.Inference1.Agents",
     default_service = "org.quire.Inference1",
     default_path = "/org/quire/Inference1"
@@ -55,34 +55,4 @@ pub trait Agents {
     ) -> zbus::Result<EndpointArg>;
     /// Ends a session: its listener is closed and its requests in flight are cancelled.
     fn close_endpoint(&self, session: &str) -> zbus::Result<()>;
-}
-
-/// The daemon's side.
-#[derive(Debug, Default)]
-pub struct AgentsSkeleton;
-
-#[zbus::interface(name = "org.quire.Inference1.Agents")]
-impl AgentsSkeleton {
-    fn open_endpoint(
-        &self,
-        program: String,
-        route: RouteArg,
-        class: String,
-        protocols: Vec<String>,
-        options: std::collections::HashMap<String, OwnedValue>,
-    ) -> fdo::Result<EndpointArg> {
-        let _ = (program, route, class, protocols, options);
-        Err(crate::frozen::error())
-    }
-
-    fn close_endpoint(&self, session: String) -> fdo::Result<()> {
-        let _ = session;
-        Err(crate::frozen::error())
-    }
-}
-
-/// Writes this interface's introspection into `xml`, as an `<interface>` element one level in:
-/// the bus's introspection collects each interface's own.
-pub(crate) fn introspect(xml: &mut String) {
-    zbus::object_server::Interface::introspect_to_writer(&AgentsSkeleton, xml, 1);
 }

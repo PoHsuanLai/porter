@@ -17,12 +17,11 @@ use porter_capability::{LoginOutcome, LoginRequestId};
 use porter_core::AccountId;
 use porter_core::AgentState;
 use porter_core::LauncherSession;
-use porter_dbus::Details;
+use porter_dbus::{Call, Details, LauncherServer};
 use porter_service::{AgentFault, LoginEnd};
 use porter_wire::{ParentWindow, Refusal};
 use std::sync::Arc;
 use zbus::message::Header;
-use zbus::object_server::SignalEmitter;
 use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 
 /// The launcher object.
@@ -48,14 +47,15 @@ fn agent_fault(fault: AgentFault) -> RefusedError {
     }
 }
 
-#[zbus::interface(name = "org.quire.Inference1.Launcher")]
-impl<H: LauncherHost, P: Peers> LauncherObject<H, P> {
+impl<H: LauncherHost, P: Peers> LauncherServer for LauncherObject<H, P> {
+    type Error = RefusedError;
+
     /// Makes the caller the launcher of these agent programs, for as long as its connection
     /// lives. One launcher per program, first wins (`AlreadyRegistered`); a program the caller
     /// holds already is a no-op, and a later call adds more.
     async fn register_launcher(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         programs: Vec<String>,
     ) -> Result<(), RefusedError> {
         let sender = self.0.launcher_of(&header).await?;
@@ -78,7 +78,7 @@ impl<H: LauncherHost, P: Peers> LauncherObject<H, P> {
     /// file of the agent's is read.
     async fn set_agent_state(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         account: String,
         state: String,
     ) -> Result<(), RefusedError> {
@@ -103,7 +103,7 @@ impl<H: LauncherHost, P: Peers> LauncherObject<H, P> {
     /// holds is `SessionTaken`; one this connection holds is a no-op.
     async fn begin_session(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         session: String,
     ) -> Result<(), RefusedError> {
         let owner = self.0.launcher_of(&header).await?;
@@ -120,7 +120,7 @@ impl<H: LauncherHost, P: Peers> LauncherObject<H, P> {
     /// `UnknownSession` and nothing is ended.
     async fn end_session(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         session: String,
     ) -> Result<(), RefusedError> {
         let owner = self.0.launcher_of(&header).await?;
@@ -140,7 +140,7 @@ impl<H: LauncherHost, P: Peers> LauncherObject<H, P> {
     /// "This session only".
     async fn request_agent_key(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         program: String,
         class: String,
         session: String,
@@ -164,7 +164,7 @@ impl<H: LauncherHost, P: Peers> LauncherObject<H, P> {
     /// was sent the request may answer it.
     async fn report_agent_login(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         request: String,
         outcome: String,
         reason: String,
@@ -177,7 +177,7 @@ impl<H: LauncherHost, P: Peers> LauncherObject<H, P> {
     /// state to `needs_login`.
     async fn report_agent_logout(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         request: String,
         outcome: String,
         reason: String,
@@ -190,7 +190,7 @@ impl<H: LauncherHost, P: Peers> LauncherObject<H, P> {
     /// its handle (a memfd or the path of a 0600 file).
     async fn issue_process_credential(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         permit: String,
         program: String,
         target: String,
@@ -204,37 +204,11 @@ impl<H: LauncherHost, P: Peers> LauncherObject<H, P> {
     /// credential.
     async fn revoke_process_credential(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         id: String,
     ) -> Result<(), RefusedError> {
         self.0.revoke_process_credential(&header, &id).await
     }
-
-    /// Sent to the registrant of `program` alone.
-    #[zbus(signal)]
-    async fn agent_login_requested(
-        emitter: &SignalEmitter<'_>,
-        request: &str,
-        account: &str,
-        program: &str,
-    ) -> zbus::Result<()>;
-
-    /// Sent to the registrant of `program` alone.
-    #[zbus(signal)]
-    async fn agent_logout_requested(
-        emitter: &SignalEmitter<'_>,
-        request: &str,
-        account: &str,
-        program: &str,
-    ) -> zbus::Result<()>;
-
-    /// Sent to the launcher that was issued the credential, alone, when inferd ended it.
-    #[zbus(signal)]
-    async fn process_credential_revoked(
-        emitter: &SignalEmitter<'_>,
-        id: &str,
-        reason: &str,
-    ) -> zbus::Result<()>;
 }
 
 impl<H: LauncherHost, P: Peers> LauncherObject<H, P> {

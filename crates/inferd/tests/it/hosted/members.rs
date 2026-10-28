@@ -5,7 +5,7 @@ use super::*;
 use inferd::engines::Engines;
 use inferd::peers::TablePeers;
 use inferd::service::Inference;
-use porter_dbus::{Details, InferenceProxy, need_to_dbus};
+use porter_dbus::{Details, InferenceProxy, InferenceServed, need_to_dbus};
 use porter_ids::UnixSeconds;
 use porter_ids::clock::FixedClock;
 use porter_infer::{InferRefusal, ModelError, Readiness};
@@ -94,12 +94,12 @@ async fn a_bad_class_or_tier_is_an_invalid_argument() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn the_object_introspects_as_the_frozen_interface() {
-    let object = Inference::new(
+    let object = InferenceServed(Inference::new(
         Engines::default(),
         TablePeers::new(),
         Discard,
         FixedClock(UnixSeconds(0)),
-    );
+    ));
     let mut xml = String::from(
         "<!DOCTYPE node PUBLIC \"-//freedesktop//DTD D-BUS Object Introspection 1.0//EN\"\n \"http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd\">\n<node>\n",
     );

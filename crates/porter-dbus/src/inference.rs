@@ -4,12 +4,12 @@
 //! computer-use steps use the same fd, so this interface has no member for them.
 
 use crate::args::{Details, NeedArg};
-use zbus::fdo;
-use zbus::object_server::SignalEmitter;
+use porter_dbus_macros::bus_interface;
 use zbus::zvariant::OwnedFd;
 
-/// The caller's side.
-#[zbus::proxy(
+/// The interface, written once. `#[bus_interface]` makes [`InferenceProxy`] for its callers from this
+/// trait, [`InferenceServer`] for the daemon to implement and [`InferenceServed`] to register.
+#[bus_interface(
     interface = "org.quire.Inference1",
     default_service = "org.quire.Inference1",
     default_path = "/org/quire/Inference1"
@@ -33,6 +33,16 @@ pub trait Inference {
         tier: &str,
         options: &Details,
     ) -> zbus::Result<OwnedFd>;
+    /// Warms the engine the route would pick (no mic, no request) and answers its readiness
+    /// slug (`ready`, `loading`, `loadable`, `downloading`, `downloadable`, `unavailable`); a
+    /// refusal answers with its slug.
+    fn prepare(
+        &self,
+        need: &NeedArg,
+        class: &str,
+        tier: &str,
+        options: &Details,
+    ) -> zbus::Result<String>;
     /// The facts about this computer that bear on a session like the one `Open` would make, one
     /// row each: the note's kind slug (`model_shared`, `graphics_memory_low`, `queue_long`),
     /// then a vardict with `words` (the sentence to show) and the note's numbers; the key names
@@ -46,16 +56,6 @@ pub trait Inference {
         tier: &str,
         options: &Details,
     ) -> zbus::Result<Vec<(String, Details)>>;
-    /// Warms the engine the route would pick (no mic, no request) and answers its readiness
-    /// slug (`ready`, `loading`, `loadable`, `downloading`, `downloadable`, `unavailable`); a
-    /// refusal answers with its slug.
-    fn prepare(
-        &self,
-        need: &NeedArg,
-        class: &str,
-        tier: &str,
-        options: &Details,
-    ) -> zbus::Result<String>;
     /// The caller's usage this period, by name (tokens, spend, cap).
     fn usage(&self) -> zbus::Result<Details>;
     /// Probes local runtimes again.
@@ -157,154 +157,4 @@ pub trait Inference {
     /// The GPU's use: `idle`, `busy` or `loading`.
     #[zbus(property)]
     fn gpu(&self) -> zbus::Result<String>;
-}
-
-/// The daemon's side.
-#[derive(Debug, Default)]
-pub struct InferenceSkeleton;
-
-#[zbus::interface(name = "org.quire.Inference1")]
-impl InferenceSkeleton {
-    fn availability(&self, need: NeedArg, class: String, options: Details) -> fdo::Result<String> {
-        let _ = (need, class, options);
-        Err(crate::frozen::error())
-    }
-
-    fn open(
-        &self,
-        need: NeedArg,
-        class: String,
-        tier: String,
-        options: Details,
-    ) -> fdo::Result<OwnedFd> {
-        let _ = (need, class, tier, options);
-        Err(crate::frozen::error())
-    }
-
-    fn prepare(
-        &self,
-        need: NeedArg,
-        class: String,
-        tier: String,
-        options: Details,
-    ) -> fdo::Result<String> {
-        let _ = (need, class, tier, options);
-        Err(crate::frozen::error())
-    }
-
-    fn hardware_notes(
-        &self,
-        need: NeedArg,
-        class: String,
-        tier: String,
-        options: Details,
-    ) -> fdo::Result<Vec<(String, Details)>> {
-        let _ = (need, class, tier, options);
-        Err(crate::frozen::error())
-    }
-
-    fn usage(&self) -> fdo::Result<Details> {
-        Err(crate::frozen::error())
-    }
-
-    fn rescan(&self) -> fdo::Result<()> {
-        Err(crate::frozen::error())
-    }
-
-    fn places(&self) -> fdo::Result<Vec<(String, Details)>> {
-        Err(crate::frozen::error())
-    }
-
-    fn local_engines(&self) -> fdo::Result<Vec<(String, Details)>> {
-        Err(crate::frozen::error())
-    }
-
-    fn point_engine(&self, engine: String, folder: String) -> fdo::Result<()> {
-        let _ = (engine, folder);
-        Err(crate::frozen::error())
-    }
-
-    fn add_computer(&self, name: String, models: Vec<(String, Details)>) -> fdo::Result<String> {
-        let _ = (name, models);
-        Err(crate::frozen::error())
-    }
-
-    fn remove_computer(&self, name: String) -> fdo::Result<()> {
-        let _ = name;
-        Err(crate::frozen::error())
-    }
-
-    fn candidates(&self) -> fdo::Result<Vec<(String, Details)>> {
-        Err(crate::frozen::error())
-    }
-
-    fn add_tailnet_computer(&self, node: String) -> fdo::Result<String> {
-        let _ = node;
-        Err(crate::frozen::error())
-    }
-
-    fn guests(&self) -> fdo::Result<Vec<(String, Details)>> {
-        Err(crate::frozen::error())
-    }
-
-    fn answer_guest(&self, node: String, answer: String) -> fdo::Result<()> {
-        let _ = (node, answer);
-        Err(crate::frozen::error())
-    }
-
-    fn forget_guest(&self, node: String) -> fdo::Result<()> {
-        let _ = node;
-        Err(crate::frozen::error())
-    }
-
-    fn set_helper_pool(
-        &self,
-        slot: String,
-        helper: String,
-        models: Vec<String>,
-    ) -> fdo::Result<()> {
-        let _ = (slot, helper, models);
-        Err(crate::frozen::error())
-    }
-
-    fn start(&self, model: String) -> fdo::Result<()> {
-        let _ = model;
-        Err(crate::frozen::error())
-    }
-
-    fn stop(&self, model: String) -> fdo::Result<()> {
-        let _ = model;
-        Err(crate::frozen::error())
-    }
-
-    fn running(&self) -> fdo::Result<Vec<(String, Details)>> {
-        Err(crate::frozen::error())
-    }
-
-    #[zbus(signal)]
-    async fn guest_asks(
-        emitter: &SignalEmitter<'_>,
-        node: &str,
-        details: Details,
-    ) -> zbus::Result<()>;
-
-    #[zbus(signal)]
-    async fn guests_changed(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
-
-    #[zbus(signal)]
-    async fn engines_changed(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
-
-    #[zbus(signal)]
-    async fn running_changed(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
-
-    #[zbus(property)]
-    fn gpu(&self) -> fdo::Result<String> {
-        Err(crate::frozen::error())
-    }
-}
-
-/// Writes this interface's introspection into `xml`, as an `<interface>` element one level in:
-/// the bus's introspection collects each interface's own.
-pub(crate) fn introspect(xml: &mut String) {
-    zbus::object_server::Interface::introspect_to_writer(&InferenceSkeleton, xml, 1);
 }

@@ -25,7 +25,7 @@ use porter_core::ProviderId;
 use porter_core::consent::Usage;
 use porter_dbus::callers::{CallerRole, Callers};
 use porter_dbus::sheet::SheetKind;
-use porter_dbus::{Details, ServiceRoot, refusal_error_name_in};
+use porter_dbus::{Call, Details, KeysServer, ServiceRoot, refusal_error_name_in};
 use porter_sheets::RequestObjects;
 use porter_wire::AccountsRequest;
 use porter_wire::{ParentWindow, Refusal};
@@ -184,11 +184,12 @@ impl<H: KeyHost, C: Callers> KeysObject<H, C> {
     }
 }
 
-#[zbus::interface(name = "org.quire.Inference1.Keys")]
-impl<H: KeyHost, C: Callers> KeysObject<H, C> {
+impl<H: KeyHost, C: Callers> KeysServer for KeysObject<H, C> {
+    type Error = KeysError;
+
     async fn request_key(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         class: String,
         usage: String,
         parent_window: String,
@@ -208,7 +209,7 @@ impl<H: KeyHost, C: Callers> KeysObject<H, C> {
 
     async fn add_account(
         &self,
-        #[zbus(header)] header: Header<'_>,
+        Call { header, .. }: Call<'_>,
         provider_hint: String,
         parent_window: String,
         options: Details,

@@ -18,11 +18,12 @@
 //! closed).
 
 use crate::args::Details;
-use zbus::fdo;
+use porter_dbus_macros::bus_interface;
 use zbus::zvariant::OwnedObjectPath;
 
-/// The caller's side.
-#[zbus::proxy(
+/// The interface, written once. `#[bus_interface]` makes [`KeysProxy`] for its callers from this
+/// trait, [`KeysServer`] for the daemon to implement and [`KeysServed`] to register.
+#[bus_interface(
     interface = "org.quire.Inference1.Keys",
     default_service = "org.quire.Inference1",
     default_path = "/org/quire/Inference1"
@@ -43,38 +44,4 @@ pub trait Keys {
         parent_window: &str,
         options: &Details,
     ) -> zbus::Result<OwnedObjectPath>;
-}
-
-/// inferd's side: the interface's shape, every method answering `NotSupported`.
-#[derive(Debug, Default)]
-pub struct KeysSkeleton;
-
-#[zbus::interface(name = "org.quire.Inference1.Keys")]
-impl KeysSkeleton {
-    fn request_key(
-        &self,
-        class: String,
-        usage: String,
-        parent_window: String,
-        options: Details,
-    ) -> fdo::Result<OwnedObjectPath> {
-        let _ = (class, usage, parent_window, options);
-        Err(crate::frozen::error())
-    }
-
-    fn add_account(
-        &self,
-        provider_hint: String,
-        parent_window: String,
-        options: Details,
-    ) -> fdo::Result<OwnedObjectPath> {
-        let _ = (provider_hint, parent_window, options);
-        Err(crate::frozen::error())
-    }
-}
-
-/// Writes this interface's introspection into `xml`, as an `<interface>` element one level in:
-/// the bus's introspection collects each interface's own.
-pub(crate) fn introspect(xml: &mut String) {
-    zbus::object_server::Interface::introspect_to_writer(&KeysSkeleton, xml, 1);
 }
