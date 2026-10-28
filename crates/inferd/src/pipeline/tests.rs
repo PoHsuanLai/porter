@@ -8,7 +8,6 @@ use crate::replay::model::model;
 use crate::replay::replayer::Replayer;
 use crate::runner::{Pin, Pinned, Turns};
 use crate::supervise::Supervised;
-use crate::testkit::Scratch;
 use porter_capability::Capability;
 use porter_capability::ModelId;
 use porter_capability::{Billing, Locality, Tier};
@@ -31,6 +30,7 @@ use porter_router::router::Listed;
 use porter_turns::pipeline::{PipelineInput, Transcriber, VecAudio, run_pipeline, unsupported};
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
+use test_kit::Scratch;
 use tokio::net::UnixListener;
 
 fn need() -> Need {

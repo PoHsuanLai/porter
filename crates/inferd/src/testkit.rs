@@ -1,12 +1,11 @@
-//! Helpers the unit tests share: a scratch directory that removes itself, the local models of the
-//! test catalog entries (both are `porter_router::testkit`'s) and a host that records what it was
-//! asked.
+//! Helpers the unit tests share: the local models of the test catalog entries
+//! (`porter_router::testkit`'s) and a host that records what it was asked.
 
 use engine_supervisor::{EngineHost, EngineId, ExitCode, HostError, UnitSpec};
 use std::sync::{Arc, Mutex};
 use tokio::sync::Notify;
 
-pub use porter_router::testkit::{Scratch, cloud_card, models};
+pub use porter_router::testkit::{cloud_card, models};
 
 /// A host that records what it was asked and lets an engine "exit" when it is stopped.
 #[derive(Debug, Clone, Default)]

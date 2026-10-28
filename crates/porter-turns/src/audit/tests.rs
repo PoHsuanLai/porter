@@ -6,7 +6,7 @@ use porter_core::{AppName, Isolation};
 use porter_ids::clock::FixedClock;
 use porter_ids::{Count, UnixSeconds};
 use porter_infer::{ChatReply, EmbedReply, InferRefusal, ModelError, StopReason, Why};
-use porter_router::testkit::Scratch;
+use test_kit::Scratch;
 
 fn app() -> AppId {
     AppId {

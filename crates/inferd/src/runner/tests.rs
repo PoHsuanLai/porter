@@ -1,5 +1,5 @@
 use super::*;
-use crate::testkit::{Scratch, models};
+use crate::testkit::models;
 use porter_capability::Locality;
 use porter_capability::ModelId;
 use porter_core::AccountId;
@@ -10,6 +10,7 @@ use porter_infer::{
     TranscribeBegin, TranscribeMode, VoiceName,
 };
 use porter_router::seams::RunningTurn;
+use test_kit::Scratch;
 use tokio::io::AsyncReadExt;
 use tokio::net::UnixListener;
 

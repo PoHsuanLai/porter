@@ -79,7 +79,7 @@ async fn the_server_answers_over_a_socket() {
 
 #[tokio::test]
 async fn a_recording_engine_appends_each_posted_body_and_not_a_get() {
-    let dir = crate::testkit::Scratch::new("engine-record");
+    let dir = test_kit::Scratch::new("engine-record");
     let path = dir.path().join("sent.jsonl");
     let played = Arc::new(replayer());
     for (head, body) in [

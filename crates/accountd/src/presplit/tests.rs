@@ -10,30 +10,7 @@ use porter_core::{
 };
 use porter_fake::{llm_account, mail_account, storage_account};
 use porter_ids::UnixSeconds;
-use std::sync::atomic::{AtomicU32, Ordering};
-
-static NEXT: AtomicU32 = AtomicU32::new(0);
-
-/// A directory under the system temp directory, removed on drop.
-struct Scratch(PathBuf);
-
-impl Scratch {
-    fn new() -> Self {
-        let dir = std::env::temp_dir().join(format!(
-            "accountd-presplit-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        std::fs::create_dir_all(&dir).expect("scratch dir");
-        Self(dir)
-    }
-}
-
-impl Drop for Scratch {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
-}
+use test_kit::Scratch;
 
 /// What a registry held before the split: an identity, an AI key, a grant and a switch.
 fn old_registry() -> Persisted {
@@ -71,8 +48,8 @@ fn old_registry() -> Persisted {
 
 #[tokio::test]
 async fn an_old_file_loads_as_its_identities_and_is_copied_once_unchanged() {
-    let scratch = Scratch::new();
-    let store = FileStore::new(scratch.0.clone());
+    let scratch = Scratch::new("presplit");
+    let store = FileStore::new(scratch.path().to_path_buf());
     let old = old_registry();
     store.save(&old).await.expect("saved");
     let before = std::fs::read(store.path()).expect("old file");
@@ -99,8 +76,8 @@ async fn an_old_file_loads_as_its_identities_and_is_copied_once_unchanged() {
 
 #[tokio::test]
 async fn a_copy_that_is_there_is_never_overwritten_and_a_clean_file_makes_none() {
-    let scratch = Scratch::new();
-    let store = FileStore::new(scratch.0.clone());
+    let scratch = Scratch::new("presplit");
+    let store = FileStore::new(scratch.path().to_path_buf());
     let copy = pre_split_path(&store);
     std::fs::write(&copy, "the first copy").expect("copy");
     store.save(&old_registry()).await.expect("saved");
@@ -110,8 +87,8 @@ async fn a_copy_that_is_there_is_never_overwritten_and_a_clean_file_makes_none()
         "the first copy"
     );
 
-    let clean = Scratch::new();
-    let store = FileStore::new(clean.0.clone());
+    let clean = Scratch::new("presplit");
+    let store = FileStore::new(clean.path().to_path_buf());
     let mut only = Persisted::empty();
     only.accounts = vec![storage_account()];
     only.accounts[0].auth = AuthKind::Password;

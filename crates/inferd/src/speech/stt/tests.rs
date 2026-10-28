@@ -1,13 +1,14 @@
 use super::*;
 use crate::entries;
 use crate::speech_host::{FakeSpeechHost, Words};
-use crate::testkit::{Scratch, models};
+use crate::testkit::models;
 use porter_core::consent::Usage;
 use porter_infer::{AudioFrame, AudioRate, Base64Bytes, InferEvent};
 use porter_router::catalog::parse_entry_text;
 use porter_router::local::{EngineConfig, build};
 use porter_turns::pipeline::VecAudio;
 use std::path::PathBuf;
+use test_kit::Scratch;
 
 fn ears(scratch: &Scratch) -> LocalModel {
     let entry = parse_entry_text(&entries::speech_in()).expect("entry");

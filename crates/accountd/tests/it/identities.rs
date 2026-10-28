@@ -18,43 +18,22 @@ use porter_sheet::{SheetInput, SheetView};
 use porter_wire::Refusal;
 use std::io::Read;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU32, Ordering};
+use test_kit::Scratch;
 
 const INVALID_ARGS: &str = "org.freedesktop.DBus.Error.InvalidArgs";
 const LIMITS_EXCEEDED: &str = "org.freedesktop.DBus.Error.LimitsExceeded";
 
-static NEXT: AtomicU32 = AtomicU32::new(0);
-
-/// A scratch state directory, removed on drop.
-struct Scratch(PathBuf);
-
-impl Scratch {
-    fn new() -> Self {
-        let dir = std::env::temp_dir().join(format!(
-            "accountd-it-identities-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        std::fs::create_dir_all(&dir).expect("scratch dir");
-        Self(dir)
-    }
-
-    fn options(&self) -> Options {
-        Options {
-            uses: UsesStore::File(self.0.join("porter")),
-            ..Options::default()
-        }
-    }
-
-    fn file(&self) -> PathBuf {
-        self.0.join("porter").join("identity-uses.json")
+/// Options whose identity uses are kept in a directory of `scratch`.
+fn options(scratch: &Scratch) -> Options {
+    Options {
+        uses: UsesStore::File(scratch.join("porter")),
+        ..Options::default()
     }
 }
 
-impl Drop for Scratch {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
+/// The file those uses are written to.
+fn file(scratch: &Scratch) -> PathBuf {
+    scratch.join("porter").join("identity-uses.json")
 }
 
 /// A host whose person picks `account` in the sheet.
@@ -386,8 +365,8 @@ async fn an_app_has_one_picker_open_at_a_time_and_leaving_takes_it_down() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn apps_that_signed_in_are_listed_for_settings_and_go_with_the_identity() {
-    let scratch = Scratch::new();
-    let rig = Rig::start_with(scratch.options(), SheetHost::quiet()).await;
+    let scratch = Scratch::new("it-identities");
+    let rig = Rig::start_with(options(&scratch), SheetHost::quiet()).await;
     let photos = identities(&rig.client("org.quire.Photos").await).await;
     let mail = identities(&rig.client("org.quire.Mail").await).await;
     photos.register_use("fake-storage").await.expect("register");
@@ -415,12 +394,12 @@ async fn apps_that_signed_in_are_listed_for_settings_and_go_with_the_identity() 
     assert_eq!(error_name(&gone), INVALID_ARGS);
 
     // Kept beside registry.json, and across a start.
-    let saved = std::fs::read_to_string(scratch.file()).expect("the uses file");
+    let saved = std::fs::read_to_string(file(&scratch)).expect("the uses file");
     assert!(
         saved.contains("org.quire.Photos") && saved.contains("fake-mail"),
         "{saved}"
     );
-    let again = Rig::start_with(scratch.options(), SheetHost::quiet()).await;
+    let again = Rig::start_with(options(&scratch), SheetHost::quiet()).await;
     let settings_again = identities(&again.client_as(settings_caller()).await).await;
     assert_eq!(
         settings_again.uses("fake-storage").await.expect("uses"),
@@ -447,7 +426,7 @@ async fn apps_that_signed_in_are_listed_for_settings_and_go_with_the_identity() 
     let after = settings.uses("fake-storage").await.expect_err("removed");
     assert_eq!(error_name(&after), INVALID_ARGS);
     assert_eq!(listed(&photos).await, [mail_identity()]);
-    let saved = std::fs::read_to_string(scratch.file()).expect("the uses file");
+    let saved = std::fs::read_to_string(file(&scratch)).expect("the uses file");
     assert!(!saved.contains("fake-storage"), "{saved}");
     assert!(saved.contains("fake-mail"), "{saved}");
 }

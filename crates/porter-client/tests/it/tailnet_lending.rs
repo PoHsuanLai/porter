@@ -66,12 +66,12 @@ impl UnitManager for FakeUnits {
     }
 }
 
-/// A scratch directory under the test temp dir, with the shipped file in it.
-struct Scratch {
+/// A scratch directory with the shipped file in it.
+struct Fixture {
     root: test_kit::Scratch,
 }
 
-impl Scratch {
+impl Fixture {
     fn new() -> Self {
         let root = test_kit::Scratch::new("lending");
         fs::create_dir_all(root.join("share")).expect("scratch");
@@ -110,7 +110,7 @@ const RELOAD_RESTART: [&str; 2] = ["reload", "restart inferd.service"];
 
 #[tokio::test]
 async fn enable_writes_the_shipped_bytes_readable_by_all_then_reloads_and_restarts_in_that_order() {
-    let s = Scratch::new();
+    let s = Fixture::new();
     let (lending, units) = s.lending(Fail::Nowhere);
     assert_eq!(lending.state(), LendingState::NotInstalled);
 
@@ -132,7 +132,7 @@ async fn enable_writes_the_shipped_bytes_readable_by_all_then_reloads_and_restar
 async fn enable_gives_0644_whatever_the_umask_made_of_a_new_file() {
     // The staged file is made with the process's umask; the mode is then set outright. A
     // restrictive file already there is replaced, not kept.
-    let s = Scratch::new();
+    let s = Fixture::new();
     s.put("# mine\n");
     fs::set_permissions(s.drop_in(), fs::Permissions::from_mode(0o600)).expect("chmod");
     let (lending, _) = s.lending(Fail::Nowhere);
@@ -142,7 +142,7 @@ async fn enable_gives_0644_whatever_the_umask_made_of_a_new_file() {
 
 #[tokio::test]
 async fn enable_twice_leaves_the_same_file_and_still_reloads_and_restarts() {
-    let s = Scratch::new();
+    let s = Fixture::new();
     let (lending, units) = s.lending(Fail::Nowhere);
     lending.enable().await.expect("first");
     lending.enable().await.expect("second");
@@ -160,7 +160,7 @@ async fn enable_twice_leaves_the_same_file_and_still_reloads_and_restarts() {
 
 #[tokio::test]
 async fn a_file_that_is_not_the_shipped_one_reads_as_differs_and_enable_replaces_it() {
-    let s = Scratch::new();
+    let s = Fixture::new();
     s.put("[Service]\nIPAddressAllow=any\n");
     let (lending, units) = s.lending(Fail::Nowhere);
     assert_eq!(lending.state(), LendingState::Differs);
@@ -174,7 +174,7 @@ async fn a_file_that_is_not_the_shipped_one_reads_as_differs_and_enable_replaces
 
 #[tokio::test]
 async fn a_shipped_file_that_changed_since_the_install_makes_the_old_copy_differ() {
-    let s = Scratch::new();
+    let s = Fixture::new();
     let (lending, _) = s.lending(Fail::Nowhere);
     lending.enable().await.expect("enable");
     fs::write(
@@ -187,7 +187,7 @@ async fn a_shipped_file_that_changed_since_the_install_makes_the_old_copy_differ
 
 #[tokio::test]
 async fn disable_takes_the_drop_in_and_its_empty_folder_away_then_reloads_and_restarts() {
-    let s = Scratch::new();
+    let s = Fixture::new();
     let (lending, units) = s.lending(Fail::Nowhere);
     lending.enable().await.expect("enable");
 
@@ -209,7 +209,7 @@ async fn disable_takes_the_drop_in_and_its_empty_folder_away_then_reloads_and_re
 
 #[tokio::test]
 async fn disable_with_nothing_installed_is_fine_and_does_it_again() {
-    let s = Scratch::new();
+    let s = Fixture::new();
     let (lending, units) = s.lending(Fail::Nowhere);
     lending.disable().await.expect("first");
     lending.disable().await.expect("second");
@@ -227,7 +227,7 @@ async fn disable_with_nothing_installed_is_fine_and_does_it_again() {
 
 #[tokio::test]
 async fn disable_leaves_the_persons_other_files_in_the_folder() {
-    let s = Scratch::new();
+    let s = Fixture::new();
     let (lending, _) = s.lending(Fail::Nowhere);
     lending.enable().await.expect("enable");
     let other = s.drop_in().with_file_name("mine.conf");
@@ -241,7 +241,7 @@ async fn disable_leaves_the_persons_other_files_in_the_folder() {
 
 #[tokio::test]
 async fn a_missing_shipped_file_changes_nothing_and_asks_nothing_of_the_manager() {
-    let s = Scratch::new();
+    let s = Fixture::new();
     let config = LendingConfig::new(s.root.join("share/none.conf"), s.user_dir());
     let units = FakeUnits::new(Fail::Nowhere);
     let lending = TailnetLending::new(config, units.clone());
@@ -261,7 +261,7 @@ async fn a_missing_shipped_file_changes_nothing_and_asks_nothing_of_the_manager(
 
 #[tokio::test]
 async fn a_folder_that_cannot_be_made_is_could_not_write_and_the_manager_is_left_alone() {
-    let s = Scratch::new();
+    let s = Fixture::new();
     // `inferd.service.d` is a file, so the drop-in cannot go in it.
     fs::create_dir_all(s.user_dir()).expect("dir");
     fs::write(s.user_dir().join("inferd.service.d"), "in the way").expect("block");
@@ -275,7 +275,7 @@ async fn a_folder_that_cannot_be_made_is_could_not_write_and_the_manager_is_left
 
 #[tokio::test]
 async fn a_reload_that_fails_keeps_the_file_and_never_restarts() {
-    let s = Scratch::new();
+    let s = Fixture::new();
     let (lending, units) = s.lending(Fail::Reload);
 
     let error = lending.enable().await.expect_err("reload");
@@ -287,7 +287,7 @@ async fn a_reload_that_fails_keeps_the_file_and_never_restarts() {
 
 #[tokio::test]
 async fn a_restart_that_fails_keeps_the_file_and_a_second_try_does_it_all_again() {
-    let s = Scratch::new();
+    let s = Fixture::new();
     let (lending, units) = s.lending(Fail::Restart);
 
     let error = lending.enable().await.expect_err("restart");
@@ -301,7 +301,7 @@ async fn a_restart_that_fails_keeps_the_file_and_a_second_try_does_it_all_again(
 
 #[tokio::test]
 async fn disable_that_fails_to_restart_has_still_taken_the_file_away() {
-    let s = Scratch::new();
+    let s = Fixture::new();
     s.put(SHIPPED);
     let (lending, units) = s.lending(Fail::Restart);
 
@@ -345,7 +345,7 @@ fn lookup<'a>(vars: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<OsStrin
 
 #[test]
 fn the_environment_names_the_persons_folder_and_where_the_shipped_file_is() {
-    let s = Scratch::new();
+    let s = Fixture::new();
     let data = s.root.to_str().expect("utf-8");
     fs::create_dir_all(s.root.join("porter")).expect("dir");
     fs::write(s.root.join("porter/inferd-tailnet.conf"), SHIPPED).expect("file");
@@ -476,7 +476,7 @@ mod session_bus {
         ) -> zbus::Result<()>;
     }
 
-    async fn run(job: Job) -> (Result<(), LendingError>, Vec<String>, Scratch) {
+    async fn run(job: Job) -> (Result<(), LendingError>, Vec<String>, Fixture) {
         let bus = PrivateBus::start();
         let systemd = bus.connect().await;
         let calls = Arc::new(Mutex::new(Vec::new()));
@@ -495,7 +495,7 @@ mod session_bus {
             .request_name("org.freedesktop.systemd1")
             .await
             .expect("name");
-        let s = Scratch::new();
+        let s = Fixture::new();
         let lending = TailnetLending::new(s.config(), SessionUnits::new(bus.connect().await));
         let result = lending.enable().await;
         let calls = calls.lock().expect("calls").clone();
@@ -521,7 +521,7 @@ mod session_bus {
     #[tokio::test]
     async fn no_manager_on_the_bus_is_a_failed_reload() {
         let bus = PrivateBus::start();
-        let s = Scratch::new();
+        let s = Fixture::new();
         let lending = TailnetLending::new(s.config(), SessionUnits::new(bus.connect().await));
         let error = lending.enable().await.expect_err("no manager");
         assert!(matches!(error, LendingError::ReloadFailed(_)), "{error:?}");

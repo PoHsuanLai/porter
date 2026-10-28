@@ -301,7 +301,7 @@ mod tests {
 
     #[test]
     fn a_table_the_person_could_have_written_is_not_root_held() {
-        let dir = std::env::temp_dir().join(format!("porter-held-{}", std::process::id()));
+        let dir = test_kit::Scratch::new("held");
         std::fs::create_dir_all(dir.join("porter")).expect("dir");
         let table = dir.join("porter/callers.toml");
         std::fs::write(&table, "").expect("write");
@@ -311,7 +311,6 @@ mod tests {
         assert!(!root_held(&dir.join("porter/absent.toml")));
         // A directory is not a table.
         assert!(!root_held(Path::new("/")));
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

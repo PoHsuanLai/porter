@@ -10,36 +10,13 @@ use porter_core::DesktopSpace;
 use porter_dbus::callers::CallerRole;
 use porter_dbus::{SpaceChangedStream, SpacesProxy};
 use porter_service::audit::AuditEvent;
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicU32, Ordering};
+use test_kit::Scratch;
 
-static NEXT: AtomicU32 = AtomicU32::new(0);
-
-/// A scratch state directory, removed on drop.
-struct Scratch(PathBuf);
-
-impl Scratch {
-    fn new() -> Self {
-        let dir = std::env::temp_dir().join(format!(
-            "accountd-it-spaces-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        std::fs::create_dir_all(&dir).expect("scratch dir");
-        Self(dir)
-    }
-
-    fn options(&self) -> Options {
-        Options {
-            spaces: SpacesStore::File(self.0.join("porter")),
-            ..Options::default()
-        }
-    }
-}
-
-impl Drop for Scratch {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
+/// Options whose Spaces are kept in a directory of `scratch`.
+fn options(scratch: &Scratch) -> Options {
+    Options {
+        spaces: SpacesStore::File(scratch.join("porter")),
+        ..Options::default()
     }
 }
 
@@ -268,14 +245,14 @@ async fn removing_a_space_is_audited_and_leaves_the_others() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_restart_keeps_the_spaces() {
-    let scratch = Scratch::new();
-    let first = start(scratch.options()).await;
+    let scratch = Scratch::new("it-spaces");
+    let first = start(options(&scratch)).await;
     let app = spaces(&first.client("org.quire.Photos").await).await;
     let work = app.create("Work", "teal").await.expect("create");
     let home = app.create("Home", "").await.expect("create");
     drop(first);
 
-    let second = start(scratch.options()).await;
+    let second = start(options(&scratch)).await;
     let app = spaces(&second.client("org.quire.Photos").await).await;
     assert_eq!(
         listed(&app).await,

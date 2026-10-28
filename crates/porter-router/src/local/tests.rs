@@ -1,8 +1,9 @@
 use super::*;
 use crate::catalog::parse_entry_text;
 use crate::testkit::entries;
-use crate::testkit::{Scratch, models};
+use crate::testkit::models;
 use porter_capability::LlmFeature;
+use test_kit::Scratch;
 
 #[test]
 fn each_entry_with_a_capability_and_a_configured_engine_becomes_a_model() {

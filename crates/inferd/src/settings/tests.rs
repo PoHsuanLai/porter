@@ -6,7 +6,7 @@ use crate::config::InferdConfig;
 use crate::engines::Engines;
 use crate::peers::Role;
 use crate::supervise::{Ports, Supervised};
-use crate::testkit::{Recorder, Scratch, models};
+use crate::testkit::{Recorder, models};
 use engine_supervisor::{FakeGpu, FakeReadyProbe, GpuMemory, Probe, SupervisorConfig};
 use model_catalog::MiB;
 use porter_capability::ModelId;
@@ -24,6 +24,7 @@ use porter_match::Need;
 use porter_router::router::{Decided, Listed, choose};
 use porter_router::session::SessionSpec;
 use std::time::Duration;
+use test_kit::Scratch;
 
 fn config(text: &str) -> InferdConfig {
     InferdConfig::from_toml(text).unwrap_or_else(|e| panic!("{text}: {e}"))

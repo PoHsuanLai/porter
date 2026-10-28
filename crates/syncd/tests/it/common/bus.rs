@@ -3,9 +3,8 @@
 //! stops the daemon by its PID. Tests never reach the real bus.
 
 use std::io::{BufRead, BufReader};
-use std::path::PathBuf;
+use std::path::Path;
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicU32, Ordering};
 
 fn config_text(dir: &std::path::Path) -> String {
     format!(
@@ -26,14 +25,12 @@ fn config_text(dir: &std::path::Path) -> String {
     )
 }
 
-static NEXT: AtomicU32 = AtomicU32::new(0);
-
 /// A running private bus.
 #[derive(Debug)]
 pub struct PrivateBus {
     child: Child,
     address: String,
-    scratch: PathBuf,
+    scratch: test_kit::Scratch,
 }
 
 impl PrivateBus {
@@ -42,18 +39,13 @@ impl PrivateBus {
         // In the temp directory (a RAM disk on most systems), not the target directory: the
         // journals commit with a flush, and on a disk busy with builds one flush took a minute,
         // so a first cycle outlasted every deadline while the machine's CPU sat idle.
-        let scratch = std::env::temp_dir().join(format!(
-            "bus-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        std::fs::create_dir_all(&scratch).expect("scratch dir");
+        let scratch = test_kit::Scratch::new("syncd-bus");
         let config = scratch.join("bus.conf");
         std::fs::write(&config, config_text(&scratch)).expect("write the bus config");
         let mut child = Command::new("dbus-daemon")
             .env_clear()
-            .env("HOME", &scratch)
-            .env("XDG_RUNTIME_DIR", &scratch)
+            .env("HOME", scratch.path())
+            .env("XDG_RUNTIME_DIR", scratch.path())
             .arg(format!("--config-file={}", config.display()))
             .args(["--nofork", "--print-address=1"])
             .stdout(Stdio::piped())
@@ -77,7 +69,7 @@ impl PrivateBus {
     }
 
     /// The scratch directory (HOME and runtime dir of anything the test runs).
-    pub fn scratch(&self) -> &PathBuf {
+    pub fn scratch(&self) -> &Path {
         &self.scratch
     }
 
@@ -95,6 +87,5 @@ impl Drop for PrivateBus {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
-        let _ = std::fs::remove_dir_all(&self.scratch);
     }
 }

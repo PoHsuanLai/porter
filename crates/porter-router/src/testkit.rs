@@ -1,6 +1,6 @@
-//! Helpers for tests of this crate and of the ones built on it (feature `testing`): a scratch
-//! directory that removes itself, the catalog entries the tests use, the local models they make,
-//! a model of an account that is not on this computer, and the catalog stoker ships.
+//! Helpers for tests of this crate and of the ones built on it (feature `testing`): the catalog
+//! entries the tests use, the local models they make, a model of an account that is not on this
+//! computer, and the catalog stoker ships.
 
 pub mod entries;
 
@@ -11,37 +11,9 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 static NEXT: AtomicU32 = AtomicU32::new(0);
 
-/// A directory under the system temp directory, removed on drop.
-#[derive(Debug)]
-pub struct Scratch(PathBuf);
-
-impl Scratch {
-    /// A new, empty directory named for `name`.
-    pub fn new(name: &str) -> Self {
-        let dir = std::env::temp_dir().join(format!(
-            "inferd-{name}-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        std::fs::create_dir_all(&dir).expect("scratch dir");
-        Self(dir)
-    }
-
-    /// The directory.
-    pub fn path(&self) -> &Path {
-        &self.0
-    }
-}
-
-impl Drop for Scratch {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
-}
-
 /// The three test models (`tiny-chat`, `tiny-embed`, `tiny-cua`), with engine programs
 /// configured and the weights directories created under `scratch`.
-pub fn models(scratch: &Scratch) -> Vec<LocalModel> {
+pub fn models(scratch: &Path) -> Vec<LocalModel> {
     let entries: Vec<_> = [entries::chat(), entries::embed(), entries::cua()]
         .iter()
         .map(|text| parse_entry_text(text).expect("entry"))
@@ -51,10 +23,10 @@ pub fn models(scratch: &Scratch) -> Vec<LocalModel> {
         llama_server: Some(PathBuf::from("/nonexistent/llama-server")),
         speech_host: None,
         kokoro_python: None,
-        hf_cache: scratch.path().join("hf"),
+        hf_cache: scratch.join("hf"),
         ..EngineConfig::default()
     };
-    let models = build(&entries, &config, &scratch.path().join("s"));
+    let models = build(&entries, &config, &scratch.join("s"));
     for model in &models {
         std::fs::create_dir_all(model.spec.unit.sandbox.read.first().expect("bind"))
             .expect("weights");

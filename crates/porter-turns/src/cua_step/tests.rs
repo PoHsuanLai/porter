@@ -10,9 +10,10 @@ use model_provider::{
 use model_provider::{Part, Role, TurnRequest};
 use porter_capability::CuaEnv;
 use porter_infer::{AttachIndex, ImageSource, StepIndex as Index};
-use porter_router::testkit::{Scratch, models};
+use porter_router::testkit::models;
 use std::io::Write;
 use std::os::fd::OwnedFd;
+use test_kit::Scratch;
 
 fn cua_model(scratch: &Scratch) -> LocalModel {
     models(scratch).remove(2)

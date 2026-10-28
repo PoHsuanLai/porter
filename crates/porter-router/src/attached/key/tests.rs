@@ -1,7 +1,7 @@
 use super::*;
-use crate::testkit::Scratch;
 use model_http::Secret;
 use std::os::unix::fs::PermissionsExt;
+use test_kit::Scratch;
 
 fn file_with(scratch: &Scratch, text: &[u8], mode: u32) -> KeyFile {
     let path = scratch.path().join("key");

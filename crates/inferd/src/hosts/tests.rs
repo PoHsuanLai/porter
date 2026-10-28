@@ -1,8 +1,8 @@
 use super::*;
-use crate::testkit::Scratch;
 use engine_supervisor::{EnvPair, GpuAccess, Network, ProgramPath, Sandbox};
 use model_catalog::EngineArg;
 use std::path::Path;
+use test_kit::Scratch;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixListener;
 

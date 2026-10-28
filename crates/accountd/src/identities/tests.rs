@@ -1,36 +1,9 @@
 use super::*;
-use std::path::Path;
-use std::sync::atomic::{AtomicU32, Ordering};
+use test_kit::Scratch;
 
-static NEXT: AtomicU32 = AtomicU32::new(0);
-
-/// A directory under the system temp directory, removed on drop.
-struct Scratch(PathBuf);
-
-impl Scratch {
-    fn new() -> Self {
-        let dir = std::env::temp_dir().join(format!(
-            "accountd-identities-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        std::fs::create_dir_all(&dir).expect("scratch dir");
-        Self(dir)
-    }
-
-    fn path(&self) -> &Path {
-        &self.0
-    }
-
-    fn store(&self) -> UsesStore {
-        UsesStore::File(self.0.join("porter"))
-    }
-}
-
-impl Drop for Scratch {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
+/// A uses store in a directory of `scratch`.
+fn store(scratch: &Scratch) -> UsesStore {
+    UsesStore::File(scratch.join("porter"))
 }
 
 fn identity(id: &str) -> IdentityId {
@@ -58,8 +31,8 @@ fn a_pick_is_spent_once_and_only_by_the_identity_and_connection_it_names() {
 
 #[tokio::test]
 async fn uses_are_kept_once_each_survive_a_restart_and_go_with_the_identity() {
-    let scratch = Scratch::new();
-    let (mut book, said) = UseBook::open(&scratch.store()).await;
+    let scratch = Scratch::new("identities");
+    let (mut book, said) = UseBook::open(&store(&scratch)).await;
     assert_eq!(said, None);
     assert!(book.apps(&identity("ada.example")).is_empty());
     for _ in 0..2 {
@@ -73,7 +46,7 @@ async fn uses_are_kept_once_each_survive_a_restart_and_go_with_the_identity() {
     let both = [app("org.quire.Calendar"), app("org.quire.Mail")];
     assert_eq!(book.apps(&identity("ada.example")), both);
 
-    let (mut again, said) = UseBook::open(&scratch.store()).await;
+    let (mut again, said) = UseBook::open(&store(&scratch)).await;
     assert_eq!(said, None);
     assert_eq!(again.apps(&identity("ada.example")), both);
     again
@@ -84,17 +57,17 @@ async fn uses_are_kept_once_each_survive_a_restart_and_go_with_the_identity() {
         .forget(&identity("never.there"))
         .await
         .expect("nothing");
-    let (last, _) = UseBook::open(&scratch.store()).await;
+    let (last, _) = UseBook::open(&store(&scratch)).await;
     assert!(last.apps(&identity("ada.example")).is_empty());
 }
 
 #[tokio::test]
 async fn a_file_that_cannot_be_read_is_left_as_it_is_and_no_use_is_recorded() {
-    let scratch = Scratch::new();
+    let scratch = Scratch::new("identities");
     let dir = scratch.path().join("porter");
     std::fs::create_dir_all(&dir).expect("dir");
     std::fs::write(dir.join(FILE), "{not json").expect("file");
-    let (mut book, said) = UseBook::open(&scratch.store()).await;
+    let (mut book, said) = UseBook::open(&store(&scratch)).await;
     assert!(said.is_some_and(|said| said.contains(FILE)));
     let refused = book
         .record(identity("ada.example"), app("org.quire.Mail"))

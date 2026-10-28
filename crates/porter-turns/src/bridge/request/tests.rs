@@ -4,9 +4,10 @@ use porter_core::DataClass;
 use porter_core::consent::Usage;
 use porter_ids::Permille;
 use porter_match::DimsNeed;
-use porter_router::testkit::{Scratch, models};
+use porter_router::testkit::models;
 use std::io::Write;
 use std::os::fd::OwnedFd;
+use test_kit::Scratch;
 
 fn chat_model() -> (Scratch, LocalModel) {
     let scratch = Scratch::new("bridge");

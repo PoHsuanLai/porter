@@ -1,12 +1,12 @@
 use super::*;
 use crate::lab::Lab;
-use crate::testkit::Scratch;
 use model_http::Port;
 use porter_fake_servers::net::Bind;
 use porter_router::attached::config::{Place, Reach};
 use porter_router::attached::key::{KeyFile, KeyFileProblem};
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
+use test_kit::Scratch;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 const SERVED: &str = "qwen3-32b";

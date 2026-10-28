@@ -2,31 +2,9 @@ use super::*;
 use porter_core::{AppName, Isolation};
 use rustix::fs::{SealFlags, fcntl_get_seals};
 use std::io::Read;
-use std::sync::atomic::{AtomicU64, Ordering};
+use test_kit::Scratch;
 
 const KEY: &str = "sk-ant-api03-S3CRET-HANDOFF-KEY";
-
-/// A scratch directory of its own, removed on drop.
-struct Scratch(PathBuf);
-
-impl Scratch {
-    fn new() -> Self {
-        static N: AtomicU64 = AtomicU64::new(0);
-        let dir = std::env::temp_dir().join(format!(
-            "inferd-credentials-{}-{}",
-            std::process::id(),
-            N.fetch_add(1, Ordering::SeqCst)
-        ));
-        std::fs::create_dir_all(&dir).expect("scratch");
-        Self(dir)
-    }
-}
-
-impl Drop for Scratch {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
-}
 
 fn audience() -> AppId {
     AppId {
@@ -66,13 +44,13 @@ fn mode(path: &Path) -> u32 {
 
 #[test]
 fn a_tmpfs_credential_is_a_0600_file_in_a_0700_directory_of_its_own_and_ending_it_unlinks_both() {
-    let scratch = Scratch::new();
-    let credentials = Credentials::new(Some(&scratch.0));
+    let scratch = Scratch::new("credentials");
+    let credentials = Credentials::new(Some(scratch.path()));
     let (id, handle) = issue(&credentials, ":1.7", Handoff::TmpfsFile).expect("issued");
     let Handle::Path(path) = handle else {
         panic!("a tmpfs credential is a path");
     };
-    let root = &scratch.0;
+    let root = scratch.path();
     assert_eq!(path, root.join(id.as_str()).join("key"));
     assert_eq!(std::fs::read_to_string(&path).expect("read"), KEY);
     assert_eq!(mode(&path), 0o600);
@@ -95,8 +73,8 @@ fn the_end_is_noted_while_the_file_is_still_there() {
     // The audit line comes first: a reader who sees the file gone finds the line that says why
     // (rel-13: a launcher's credentials were unlinked, then audited, and a test that looked in
     // between found no line).
-    let scratch = Scratch::new();
-    let credentials = Credentials::new(Some(&scratch.0));
+    let scratch = Scratch::new("credentials");
+    let credentials = Credentials::new(Some(scratch.path()));
     let (gone, one) = issue(&credentials, ":1.1", Handoff::TmpfsFile).expect("first");
     let (taken, two) = issue(&credentials, ":1.2", Handoff::TmpfsFile).expect("second");
     let (Handle::Path(one), Handle::Path(two)) = (one, two) else {
@@ -138,8 +116,8 @@ fn the_end_is_noted_while_the_file_is_still_there() {
 
 #[test]
 fn two_credentials_get_two_files_and_ending_one_leaves_the_other() {
-    let scratch = Scratch::new();
-    let credentials = Credentials::new(Some(&scratch.0));
+    let scratch = Scratch::new("credentials");
+    let credentials = Credentials::new(Some(scratch.path()));
     let (first, one) = issue(&credentials, ":1.1", Handoff::TmpfsFile).expect("first");
     let (second, two) = issue(&credentials, ":1.2", Handoff::TmpfsFile).expect("second");
     assert_ne!(first, second);
@@ -161,8 +139,8 @@ fn two_credentials_get_two_files_and_ending_one_leaves_the_other() {
 
 #[test]
 fn a_memfd_credential_is_a_sealed_descriptor_and_leaves_no_file() {
-    let scratch = Scratch::new();
-    let credentials = Credentials::new(Some(&scratch.0));
+    let scratch = Scratch::new("credentials");
+    let credentials = Credentials::new(Some(scratch.path()));
     let (id, handle) = issue(&credentials, ":1.7", Handoff::Memfd).expect("issued");
     let Handle::Fd(fd) = handle else {
         panic!("a memfd credential is a descriptor");
@@ -177,7 +155,10 @@ fn a_memfd_credential_is_a_sealed_descriptor_and_leaves_no_file() {
         .expect("read");
     assert_eq!(text, KEY);
     assert!(
-        std::fs::read_dir(&scratch.0).expect("dir").next().is_none(),
+        std::fs::read_dir(scratch.path())
+            .expect("dir")
+            .next()
+            .is_none(),
         "a memfd touches no directory"
     );
     assert!(credentials.take(":1.7", &id, |_| {}).is_some());
@@ -196,13 +177,13 @@ fn a_tmpfs_credential_needs_a_runtime_directory() {
 
 #[test]
 fn what_an_earlier_inferd_left_is_cleared_at_start_and_nothing_else_is() {
-    let scratch = Scratch::new();
-    let stale = scratch.0.join("cred-1");
+    let scratch = Scratch::new("credentials");
+    let stale = scratch.join("cred-1");
     std::fs::create_dir_all(&stale).expect("stale dir");
     std::fs::write(stale.join("key"), KEY).expect("stale key");
-    let foreign = scratch.0.join("not-a-credential");
+    let foreign = scratch.join("not-a-credential");
     std::fs::create_dir_all(&foreign).expect("foreign dir");
-    let credentials = Credentials::new(Some(&scratch.0));
+    let credentials = Credentials::new(Some(scratch.path()));
     assert!(!stale.exists());
     assert!(foreign.exists(), "what is not a credential stays");
     // The first id of this run does not meet the old directory.
@@ -212,9 +193,9 @@ fn what_an_earlier_inferd_left_is_cleared_at_start_and_nothing_else_is() {
 
 #[test]
 fn a_directory_that_is_there_already_is_refused_rather_than_written_into() {
-    let scratch = Scratch::new();
-    let credentials = Credentials::new(Some(&scratch.0));
-    let planted = scratch.0.join("cred-1");
+    let scratch = Scratch::new("credentials");
+    let credentials = Credentials::new(Some(scratch.path()));
+    let planted = scratch.join("cred-1");
     std::fs::create_dir_all(&planted).expect("planted");
     assert!(matches!(
         issue(&credentials, ":1.7", Handoff::TmpfsFile),
