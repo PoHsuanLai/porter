@@ -2769,6 +2769,7 @@ dependencies = [
  "porter-service-core",
  "porter-sheet",
  "porter-wire",
+ "serde_json",
  "test-kit",
  "tokio",
 ]

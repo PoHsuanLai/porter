@@ -131,6 +131,25 @@ impl Registry {
             .collect()
     }
 
+    /// Whether the key of `account` may be used for language models now: not when the person
+    /// turned the account off for them (`Denied`) nor while it waits to be signed in again
+    /// (`NeedsReauth`).
+    ///
+    /// # Errors
+    /// The refusal that says why not.
+    pub fn llm_usable(&self, account: &Account) -> Result<(), Refusal> {
+        let off = self.toggles.iter().any(|t| {
+            t.account == account.id
+                && t.kind == CapabilityKind::Llm
+                && t.toggle == porter_capability::Toggle::Off
+        });
+        match (off, account.state) {
+            (true, _) => Err(Refusal::Denied),
+            (false, porter_core::AccountState::NeedsReauth) => Err(Refusal::NeedsReauth),
+            (false, _) => Ok(()),
+        }
+    }
+
     /// The grant `id`, if it is `app`'s.
     pub fn grant_of(&self, app: &AppId, id: &GrantId) -> Option<&Grant> {
         self.grants

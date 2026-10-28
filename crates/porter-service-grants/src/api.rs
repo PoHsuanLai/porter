@@ -2,7 +2,8 @@
 
 use crate::Grants;
 use porter_core::consent::{Availability, Grant, Usage};
-use porter_core::{AppId, Candidate, DataClass, EndpointUrl, GrantId, RelayPlan, SessionToken};
+use porter_core::{AppId, Candidate, DataClass, EndpointUrl, GrantId, LlmVerdict, ProviderId};
+use porter_core::{RelayPlan, SecretText, SessionToken};
 use porter_match::Need;
 use porter_service_core::Ports;
 use porter_wire::{AccountsReply, ParentWindow, Refusal};
@@ -75,6 +76,39 @@ pub trait GrantsApi {
         &self,
         session: Option<&SessionToken>,
     ) -> impl Future<Output = Vec<GrantId>> + Send;
+
+    /// What each account that serves language models says for `app`, for data of `class` used as
+    /// `usage` says. `provider_label` gives what a person reads for a provider.
+    fn llm_verdicts(
+        &self,
+        app: &AppId,
+        class: DataClass,
+        usage: Usage,
+        provider_label: &dyn Fn(&ProviderId) -> Option<String>,
+    ) -> Vec<LlmVerdict>;
+
+    /// The key behind an allow grant of kind `Llm`. The grant must exist and be an allow, the
+    /// account must be usable (its switch for language models on, no sign-in due), and the key
+    /// is read through the accounts domain. `KeyResolved` is audited, never the key, and an
+    /// allow-once grant is spent only after the read succeeded.
+    ///
+    /// # Errors
+    /// `UnknownGrant`, `AudienceNotGranted` for a grant of another kind, `Denied`,
+    /// `NeedsReauth` and `Unavailable`.
+    fn release_key(
+        &self,
+        grant: &GrantId,
+    ) -> impl Future<Output = Result<SecretText, Refusal>> + Send;
+
+    /// The permit `app` already holds for `need`, the one given most recently, so a repeat
+    /// request is answered with no sheet.
+    fn existing_permit(
+        &self,
+        app: &AppId,
+        need: &Need,
+        class: DataClass,
+        usage: Usage,
+    ) -> Option<Candidate>;
 
     /// What the relay for `OpenAuthenticated` is told: checks that `caller` holds the grant and
     /// that `endpoint` is one of the account's for the grant's kind, then reads what the relay
@@ -159,6 +193,33 @@ impl<E: Ports> GrantsApi for Grants<'_, E> {
         session: Option<&SessionToken>,
     ) -> impl Future<Output = Vec<GrantId>> + Send {
         Grants::end_session_grants(self, session)
+    }
+
+    fn llm_verdicts(
+        &self,
+        app: &AppId,
+        class: DataClass,
+        usage: Usage,
+        provider_label: &dyn Fn(&ProviderId) -> Option<String>,
+    ) -> Vec<LlmVerdict> {
+        self.llm_verdicts_of(app, class, usage, provider_label)
+    }
+
+    fn release_key(
+        &self,
+        grant: &GrantId,
+    ) -> impl Future<Output = Result<SecretText, Refusal>> + Send {
+        Grants::release_key(self, grant)
+    }
+
+    fn existing_permit(
+        &self,
+        app: &AppId,
+        need: &Need,
+        class: DataClass,
+        usage: Usage,
+    ) -> Option<Candidate> {
+        self.existing_permit_of(app, need, class, usage)
     }
 
     fn open_authenticated(

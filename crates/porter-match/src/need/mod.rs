@@ -7,7 +7,9 @@ mod ai;
 mod data;
 
 pub use agent::AgentNeed;
-pub use ai::{CuaNeed, DimsNeed, EmbedNeed, ImageGenNeed, LlmNeed, RerankNeed, SpeechNeed};
+pub use ai::{
+    CuaNeed, DimsNeed, EmbedNeed, ImageGenNeed, LlmNeed, RerankNeed, SpeechNeed, llm_need,
+};
 pub use data::{
     IdentityNeed, KeyValueNeed, MailNeed, NotesNeed, PhotosNeed, PimNeed, PushNeed, StorageNeed,
 };

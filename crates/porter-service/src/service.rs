@@ -7,8 +7,8 @@ use porter_core::consent::{Availability, Grant, Usage};
 use porter_core::store::{NoStore, RegistryStore};
 use porter_core::{AccountId, GrantId, ProviderId};
 use porter_core::{
-    AccountState, AgentState, AppId, Candidate, DataClass, EndpointUrl, RelayPlan, SecretText,
-    SessionToken,
+    AccountState, AgentState, AppId, Candidate, DataClass, EndpointUrl, LlmVerdict, OwnServerRow,
+    RelayPlan, SecretText, SessionToken,
 };
 use porter_ids::clock::Clock;
 use porter_match::Need;
@@ -216,6 +216,45 @@ where
     /// is locked or unreachable is `Unavailable`.
     pub async fn api_key(&self, account: &AccountId) -> Result<SecretText, Refusal> {
         self.accounts().api_key(account).await
+    }
+
+    /// The accounts that are servers of the person's own, with their chat addresses.
+    pub fn own_servers(&self) -> Vec<OwnServerRow> {
+        self.accounts().own_servers()
+    }
+
+    /// The key of the own server `account`, which needs no permit.
+    pub async fn own_server_key(&self, account: &AccountId) -> Result<SecretText, Refusal> {
+        self.accounts().own_server_key(account).await
+    }
+
+    /// What each account that serves language models says for `app`.
+    pub fn llm_verdicts(
+        &self,
+        app: &AppId,
+        class: DataClass,
+        usage: Usage,
+        provider_label: &dyn Fn(&ProviderId) -> Option<String>,
+    ) -> Vec<LlmVerdict> {
+        self.grants_domain()
+            .llm_verdicts(app, class, usage, provider_label)
+    }
+
+    /// The key behind an allow grant of kind `Llm`, read once; an allow-once grant is spent.
+    pub async fn release_key(&self, grant: &GrantId) -> Result<SecretText, Refusal> {
+        self.grants_domain().release_key(grant).await
+    }
+
+    /// The permit `app` already holds for `need`, the newest.
+    pub fn existing_permit(
+        &self,
+        app: &AppId,
+        need: &Need,
+        class: DataClass,
+        usage: Usage,
+    ) -> Option<Candidate> {
+        self.grants_domain()
+            .existing_permit(app, need, class, usage)
     }
 
     /// Opens the add-account sheet for an identity the host already knows ("Continue as"): the

@@ -8,7 +8,7 @@ use crate::launcher::Launchers;
 use crate::local::LocalFault;
 use porter_capability::{CapabilityKind, Claim, Toggle};
 use porter_core::{
-    AccountId, AccountState, AgentState, AppId, ProviderHint, ProviderId, SecretText,
+    AccountId, AccountState, AgentState, AppId, OwnServerRow, ProviderHint, ProviderId, SecretText,
 };
 use porter_provider::RevokeOutcome;
 use porter_secrets::SecretsError;
@@ -95,11 +95,23 @@ pub trait AccountsApi {
     /// whether a host offers the switch that asks it ("Show in Files").
     fn asks_on_use(&self, provider: &ProviderId, kind: CapabilityKind) -> bool;
 
-    /// The API key filed for `account`: the in-process read for a host that runs the agent
-    /// launcher (inferd). It never crosses a process. A key that is missing or unreadable (or
-    /// filed as another kind of credential) means signing in again (`NeedsReauth`); a store that
-    /// is locked or unreachable is `Unavailable`.
+    /// The API key filed for `account`: the in-process read of the host that keeps it. A key
+    /// that is missing or unreadable (or filed as another kind of credential) means signing in
+    /// again (`NeedsReauth`); a store that is locked or unreachable is `Unavailable`.
     fn api_key(
+        &self,
+        account: &AccountId,
+    ) -> impl Future<Output = Result<SecretText, Refusal>> + Send;
+
+    /// The accounts that are servers of the person's own (provider `openai-compatible`) and keep
+    /// a chat-completions address.
+    fn own_servers(&self) -> Vec<OwnServerRow>;
+
+    /// The key of the own server `account`, for the one request that asks it for its models. It
+    /// needs no permit; it is refused for an account that is not an own server, and as `api_key`
+    /// is for a key that is gone, with the account's switch for language models and its sign-in
+    /// state judged as for any key.
+    fn own_server_key(
         &self,
         account: &AccountId,
     ) -> impl Future<Output = Result<SecretText, Refusal>> + Send;
@@ -238,6 +250,17 @@ impl<E: Ports> AccountsApi for Accounts<'_, E> {
         account: &AccountId,
     ) -> impl Future<Output = Result<SecretText, Refusal>> + Send {
         Accounts::api_key(self, account)
+    }
+
+    fn own_servers(&self) -> Vec<OwnServerRow> {
+        Accounts::own_servers(self)
+    }
+
+    fn own_server_key(
+        &self,
+        account: &AccountId,
+    ) -> impl Future<Output = Result<SecretText, Refusal>> + Send {
+        Accounts::own_server_key(self, account)
     }
 
     fn set_agent_state(

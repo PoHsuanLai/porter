@@ -28,6 +28,12 @@ impl LlmNeed {
     }
 }
 
+/// What an app asks when it wants "AI access", never one key: a language model that can chat, with
+/// any context window.
+pub fn llm_need() -> crate::Need {
+    crate::Need::Llm(LlmNeed::new([LlmFeature::Chat].into(), Tokens(0)))
+}
+
 /// An embedding model.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]

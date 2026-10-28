@@ -9,6 +9,7 @@
 mod api;
 mod audience;
 mod grants;
+mod llm;
 mod relay;
 
 pub use api::GrantsApi;

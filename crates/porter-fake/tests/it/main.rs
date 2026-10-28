@@ -3,6 +3,7 @@
 mod add_flow;
 mod fakes;
 mod grant_kind;
+mod llm_keys;
 mod local;
 mod persist;
 mod refresh;

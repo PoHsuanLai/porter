@@ -24,6 +24,7 @@ porter-service-accounts = { workspace = true }
 test-kit = { workspace = true }
 tokio = { workspace = true }
 porter-match = { workspace = true }
+serde_json = { workspace = true }
 
 [lints]
 workspace = true

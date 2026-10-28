@@ -6,7 +6,8 @@ use crate::add_flow::SignInAs;
 use porter_capability::CapabilityKind;
 use porter_core::AccountId;
 use porter_core::ProviderHint;
-use porter_core::{AppId, Credential, SecretKey, SecretPurpose, SecretText};
+use porter_core::{AppId, Credential, Family, OWN_SERVER_PROVIDER, OwnServerRow};
+use porter_core::{SecretKey, SecretPurpose, SecretText};
 use porter_secrets::Secrets;
 use porter_secrets::SecretsError;
 use porter_service_core::Ports;
@@ -39,6 +40,43 @@ impl<E: Ports> Accounts<'_, E> {
             // locked, unreachable, and a failure a later porter-secrets adds
             Err(_) => Err(Refusal::Unavailable),
         }
+    }
+
+    /// See [`AccountsApi::own_servers`](crate::AccountsApi::own_servers).
+    pub(crate) fn own_servers(&self) -> Vec<OwnServerRow> {
+        self.ctx
+            .lock()
+            .accounts
+            .iter()
+            .filter(|account| account.provider.as_str() == OWN_SERVER_PROVIDER)
+            .filter_map(|account| {
+                let endpoint = account
+                    .endpoints
+                    .iter()
+                    .find(|endpoint| endpoint.family == Family::ChatCompletions)?;
+                Some(OwnServerRow::new(
+                    account.id.clone(),
+                    account.label.0.clone(),
+                    endpoint.clone(),
+                ))
+            })
+            .collect()
+    }
+
+    /// See [`AccountsApi::own_server_key`](crate::AccountsApi::own_server_key).
+    pub(crate) async fn own_server_key(&self, account: &AccountId) -> Result<SecretText, Refusal> {
+        let account = {
+            let registry = self.ctx.lock();
+            let account = registry
+                .accounts
+                .iter()
+                .find(|a| a.id == *account && a.provider.as_str() == OWN_SERVER_PROVIDER)
+                .ok_or(Refusal::UnknownGrant)?
+                .clone();
+            registry.llm_usable(&account)?;
+            account
+        };
+        self.api_key(&account.id).await
     }
 
     /// See [`AccountsApi::sign_in_as`](crate::AccountsApi::sign_in_as).
