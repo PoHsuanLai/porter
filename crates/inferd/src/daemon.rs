@@ -9,13 +9,13 @@
 
 use crate::agent::Agents;
 use crate::attached::{AddedFile, Attached, AttachedBook, Computers};
+use crate::broker::{AccountList, AccountdBroker};
 use crate::cloud::Cloud;
 use crate::cloud::spend::Ledger;
 use crate::config::{ConfigError, Dirs, InferdConfig, ProgramSearch};
 use crate::engines::Engines;
 use crate::hosts::{HealthProbe, HostCloser, NvidiaSmi, ProcessHost};
 use crate::installed::Installed;
-use crate::keys::{AccountRows, KeyAudit, KeysObject, KeysStartError};
 use crate::peers::{CallerTable, HONOURS_PROC_ROOT, ProcPeers};
 use crate::replay::Replays;
 use crate::service::{Inference, serve_with_settings};
@@ -28,14 +28,13 @@ use crate::watch::Watch;
 use engine_supervisor::EngineId;
 use model_catalog::EngineKind;
 use porter_callers::{ProcRoot, choose_proc_root, proc_notice};
+use porter_client::AiAccounts;
 use porter_dbus::BusTarget;
-use porter_dbus::inference::KeysServed;
-use porter_dbus::inference::{INFERENCE_BUS, INFERENCE_PATH};
+use porter_dbus::inference::INFERENCE_BUS;
 use porter_http_reqwest::{Limits, ReqwestHttp};
 use porter_ids::{clock::Clock, clock::SystemClock};
 use porter_router::catalog::read_catalog;
 use porter_router::local::{Lengths, LocalModel, build};
-use porter_secrets::keysel::{Selection, select};
 use porter_tailnet::{Config as TailnetConfig, Guests, Timing};
 use porter_tailscale::LocalApi;
 use porter_turns::audit::JsonLines;
@@ -63,10 +62,6 @@ pub const TAILSCALE_SOCKET_VAR: &str = "INFERD_TAILSCALE_SOCKET";
 /// only).
 pub const PROC_ROOT_VAR: &str = "INFERD_PROC_ROOT";
 
-/// The variable that names the key file of a `test-keys` build (`file:<absolute path>`); read
-/// only in [`Config::from_env`].
-pub const KEYS_VAR: &str = "INFERD_KEYS";
-
 /// Everything inferd needs to start, as typed values.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
@@ -88,8 +83,6 @@ pub struct Config {
     pub callers_file: PathBuf,
     /// The bus to serve on.
     pub bus: BusTarget,
-    /// Which secret store holds the AI keys.
-    pub keys: Selection,
     /// The fixed system paths engine programs are looked for at when the file names none.
     pub programs: ProgramSearch,
 }
@@ -110,7 +103,6 @@ impl Config {
             proc_root: ProcRoot::Unset,
             callers_file: PathBuf::from(porter_callers::INFERD_CALLERS.path),
             bus,
-            keys: Selection::SecretService,
             programs,
         }
     }
@@ -119,13 +111,6 @@ impl Config {
     #[must_use]
     pub fn with_programs(mut self, programs: ProgramSearch) -> Self {
         self.programs = programs;
-        self
-    }
-
-    /// With this secret store for the AI keys.
-    #[must_use]
-    pub fn with_keys(mut self, keys: Selection) -> Self {
-        self.keys = keys;
         self
     }
 
@@ -161,10 +146,10 @@ impl Config {
     /// The configuration the process's environment gives; `config_file` is the command line's
     /// `--config`, else the file under `$XDG_CONFIG_HOME`. The one place inferd reads the
     /// environment: `HOME`, the XDG directories and `HF_HOME` (`Dirs::from_env`),
-    /// `INFERD_TAILSCALE_SOCKET`, `INFERD_PROC_ROOT`, `PORTER_INFERD_CALLERS` and `INFERD_KEYS`.
+    /// `INFERD_TAILSCALE_SOCKET`, `INFERD_PROC_ROOT` and `PORTER_INFERD_CALLERS`.
     ///
     /// # Errors
-    /// There is nowhere to put the sockets and files, or the key store asked for is refused.
+    /// There is nowhere to put the sockets and files.
     pub fn from_env(config_file: Option<PathBuf>) -> Result<Self, StartError> {
         let dirs = Dirs::from_env()?;
         let mut tailscale = std::env::var_os(TAILSCALE_SOCKET_VAR)
@@ -193,8 +178,6 @@ impl Config {
             eprintln!("{line}");
         }
         config.callers_file = callers.path().to_owned();
-        let keys_var = std::env::var(KEYS_VAR).ok();
-        config.keys = select(keys_var.as_deref()).map_err(KeysStartError::from)?;
         Ok(config)
     }
 }
@@ -256,9 +239,9 @@ pub enum StartError {
     /// The bus.
     #[error(transparent)]
     Bus(#[from] zbus::Error),
-    /// The AI keys' store or registry could not be opened.
+    /// The AI accounts' interface could not be made.
     #[error(transparent)]
-    Keys(#[from] KeysStartError),
+    Accounts(#[from] porter_client::AiAccountsError),
 }
 
 /// Why the daemon did not stop cleanly.
@@ -388,7 +371,6 @@ impl Daemon {
             proc_root,
             callers_file,
             bus,
-            keys,
             programs,
         } = config;
         let file = match config_before {
@@ -520,60 +502,27 @@ impl Daemon {
             callers.clone(),
             &proc_root,
         ));
-        // The AI keys, held here: the hosted service over inferd's own store, the shell's sheets
-        // for consent and adding, and the agent launcher's seam to it.
-        let opened = crate::keys::open(
-            &dirs,
-            keys,
-            callers.rows(),
-            connection.clone(),
-            peers.shared(),
-        )
-        .await?;
+        // The AI keys are accountd's; inferd asks it for the permits an app holds and for the key
+        // behind one, and reports the runtimes it probes. What it learns of the accounts wakes
+        // the places listeners and keeps the spend rows' list.
+        let broker = AiAccounts::connect(&connection).await?;
         let engines_news = Arc::new(tokio::sync::Notify::new());
-        let served_rows = crate::keys::ServedSlot::default();
-        let launchers = crate::launcher::serve_launcher(
-            &connection,
-            Arc::clone(&opened.service),
-            Arc::clone(&peers),
-            crate::launcher::LauncherConfig::new(dirs.agent.clone())
-                .with_audit(Arc::new(KeyAudit::new(dirs.keys_audit.clone()))),
-        )
-        .await?;
-        crate::keys::news::watch(
-            Arc::clone(&opened.service),
-            Arc::clone(&opened.saved),
-            Arc::clone(&served_rows),
+        let account_list = AccountList::default();
+        // Whatever an earlier inferd left of its own store is removed once accountd, which copies
+        // it when it starts, has answered.
+        let old = dirs.clone();
+        crate::broker::follow(
+            broker.clone(),
+            account_list.clone(),
             Arc::clone(&engines_news),
-            {
-                let launchers = launchers.clone();
-                move || {
-                    let launchers = launchers.clone();
-                    tokio::spawn(async move { launchers.registry_changed().await });
-                }
+            move || {
+                crate::old_keys::retire(&old);
             },
         );
-        connection
-            .object_server()
-            .at(
-                INFERENCE_PATH,
-                KeysServed(KeysObject::new(
-                    Arc::clone(&opened.service),
-                    peers.shared(),
-                    connection.clone(),
-                )),
-            )
-            .await?;
-        let rows = AccountRows::new(
-            Arc::clone(&opened.service),
-            launchers,
-            opened.apps.clone(),
-            opened.providers.clone(),
-            served_rows,
-        );
+        let broker = AccountdBroker::new(broker);
         // The hosted models of the catalogue, reached through the accounts inferd holds the keys of.
         let cloud = Cloud::new(
-            Arc::new(opened.local.clone()),
+            Arc::new(broker.clone()),
             &catalog.entries,
             Ledger::open_at(dirs.spend.clone(), SystemClock.now()),
             Arc::new(SystemClock),
@@ -632,7 +581,7 @@ impl Daemon {
             }),
             config.probe.clone(),
             engines.clone(),
-            Arc::new(opened.local.clone()),
+            Arc::new(broker.clone()),
             dirs.sockets.clone(),
         )
         .spawn();
@@ -651,7 +600,7 @@ impl Daemon {
             Arc::new(SystemClock),
         );
         // The accounts' rows read what each spent this month, and the cap, from the engines.
-        let spend: Arc<dyn crate::keys::SpendBook> = Arc::new(engines.clone());
+        let spend: Arc<dyn crate::spend_rows::SpendBook> = Arc::new(engines.clone());
         let daemon = Inference::new(
             engines,
             Arc::clone(&peers),
@@ -671,7 +620,7 @@ impl Daemon {
             &connection,
             daemon,
             InferdSettings::new(peers, reload)
-                .with_keys(Arc::new(rows.with_spend(spend)))
+                .with_spend_rows(crate::spend_rows::SpendRows::new(account_list, spend))
                 .announcing(engines_news),
         )
         .await?;

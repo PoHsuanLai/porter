@@ -126,6 +126,7 @@ impl<H: Host, C: Callers> BrokerServer for BrokerObject<H, C> {
                 ai_account_to_dbus(&AiAccountRow::new(
                     account.id.clone(),
                     account.provider.as_str().to_owned(),
+                    names.label_of(&account.provider).map(str::to_owned),
                     account.label.0.clone(),
                     account.auth != AuthKind::LocalRuntime,
                 ))

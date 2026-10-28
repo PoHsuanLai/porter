@@ -1,10 +1,10 @@
-//! A scripted stand-in for the AI accounts inferd holds, behind the two seams the daemon asks
-//! them through (`Accountd`: the verdicts and the key; `Reports`: a probed runtime becoming an
-//! account). It is in process: inferd holds the keys itself, so nothing here is on the bus.
+//! A scripted stand-in for accountd's AI accounts, behind the two seams the daemon asks them
+//! through (`Accountd`: the verdicts and the key; `Reports`: a probed runtime becoming an
+//! account). It is in process; the real seams over the bus are tested in `broker.rs`.
 //! `verdicts` answers by app (an app a grant names is `Granted`, any other `Ask`, an account
 //! marked denied `Denied`), and `key` hands the key of a grant. Every call is recorded (the app
-//! and class asked about, the grants resolved), never a key. The real store is tested in
-//! `keys_local.rs`.
+//! and class asked about, the grants resolved), never a key. The real store is
+//! accountd's, and its tests are accountd's.
 
 use inferd::cloud::accountd::{AccountVerdict, Accountd, AccountdFault, Boxed};
 use inferd::cloud::own::{OWN_PROVIDER, OwnServer};
@@ -131,7 +131,7 @@ impl FakeAccountd {
         Arc::clone(&self.news)
     }
 
-    /// Says that an account appeared, went or changed state, as the key host does after a save.
+    /// Says that an account appeared, went or changed state, as accountd does after a save.
     pub fn changed(&self) {
         self.news.notify_one();
     }

@@ -1217,7 +1217,7 @@ mod who;
 pub use running::RunError;
 pub use who::Who;
 
-impl crate::keys::SpendBook for Engines {
+impl crate::spend_rows::SpendBook for Engines {
     fn month(&self, account: &AccountId) -> (ChargeTotal, Option<Money>) {
         self.month_of(account)
     }

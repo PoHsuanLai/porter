@@ -81,6 +81,8 @@ pub struct AiAccountRow {
     pub account: AccountId,
     /// The provider file the account was made from.
     pub provider: String,
+    /// What a person reads for its provider, when the daemon knows.
+    pub provider_label: Option<String>,
     /// What the person calls it.
     pub label: String,
     /// Whether it is reached over the network (a program on this computer is not), so a spend
@@ -90,10 +92,17 @@ pub struct AiAccountRow {
 
 impl AiAccountRow {
     /// The row of `account`.
-    pub fn new(account: AccountId, provider: String, label: String, network: bool) -> Self {
+    pub fn new(
+        account: AccountId,
+        provider: String,
+        provider_label: Option<String>,
+        label: String,
+        network: bool,
+    ) -> Self {
         Self {
             account,
             provider,
+            provider_label,
             label,
             network,
         }

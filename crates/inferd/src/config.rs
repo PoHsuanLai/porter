@@ -115,16 +115,15 @@ pub struct Dirs {
     pub guests: PathBuf,
     /// `$HF_HOME/hub`, else `~/.cache/huggingface/hub`: the weights, when the file names none.
     pub hf_cache: PathBuf,
-    /// `$XDG_STATE_HOME/quire/inferd/keys`: the AI keys' registry (`registry.json`, whose grants
-    /// are the permits). The keys themselves are in the Secret Service, never here. Agents must
-    /// not read it, and it is under the directory `inferd.service` keeps as its state.
-    pub keys: PathBuf,
-    /// `$XDG_STATE_HOME/quire/inferd/keys-audit.jsonl`: what happened to the keys and permits
-    /// (ids and kinds, never a key).
-    pub keys_audit: PathBuf,
-    /// `$XDG_RUNTIME_DIR/inferd/agent`: where the credential files of the agents' processes live
-    /// (the launcher makes it 0700 and clears what a dead inferd left).
-    pub agent: PathBuf,
+    /// `$XDG_STATE_HOME/quire/inferd/keys`: where inferd kept the AI keys' registry before
+    /// accountd did. Removed at start once accountd has copied it (`old_keys`).
+    pub old_keys: PathBuf,
+    /// `$XDG_STATE_HOME/quire/inferd/keys-audit.jsonl`: the audit file of those keys, removed
+    /// with them.
+    pub old_keys_audit: PathBuf,
+    /// `$XDG_STATE_HOME/quire/accountd/ai-import.json`: accountd's record of that copy, which
+    /// says the old files may go.
+    pub ai_import: PathBuf,
     /// `porter/providers` under the first data directory that has it (`/usr/local/share` or
     /// `/usr/share` by default): the provider files this install ships.
     pub providers_system: PathBuf,
@@ -166,9 +165,9 @@ impl Dirs {
             .map(|dir| dir.join("applications"))
             .collect();
         Ok(Self {
-            keys: state.join("quire").join("inferd").join("keys"),
-            keys_audit: state.join("quire").join("inferd").join("keys-audit.jsonl"),
-            agent: runtime.join("inferd").join("agent"),
+            old_keys: state.join("quire").join("inferd").join("keys"),
+            old_keys_audit: state.join("quire").join("inferd").join("keys-audit.jsonl"),
+            ai_import: state.join("quire").join("accountd").join("ai-import.json"),
             providers_system: xdg.shipped("porter/providers"),
             providers_own: data.join("porter").join("providers"),
             engines_own: data.join("porter").join("engines"),

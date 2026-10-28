@@ -72,7 +72,7 @@ pub struct Inference<P, O, C> {
     /// The seats of the engines: every session of the daemon asks here before a request goes
     /// to an engine.
     gate: Gate,
-    /// Woken when an AI account appeared, went or changed state (the key host fires it).
+    /// Woken when an AI account appeared, went or changed state (accountd says so, through `broker::follow`).
     keys_news: Option<Arc<tokio::sync::Notify>>,
 }
 
@@ -1234,8 +1234,8 @@ where
                 .await;
         }
     });
-    // An AI account appeared, went or changed state (the key host says so): a listener re-reads
-    // `Places`. Only a daemon that hosts the keys has accounts to hear.
+    // An AI account appeared, went or changed state (accountd says so): a listener re-reads
+    // `Places`.
     if let Some(news) = keys_news {
         let iface: zbus::object_server::InterfaceRef<InferenceServed<Inference<P, O, C>>> =
             connection.object_server().interface(INFERENCE_PATH).await?;

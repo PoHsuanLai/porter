@@ -40,7 +40,7 @@ use porter_core::{AppId, AuthKind};
 use porter_core::{ProcessCredentialId, SessionToken};
 use porter_dbus::accounts::LauncherFault;
 use porter_ids::word::word as word_of;
-use porter_service_core::audit::{AuditEvent, CredentialEnd, Handoff};
+use porter_service_core::audit::{AuditEvent, CredentialEnd};
 use porter_service_core::registry::Registry;
 use porter_wire::Refusal;
 use std::sync::Arc;
@@ -174,7 +174,6 @@ impl<H: Host, C: Callers> Core<H, C> {
             &account.id,
             AuditEvent::ProcessCredentialIssued {
                 audience: porter_core::Audience(audience.name.as_str().to_owned()),
-                handoff: Handoff::Memfd,
             },
         );
         Ok((id.to_string(), OwnedFd::from(handle)))

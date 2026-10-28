@@ -385,7 +385,7 @@ EDGES=(
   "porter-rig: fake-secret-service porter-client porter-core porter-match porter-capability porter-wire porter-ids porter-callers porter-dbus porter-fake porter-fake-servers porter-infer test-kit"
   "fake-secret-service:"
   "syncd-fakes: porter-dbus"
-  "inferd: ds-settings porter-bridge porter-engines porter-families porter-family-oauth porter-secrets porter-service porter-service-accounts porter-service-core porter-settings porter-sheets porter-store porter-router porter-turns porter-core porter-match porter-capability porter-sheet porter-wire porter-ids porter-daemon porter-callers porter-dbus porter-discover porter-fs porter-http porter-http-reqwest porter-infer porter-provider porter-tailnet porter-tailscale cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-host-client speech-provider vision-prep"
+  "inferd: ds-settings porter-bridge porter-client porter-engines porter-settings porter-store porter-router porter-turns porter-core porter-match porter-capability porter-wire porter-ids porter-daemon porter-callers porter-dbus porter-discover porter-fs porter-http porter-http-reqwest porter-infer porter-provider porter-tailnet porter-tailscale cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-host-client speech-provider vision-prep"
 )
 for edge in "${EDGES[@]}"; do
   crate="${edge%%:*}"

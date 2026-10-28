@@ -76,9 +76,7 @@ fn audit_lines(rig: &Rig) -> Vec<String> {
         .entries()
         .iter()
         .filter_map(|entry| match &entry.event {
-            AuditEvent::ProcessCredentialIssued { handoff, .. } => {
-                Some(format!("issued {}", word_of(&handoff)))
-            }
+            AuditEvent::ProcessCredentialIssued { .. } => Some("issued".to_owned()),
             AuditEvent::ProcessCredentialRevoked { reason, .. } => {
                 Some(format!("ended {}", word_of(&reason)))
             }
@@ -116,7 +114,7 @@ async fn a_credential_is_a_sealed_key_on_a_descriptor_and_the_key_is_in_no_line(
         fault(LauncherFault::UnknownCredential)
     );
 
-    assert_eq!(audit_lines(&rig), ["issued memfd", "ended process_exited"]);
+    assert_eq!(audit_lines(&rig), ["issued", "ended process_exited"]);
     assert!(!format!("{:?}", rig.audit.entries()).contains(KEY));
 }
 

@@ -5,7 +5,7 @@
 //! Where the line goes is a seam, [`AuditSink`], so the daemon appends `audit.jsonl`, an app
 //! hosting porter appends its own, and tests collect entries.
 
-pub use porter_core::audit::{CredentialEnd, Handoff};
+pub use porter_core::audit::CredentialEnd;
 
 use porter_capability::LoginRequestId;
 use porter_capability::Toggle;
@@ -151,13 +151,11 @@ pub enum AuditEvent {
         program: AgentProgram,
     },
     /// `Tokens.IssueProcessCredential` (P2, lane p2-handoff): an API key was handed to a process
-    /// the launcher spawns for `audience` (`org.quire.Agent.<program>`), by `handoff`. The entry's
+    /// the launcher spawns for `audience` (`org.quire.Agent.<program>`), on a sealed memfd. The entry's
     /// `app` is the app the grant is for and `account` the account. Never the credential.
     ProcessCredentialIssued {
         /// Who it was handed to.
         audience: Audience,
-        /// How it travelled.
-        handoff: Handoff,
     },
     /// A credential handed to a process is no longer valid (`reason` says why).
     ProcessCredentialRevoked {
@@ -312,7 +310,6 @@ mod tests {
             },
             AuditEvent::ProcessCredentialIssued {
                 audience: Audience("org.quire.Agent.codex".into()),
-                handoff: Handoff::TmpfsFile,
             },
             AuditEvent::ProcessCredentialRevoked {
                 audience: Audience("org.quire.Agent.codex".into()),
@@ -386,9 +383,8 @@ mod tests {
         assert_eq!(
             at(AuditEvent::ProcessCredentialIssued {
                 audience: Audience("a".into()),
-                handoff: Handoff::Memfd
             }),
-            r#"{"at":1,"app":null,"account":null,"event":{"kind":"process_credential_issued","v":{"audience":"a","handoff":"memfd"}}}"#
+            r#"{"at":1,"app":null,"account":null,"event":{"kind":"process_credential_issued","v":{"audience":"a"}}}"#
         );
         assert_eq!(
             at(AuditEvent::ProcessCredentialRevoked {
@@ -478,6 +474,26 @@ mod tests {
         for line in lines {
             let entry: AuditEntry = serde_json::from_str(line).expect(line);
             assert_eq!(AuditEntry::read_all(line), [entry], "{line}");
+        }
+    }
+
+    /// Audit files written before a key was handed over on a memfd only carry a `handoff` word
+    /// on the line of an issued credential. Those lines are still read, whichever word they have.
+    #[test]
+    fn an_issued_credential_line_from_before_the_handoff_field_went_still_reads() {
+        for word in ["memfd", "tmpfs_file"] {
+            let line = format!(
+                r#"{{"at":1,"app":null,"account":null,"event":{{"kind":"process_credential_issued","v":{{"audience":"org.quire.Agent.codex","handoff":"{word}"}}}}}}"#
+            );
+            let entries = AuditEntry::read_all(&line);
+            assert_eq!(entries.len(), 1, "{word}");
+            assert_eq!(
+                entries[0].event,
+                AuditEvent::ProcessCredentialIssued {
+                    audience: Audience("org.quire.Agent.codex".into()),
+                },
+                "{word}"
+            );
         }
     }
 }

@@ -7,7 +7,7 @@ use porter_ids::is_id;
 use serde::{Deserialize, Serialize};
 
 /// One handed-off credential. The same grammar as every id of ours, so it is also safe as a
-/// single path segment (the tmpfs file lives in a directory of this name).
+/// single path segment.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct ProcessCredentialId(Box<str>);

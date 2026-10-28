@@ -49,7 +49,8 @@ pub trait Broker {
     ) -> zbus::Result<Vec<RowArg>>;
     /// The key behind an allow permit of the language-model kind, on a sealed memfd.
     fn read_key(&self, grant: &str) -> zbus::Result<OwnedFd>;
-    /// The AI accounts: the account's id, then `provider` (`s`), `label` (`s`) and `network` (`b`).
+    /// The AI accounts: the account's id, then `provider` (`s`), `provider_label` (`s`, when
+    /// known), `label` (`s`) and `network` (`b`).
     fn accounts(&self) -> zbus::Result<Vec<RowArg>>;
     /// The accounts that are servers of the person's own: the account's id, then `label` (`s`)
     /// and `endpoint` (the chat-completions endpoint, by name).
@@ -180,7 +181,13 @@ mod tests {
 
     #[test]
     fn an_account_and_an_own_server_survive_the_bus_shape() {
-        let account = AiAccountRow::new(id("a.b"), "ollama".into(), "Ollama".into(), false);
+        let account = AiAccountRow::new(
+            id("a.b"),
+            "ollama".into(),
+            Some("Ollama".into()),
+            "Ollama".into(),
+            false,
+        );
         assert_eq!(
             ai_account_from_dbus(ai_account_to_dbus(&account)).expect("back"),
             account

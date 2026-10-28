@@ -2,9 +2,9 @@
 //! ([`Accountd::verdicts`]) and, for the one it will call, the account's API key
 //! ([`Accountd::key`]).
 //!
-//! inferd holds the keys itself (`keys::LocalKeys` implements this seam over its own store), so a
-//! key is read in this process, into a [`SecretText`] (whose `Debug` shows nothing) that the
-//! caller drops after building one request. The seam stays so the cloud turns are tested over a
+//! accountd keeps the keys (`broker::AccountdBroker` implements this seam over its `Broker`), and
+//! a key arrives on a sealed descriptor, is read into a [`SecretText`] (whose `Debug` shows
+//! nothing) that the caller drops after building one request. The seam stays so the cloud turns are tested over a
 //! scripted fake. The module keeps its old name; it is the "accounts" seam.
 //!
 //! Two more questions are about the servers of the person's own (`own`, accounts of the provider
@@ -52,7 +52,7 @@ pub struct AccountVerdict {
     pub verdict: Verdict,
 }
 
-/// Why the key store did not answer.
+/// Why accountd did not answer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AccountdFault {
     /// The store could not be reached: ask again at the next look.

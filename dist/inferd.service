@@ -44,14 +44,13 @@ IPAddressAllow=localhost
 # before the sandbox starts. The rest of the person's files are read-only (ProtectHome in
 # sandbox.conf), so the weights cache is read through that.
 #
-# inferd also holds the person's AI keys: the registry of the accounts and the permissions given
-# to apps is keys/registry.json in the state directory (the keys themselves are in the Secret
-# Service, under the name porter.inferd, which the session bus reaches), and the credential
-# files it hands to the processes of an agent are under %t/inferd/agent (a directory of its
-# own, private to the person, emptied when inferd starts and when a credential ends).
-# Checking a key when it is added is one call to the company, which needs the network drop-in
-# below; without it the add sheet says the service could not be reached.
-RuntimeDirectory=inferd inferd/agent
+# The person's AI keys are accountd's (org.quire.Accounts1): inferd asks it which accounts an app
+# may use and for the key behind a permit, which arrives on a sealed descriptor and is never
+# written anywhere, so this unit has no directory for credentials. What inferd kept of the keys
+# before (keys/ and keys-audit.jsonl in the state directory) it removes once accountd has copied
+# it. A hosted model is called with the key for that one request, which needs the network drop-in
+# below.
+RuntimeDirectory=inferd
 RuntimeDirectoryMode=0700
 StateDirectory=quire/inferd
 # No setuid gain. MemoryDenyWriteExecute is NOT set: CUDA and the engines' JIT need writable and

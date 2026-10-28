@@ -78,6 +78,43 @@ fn the_unit_is_a_sandbox_with_the_network_it_needs_and_no_more() {
     }
 }
 
+/// accountd holds the AI keys as well now, and its sandbox is exactly what it was: it writes the
+/// two state directories and the config directory it already had, nothing for a key (a key travels
+/// on a sealed memfd), and it reads inferd's old store through the person's home, which is
+/// readable. None of the limits is loosened: the same directives, the same values.
+#[test]
+fn holding_the_ai_keys_loosens_no_limit_and_adds_no_path() {
+    let unit = dist("accountd.service");
+    assert_eq!(value(&unit, "RuntimeDirectory"), None, "no place for a key");
+    assert_eq!(value(&unit, "ReadWritePaths"), None);
+    assert_eq!(
+        value(&unit, "StateDirectory"),
+        Some("porter quire/accountd")
+    );
+    assert_eq!(value(&unit, "ConfigurationDirectory"), Some("porter"));
+    for (limit, want) in [
+        ("MemoryDenyWriteExecute", "yes"),
+        ("RestrictNamespaces", "yes"),
+        ("RestrictRealtime", "yes"),
+        ("RestrictSUIDSGID", "yes"),
+        ("LockPersonality", "yes"),
+        ("NoNewPrivileges", "yes"),
+        ("CapabilityBoundingSet", ""),
+        ("AmbientCapabilities", ""),
+        ("UMask", "0077"),
+    ] {
+        assert_eq!(value(&unit, limit), Some(want), "{limit}");
+    }
+    assert_eq!(
+        value(&unit, "IPAddressDeny"),
+        None,
+        "providers need the network, as before"
+    );
+    let sandbox = dist("accountd.service.d/sandbox.conf");
+    assert_eq!(value(&sandbox, "ProtectHome"), Some("read-only"));
+    assert_eq!(value(&sandbox, "ReadWritePaths"), None);
+}
+
 #[test]
 fn the_test_proc_root_feature_is_not_a_default_feature() {
     let manifest: toml::Table = include_str!("../../Cargo.toml").parse().expect("manifest");

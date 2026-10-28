@@ -13,16 +13,11 @@ publish.workspace = true
 # `<dir>/<pid>/cgroup` instead of `/proc`, for acceptance runs whose processes are in no unit.
 # Without this feature the variable is ignored (with a line on standard error).
 test-proc-root = ["porter-callers/test-proc-root"]
-# TEST ONLY, off by default and never in dist: `INFERD_KEYS=file:<absolute path>` keeps the AI keys
-# in one 0600 plain-text file instead of the Secret Service (porter-secrets' `keysel`). Without
-# this feature the variable is ignored (with a line on standard error).
-test-keys = ["porter-secrets/test-keys"]
 
 [dependencies]
 porter-core = { workspace = true }
 porter-match = { workspace = true }
 porter-capability = { workspace = true }
-porter-sheet = { workspace = true }
 porter-wire = { workspace = true }
 porter-ids = { workspace = true }
 porter-daemon = { workspace = true, features = ["watch"] }
@@ -30,16 +25,10 @@ porter-fs = { workspace = true }
 cua-action = { workspace = true }
 porter-callers = { workspace = true }
 porter-dbus = { workspace = true }
-# inferd holds the AI keys itself: an `AccountService` hosted in process over its own store
-# (`keys/`), the AI and agent families, its own key namespace and the shared sheet plumbing.
-porter-families = { workspace = true, features = ["set"] }
-porter-family-oauth = { workspace = true }
-porter-secrets = { workspace = true, features = ["oo7"] }
-porter-service = { workspace = true }
-porter-service-core = { workspace = true }
-porter-service-accounts = { workspace = true }
+# The AI keys are accountd's: inferd asks it through porter-client (`broker`), and removes its old
+# store once accountd has copied it (`old_keys`, the record is porter-store's).
+porter-client = { workspace = true, features = ["dbus"] }
 porter-settings = { workspace = true }
-porter-sheets = { workspace = true }
 porter-store = { workspace = true }
 porter-discover = { workspace = true }
 porter-engines = { workspace = true }
@@ -95,9 +84,10 @@ zbus = { workspace = true }
 [dev-dependencies]
 test-kit = { workspace = true }
 ds-settings = { workspace = true, features = ["testing"] }
-# The client side the tests drive inferd through (inferd itself no longer calls accountd).
+# The client side the tests drive inferd through.
 porter-client = { workspace = true, features = ["dbus", "infer"] }
-porter-secrets = { workspace = true, features = ["testing"] }
+# `sealed_key`: the memfd the fake Broker hands a key on.
+porter-secrets = { workspace = true }
 engine-supervisor = { workspace = true, features = ["testing"] }
 model-provider = { workspace = true, features = ["testing"] }
 porter-fake = { workspace = true }
