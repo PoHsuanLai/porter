@@ -6,7 +6,7 @@
 //! ```no_run
 //! use porter_client::{Accounts, ClientError, Found, Transport};
 //! use porter_core::consent::Usage;
-//! use porter_core::wire::ParentWindow;
+//! use porter_wire::ParentWindow;
 //! use porter_core::{Candidate, DataClass, Need};
 //!
 //! // `accounts` is `Accounts::connect()` (D-Bus) or `Accounts::over(transport)`.

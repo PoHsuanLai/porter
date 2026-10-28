@@ -1,9 +1,8 @@
 //! What accountd answers.
 
-use crate::AccountId;
-use crate::candidate::Candidate;
-use crate::consent::{Availability, Grant};
-use crate::token::IssuedToken;
+use porter_core::AccountId;
+use porter_core::consent::{Availability, Grant};
+use porter_core::{Candidate, IssuedToken};
 use serde::{Deserialize, Serialize};
 
 /// One reply from accountd, matching its [`crate::AccountsRequest`].

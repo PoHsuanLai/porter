@@ -5,9 +5,9 @@ use crate::stream::RelayStream;
 use porter_client::{Accounts, ClientError, Transport};
 use porter_core::EndpointUrl;
 use porter_core::GrantId;
-use porter_core::wire::Refusal;
 use porter_http::HttpError;
 use porter_ids::{Origin, UrlScheme};
+use porter_wire::Refusal;
 use std::sync::Arc;
 
 /// Why a relay could not be had, as the client takes it: access the account has not given yet

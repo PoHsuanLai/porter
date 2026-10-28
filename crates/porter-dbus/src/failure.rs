@@ -31,7 +31,7 @@ const REFUSED: [&str; 2] = [
 ];
 
 /// The refusal a daemon's error reply stands for (`org.quire.Accounts1.Error.*`), if it is one.
-pub fn refusal_of(error: &zbus::Error) -> Option<porter_core::wire::Refusal> {
+pub fn refusal_of(error: &zbus::Error) -> Option<porter_wire::Refusal> {
     let name = match error {
         zbus::Error::MethodError(name, _, _) => name.as_str().to_owned(),
         _ => return None,

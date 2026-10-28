@@ -12,12 +12,9 @@ pub enum CoreError {
         /// The text refused.
         text: String,
     },
-    /// A wire frame could not be decoded; the connection that sent it is closed.
-    #[error("malformed frame: {0}")]
-    MalformedFrame(String),
-    /// A frame longer than the protocol allows.
-    #[error("frame of {0} bytes exceeds the limit")]
-    FrameTooLong(usize),
+    /// A value that arrived from outside (a bus argument) is not a value of ours.
+    #[error("malformed value: {0}")]
+    MalformedValue(String),
 }
 
 impl From<porter_ids::IdError> for CoreError {

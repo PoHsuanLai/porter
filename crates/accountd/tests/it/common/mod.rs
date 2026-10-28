@@ -268,8 +268,8 @@ pub async fn publish(rig: &Rig) {
         .expect("a poke");
 }
 
-use porter_core::wire::Refusal;
 use porter_dbus::{Details, refusal_error_name};
+use porter_wire::Refusal;
 
 /// The text of a vardict entry.
 pub fn text_of(details: &Details, key: &str) -> Option<String> {

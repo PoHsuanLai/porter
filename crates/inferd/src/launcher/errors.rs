@@ -7,8 +7,8 @@
 //! Written by hand rather than with the `DBusError` derive: the derive names every non-refusal
 //! `org.freedesktop.zbus.Error`, which a client cannot tell from any other failure.
 
-use porter_core::wire::Refusal;
 use porter_dbus::{LauncherFault, ServiceRoot, refusal_error_name_in};
+use porter_wire::Refusal;
 use zbus::DBusError;
 use zbus::fdo;
 use zbus::message::{Header, Message};

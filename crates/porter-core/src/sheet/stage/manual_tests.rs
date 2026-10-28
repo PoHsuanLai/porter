@@ -2,13 +2,13 @@
 //! protocol, checked before anything is sent.
 
 use super::*;
+use crate::ProviderHint;
 use crate::ProviderId;
 use crate::sheet::fields::{FieldAnswer, FieldKind, FieldSpec, FieldValue};
 use crate::sheet::input::SheetInput;
 use crate::sheet::manual::{Protocol, manual_form};
 use crate::sheet::progress::{Progress, SignInInput};
 use crate::sheet::view::{FieldProblem, ProblemKind, SheetView};
-use crate::wire::ProviderHint;
 
 fn provider() -> ProviderId {
     ProviderId::parse("generic-imap").expect("id")

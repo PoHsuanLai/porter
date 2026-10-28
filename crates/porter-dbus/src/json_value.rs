@@ -111,7 +111,7 @@ pub fn from_vardict(
 }
 
 pub(crate) fn bad(why: &str) -> CoreError {
-    CoreError::MalformedFrame(format!("D-Bus argument: {why}"))
+    CoreError::MalformedValue(format!("D-Bus argument: {why}"))
 }
 
 #[cfg(test)]

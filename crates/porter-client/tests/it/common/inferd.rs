@@ -3,11 +3,11 @@
 //! ride on them), plays them into a scripted `FakeInferSession` and writes its events back as
 //! frames. How it misbehaves is a `Behaviour`, so the client's error paths run too.
 
-use porter_core::wire::{FrameRead, decode_frame, encode_frame};
 use porter_core::{DataClass, Need, Tier};
 use porter_dbus::{Details, NeedArg, need_from_dbus};
 use porter_infer::testing::{FakeInferSession, Script};
 use porter_infer::{ClientFrame, InferEvent, InferRefusal, InferReply, InferSession};
+use porter_wire::{FrameRead, decode_frame, encode_frame};
 use rustix::net::{RecvAncillaryBuffer, RecvAncillaryMessage, RecvFlags, recvmsg};
 use std::io::IoSliceMut;
 use std::mem::MaybeUninit;

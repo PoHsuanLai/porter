@@ -8,8 +8,8 @@ use porter_core::capability::StorageScope;
 use porter_core::consent::{Decision, GrantScope, Usage};
 use porter_core::consent::{Grant, GrantKey};
 use porter_core::{
-    AccountsReply, AccountsRequest, AppId, AppName, Audience, CapabilityKind, Credential,
-    DataClass, Isolation, IssuedToken, RelayAuth, SecretKey, SecretPurpose, SecretText, SpaceScope,
+    AppId, AppName, Audience, CapabilityKind, Credential, DataClass, Isolation, IssuedToken,
+    RelayAuth, SecretKey, SecretPurpose, SecretText, SpaceScope,
 };
 use porter_fake::{
     FakeProvider, MemoryStore, RecordingAudit, ScriptedSheets, cloud_provider, mail_account,
@@ -22,6 +22,7 @@ use porter_provider::{
 };
 use porter_secrets::{MemorySecrets, Secrets};
 use porter_service::{AccountService, Registry};
+use porter_wire::{AccountsReply, AccountsRequest};
 use std::sync::{Arc, Mutex};
 
 /// The kind and reach each token was asked for: `None` for a token asked with no kind.
@@ -284,8 +285,8 @@ async fn a_token_is_asked_for_as_far_as_the_storage_grant_reaches() {
 async fn a_grant_reaches_as_far_as_the_need_it_was_chosen_for() {
     use porter_core::capability::{Access, Delta, QuotaReport};
     use porter_core::need::StorageNeed;
-    use porter_core::wire::ParentWindow;
     use porter_fake::Scripted;
+    use porter_wire::ParentWindow;
     let files = AppId {
         name: AppName::parse("org.example.Files").expect("name"),
         isolation: Isolation::Unsandboxed,

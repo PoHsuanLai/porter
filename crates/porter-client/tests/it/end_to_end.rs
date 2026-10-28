@@ -7,9 +7,9 @@ use porter_core::AccountId;
 use porter_core::capability::{Access, Delta, QuotaReport, StorageScope};
 use porter_core::consent::{GrantScope, Usage};
 use porter_core::need::StorageNeed;
-use porter_core::wire::{ParentWindow, Refusal};
 use porter_core::{AppId, AppName, Audience, DataClass, Isolation, Need};
 use porter_fake::{FakeService, Scripted, ScriptedSheets, fake_service};
+use porter_wire::{ParentWindow, Refusal};
 use std::sync::Arc;
 
 type App = Accounts<InProcess<FakeService>>;
@@ -263,10 +263,7 @@ async fn an_app_adds_an_account_through_a_family_is_granted_it_and_signs_it_in_a
     let calendar = app_over(&service, "org.quire.Calendar");
 
     let added = calendar
-        .add_account(
-            porter_core::wire::ProviderHint::Any,
-            &ParentWindow::Unparented,
-        )
+        .add_account(porter_core::ProviderHint::Any, &ParentWindow::Unparented)
         .await
         .expect("added");
     assert_eq!(added.as_str(), "generic-dav-bob-127.0.0.1");
@@ -370,20 +367,14 @@ async fn adding_an_account_that_is_already_here_tells_the_app_which_one_it_is() 
     ));
     let calendar = app_over(&service, "org.quire.Calendar");
     let added = calendar
-        .add_account(
-            porter_core::wire::ProviderHint::Any,
-            &ParentWindow::Unparented,
-        )
+        .add_account(porter_core::ProviderHint::Any, &ParentWindow::Unparented)
         .await
         .expect("added");
     let held = service.registry().accounts.clone();
 
     assert_eq!(
         calendar
-            .add_account(
-                porter_core::wire::ProviderHint::Any,
-                &ParentWindow::Unparented,
-            )
+            .add_account(porter_core::ProviderHint::Any, &ParentWindow::Unparented,)
             .await,
         Err(ClientError::AlreadyAdded(added))
     );
@@ -483,10 +474,7 @@ async fn a_typed_pop3_server_is_added_through_the_sheet_and_found_by_a_mail_need
     ));
     let mail = app_over(&service, "org.quire.Mail");
     let added = mail
-        .add_account(
-            porter_core::wire::ProviderHint::Any,
-            &ParentWindow::Unparented,
-        )
+        .add_account(porter_core::ProviderHint::Any, &ParentWindow::Unparented)
         .await
         .expect("added");
 

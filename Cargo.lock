@@ -25,6 +25,7 @@ dependencies = [
  "porter-sheets",
  "porter-store",
  "porter-tailscale",
+ "porter-wire",
  "rustix",
  "serde",
  "serde_json",
@@ -1562,6 +1563,7 @@ dependencies = [
  "porter-tailnet",
  "porter-tailscale",
  "porter-turns",
+ "porter-wire",
  "rustix",
  "serde",
  "serde_json",
@@ -2457,6 +2459,7 @@ dependencies = [
  "porter-service",
  "porter-tailscale",
  "porter-turns",
+ "porter-wire",
  "rustix",
  "serde",
  "serde_json",
@@ -2512,6 +2515,7 @@ dependencies = [
  "peephole-core",
  "porter-core",
  "porter-ids",
+ "porter-wire",
  "proptest",
  "serde",
  "serde_json",
@@ -2612,6 +2616,7 @@ dependencies = [
  "porter-provider",
  "porter-secrets",
  "porter-service",
+ "porter-wire",
  "test-kit",
  "tokio",
 ]
@@ -2661,6 +2666,7 @@ dependencies = [
  "porter-secrets",
  "porter-service",
  "porter-tailscale",
+ "porter-wire",
  "serde",
  "serde_json",
  "test-kit",
@@ -2694,6 +2700,7 @@ dependencies = [
  "porter-core",
  "porter-http",
  "porter-ids",
+ "porter-wire",
  "test-kit",
  "tokio",
 ]
@@ -2821,6 +2828,7 @@ dependencies = [
  "porter-secrets",
  "porter-service",
  "porter-sync",
+ "porter-wire",
  "rustix",
  "serde",
  "serde_json",
@@ -2881,6 +2889,7 @@ dependencies = [
  "porter-ids",
  "porter-provider",
  "porter-secrets",
+ "porter-wire",
  "serde",
  "serde_json",
  "thiserror",
@@ -2895,6 +2904,7 @@ dependencies = [
  "porter-ids",
  "porter-provider",
  "porter-service",
+ "porter-wire",
  "serde_json",
  "test-kit",
  "tokio",
@@ -2989,6 +2999,18 @@ dependencies = [
  "serde_json",
  "tokio",
  "vision-prep",
+]
+
+[[package]]
+name = "porter-wire"
+version = "0.1.0"
+dependencies = [
+ "porter-core",
+ "porter-ids",
+ "serde",
+ "serde_json",
+ "test-kit",
+ "thiserror",
 ]
 
 [[package]]
@@ -3924,6 +3946,7 @@ dependencies = [
  "porter-sheets",
  "porter-store",
  "porter-sync",
+ "porter-wire",
  "rusqlite",
  "serde",
  "serde_json",

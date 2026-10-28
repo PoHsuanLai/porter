@@ -1,6 +1,6 @@
 [package]
 name = "porter-core"
-description = "porter's pure vocabulary: accounts, the capability vocabulary and matching, consent, secrets' keys, the wire protocol."
+description = "porter's pure vocabulary: accounts, the capability vocabulary and matching, consent and secrets' keys."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -7,10 +7,10 @@
 use super::input::SheetInput;
 use super::progress::{Progress, Review, ServiceChoice, SignInFault, SignInInput, UserCode};
 use super::view::{FieldProblem, ProviderRow, ReviewView, SheetView, SignInView};
+use crate::ProviderHint;
 use crate::app_id::AppId;
 use crate::endpoint::EndpointUrl;
 use crate::tailnet::Machine;
-use crate::wire::ProviderHint;
 use crate::{AccountId, ProviderId};
 use porter_ids::WebUrl;
 

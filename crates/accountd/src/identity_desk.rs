@@ -9,12 +9,12 @@
 
 use porter_core::AccountId;
 use porter_core::consent::{ConsentAnswer, ConsentAsk};
-use porter_core::wire::{ParentWindow, Refusal};
 use porter_core::{AppId, Credential, SecretKey, SecretPurpose, SecretText};
 use porter_ids::clock::Clock;
 use porter_secrets::{Secrets, SecretsError};
 use porter_service::audit::{AuditEntry, AuditEvent};
 use porter_service::{AuditSink, Sheets};
+use porter_wire::{ParentWindow, Refusal};
 use std::future::Future;
 use std::pin::Pin;
 

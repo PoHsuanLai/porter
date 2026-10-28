@@ -1,12 +1,10 @@
 //! What an app asks accountd. The caller's identity is not part of it: each transport derives
 //! it from the connection.
 
-use crate::consent::Usage;
-use crate::data_class::DataClass;
-use crate::endpoint::EndpointUrl;
-use crate::need::Need;
-use crate::token::Audience;
-use crate::{AccountId, GrantId, ProviderId};
+use porter_core::consent::Usage;
+use porter_core::token::Audience;
+use porter_core::{AccountId, GrantId};
+use porter_core::{DataClass, EndpointUrl, Need, ProviderHint};
 use serde::{Deserialize, Serialize};
 
 /// One request to accountd (design/31 §4.4; the D-Bus methods carry the same values).
@@ -102,14 +100,4 @@ pub enum ParentWindow {
     Unparented,
     /// The handle.
     Handle(String),
-}
-
-/// Which provider the add sheet opens on.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(tag = "kind", content = "v", rename_all = "snake_case")]
-pub enum ProviderHint {
-    /// The provider list.
-    Any,
-    /// This provider's form.
-    Provider(ProviderId),
 }

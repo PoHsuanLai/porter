@@ -32,12 +32,12 @@ use ds_settings::schema::{
     LiveAction, Note, Page, Section, WordLabels,
 };
 use porter_core::AccountId;
-use porter_core::wire::ParentWindow;
 use porter_core::{Account, AccountState, Family, Toggle};
 use porter_dbus::callers::{CallerRole, Callers};
 use porter_drive::CacheLimit;
 use porter_families::set::ProviderNames;
 use porter_service::Registry;
+use porter_wire::ParentWindow;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};

@@ -1,5 +1,5 @@
 //! porter's pure vocabulary: accounts, the capability vocabulary and how a need meets an offer,
-//! consent, credentials' filing, and the wire protocol. No runtime, no file system, no I/O: the
+//! consent and credentials' filing. No runtime, no file system, no I/O: the
 //! file writer lives in `porter-fs`. The ids, units, URLs, the clock and percent-encoding it is
 //! built from are in `porter-ids`.
 
@@ -30,6 +30,7 @@ pub mod need;
 mod offer;
 mod process_credential;
 mod protocol;
+mod provider_hint;
 mod restriction;
 pub mod scope;
 mod secret;
@@ -40,7 +41,6 @@ pub mod store;
 pub mod stream;
 mod tailnet;
 pub mod token;
-pub mod wire;
 
 pub use account::{Account, AccountLabel, AccountState, AgentState};
 pub use agent_login::{LoginFault, LoginOutcome, LoginRequestId};
@@ -67,6 +67,7 @@ pub use need::Need;
 pub use offer::{AbsentReason, Claim, Offer, Provenance, Subject};
 pub use process_credential::ProcessCredentialId;
 pub use protocol::EndpointProtocol;
+pub use provider_hint::ProviderHint;
 pub use restriction::{
     Limit, LimitReason, ReauthReason, Restriction, SEVEN_DAYS, TenantConsent, TokenLifetime,
     Verification,
@@ -83,4 +84,3 @@ pub use space_record::{
 };
 pub use tailnet::{Machine, MachineLink, MachineOwner, MachineSsh, NodeId};
 pub use token::{Audience, IssuedToken, TokenKind};
-pub use wire::{AccountsReply, AccountsRequest};

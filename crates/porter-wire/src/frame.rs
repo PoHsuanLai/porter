@@ -1,8 +1,8 @@
 //! Framing for a session socket (design/31 §4.3): a 4-byte big-endian length, then one JSON
 //! envelope carrying the vocabulary version and the body.
 
-use crate::capability::VocabVersion;
-use crate::error::CoreError;
+use crate::error::FrameError;
+use porter_core::capability::VocabVersion;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
@@ -28,41 +28,40 @@ pub enum FrameRead<T> {
 }
 
 /// One frame for `body`, at this build's vocabulary version.
-pub fn encode_frame<T: Serialize>(body: &T) -> Result<Vec<u8>, CoreError> {
+pub fn encode_frame<T: Serialize>(body: &T) -> Result<Vec<u8>, FrameError> {
     let envelope = Envelope {
         vocab: VocabVersion::CURRENT,
         body,
     };
-    let json =
-        serde_json::to_vec(&envelope).map_err(|e| CoreError::MalformedFrame(e.to_string()))?;
+    let json = serde_json::to_vec(&envelope).map_err(|e| FrameError::Malformed(e.to_string()))?;
     let len = u32::try_from(json.len())
         .ok()
         .filter(|len| (*len as usize) <= MAX_FRAME)
-        .ok_or(CoreError::FrameTooLong(json.len()))?;
+        .ok_or(FrameError::TooLong(json.len()))?;
     Ok(len.to_be_bytes().into_iter().chain(json).collect())
 }
 
 /// The first frame in `buffer`, if it is all there.
-pub fn decode_frame<T: DeserializeOwned>(buffer: &[u8]) -> Result<FrameRead<T>, CoreError> {
+pub fn decode_frame<T: DeserializeOwned>(buffer: &[u8]) -> Result<FrameRead<T>, FrameError> {
     let Some((head, rest)) = buffer.split_first_chunk::<4>() else {
         return Ok(FrameRead::Partial);
     };
     let len = u32::from_be_bytes(*head) as usize;
     if len > MAX_FRAME {
-        return Err(CoreError::FrameTooLong(len));
+        return Err(FrameError::TooLong(len));
     }
     let Some(json) = rest.get(..len) else {
         return Ok(FrameRead::Partial);
     };
     let envelope =
-        serde_json::from_slice(json).map_err(|e| CoreError::MalformedFrame(e.to_string()))?;
+        serde_json::from_slice(json).map_err(|e| FrameError::Malformed(e.to_string()))?;
     Ok(FrameRead::Complete(envelope, 4 + len))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::wire::AccountsRequest;
+    use crate::AccountsRequest;
 
     #[test]
     fn a_frame_decodes_to_what_was_encoded() {
@@ -88,6 +87,6 @@ mod tests {
     fn an_oversized_length_is_refused() {
         let bytes = u32::MAX.to_be_bytes();
         let read = decode_frame::<AccountsRequest>(&bytes);
-        assert_eq!(read, Err(CoreError::FrameTooLong(u32::MAX as usize)));
+        assert_eq!(read, Err(FrameError::TooLong(u32::MAX as usize)));
     }
 }

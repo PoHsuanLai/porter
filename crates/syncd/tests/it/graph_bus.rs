@@ -398,7 +398,7 @@ async fn a_linked_relay_reaches_a_declared_origin_only_adds_no_credential_and_st
             matches!(
                 refused,
                 Err(porter_client::ClientError::Refused(
-                    porter_core::wire::Refusal::EndpointNotGranted
+                    porter_wire::Refusal::EndpointNotGranted
                 ))
             ),
             "{origin}: {:?}",

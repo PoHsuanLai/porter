@@ -19,8 +19,8 @@
 //! while let Some(id) = removed.next().await { /* forget your own copies of it */ }
 //! ```
 
+use porter_core::ProviderHint;
 use porter_core::ProviderId;
-use porter_core::wire::{ParentWindow, ProviderHint, Refusal};
 use porter_core::{AppName, CoreError, Identity, IdentityAddress, IdentityId, SecretText};
 use porter_dbus::{
     BusConnection, BusError, BusFailure, BusStream, IdentitiesProxy, IdentityRemoved,
@@ -28,6 +28,7 @@ use porter_dbus::{
     refusal_of,
 };
 use porter_ids::IdError;
+use porter_wire::{ParentWindow, Refusal};
 use std::io::Read;
 use std::pin::Pin;
 use std::task::{Context, Poll};

@@ -5,8 +5,8 @@
 //! `n` (`ClientFrame::attachments`). A frame that finds fewer, or a stream that ends with
 //! descriptors nobody named, is a protocol error and ends the session.
 
-use porter_core::wire::{FrameRead, decode_frame, encode_frame};
 use porter_infer::{ClientFrame, InferEvent};
+use porter_wire::{FrameRead, decode_frame, encode_frame};
 use rustix::net::{RecvAncillaryBuffer, RecvAncillaryMessage, RecvFlags, recvmsg};
 use std::collections::VecDeque;
 use std::io::IoSliceMut;

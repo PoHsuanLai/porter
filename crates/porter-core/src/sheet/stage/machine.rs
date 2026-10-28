@@ -20,11 +20,11 @@
 //! this machine's input and is dropped here.
 
 use super::{Purpose, Sheet, SheetEffect, SheetEnd, SheetEvent, Stage};
+use crate::ProviderHint;
 use crate::sheet::fields::{FieldAnswer, FieldSpec, FieldValue};
 use crate::sheet::input::SheetInput;
 use crate::sheet::manual;
 use crate::sheet::progress::{Progress, SignInFault, SignInInput};
-use crate::wire::ProviderHint;
 
 pub(super) fn step(sheet: Sheet, event: SheetEvent) -> (Sheet, Vec<SheetEffect>) {
     match event {

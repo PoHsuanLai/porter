@@ -8,11 +8,9 @@ use porter_core::AccountId;
 use porter_core::capability::{Access, Delta, Offered};
 use porter_core::consent::{GrantScope, Usage};
 use porter_core::need::MailNeed;
-use porter_core::wire::ParentWindow;
 use porter_core::{
-    Account, AccountsReply, AccountsRequest, AppId, AppName, Audience, Candidate, Claim,
-    Credential, DataClass, Isolation, IssuedToken, Need, SecretKey, SecretPurpose, SecretText,
-    TokenKind,
+    Account, AppId, AppName, Audience, Candidate, Claim, Credential, DataClass, Isolation,
+    IssuedToken, Need, SecretKey, SecretPurpose, SecretText, TokenKind,
 };
 use porter_fake::{
     FakeProvider, FakeSignIn, MemoryStore, NOW, Scripted, ScriptedSheets, mail_account,
@@ -25,6 +23,8 @@ use porter_provider::{
 };
 use porter_secrets::{MemorySecrets, Secrets};
 use porter_service::{AccountService, Registry};
+use porter_wire::ParentWindow;
+use porter_wire::{AccountsReply, AccountsRequest};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -253,7 +253,7 @@ async fn a_scope_never_given_is_needs_consent_and_the_account_stays_signed_in() 
     *seen.unconsented.lock().expect("unconsented") = true;
     assert_eq!(
         token(&service, &candidate, "imap").await,
-        AccountsReply::Refused(porter_core::wire::Refusal::NeedsConsent)
+        AccountsReply::Refused(porter_wire::Refusal::NeedsConsent)
     );
     assert_eq!(
         service.registry().accounts[0].state,

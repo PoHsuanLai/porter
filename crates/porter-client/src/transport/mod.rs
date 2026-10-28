@@ -42,11 +42,12 @@ use crate::computers::NewComputer;
 use crate::error::TransportError;
 use porter_core::GrantId;
 use porter_core::lending::{ComputerCandidate, GuestAnswer, GuestRow};
-use porter_core::{AccountsReply, AccountsRequest, EndpointUrl, NodeId};
 #[cfg(feature = "infer")]
 use porter_core::{DataClass, Need, Tier};
+use porter_core::{EndpointUrl, NodeId};
 #[cfg(feature = "infer")]
 use porter_infer::{ComputerName, InferSession, OpenOptions, PlaceId, PlaceRow, Readiness};
+use porter_wire::{AccountsReply, AccountsRequest};
 use std::future::Future;
 
 /// Carries requests to accountd and inferd.

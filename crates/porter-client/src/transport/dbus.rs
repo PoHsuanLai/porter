@@ -1,6 +1,6 @@
 //! The D-Bus carrier: porter-dbus proxies on the session bus; the caller's identity is what
 //! the bus says about the connection. `Inference1.Open` is built (a socket fd, framed with
-//! `porter_core::wire`), and so are the two sheet calls accountd still serves (adding an identity
+//! `porter_wire`), and so are the two sheet calls accountd still serves (adding an identity
 //! and signing it in again). No credential crosses the bus any more, so nothing else of accounts
 //! is carried: finding, choosing, tokens and relays are the library's, for an app that hosts its
 //! own `AccountService` ([`super::InProcess`]), and every other call answers `Unsupported`.
@@ -12,13 +12,14 @@ use super::Transport;
 use super::dbus_session::DbusSession;
 use crate::Destination;
 use crate::error::TransportError;
+use porter_core::NodeId;
 use porter_core::lending::{ComputerCandidate, GuestAnswer, GuestRow};
-use porter_core::{AccountsReply, AccountsRequest, NodeId};
 #[cfg(feature = "infer")]
 use porter_core::{DataClass, Need, Tier};
 use porter_dbus::{BusConnection, BusError, BusFailure, classify};
 #[cfg(feature = "infer")]
 use porter_infer::{ComputerName, OpenOptions, PlaceId, PlaceRow, Readiness};
+use porter_wire::{AccountsReply, AccountsRequest};
 #[cfg(feature = "infer")]
 use serde::Serialize;
 use zbus::names::UniqueName;

@@ -19,13 +19,14 @@ use ds_settings::live::{
     Access, Caller, LiveError, LiveModule, LiveSchema, Snapshot, Verdict, serve,
 };
 use ds_settings::schema::KeyPath;
-use porter_core::wire::ParentWindow;
-use porter_core::{AccountsReply, AppId, AppName, AuthKind, IdentityId, Isolation};
+use porter_core::{AppId, AppName, AuthKind, IdentityId, Isolation};
 use porter_dbus::callers::CallerRole;
 use porter_dbus::names::ACCOUNTS_SETTINGS_PATH;
 use porter_provider::{ClientChannel, ClientsFile, Issuer, parse_clients};
 use porter_service::Registry;
 use porter_service::audit::{AuditEvent, ClientIdChange, IssuerSlug};
+use porter_wire::AccountsReply;
+use porter_wire::ParentWindow;
 use std::sync::Arc;
 use zbus::Connection;
 
@@ -66,7 +67,7 @@ pub(crate) enum ReauthNews {
 
 impl ReauthNews {
     pub(crate) fn of(reply: &AccountsReply) -> Self {
-        use porter_core::wire::Refusal;
+        use porter_wire::Refusal;
         match reply {
             AccountsReply::Reauthenticated => ReauthNews::Done,
             AccountsReply::Refused(Refusal::Dismissed) => ReauthNews::Cancelled,

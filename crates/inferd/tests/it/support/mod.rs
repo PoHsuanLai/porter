@@ -1,7 +1,6 @@
 //! Scripted seams and a raw client for the session server's tests. The test plays the engine: a
 //! started turn hands the test a sender, and the turn yields whatever the test pushes.
 
-use porter_core::wire::{FrameRead, decode_frame, encode_frame};
 use porter_core::{AccountId, ModelId};
 use porter_core::{DataClass, Locality, Need, Tier};
 use porter_ids::Tokens;
@@ -14,6 +13,7 @@ use porter_router::seams::{
     AuditSink, EngineFailed, EngineHost, Router, RunningTurn, TurnRunner, TurnStep,
 };
 use porter_router::session::{RouteDecision, SessionSpec};
+use porter_wire::{FrameRead, decode_frame, encode_frame};
 use rustix::net::{SendAncillaryBuffer, SendAncillaryMessage, SendFlags, sendmsg};
 use std::io::{IoSlice, Read, Seek};
 use std::mem::MaybeUninit;

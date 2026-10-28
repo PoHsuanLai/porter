@@ -10,10 +10,10 @@ use common::host::send_input;
 use common::*;
 use porter_core::SecretText;
 use porter_core::sheet::{FieldAnswer, FieldKind, FieldValue, SheetInput, SheetView};
-use porter_core::wire::ParentWindow;
 use porter_dbus::callers::CallerRole;
 use porter_dbus::{ManagerProxy, Sheet};
 use porter_service::{SheetFault, SheetLink, SheetOpen, Sheets};
+use porter_wire::ParentWindow;
 use std::sync::Arc;
 use std::time::Duration;
 

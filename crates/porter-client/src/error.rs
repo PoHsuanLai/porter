@@ -1,9 +1,9 @@
 //! porter-client's errors.
 
 use porter_core::AccountId;
-use porter_core::wire::Refusal;
 #[cfg(feature = "infer")]
 use porter_infer::{InferRefusal, NoPlaceReason, PlaceKind, SessionError};
+use porter_wire::Refusal;
 
 /// What inferd refuses with, in a build with no `infer` feature: it has no values, because such a
 /// build never talks to inferd. It stands where porter-infer's `InferRefusal` stands with the

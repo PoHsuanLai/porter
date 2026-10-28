@@ -36,9 +36,9 @@ async fn an_account_that_needs_a_secret_cannot_open_without_one() {
 #[tokio::test]
 async fn a_scripted_conversation_shows_its_views_and_reads_its_inputs_then_closes() {
     use porter_core::sheet::{SheetInput, SheetView};
-    use porter_core::wire::ParentWindow;
     use porter_fake::ScriptedSheets;
     use porter_service::{SheetFault, SheetLink, SheetOpen, Sheets};
+    use porter_wire::ParentWindow;
     let sheets =
         ScriptedSheets::default().conversing([vec![SheetInput::Back, SheetInput::Dismiss]]);
     let log = sheets.log();

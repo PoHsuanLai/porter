@@ -408,7 +408,7 @@ mod service {
         );
         assert_eq!(
             service.rediscover(&account()).await,
-            Err(porter_core::wire::Refusal::NeedsReauth)
+            Err(porter_wire::Refusal::NeedsReauth)
         );
         assert_eq!(secrets.get(&key).await, Ok(dead));
     }

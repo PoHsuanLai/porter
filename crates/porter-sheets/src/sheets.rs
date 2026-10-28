@@ -16,11 +16,11 @@
 use crate::app_names::AppNames;
 use porter_core::consent::{ConsentAnswer, ConsentAsk};
 use porter_core::sheet::{ReviewView, SheetInput, SheetView};
-use porter_core::wire::ParentWindow;
 use porter_dbus::AccountsSheetProxy;
 use porter_dbus::callers::{CallerRole, Callers};
 use porter_dbus::names::SHEET_BUS;
 use porter_service::{SheetFault, SheetLink, SheetOpen, Sheets};
+use porter_wire::ParentWindow;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};

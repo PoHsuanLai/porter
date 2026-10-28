@@ -6,7 +6,6 @@
 //! permit a key was used under and by whom, never the key.
 
 use crate::cloud::accountd::Boxed;
-use porter_core::wire::Refusal;
 use porter_core::{
     Account, AccountState, AppId, Audience, CapabilityKind, Credential, SecretKey, SecretPurpose,
     SecretText, Toggle,
@@ -16,6 +15,7 @@ use porter_ids::clock::Clock;
 use porter_secrets::{Secrets, SecretsError};
 use porter_service::audit::{AuditEntry, AuditEvent};
 use porter_service::{AuditSink, Registry};
+use porter_wire::Refusal;
 
 /// Reads API keys and notes each use.
 pub trait KeyDesk: std::fmt::Debug + Send + Sync + 'static {

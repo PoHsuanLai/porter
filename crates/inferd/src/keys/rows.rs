@@ -17,16 +17,17 @@ use ds_settings::schema::{
 };
 use porter_core::consent::{Decision, Grant, GrantScope};
 use porter_core::sheet::ProviderGroup;
-use porter_core::wire::ParentWindow;
 use porter_core::{
-    Account, AccountState, AccountsReply, AgentState, AppId, AppName, AuthKind, CapabilityKind,
-    Isolation, LoginOutcome, Offer, Toggle,
+    Account, AccountState, AgentState, AppId, AppName, AuthKind, CapabilityKind, Isolation,
+    LoginOutcome, Offer, Toggle,
 };
 use porter_core::{AccountId, GrantId};
 use porter_families::set::ProviderNames;
 use porter_ids::MicroUsd;
 use porter_service::{Launchers as LaunchersSeam, LoginEnd, Registry, program_of};
 use porter_sheets::AppNames;
+use porter_wire::AccountsReply;
+use porter_wire::ParentWindow;
 use std::sync::{Arc, OnceLock};
 
 /// What a key names.
@@ -501,7 +502,7 @@ enum ReauthNews {
 
 impl ReauthNews {
     fn of(reply: &AccountsReply) -> Self {
-        use porter_core::wire::Refusal;
+        use porter_wire::Refusal;
         match reply {
             AccountsReply::Reauthenticated => ReauthNews::Done,
             AccountsReply::Refused(Refusal::Dismissed) => ReauthNews::Cancelled,
@@ -747,7 +748,7 @@ impl<H: KeyHost, L: LaunchersSeam + Clone + 'static> AccountRows<H, L> {
         let registry = self.host.registry();
         let parsed = parse(path_text, &registry)
             .ok_or_else(|| LiveError::UnknownKey(path_text.to_owned()))?;
-        let refused = |r: porter_core::wire::Refusal| {
+        let refused = |r: porter_wire::Refusal| {
             eprintln!("inferd: a Settings change was refused: {r:?}");
             failed("That could not be done.")
         };

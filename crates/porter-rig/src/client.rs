@@ -12,11 +12,11 @@ use porter_client::{
     Accounts, AiKeys, AiKeysError, ClientError, DbusTransport, Identities, IdentitiesError,
     InferSession, Launcher, LauncherError, OpenOptions,
 };
+use porter_core::ProviderHint;
 use porter_core::audit::Handoff;
 use porter_core::capability::{Access, AgentProgram, Delta, Offered, QuotaReport, StorageScope};
 use porter_core::consent::Usage;
 use porter_core::need::{LlmNeed, MailNeed, NotesNeed, PimNeed, StorageNeed};
-use porter_core::wire::{ParentWindow, ProviderHint};
 use porter_core::{AccountId, KeyPermitId, ProviderId};
 use porter_core::{DataClass, IdentityId, LauncherSession, Need, Tier};
 use porter_dbus::{SyncProxy, from_vardict};
@@ -25,6 +25,7 @@ use porter_infer::{
     ChatControl, ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRequest, MessagePart,
     Role, ToolParallelism,
 };
+use porter_wire::ParentWindow;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use std::time::Duration;
@@ -234,7 +235,7 @@ pub async fn run(
 }
 
 /// A refusal as the rig prints it, `refused` with the word for it.
-fn refused(refusal: porter_core::wire::Refusal, emit: &mut impl FnMut(Value)) -> bool {
+fn refused(refusal: porter_wire::Refusal, emit: &mut impl FnMut(Value)) -> bool {
     emit(json!({ "result": "refused", "refusal": format!("{refusal:?}") }));
     false
 }

@@ -27,7 +27,7 @@ async fn only_the_shell_may_ask_who_needs_signing_in() {
             .expect_err("refused");
         assert_eq!(
             error_name(&error),
-            refusal_name(porter_core::wire::Refusal::Denied)
+            refusal_name(porter_wire::Refusal::Denied)
         );
     }
 }

@@ -12,9 +12,10 @@ use common::eventually;
 use common::fake_inferd::{FakeInferd, Sheets};
 use porter_client::{AiKeys, AiKeysError};
 use porter_core::DataClass;
+use porter_core::ProviderHint;
 use porter_core::consent::Usage;
-use porter_core::wire::{ParentWindow, ProviderHint, Refusal};
 use porter_core::{AccountId, ProviderId};
+use porter_wire::{ParentWindow, Refusal};
 use std::sync::Arc;
 
 /// A private bus with the fake on it, and a client connection.

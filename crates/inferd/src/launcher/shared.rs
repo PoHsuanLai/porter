@@ -34,7 +34,6 @@ use super::roster::Launchers;
 use crate::peers::{Peers, Role};
 use porter_core::capability::AgentProgram;
 use porter_core::consent::{Decision, GrantScope};
-use porter_core::wire::Refusal;
 use porter_core::{
     Account, AccountState, AppId, AuthKind, CapabilityKind, LauncherSession, ProcessCredentialId,
     Toggle,
@@ -44,6 +43,7 @@ use porter_dbus::LauncherFault;
 use porter_service::Registry;
 use porter_service::audit::{AuditEvent, CredentialEnd, Handoff};
 use porter_sheets::{OpenSheets, RequestObjects};
+use porter_wire::Refusal;
 use std::sync::Arc;
 use zbus::message::Header;
 use zbus::zvariant::{Fd, OwnedValue, Value};

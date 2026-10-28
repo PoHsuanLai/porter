@@ -4,6 +4,7 @@
 //! a password goes to the sign-in and nowhere else), restated over porter's stages.
 
 use super::*;
+use crate::ProviderHint;
 use crate::account::AccountLabel;
 use crate::capability::CapabilityKind;
 use crate::effective::Toggle;
@@ -16,7 +17,6 @@ use crate::sheet::progress::{
 use crate::sheet::view::{
     FieldProblem, ProblemKind, ProviderKind, ProviderRow, RowKind, SheetView,
 };
-use crate::wire::ProviderHint;
 use proptest::prelude::*;
 
 const SECRET: &str = "hunter2-correct-horse";

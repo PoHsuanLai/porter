@@ -2,7 +2,7 @@
 //! (`NoFittingAccount`, `AudienceNotGranted`), so an app that gets the error knows what to do.
 
 use crate::service_root::ServiceRoot;
-use porter_core::wire::Refusal;
+use porter_wire::Refusal;
 
 /// The prefix of every accountd refusal's error name (inferd's and syncd's are
 /// [`ServiceRoot::error_prefix`] and a dot).

@@ -24,11 +24,11 @@
 //!   has the origin's root as its endpoint.
 
 use crate::registry::serves;
-use porter_core::wire::Refusal;
 use porter_core::{
     Account, CapabilityKind, EndpointUrl, Family, PathReach, Reach, ReachMethods, ServiceEndpoint,
 };
 use porter_provider::ProviderSpec;
+use porter_wire::Refusal;
 
 /// The other origins a provider file may declare for a row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

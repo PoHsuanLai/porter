@@ -1,9 +1,9 @@
-//! A Unix stream socket whose frames are `porter_core::wire` envelopes (a 4-byte length, then
+//! A Unix stream socket whose frames are `porter_wire` envelopes (a 4-byte length, then
 //! JSON): the fd `Inference1.Open` returns. A session writes `ClientFrame`s and reads
 //! `InferEvent`s, a memfd riding on the frame that names it as SCM_RIGHTS.
 
 use crate::error::TransportError;
-use porter_core::wire::{FrameRead, decode_frame, encode_frame};
+use porter_wire::{FrameRead, decode_frame, encode_frame};
 use std::mem::MaybeUninit;
 use std::os::fd::OwnedFd;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, Interest};
@@ -19,7 +19,7 @@ use std::os::unix::net::UnixStream as StdStream;
 /// a handful of images).
 pub const MAX_ATTACHMENTS: usize = 16;
 
-/// A Unix stream socket, framed with `porter_core::wire`'s envelope.
+/// A Unix stream socket, framed with `porter_wire`'s envelope.
 #[derive(Debug)]
 pub struct FramedSession {
     stream: UnixStream,

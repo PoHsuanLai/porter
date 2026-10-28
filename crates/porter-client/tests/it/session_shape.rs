@@ -3,7 +3,7 @@
 
 use porter_client::{Accounts, ClientError, InferSession, Transport, TransportError};
 use porter_core::need::LlmNeed;
-use porter_core::{AccountsReply, AccountsRequest, DataClass, Need, Tier};
+use porter_core::{DataClass, Need, Tier};
 use porter_ids::Tokens;
 use porter_infer::OpenOptions;
 use porter_infer::testing::{FakeInferSession, Script, ScriptStep};
@@ -12,6 +12,7 @@ use porter_infer::{
     ChatReply, ClientFrame, InferEvent, InferRefusal, InferReply, InferRequest, RequestKind,
     ServedBy, StopReason, TokenUsage,
 };
+use porter_wire::{AccountsReply, AccountsRequest};
 use std::sync::Mutex;
 
 #[derive(Debug)]

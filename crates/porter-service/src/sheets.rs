@@ -5,7 +5,7 @@
 
 use porter_core::consent::{ConsentAnswer, ConsentAsk};
 use porter_core::sheet::{SheetInput, SheetView};
-use porter_core::wire::ParentWindow;
+use porter_wire::ParentWindow;
 use std::future::Future;
 
 /// What a conversation opens with.
