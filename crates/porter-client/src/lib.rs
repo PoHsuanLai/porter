@@ -4,7 +4,8 @@
 //! and the app asks them for an identity or a key permit:
 //!
 //! ```no_run
-//! # #![cfg(feature = "in-process")]
+//! # #[cfg(feature = "in-process")]
+//! # mod example {
 //! use porter_client::{Accounts, ClientError, Found, HostedCore, InProcess};
 //! use porter_core::consent::Usage;
 //! use porter_wire::ParentWindow;
@@ -26,6 +27,8 @@
 //!         Found::None(_why) => None, // EmptyState + "Add Account…"
 //!     })
 //! }
+//! # }
+//! # fn main() {}
 //! ```
 //!
 //! Transport-agnostic behind [`Transport`]: D-Bus to accountd (feature `dbus`), or [`InProcess`]
