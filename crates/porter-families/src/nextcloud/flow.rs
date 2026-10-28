@@ -1,127 +1,30 @@
-//! Login Flow v2's two calls: start a flow, and poll it.
-//!
-//! `POST /index.php/login/v2` answers the page the person opens and where to poll; `POST` to the
-//! poll endpoint with the token answers 404 until the person approves, then the server, the login
-//! name and a new app password, once.
+//! Login Flow v2's two calls, sent: start a flow, and poll it. The requests and the reading of
+//! the answers are nextcloud-proto's.
 
+use super::fault;
 use crate::io::Io;
-use crate::password::{fault_of, join, parse_server};
-use porter_core::{EndpointUrl, LoginName, SecretText};
-use porter_http::http::header::{ACCEPT, CONTENT_TYPE, USER_AGENT};
-use porter_http::http::{Method, Request, StatusCode};
-use porter_http::{Http, HttpError, request_to};
-use porter_ids::WebUrl;
+use crate::password::fault_of;
+use nextcloud_proto::flow::{self, Polled, Started};
+use porter_core::EndpointUrl;
+use porter_http::Http;
 use porter_sheet::SignInFault;
-use serde_json::Value;
-
-/// What the server named for a flow just started.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct Started {
-    /// The page the person opens.
-    pub(super) login: WebUrl,
-    /// Where to poll.
-    pub(super) poll: EndpointUrl,
-    /// What to post there. Whoever holds it can collect the app password once the person
-    /// approves, so it prints as `<redacted>` and is wiped when dropped.
-    pub(super) token: SecretText,
-}
-
-/// What the person approved: the server, who they are there, and the app password.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct Granted {
-    pub(super) server: Option<EndpointUrl>,
-    pub(super) login: LoginName,
-    pub(super) password: SecretText,
-}
-
-/// What one poll came to.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum Polled {
-    /// The person has not approved yet.
-    Waiting,
-    /// The server could not answer this time; the flow may still be alive.
-    Hiccup,
-    /// Approved.
-    Granted(Granted),
-    /// The flow is over without an app password.
-    Failed(SignInFault),
-}
 
 /// Starts a flow at `server`.
 pub(super) async fn start(io: &Io, server: &EndpointUrl) -> Result<Started, SignInFault> {
-    let url = join(server, "/index.php/login/v2").ok_or(SignInFault::Unreadable)?;
-    let request = request_to(Method::POST, &url)
-        .and_then(|builder| {
-            Ok(builder
-                .header(USER_AGENT, "Porter")
-                .header(ACCEPT, "application/json")
-                .body(Vec::new())?)
-        })
-        .map_err(fault_of)?;
+    let request = flow::start_request(server).map_err(fault)?;
     let response = io.http.send(request).await.map_err(fault_of)?;
-    match response.status() {
-        StatusCode::OK => started(response.body()).ok_or(SignInFault::Unreadable),
-        // A server without Login Flow v2 (before Nextcloud 16) or not a Nextcloud at all.
-        _ => Err(SignInFault::Unreadable),
+    flow::started(&response).map_err(fault)
+}
+
+/// Polls once: what came of it, or the fault that ends the flow. A server that could not be
+/// reached this time is a hiccup, not an end.
+pub(super) async fn poll(io: &Io, started: &Started) -> Result<Polled, SignInFault> {
+    let request = flow::poll_request(started).map_err(fault)?;
+    match io.http.send(request).await {
+        Ok(response) => Ok(flow::polled(&response)),
+        Err(error) => match fault_of(error) {
+            SignInFault::Unreachable => Ok(Polled::Hiccup),
+            fault => Err(fault),
+        },
     }
 }
-
-fn started(body: &[u8]) -> Option<Started> {
-    let json: Value = serde_json::from_slice(body).ok()?;
-    let text = |pointer: &str| json.pointer(pointer).and_then(Value::as_str);
-    Some(Started {
-        login: WebUrl::parse(text("/login")?).ok()?,
-        poll: parse_server(text("/poll/endpoint")?)?,
-        token: SecretText::new(text("/poll/token").filter(|t| !t.is_empty())?),
-    })
-}
-
-/// Polls once.
-pub(super) async fn poll(io: &Io, started: &Started) -> Polled {
-    let request = match poll_request(started) {
-        Ok(request) => request,
-        Err(error) => return Polled::Failed(fault_of(error)),
-    };
-    let response = match io.http.send(request).await {
-        Ok(response) => response,
-        Err(error) => {
-            return match fault_of(error) {
-                SignInFault::Unreachable => Polled::Hiccup,
-                fault => Polled::Failed(fault),
-            };
-        }
-    };
-    match response.status().as_u16() {
-        404 => Polled::Waiting,
-        200 => granted(response.body())
-            .map_or(Polled::Failed(SignInFault::Unreadable), Polled::Granted),
-        500..=599 | 429 => Polled::Hiccup,
-        _ => Polled::Failed(SignInFault::Unreadable),
-    }
-}
-
-/// The poll's `POST`, the token as its form body.
-fn poll_request(started: &Started) -> Result<Request<Vec<u8>>, HttpError> {
-    let request = request_to(Method::POST, &started.poll)?
-        .header(USER_AGENT, "Porter")
-        .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
-        .body(format!("token={}", started.token.expose()).into_bytes())?;
-    Ok(request)
-}
-
-fn granted(body: &[u8]) -> Option<Granted> {
-    let json: Value = serde_json::from_slice(body).ok()?;
-    let text = |key: &str| {
-        json.get(key)
-            .and_then(Value::as_str)
-            .filter(|t| !t.is_empty())
-    };
-    Some(Granted {
-        server: text("server").and_then(parse_server),
-        login: LoginName(text("loginName")?.to_owned()),
-        password: SecretText::new(text("appPassword")?),
-    })
-}
-
-#[cfg(test)]
-mod tests;

@@ -4,9 +4,9 @@
 use super::mail::{self, Looked};
 use super::sign_in::{Located, Lookup, Outcome, Seams};
 use super::{dav, jmap};
-use crate::password::{parse_server, password_for, plain, text_of, typed_password};
+use crate::password::{password_for, plain, text_of, typed_password};
 use porter_capability::Claim;
-use porter_core::{Credential, Family, LoginName, SecretText, ServiceEndpoint};
+use porter_core::{Credential, EndpointUrl, Family, LoginName, SecretText, ServiceEndpoint};
 use porter_provider::{ProviderSpec, SignInMode, SignInStep};
 use porter_sheet::{
     FieldAnswer, FieldKind, FieldSpec, Manual, Protocol, SignInFault, manual_form, parse_manual,
@@ -198,7 +198,7 @@ impl Lookup for DavLookup {
 
     async fn submitted(&self, seams: &Seams<'_>, answers: Vec<FieldAnswer>) -> Outcome<()> {
         let (Some(server), Some(user), Some(password)) = (
-            text_of(&answers, FieldKind::Server).and_then(|t| parse_server(&t)),
+            text_of(&answers, FieldKind::Server).and_then(|t| EndpointUrl::typed_server(&t)),
             text_of(&answers, FieldKind::Username),
             typed_password(&answers),
         ) else {

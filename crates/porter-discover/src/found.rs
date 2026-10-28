@@ -18,8 +18,6 @@ pub enum Source {
     WellKnown,
     /// The JMAP session resource.
     JmapSession,
-    /// Nextcloud's OCS capabilities.
-    Ocs,
     /// A probe of local ports.
     Probe,
 }

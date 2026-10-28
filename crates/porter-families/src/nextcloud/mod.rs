@@ -7,7 +7,6 @@
 
 mod discover;
 mod flow;
-mod known;
 mod revoke;
 mod sign_in;
 
@@ -15,6 +14,7 @@ use crate::conversation::Conversation;
 use crate::io::{Io, Pacing};
 use crate::password::password_of;
 use discover::Who;
+use nextcloud_proto::paths::server_of;
 use porter_capability::Claim;
 use porter_core::AccountId;
 use porter_core::{Account, Audience, Credential, EndpointUrl, IssuedToken};
@@ -25,6 +25,18 @@ use porter_provider::{
 use porter_sheet::SignInFault;
 
 pub use sign_in::NextcloudFlow;
+
+/// What a nextcloud-proto error means for a sign-in. Plain `http` to another computer is a
+/// server that cannot be reached safely.
+fn fault(error: nextcloud_proto::Error) -> SignInFault {
+    match error {
+        nextcloud_proto::Error::Refused => SignInFault::Refused,
+        nextcloud_proto::Error::Unreachable | nextcloud_proto::Error::Insecure => {
+            SignInFault::Unreachable
+        }
+        _ => SignInFault::Unreadable,
+    }
+}
 
 /// The Nextcloud family's provider.
 #[derive(Debug, Clone)]
@@ -90,8 +102,7 @@ impl Provider for NextcloudProvider {
         account: &Account,
         presented: &Presented,
     ) -> Result<Vec<Claim>, ProviderError> {
-        let (server, login) =
-            known::server_of(&account.endpoints).ok_or(ProviderError::Unreadable)?;
+        let (server, login) = server_of(&account.endpoints).ok_or(ProviderError::Unreadable)?;
         let who = Who {
             server,
             login,
@@ -131,8 +142,7 @@ impl Provider for NextcloudProvider {
         account: &Account,
         presented: &Presented,
     ) -> Result<RevokeOutcome, ProviderError> {
-        let (server, login) =
-            known::server_of(&account.endpoints).ok_or(ProviderError::Unreadable)?;
+        let (server, login) = server_of(&account.endpoints).ok_or(ProviderError::Unreadable)?;
         revoke::revoke(&self.io, &server, &login, password_of(presented)?).await
     }
 }

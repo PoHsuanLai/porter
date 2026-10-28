@@ -2,10 +2,10 @@
 
 use super::*;
 use porter_capability::Capability;
+use porter_capability::CapabilityKind;
 
-fn offers(found: &Found) -> Vec<(CapabilityKind, bool)> {
-    found
-        .claims
+fn offers(claims: &[Claim]) -> Vec<(CapabilityKind, bool)> {
+    claims
         .iter()
         .map(|c| (c.offer.kind(), matches!(c.offer, Offer::Present(_))))
         .collect()
@@ -13,16 +13,9 @@ fn offers(found: &Found) -> Vec<(CapabilityKind, bool)> {
 
 #[test]
 fn a_full_install_offers_every_kind() {
-    let found = parse_ocs_capabilities(include_str!("../../fixtures/ocs-capabilities.json"))
-        .expect("found");
-    assert_eq!(found.source, Source::Ocs);
-    assert!(found.endpoints.is_empty());
-    assert!(
-        found
-            .claims
-            .iter()
-            .all(|c| c.provenance == Provenance::Discovered)
-    );
+    let found =
+        parse_capabilities(include_str!("../../tests/ocs-capabilities.json")).expect("found");
+    assert!(found.iter().all(|c| c.provenance == Provenance::Discovered));
     assert_eq!(
         offers(&found),
         [
@@ -38,22 +31,19 @@ fn a_full_install_offers_every_kind() {
 #[test]
 fn chunked_upload_follows_the_dav_chunking_advertisement() {
     let chunked = |text: &str| {
-        let found = parse_ocs_capabilities(text).expect("found");
-        let Offer::Present(Capability::Storage(storage)) = &found.claims[0].offer else {
-            panic!("{:?}", found.claims[0])
+        let found = parse_capabilities(text).expect("found");
+        let Offer::Present(Capability::Storage(storage)) = &found[0].offer else {
+            panic!("{:?}", found[0])
         };
         storage.chunked_upload
     };
-    assert!(chunked(include_str!(
-        "../../fixtures/ocs-capabilities.json"
-    )));
-    assert!(!chunked(include_str!("../../fixtures/ocs-minimal.json")));
+    assert!(chunked(include_str!("../../tests/ocs-capabilities.json")));
+    assert!(!chunked(include_str!("../../tests/ocs-minimal.json")));
 }
 
 #[test]
 fn an_install_without_the_apps_marks_them_not_on_server() {
-    let found =
-        parse_ocs_capabilities(include_str!("../../fixtures/ocs-minimal.json")).expect("found");
+    let found = parse_capabilities(include_str!("../../tests/ocs-minimal.json")).expect("found");
     assert_eq!(
         offers(&found),
         [
@@ -64,7 +54,7 @@ fn an_install_without_the_apps_marks_them_not_on_server() {
             (CapabilityKind::Notes, false),
         ]
     );
-    assert!(found.claims[1..].iter().all(|c| matches!(
+    assert!(found[1..].iter().all(|c| matches!(
         c.offer,
         Offer::Absent {
             reason: AbsentReason::NotOnServer,
@@ -77,9 +67,8 @@ fn an_install_without_the_apps_marks_them_not_on_server() {
 fn the_calendar_app_brings_tasks_and_the_dav_app_brings_calendars_and_contacts() {
     let json =
         r#"{"ocs":{"meta":{"statuscode":100},"data":{"capabilities":{"calendar":{},"files":{}}}}}"#;
-    let found = parse_ocs_capabilities(json).expect("found");
+    let found = parse_capabilities(json).expect("found");
     let present: Vec<CapabilityKind> = found
-        .claims
         .iter()
         .filter(|c| matches!(c.offer, Offer::Present(_)))
         .map(|c| c.offer.kind())
@@ -95,13 +84,10 @@ fn the_calendar_app_brings_tasks_and_the_dav_app_brings_calendars_and_contacts()
 }
 
 #[test]
-fn an_error_status_is_no_servers_and_anything_else_unreadable() {
+fn an_error_status_and_anything_unreadable_say_nothing() {
     let denied = r#"{"ocs":{"meta":{"status":"failure","statuscode":997},"data":[]}}"#;
-    assert_eq!(
-        parse_ocs_capabilities(denied),
-        Err(DiscoverFault::NoServers)
-    );
     for text in [
+        denied,
         "",
         "<html/>",
         "{}",
@@ -109,10 +95,6 @@ fn an_error_status_is_no_servers_and_anything_else_unreadable() {
         r#"{"ocs":{"meta":{"statuscode":200},"data":{}}}"#,
         r#"{"ocs":{"meta":{"statuscode":200},"data":{"capabilities":[]}}}"#,
     ] {
-        assert_eq!(
-            parse_ocs_capabilities(text),
-            Err(DiscoverFault::Unreadable),
-            "{text:?}"
-        );
+        assert_eq!(parse_capabilities(text), Err(Error::Unreadable), "{text:?}");
     }
 }

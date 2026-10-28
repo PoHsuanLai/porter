@@ -32,7 +32,7 @@ pub use effective::{KindToggle, Toggle, effective};
 pub use kind::{CapabilityKind, VocabVersion};
 pub use mail::{IdentityCap, LabelModel, MailCap, MailTransport};
 pub use model_id::ModelId;
-pub use offer::{AbsentReason, Claim, Offer, Provenance, Subject};
+pub use offer::{AbsentReason, Claim, Offer, Provenance, Subject, offers};
 pub use photos::{Albums, LibraryRead, PhotosCap};
 pub use pim::{NotesCap, NotesTransport, PimCap, PimTransport};
 pub use storage::{HashKind, StorageCap, StorageScope};

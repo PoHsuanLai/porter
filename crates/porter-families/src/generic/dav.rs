@@ -3,7 +3,7 @@
 //! PROPFIND with the password at each to see that it is accepted.
 
 use crate::io::Io;
-use crate::password::{authorize, basic, endpoint, fault_of, join};
+use crate::password::{authorize, basic, fault_of};
 use dav_proto::discover::{Error as WalkError, Reach, Scope, Walk};
 use porter_capability::CapabilityKind;
 use porter_capability::{AbsentReason, Claim, Offer, Provenance, Subject};
@@ -49,7 +49,7 @@ pub(super) async fn discover(
     for (kind, family, well_known) in SERVICES {
         let present = match root(io, server, well_known, kind, login).await {
             Ok(Some(url)) if check(io, &url, login, password).await? => {
-                verified.extend(endpoint(family, url, login));
+                verified.extend(ServiceEndpoint::coherent(family, url, login));
                 true
             }
             Ok(_) => false,
@@ -80,9 +80,9 @@ async fn root(
     login: &LoginName,
 ) -> Result<Option<EndpointUrl>, SignInFault> {
     if server.path() != "/" {
-        return Ok(join(server, "/"));
+        return Ok(server.join("/"));
     }
-    let Some(requested) = join(server, well_known) else {
+    let Some(requested) = server.join(well_known) else {
         return Ok(None);
     };
     let request = request_to(Method::GET, &requested)

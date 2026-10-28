@@ -77,6 +77,34 @@ impl EndpointUrl {
         }
     }
 
+    /// `path` under this URL: `https://example.org/nextcloud` joined with `/index.php` is
+    /// `https://example.org/nextcloud/index.php`.
+    pub fn join(&self, path: &str) -> Option<Self> {
+        let base = self.0.trim_end_matches('/');
+        Self::parse(&format!("{base}/{}", path.trim_start_matches('/'))).ok()
+    }
+
+    /// The server a person typed: a host (`cloud.example.org`), or an address with a scheme, a
+    /// port and a path (`https://example.org/nextcloud`). A bare host is `https`; plain `http`
+    /// is for this computer only.
+    pub fn typed_server(text: &str) -> Option<Self> {
+        let text = text.trim().trim_end_matches('/');
+        if text.is_empty() {
+            return None;
+        }
+        let with_scheme = match text.contains("://") {
+            true => text.to_owned(),
+            false => format!("https://{text}"),
+        };
+        let url = Self::parse(&with_scheme).ok()?;
+        let origin = url.origin();
+        match origin.scheme {
+            UrlScheme::Https => Some(url),
+            UrlScheme::Http if origin.is_loopback() => Some(url),
+            _ => None,
+        }
+    }
+
     /// The scheme, host and port.
     pub fn origin(&self) -> Origin {
         // `parse` checked the split, and no other constructor exists.
@@ -152,6 +180,24 @@ pub enum EndpointFault {
 }
 
 impl ServiceEndpoint {
+    /// The endpoint of `family` at `url` for `login`, with the TLS mode its scheme means, when
+    /// that is coherent ([`Self::check`]).
+    pub fn coherent(family: Family, url: EndpointUrl, login: &LoginName) -> Option<Self> {
+        let tls = match url.origin().scheme {
+            UrlScheme::Https | UrlScheme::Imaps | UrlScheme::Smtps | UrlScheme::Pop3s => {
+                Tls::Implicit
+            }
+            _ => Tls::Plain,
+        };
+        let endpoint = Self {
+            tls,
+            family,
+            url,
+            login: login.clone(),
+        };
+        endpoint.check().ok().map(|()| endpoint)
+    }
+
     /// The protocol a relay speaks to it, if the relay carries its family.
     pub fn protocol(&self) -> Option<EndpointProtocol> {
         self.family.relay_protocol()

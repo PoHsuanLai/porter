@@ -2,11 +2,12 @@
 //! v2 in the browser, what the account can do, and the review.
 
 use super::discover::{Found, Who, discover};
-use super::flow::{Granted, Polled, Started, poll, start};
-use super::known::server_of;
+use super::flow::{poll, start};
 use crate::conversation::{Flow, Move};
 use crate::io::Io;
-use crate::password::{parse_server, plain, text_of};
+use crate::password::{plain, text_of};
+use nextcloud_proto::flow::{Granted, Polled, Started};
+use nextcloud_proto::paths::server_of;
 use porter_core::{AccountLabel, Credential, EndpointUrl, Restriction, SecretPurpose};
 use porter_http::Sleep;
 use porter_provider::{SignInMode, SignInStep, Signed};
@@ -93,17 +94,18 @@ impl NextcloudFlow {
         polling.attempt += 1;
         polling.waited += wait;
         match poll(&self.io, &polling.started).await {
-            Polled::Waiting => {
+            Err(fault) => Move::Fail(fault),
+            Ok(Polled::Waiting) => {
                 polling.hiccups = 0;
                 Move::Next(SignInStep::Waiting, Mid::Polling(polling))
             }
-            Polled::Hiccup if polling.hiccups + 1 < MAX_HICCUPS => {
+            Ok(Polled::Hiccup) if polling.hiccups + 1 < MAX_HICCUPS => {
                 polling.hiccups += 1;
                 Move::Next(SignInStep::Waiting, Mid::Polling(polling))
             }
-            Polled::Hiccup => Move::Fail(SignInFault::Unreachable),
-            Polled::Failed(fault) => Move::Fail(fault),
-            Polled::Granted(granted) => self.granted(polling.server, granted).await,
+            Ok(Polled::Hiccup) => Move::Fail(SignInFault::Unreachable),
+            Ok(Polled::Failed) => Move::Fail(SignInFault::Unreadable),
+            Ok(Polled::Granted(granted)) => self.granted(polling.server, granted).await,
         }
     }
 
@@ -168,7 +170,9 @@ impl Flow for NextcloudFlow {
     async fn resume(&mut self, mid: Mid, input: SignInInput) -> Move<Mid> {
         match (mid, input) {
             (Mid::AskedServer, SignInInput::Fields(answers)) => {
-                match text_of(&answers, FieldKind::Server).and_then(|t| parse_server(&t)) {
+                match text_of(&answers, FieldKind::Server)
+                    .and_then(|t| EndpointUrl::typed_server(&t))
+                {
                     Some(server) => self.begin(server).await,
                     None => Move::Fail(SignInFault::Unreadable),
                 }

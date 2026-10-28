@@ -48,6 +48,7 @@ RULES=(
   "porter-tailscale: $EFFECTS"
   "porter-tailnet: $EFFECTS"
   "dav-proto: $EFFECTS"
+  "nextcloud-proto: $EFFECTS"
   "porter-families: $EFFECTS"
   "porter-engines: $EFFECTS"
   "porter-engines-install: zbus zvariant ureq oo7 keyring secret-service interprocess latchkey ds-settings inferd"
@@ -108,13 +109,13 @@ declare -A FAMILY_FORBIDS=(
   [set]="$DIRECT_FORBIDS"
 )
 declare -A FAMILY_EDGES=(
-  [nextcloud]="dav-proto porter-core porter-capability porter-sheet porter-ids porter-discover porter-http porter-provider"
+  [nextcloud]="dav-proto nextcloud-proto porter-core porter-capability porter-sheet porter-ids porter-http porter-provider"
   [generic]="dav-proto porter-core porter-capability porter-sheet porter-ids porter-discover porter-http porter-provider porter-proxy"
   [oauth]="porter-core porter-capability porter-sheet porter-ids porter-http porter-http-reqwest porter-oauth porter-provider"
   [api_key]="porter-core porter-capability porter-sheet porter-ids porter-http porter-http-reqwest porter-provider"
   [agent_login]="porter-core porter-capability porter-sheet porter-ids porter-http porter-provider"
   [tailnet]="porter-core porter-capability porter-sheet porter-ids porter-http porter-provider porter-tailscale"
-  [set]="dav-proto porter-core porter-capability porter-sheet porter-ids porter-discover porter-http porter-http-reqwest porter-oauth porter-provider porter-proxy porter-tailscale"
+  [set]="dav-proto nextcloud-proto porter-core porter-capability porter-sheet porter-ids porter-discover porter-http porter-http-reqwest porter-oauth porter-provider porter-proxy porter-tailscale"
 )
 family_features=$(awk '/^\[features\]/{f=1;next} /^\[/{f=0} f && /^[A-Za-z0-9_-]+ *=/{sub(/ *=.*/,""); if ($0!="default") print}' crates/porter-families/Cargo.toml)
 for feature in $family_features; do
@@ -313,7 +314,8 @@ EDGES=(
   "porter-tailscale: porter-ids"
   "porter-tailnet: porter-ids porter-fs porter-tailscale"
   "dav-proto:"
-  "porter-families: dav-proto porter-core porter-capability porter-sheet porter-ids porter-discover porter-http porter-http-reqwest porter-oauth porter-provider porter-proxy porter-tailscale"
+  "nextcloud-proto: porter-core porter-capability porter-ids"
+  "porter-families: dav-proto nextcloud-proto porter-core porter-capability porter-sheet porter-ids porter-discover porter-http porter-http-reqwest porter-oauth porter-provider porter-proxy porter-tailscale"
   "accountd: ds-settings porter-core porter-match porter-capability porter-sheet porter-wire porter-ids porter-daemon porter-dbus porter-families porter-fs porter-provider porter-secrets porter-service porter-sheets porter-store porter-tailscale"
   "storage-webdav: dav-proto porter-capability porter-ids porter-http porter-sync"
   "storage-graph: porter-capability porter-ids porter-http porter-sync"

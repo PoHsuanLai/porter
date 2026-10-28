@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### nextcloud-proto
+
+- New crate nextcloud-proto: Login Flow v2, the OCS capabilities (moved from porter-discover:
+  `parse_ocs_capabilities` is `nextcloud_proto::ocs::parse_capabilities` and returns the claims,
+  and `Source::Ocs` is gone), the app-password revoke, the paths of a server and the account's
+  endpoints, as requests and parsers. The Nextcloud family only sends them. porter-core gains
+  `EndpointUrl::join`, `EndpointUrl::typed_server` and `ServiceEndpoint::coherent`,
+  porter-capability `offers`; the families' own copies are gone.
+
 ### One DAV discovery, and porter-dav is gone
 
 - dav-proto: feature `discover` adds `discover::Walk`, the one sans-IO state machine for the

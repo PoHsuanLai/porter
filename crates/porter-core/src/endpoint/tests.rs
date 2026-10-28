@@ -366,3 +366,58 @@ fn an_endpoint_url_converts_when_it_is_a_web_url() {
         assert_eq!(WebUrl::try_from(&endpoint).is_ok(), ok, "{text}");
     }
 }
+
+#[test]
+fn a_typed_server_becomes_an_https_url_and_plain_http_is_for_this_computer_only() {
+    const CASES: &[(&str, &str, Option<&str>)] = &[
+        (
+            "a bare host",
+            "cloud.example.org",
+            Some("https://cloud.example.org"),
+        ),
+        (
+            "spaces and a slash",
+            "  cloud.example.org/ ",
+            Some("https://cloud.example.org"),
+        ),
+        (
+            "a port",
+            "cloud.example.org:8443",
+            Some("https://cloud.example.org:8443"),
+        ),
+        (
+            "a sub-path",
+            "https://example.org/nextcloud/",
+            Some("https://example.org/nextcloud"),
+        ),
+        (
+            "loopback over http",
+            "http://127.0.0.1:8080",
+            Some("http://127.0.0.1:8080"),
+        ),
+        ("http elsewhere", "http://cloud.example.org", None),
+        ("another scheme", "imaps://mail.example.org", None),
+        ("nothing", "   ", None),
+        ("user info", "https://ada@cloud.example.org", None),
+    ];
+    for (case, typed, want) in CASES {
+        assert_eq!(
+            EndpointUrl::typed_server(typed)
+                .map(|u| u.as_str().to_owned())
+                .as_deref(),
+            *want,
+            "{case}"
+        );
+    }
+}
+
+#[test]
+fn paths_join_on_the_servers_own_origin() {
+    let base = EndpointUrl::parse("https://example.org/nextcloud").expect("url");
+    assert_eq!(
+        base.join("/index.php/login/v2")
+            .map(|u| u.to_string())
+            .as_deref(),
+        Some("https://example.org/nextcloud/index.php/login/v2")
+    );
+}

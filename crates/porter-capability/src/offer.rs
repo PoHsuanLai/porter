@@ -74,6 +74,13 @@ pub enum Provenance {
     Probed,
 }
 
+/// Whether `claims` offer `kind`.
+pub fn offers(claims: &[Claim], kind: CapabilityKind) -> bool {
+    claims
+        .iter()
+        .any(|c| matches!(&c.offer, Offer::Present(cap) if cap.kind() == kind))
+}
+
 /// One statement about what an account can do, from one source.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Claim {

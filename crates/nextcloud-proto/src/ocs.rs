@@ -1,12 +1,37 @@
-//! Nextcloud's `/ocs/v2.php/cloud/capabilities` answer.
+//! Nextcloud's `/ocs/v2.php/cloud/capabilities`: the request, and the answer read as claims.
 
-use crate::found::{DiscoverFault, Found, Source};
+use crate::{Error, authorized, judged, web};
+use http::header::ACCEPT;
+use http::{HeaderValue, Method, Request, Response};
 use porter_capability::{AbsentReason, Claim, Offer, Provenance, Subject};
 use porter_capability::{
     Access, Capability, CapabilityKind, Delta, HashKind, NotesCap, NotesTransport, PimCap,
     PimTransport, StorageCap, StorageScope,
 };
+use porter_core::EndpointUrl;
 use serde_json::{Map, Value};
+
+/// The capabilities request, with the account's `authorization`.
+pub fn request(
+    server: &EndpointUrl,
+    authorization: HeaderValue,
+) -> Result<Request<Vec<u8>>, Error> {
+    let url = web(&crate::paths::capabilities(server).ok_or(Error::Unreadable)?)?;
+    let request = Request::builder()
+        .method(Method::GET)
+        .uri(url.as_str())
+        .header("OCS-APIRequest", "true")
+        .header(ACCEPT, "application/json")
+        .body(Vec::new())
+        .map_err(|_| Error::Unreadable)?;
+    Ok(authorized(request, authorization))
+}
+
+/// What the capabilities `response` says the account can do, or why it says nothing.
+pub fn capabilities(response: &Response<Vec<u8>>) -> Result<Vec<Claim>, Error> {
+    let response = judged(response)?;
+    parse_capabilities(&String::from_utf8_lossy(response.body()))
+}
 
 /// What a Nextcloud's OCS capabilities answer says the account can do: files and quota always;
 /// calendar, contacts, tasks and notes when their apps are on the server (an app that is not
@@ -16,20 +41,20 @@ use serde_json::{Map, Value};
 /// app's own key (`calendar`, `contacts`) marks them present; tasks need the `tasks` key or the
 /// calendar app (which keeps VTODO), notes need the `notes` key. Chunked upload is present when
 /// `dav.chunking` is advertised.
-pub fn parse_ocs_capabilities(json: &str) -> Result<Found, DiscoverFault> {
-    let root: Value = serde_json::from_str(json).map_err(|_| DiscoverFault::Unreadable)?;
-    let ocs = root.get("ocs").ok_or(DiscoverFault::Unreadable)?;
+pub fn parse_capabilities(json: &str) -> Result<Vec<Claim>, Error> {
+    let root: Value = serde_json::from_str(json).map_err(|_| Error::Unreadable)?;
+    let ocs = root.get("ocs").ok_or(Error::Unreadable)?;
     let status = ocs
         .pointer("/meta/statuscode")
         .and_then(Value::as_u64)
-        .ok_or(DiscoverFault::Unreadable)?;
+        .ok_or(Error::Unreadable)?;
     if !matches!(status, 100 | 200) {
-        return Err(DiscoverFault::NoServers);
+        return Err(Error::Unreadable);
     }
     let caps = ocs
         .pointer("/data/capabilities")
         .and_then(Value::as_object)
-        .ok_or(DiscoverFault::Unreadable)?;
+        .ok_or(Error::Unreadable)?;
     let has = |key: &str| caps.contains_key(key);
     let pim = |transport| PimCap {
         access: Access::ReadWrite,
@@ -74,13 +99,7 @@ pub fn parse_ocs_capabilities(json: &str) -> Result<Found, DiscoverFault> {
             }),
         ),
     ];
-    Ok(Found {
-        endpoints: Vec::new(),
-        claims,
-        source: Source::Ocs,
-        oauth: None,
-        pop3: Vec::new(),
-    })
+    Ok(claims)
 }
 
 fn chunking(caps: &Map<String, Value>) -> bool {

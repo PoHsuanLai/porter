@@ -7,14 +7,11 @@
 //! credential itself.
 
 use base64::Engine;
-use porter_capability::CapabilityKind;
 use porter_capability::{Claim, Offer, Provenance, Subject};
-use porter_core::ServiceEndpoint;
-use porter_core::{Credential, EndpointUrl, SecretText, Tls};
+use porter_core::{Credential, SecretText};
 use porter_http::HttpError;
 use porter_http::http::Request;
 use porter_http::http::header::{AUTHORIZATION, HeaderValue};
-use porter_ids::UrlScheme;
 use porter_provider::{Presented, ProviderError, ProviderSpec};
 use porter_sheet::{Entry, FieldAnswer, FieldKind, FieldSpec, FieldValue, Presence, SignInFault};
 
@@ -93,61 +90,6 @@ pub(crate) fn secret_of(answers: &[FieldAnswer], kind: FieldKind) -> Option<Secr
         .filter(|secret| !secret.expose().is_empty())
 }
 
-/// The server a person typed: a host (`cloud.example.org`), or an address with a scheme, a port
-/// and a path (`https://example.org/nextcloud`). A bare host is `https`; plain `http` is for
-/// this computer only.
-pub(crate) fn parse_server(text: &str) -> Option<EndpointUrl> {
-    let text = text.trim().trim_end_matches('/');
-    if text.is_empty() {
-        return None;
-    }
-    let with_scheme = match text.contains("://") {
-        true => text.to_owned(),
-        false => format!("https://{text}"),
-    };
-    let url = EndpointUrl::parse(&with_scheme).ok()?;
-    let origin = url.origin();
-    match origin.scheme {
-        UrlScheme::Https => Some(url),
-        UrlScheme::Http if origin.is_loopback() => Some(url),
-        _ => None,
-    }
-}
-
-/// `path` under `base`.
-pub(crate) fn join(base: &EndpointUrl, path: &str) -> Option<EndpointUrl> {
-    let base = base.as_str().trim_end_matches('/');
-    EndpointUrl::parse(&format!("{base}/{}", path.trim_start_matches('/'))).ok()
-}
-
-/// A path segment, percent-encoded (an `@` or a space in a user id is not a URL character).
-pub(crate) fn segment(text: &str) -> String {
-    porter_ids::percent::encode_unreserved(text)
-}
-
-/// The TLS mode a URL's scheme means.
-pub(crate) fn tls_of(url: &EndpointUrl) -> Tls {
-    match url.origin().scheme {
-        UrlScheme::Https | UrlScheme::Imaps | UrlScheme::Smtps | UrlScheme::Pop3s => Tls::Implicit,
-        _ => Tls::Plain,
-    }
-}
-
-/// A coherent endpoint, or `None`.
-pub(crate) fn endpoint(
-    family: porter_core::Family,
-    url: EndpointUrl,
-    login: &porter_core::LoginName,
-) -> Option<ServiceEndpoint> {
-    let endpoint = ServiceEndpoint {
-        tls: tls_of(&url),
-        family,
-        url,
-        login: login.clone(),
-    };
-    endpoint.check().ok().map(|()| endpoint)
-}
-
 /// The `Authorization` value of HTTP Basic.
 pub(crate) fn basic(login: &str, password: &SecretText) -> String {
     let token =
@@ -155,12 +97,20 @@ pub(crate) fn basic(login: &str, password: &SecretText) -> String {
     format!("Basic {token}")
 }
 
+/// `value` as a header value marked sensitive, so a request's `Debug` never shows it. A value
+/// that cannot be a header's is `Malformed`.
+pub(crate) fn sensitive(value: &str) -> Result<HeaderValue, HttpError> {
+    let mut value = HeaderValue::from_str(value).map_err(|_| HttpError::Malformed)?;
+    value.set_sensitive(true);
+    Ok(value)
+}
+
 /// Puts `value` on a built request as its `Authorization`, marked sensitive so the request's
 /// `Debug` never shows it. A value that cannot be a header's is `Malformed`.
 pub(crate) fn authorize(request: &mut Request<Vec<u8>>, value: &str) -> Result<(), HttpError> {
-    let mut value = HeaderValue::from_str(value).map_err(|_| HttpError::Malformed)?;
-    value.set_sensitive(true);
-    request.headers_mut().insert(AUTHORIZATION, value);
+    request
+        .headers_mut()
+        .insert(AUTHORIZATION, sensitive(value)?);
     Ok(())
 }
 
@@ -174,13 +124,6 @@ pub(crate) fn declared(spec: &ProviderSpec) -> Vec<Claim> {
             provenance: Provenance::Declared,
         })
         .collect()
-}
-
-/// Whether `claims` offer `kind`.
-pub(crate) fn offers(claims: &[Claim], kind: CapabilityKind) -> bool {
-    claims
-        .iter()
-        .any(|c| matches!(&c.offer, Offer::Present(cap) if cap.kind() == kind))
 }
 
 /// The password an account presents: the credential, when it is one.
