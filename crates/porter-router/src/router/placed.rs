@@ -9,11 +9,12 @@
 
 use super::{Decided, Listed, Unchosen, choose, chosen_for, fits};
 use porter_capability::ModelId;
-use porter_core::{DataClass, Need, Tier};
+use porter_core::{DataClass, Tier};
 use porter_infer::{
     AutoPolicy, InferRefusal, NoPlaceReason, PickRefusal, PlaceId, PlaceRefusal, Policy, RouteAsk,
     RouteCandidate, TierChoice, TierMap, admit,
 };
+use porter_match::Need;
 use std::collections::BTreeMap;
 
 /// The places a session may run, in order of preference, and the model to use at some of them.

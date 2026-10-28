@@ -1,7 +1,7 @@
-//! porter's pure vocabulary: accounts, the capability vocabulary and how a need meets an offer,
-//! consent and credentials' filing. No runtime, no file system, no I/O: the
-//! file writer lives in `porter-fs`. The ids, units, URLs, the clock and percent-encoding it is
-//! built from are in `porter-ids`.
+//! porter's pure accounts vocabulary: accounts and their endpoints, consent, and credentials'
+//! filing. No runtime, no file system, no I/O: the file writer lives in `porter-fs`. What it is
+//! built from lives below it, each in its own crate: ids, units, URLs, the clock and
+//! percent-encoding in `porter-ids`, the capability vocabulary in `porter-capability`.
 
 mod account;
 mod agent_login;
@@ -21,8 +21,6 @@ mod identity;
 mod ids;
 mod launcher_session;
 pub mod lending;
-mod matching;
-pub mod need;
 mod process_credential;
 mod protocol;
 mod provider_hint;
@@ -54,8 +52,6 @@ pub use identities::{Identity, IdentityAddress, IdentityId, IdentityKind, Identi
 pub use identity::{CgroupPath, ClaimedId, PeerFacts, PeerIdentity, SandboxFacts, identity_of};
 pub use ids::{AccountId, GrantId, KeyPermitId, ProviderId};
 pub use launcher_session::LauncherSession;
-pub use matching::{Match, Shortfall, matches};
-pub use need::Need;
 pub use process_credential::ProcessCredentialId;
 pub use protocol::EndpointProtocol;
 pub use provider_hint::ProviderHint;

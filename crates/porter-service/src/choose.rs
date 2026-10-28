@@ -1,10 +1,11 @@
 //! `Choose`: the chooser and consent sheet, and the grant it records.
 
 use crate::registry::{Asker, Registry, candidate};
+use porter_core::LauncherSession;
 use porter_core::consent::{AccountChoice, ConsentAnswer, ConsentAsk, Decision, Grant, GrantScope};
 use porter_core::{AccountId, GrantId};
-use porter_core::{LauncherSession, Need};
 use porter_ids::UnixSeconds;
+use porter_match::Need;
 use porter_wire::AccountsReply;
 use porter_wire::Refusal;
 

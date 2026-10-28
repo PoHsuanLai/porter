@@ -12,13 +12,14 @@ use inferd::peers::Role;
 use porter_capability::{CuaEnv, LlmFeature, Modality};
 use porter_client::{Accounts, ClientError, DbusTransport, InferSession, TransportError};
 use porter_core::consent::Usage;
-use porter_core::need::{CuaNeed, DimsNeed, EmbedNeed, LlmNeed};
-use porter_core::{DataClass, Need, Tier};
+use porter_core::{DataClass, Tier};
 use porter_ids::{Dims, Tokens};
 use porter_infer::{
     ChatMessage, ChatRequest, ClientFrame, EmbedRequest, EmbedRole, InferEvent, InferReply,
     InferRequest, MessagePart, Readiness, ReplyShape, Role as ChatRole, StopReason,
 };
+use porter_match::Need;
+use porter_match::{CuaNeed, DimsNeed, EmbedNeed, LlmNeed};
 use serde_json::Value;
 
 fn llm() -> Need {

@@ -422,7 +422,7 @@ async fn only_the_agent_launcher_may_open_an_endpoint() {
     let refused = world
         .accounts
         .session(
-            &porter_core::Need::Llm(porter_core::need::LlmNeed::new(
+            &porter_match::Need::Llm(porter_match::LlmNeed::new(
                 [porter_capability::LlmFeature::Chat].into(),
                 porter_ids::Tokens(10),
             )),

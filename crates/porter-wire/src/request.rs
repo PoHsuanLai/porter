@@ -4,7 +4,8 @@
 use porter_core::consent::Usage;
 use porter_core::token::Audience;
 use porter_core::{AccountId, GrantId};
-use porter_core::{DataClass, EndpointUrl, Need, ProviderHint};
+use porter_core::{DataClass, EndpointUrl, ProviderHint};
+use porter_match::Need;
 use serde::{Deserialize, Serialize};
 
 /// One request to accountd (design/31 §4.4; the D-Bus methods carry the same values).

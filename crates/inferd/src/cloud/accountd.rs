@@ -15,10 +15,11 @@
 use super::own::OwnServer;
 use porter_capability::LlmFeature;
 use porter_core::consent::{Usage, Verdict};
-use porter_core::need::LlmNeed;
 use porter_core::{AccountId, GrantId};
-use porter_core::{AccountState, AppId, DataClass, Need, SecretText};
+use porter_core::{AccountState, AppId, DataClass, SecretText};
 use porter_ids::Tokens;
+use porter_match::LlmNeed;
+use porter_match::Need;
 use porter_wire::Refusal;
 use std::fmt::Debug;
 use std::future::Future;

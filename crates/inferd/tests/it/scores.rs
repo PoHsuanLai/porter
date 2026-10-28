@@ -14,13 +14,14 @@ use hosting::rig::{Plan, World};
 use porter_capability::LlmFeature;
 use porter_client::InferSession;
 use porter_core::consent::Usage;
-use porter_core::need::LlmNeed;
-use porter_core::{DataClass, Need, Tier};
+use porter_core::{DataClass, Tier};
 use porter_ids::Tokens;
 use porter_infer::{
     ChatControl, ChatMessage, ChatReply, ChatRequest, ClientFrame, InferEvent, InferReply,
     InferRequest, Knob, MessagePart, Reasoning, ReplyShape, Role as ChatRole, ScoreOptions,
 };
+use porter_match::LlmNeed;
+use porter_match::Need;
 use serde_json::json;
 
 fn llm() -> Need {

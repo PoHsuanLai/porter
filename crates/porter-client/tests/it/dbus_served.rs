@@ -14,8 +14,7 @@ use porter_capability::ModelId;
 use porter_client::{Accounts, ClientError, DbusTransport, InferSession};
 use porter_core::AccountId;
 use porter_core::consent::Usage;
-use porter_core::need::{CuaNeed, DimsNeed, EmbedNeed};
-use porter_core::{DataClass, Locality, Need, Tier};
+use porter_core::{DataClass, Locality, Tier};
 use porter_ids::{Dims, Tokens};
 use porter_infer::testing::{Script, ScriptStep};
 use porter_infer::{
@@ -23,6 +22,8 @@ use porter_infer::{
     EmbedVector, ImageSource, InferEvent, InferRefusal, InferReply, InferRequest, Readiness,
     RequestKind, ServedBy, TokenUsage,
 };
+use porter_match::Need;
+use porter_match::{CuaNeed, DimsNeed, EmbedNeed};
 use porter_router::session::RouteDecision;
 use std::sync::Arc;
 use tokio::sync::Notify;

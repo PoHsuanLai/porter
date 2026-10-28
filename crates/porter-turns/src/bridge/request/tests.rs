@@ -1,8 +1,8 @@
 use super::*;
 use porter_core::consent::Usage;
-use porter_core::need::DimsNeed;
 use porter_core::{DataClass, Tier};
 use porter_ids::Permille;
+use porter_match::DimsNeed;
 use porter_router::testkit::{Scratch, models};
 use std::io::Write;
 use std::os::fd::OwnedFd;

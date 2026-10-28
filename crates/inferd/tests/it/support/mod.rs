@@ -3,12 +3,13 @@
 
 use porter_capability::ModelId;
 use porter_core::AccountId;
-use porter_core::{DataClass, Locality, Need, Tier};
+use porter_core::{DataClass, Locality, Tier};
 use porter_ids::Tokens;
 use porter_infer::{
     AudioFrame, ClientFrame, InferEvent, InferRefusal, InferReply, InferRequest, ModelRef,
     Readiness, ServedBy,
 };
+use porter_match::Need;
 use porter_router::carried::Carried;
 use porter_router::seams::{
     AuditSink, EngineFailed, EngineHost, Router, RunningTurn, TurnRunner, TurnStep,
@@ -50,10 +51,7 @@ pub fn spec(need: Need, class: DataClass) -> SessionSpec {
 }
 
 pub fn llm() -> Need {
-    Need::Llm(porter_core::need::LlmNeed::new(
-        Default::default(),
-        Tokens(1),
-    ))
+    Need::Llm(porter_match::LlmNeed::new(Default::default(), Tokens(1)))
 }
 
 /// A router with one fixed answer.

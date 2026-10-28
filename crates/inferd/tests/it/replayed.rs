@@ -9,13 +9,14 @@ use hosting::rig::{Plan, World};
 use porter_capability::LlmFeature;
 use porter_client::InferSession;
 use porter_core::consent::Usage;
-use porter_core::need::LlmNeed;
-use porter_core::{DataClass, Need, Tier};
+use porter_core::{DataClass, Tier};
 use porter_ids::Tokens;
 use porter_infer::{
     ChatMessage, ChatRequest, ClientFrame, InferEvent, InferReply, InferRequest, JsonSchemaText,
     JsonText, MessagePart, Role as ChatRole, StopReason, ToolDecl, ToolName,
 };
+use porter_match::LlmNeed;
+use porter_match::Need;
 use std::path::PathBuf;
 
 fn cassette_file() -> PathBuf {

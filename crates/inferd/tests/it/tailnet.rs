@@ -197,14 +197,14 @@ mod chat {
     use super::*;
     use porter_capability::LlmFeature;
     use porter_client::InferSession;
-    use porter_core::Need;
     use porter_core::consent::Usage;
-    use porter_core::need::LlmNeed;
     use porter_ids::Tokens;
     use porter_infer::{
         ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRequest, MessagePart, OpenOptions,
         Role as ChatRole,
     };
+    use porter_match::LlmNeed;
+    use porter_match::Need;
 
     fn llm() -> Need {
         Need::Llm(LlmNeed::new([LlmFeature::Chat].into(), Tokens(1000)))

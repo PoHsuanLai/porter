@@ -11,14 +11,15 @@ use porter_capability::ModelId;
 use porter_client::{Accounts, ClientError, TransportError};
 use porter_core::AccountId;
 use porter_core::consent::Usage;
-use porter_core::need::LlmNeed;
-use porter_core::{DataClass, Need, Tier};
+use porter_core::{DataClass, Tier};
 use porter_ids::Tokens;
 use porter_infer::testing::{Script, ScriptStep};
 use porter_infer::{
     ChatControl, ChatReply, ChatRequest, InferEvent, InferReply, InferRequest, RequestKind,
     ServedBy, StopReason, TokenUsage, ToolParallelism,
 };
+use porter_match::LlmNeed;
+use porter_match::Need;
 
 const CHILD_MARKER: &str = "PORTER_CLIENT_CONNECT_CHILD";
 const CHILD_TEST: &str = "connect::child_connects_over_the_session_bus_it_is_given";

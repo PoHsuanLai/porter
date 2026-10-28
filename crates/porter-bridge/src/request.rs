@@ -12,8 +12,8 @@ use model_catalog::SamplingDefaults;
 use model_openai_compat::Flavor;
 use model_provider as sp;
 use model_provider::EmbedCaps;
-use porter_core::need::DimsNeed;
 use porter_infer as pi;
+use porter_match::DimsNeed;
 #[cfg(unix)]
 use std::fs::File;
 #[cfg(unix)]

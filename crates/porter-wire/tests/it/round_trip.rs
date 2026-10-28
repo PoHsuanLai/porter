@@ -7,7 +7,6 @@ use porter_capability::{
     StorageScope,
 };
 use porter_core::consent::{Availability, Decision, Grant, GrantKey, GrantScope, Usage};
-use porter_core::need::{Need, StorageNeed};
 use porter_core::token::Audience;
 use porter_core::{AccountId, GrantId, ProviderId};
 use porter_core::{
@@ -15,6 +14,7 @@ use porter_core::{
     ProviderHint, Restriction, SecretText, SpaceId, SpaceScope, TokenKind,
 };
 use porter_ids::UnixSeconds;
+use porter_match::{Need, StorageNeed};
 use porter_wire::{AccountsReply, AccountsRequest, ParentWindow, Refusal};
 use serde::Serialize;
 use serde::de::DeserializeOwned;

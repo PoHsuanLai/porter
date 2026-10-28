@@ -12,11 +12,12 @@ use porter_core::Tier;
 use porter_core::consent::{Grant, Usage};
 use porter_core::lending::{ComputerCandidate, GuestAnswer, GuestRow};
 use porter_core::{AccountId, GrantId};
-use porter_core::{Audience, Candidate, DataClass, EndpointUrl, IssuedToken, Need, NodeId};
+use porter_core::{Audience, Candidate, DataClass, EndpointUrl, IssuedToken, NodeId};
 #[cfg(feature = "infer")]
 use porter_infer::{
     ClientFrame, InferEvent, InferReply, InferRequest, InferSession, OpenOptions, Readiness,
 };
+use porter_match::Need;
 use porter_wire::ParentWindow;
 use porter_wire::{AccountsReply, AccountsRequest};
 

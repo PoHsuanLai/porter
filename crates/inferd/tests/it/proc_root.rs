@@ -4,10 +4,10 @@
 
 use crate::hosting::bus;
 
-use porter_core::Need;
-use porter_core::need::LlmNeed;
 use porter_dbus::names::INFERENCE_BUS;
 use porter_dbus::{Details, InferenceProxy, need_to_dbus};
+use porter_match::LlmNeed;
+use porter_match::Need;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 

@@ -188,7 +188,7 @@ async fn only_settings_the_shell_the_companion_and_cuad_may_list_the_places() {
 async fn the_shell_may_list_the_places_and_ask_for_no_model() {
     let (world, _lab) = world("shell", Role::Shell, "org.quire.Shell").await;
     assert!(world.accounts.places().await.is_ok());
-    let need = porter_core::Need::Llm(porter_core::need::LlmNeed::new(
+    let need = porter_match::Need::Llm(porter_match::LlmNeed::new(
         [porter_capability::LlmFeature::Chat].into(),
         porter_ids::Tokens(1000),
     ));
@@ -255,15 +255,15 @@ mod routing {
     use hosting::bus::within;
     use porter_capability::LlmFeature;
     use porter_client::InferSession;
-    use porter_core::Need;
     use porter_core::consent::Usage;
-    use porter_core::need::LlmNeed;
     use porter_dbus::InferenceProxy;
     use porter_ids::Tokens;
     use porter_infer::{
         ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRequest, LocalOnly, MessagePart,
         NoPlaceReason, OpenOptions, PlaceId, Policy, Role as ChatRole,
     };
+    use porter_match::LlmNeed;
+    use porter_match::Need;
     use porter_router::router::placed::Allowed;
     use porter_router::session::SessionSpec;
     use std::collections::BTreeMap;
@@ -593,11 +593,11 @@ mod refusals {
     use super::*;
     use hosting::rig::World;
     use porter_capability::{LlmFeature, Modality};
-    use porter_core::Need;
-    use porter_core::need::{DimsNeed, EmbedNeed, LlmNeed};
     use porter_dbus::{InferenceProxy, PLACE_ERROR_PREFIX, place_refusal_of};
     use porter_ids::Tokens;
     use porter_infer::{LocalOnly, NoPlaceReason, OpenOptions, PlaceId, Policy};
+    use porter_match::Need;
+    use porter_match::{DimsNeed, EmbedNeed, LlmNeed};
 
     const COMPANION: &str = "org.quire.Companion";
 
@@ -1024,7 +1024,7 @@ mod computers {
         as_caller(&world, Role::Placer, COMPANION);
         let options = OpenOptions::default()
             .with_places(vec![PlaceId::parse("computer:studio-pc").expect("place")]);
-        let need = porter_core::Need::Llm(porter_core::need::LlmNeed::new(
+        let need = porter_match::Need::Llm(porter_match::LlmNeed::new(
             [porter_capability::LlmFeature::Chat].into(),
             porter_ids::Tokens(1000),
         ));

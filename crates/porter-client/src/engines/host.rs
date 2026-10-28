@@ -9,8 +9,9 @@ use super::session::EngineSession;
 use super::turn::Pinned;
 use crate::error::TransportError;
 use crate::transport::SessionHost;
-use porter_core::{AppId, DataClass, Need, Tier};
+use porter_core::{AppId, DataClass, Tier};
 use porter_infer::{InferRefusal, OpenOptions, Policy, Readiness, ServedBy};
+use porter_match::Need;
 use std::sync::Arc;
 
 #[derive(Debug)]

@@ -20,6 +20,7 @@ subtle = { workspace = true }
 zeroize = { workspace = true }
 
 [dev-dependencies]
+porter-match = { workspace = true }
 porter-capability = { workspace = true, features = ["testing"] }
 test-kit = { workspace = true }
 

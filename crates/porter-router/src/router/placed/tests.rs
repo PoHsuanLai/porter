@@ -1,12 +1,12 @@
 use super::*;
 use porter_capability::{Capability, LlmCap, LlmFeature, LlmWire};
 use porter_core::AccountId;
-use porter_core::need::{DimsNeed, EmbedNeed, LlmNeed};
 use porter_core::{Billing, Locality};
 use porter_ids::Tokens;
 use porter_infer::{
     AutoPolicy, LicenceClass, LocalOnly, ModelCard, Permit, PlaceKind, Policy, Readiness, SwapCost,
 };
+use porter_match::{DimsNeed, EmbedNeed, LlmNeed};
 
 fn llm_cap() -> Capability {
     Capability::Llm(LlmCap {

@@ -7,14 +7,15 @@ use porter_client::engines::{
 };
 use porter_client::{InferRefusal, InferSession, OpenOptions, Policy, SessionHost, Slot};
 use porter_core::AccountId;
-use porter_core::need::{DimsNeed, EmbedNeed, LlmNeed};
-use porter_core::{AppId, AppName, DataClass, Isolation, Locality, Need, SecretText, Tier};
+use porter_core::{AppId, AppName, DataClass, Isolation, Locality, SecretText, Tier};
 use porter_fake_servers::{FakeModels, ModelDef, ModelsHandle, Running, Wire};
 use porter_ids::Tokens;
 use porter_infer::{
     ChatControl, ChatMessage, ChatRequest, ClientFrame, InferEvent, InferReply, InferRequest,
     MessagePart, ModelError, Role, ToolParallelism,
 };
+use porter_match::Need;
+use porter_match::{DimsNeed, EmbedNeed, LlmNeed};
 use std::sync::{Arc, Mutex};
 
 fn app() -> AppId {

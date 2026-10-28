@@ -9,9 +9,10 @@
 use super::PimKind;
 use porter_capability::{Access, Delta};
 use porter_client::{Accounts, Found, Transport};
+use porter_core::Candidate;
 use porter_core::consent::Usage;
-use porter_core::need::PimNeed;
-use porter_core::{Candidate, Need};
+use porter_match::Need;
+use porter_match::PimNeed;
 use std::future::Future;
 use std::sync::Arc;
 

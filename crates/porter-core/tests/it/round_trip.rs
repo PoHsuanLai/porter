@@ -14,13 +14,14 @@ use porter_core::consent::{
     AccountChoice, AskPurpose, Availability, ConsentAnswer, ConsentAsk, Decision, Grant, GrantKey,
     GrantScope, Usage, Verdict,
 };
-use porter_core::need::{
-    AgentNeed, CuaNeed, DimsNeed, EmbedNeed, IdentityNeed, ImageGenNeed, KeyValueNeed, LlmNeed,
-    MailNeed, NotesNeed, PhotosNeed, PimNeed, PushNeed, RerankNeed, SpeechNeed, StorageNeed,
-};
 use porter_core::store::{AccountToggle, Persisted};
 use porter_core::*;
 use porter_ids::*;
+use porter_match::{
+    AgentNeed, CuaNeed, DimsNeed, EmbedNeed, IdentityNeed, ImageGenNeed, KeyValueNeed, LlmNeed,
+    MailNeed, NotesNeed, PhotosNeed, PimNeed, PushNeed, RerankNeed, SpeechNeed, StorageNeed,
+};
+use porter_match::{Match, Need, Shortfall};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::fmt::Debug;

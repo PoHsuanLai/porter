@@ -18,8 +18,7 @@ use inferd::settings::Settings;
 use porter_capability::LlmFeature;
 use porter_client::InferSession;
 use porter_core::consent::Usage;
-use porter_core::need::LlmNeed;
-use porter_core::{AppId, AppName, DataClass, Isolation, Locality, Need, Tier};
+use porter_core::{AppId, AppName, DataClass, Isolation, Locality, Tier};
 use porter_dbus::InferenceProxy;
 use porter_fake_servers::net::Bind;
 use porter_fake_servers::{FakeModels, ModelDef, ModelsHandle, Running, Wire};
@@ -28,6 +27,8 @@ use porter_infer::{
     ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRefusal, InferReply, InferRequest,
     LocalOnly, MessagePart, Policy, Role as ChatRole,
 };
+use porter_match::LlmNeed;
+use porter_match::Need;
 use std::time::Duration;
 
 const MAIL: &str = "org.quire.Mail";

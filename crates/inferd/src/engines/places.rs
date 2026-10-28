@@ -8,12 +8,12 @@ use crate::settings::Engine;
 use porter_capability::LlmFeature;
 use porter_capability::ModelId;
 use porter_core::AccountState;
-use porter_core::need::LlmNeed;
 use porter_ids::Tokens;
 use porter_infer::{
     ComputerName, PlaceEngine, PlaceId, PlaceKind, PlaceModel, PlaceRow, PlaceState, PlaceTarget,
     Takes,
 };
+use porter_match::LlmNeed;
 use porter_router::router::fits;
 use std::collections::BTreeMap;
 

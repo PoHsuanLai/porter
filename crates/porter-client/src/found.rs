@@ -1,7 +1,8 @@
 //! What `find` answers: a closed set the app renders arm by arm.
 
 use porter_core::consent::{Availability, Usage};
-use porter_core::{Candidate, DataClass, Need};
+use porter_core::{Candidate, DataClass};
+use porter_match::Need;
 
 /// The answer to "is there an account that can do this for me?".
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,9 +63,9 @@ mod tests {
     use super::*;
     use porter_capability::{Access, Delta, QuotaReport, StorageScope};
     use porter_capability::{Capability, Subject};
-    use porter_core::need::StorageNeed;
     use porter_core::{AccountLabel, Restriction};
     use porter_core::{GrantId, ProviderId};
+    use porter_match::StorageNeed;
 
     fn offer() -> ConsentOffer {
         let need = Need::Storage(StorageNeed::new(

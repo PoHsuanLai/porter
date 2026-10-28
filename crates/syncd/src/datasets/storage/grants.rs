@@ -12,8 +12,9 @@ use crate::datasets::pim::AccountdUnavailable;
 use porter_capability::{Access, Albums, Delta, LibraryRead, Offered, QuotaReport, StorageScope};
 use porter_client::{Accounts, Found, Transport};
 use porter_core::consent::Usage;
-use porter_core::need::{PhotosNeed, StorageNeed};
-use porter_core::{Candidate, DataClass, Family, Need, ServiceEndpoint};
+use porter_core::{Candidate, DataClass, Family, ServiceEndpoint};
+use porter_match::Need;
+use porter_match::{PhotosNeed, StorageNeed};
 use std::future::Future;
 use std::sync::Arc;
 

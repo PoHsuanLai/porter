@@ -8,8 +8,7 @@ use crate::support;
 use inferd::serve::serve_session;
 use porter_capability::{CuaEnv, SpeechMode};
 use porter_core::consent::Usage;
-use porter_core::need::{CuaNeed, SpeechNeed};
-use porter_core::{DataClass, Need, Tier};
+use porter_core::{DataClass, Tier};
 use porter_ids::{Count, Tokens};
 use porter_infer::{
     AttachIndex, AudioFrame, AudioRate, Base64Bytes, ChatControl, ChatMessage, ChatReply,
@@ -17,6 +16,8 @@ use porter_infer::{
     InferRefusal, InferReply, InferRequest, MessagePart, ModelError, Role, StopReason, TokenUsage,
     ToolParallelism, TranscribeBegin, TranscribeMode, TranscribeReply,
 };
+use porter_match::Need;
+use porter_match::{CuaNeed, SpeechNeed};
 use porter_router::carried::Carried;
 use porter_router::seams::{Seams, TurnStep};
 use porter_router::session::SessionSpec;

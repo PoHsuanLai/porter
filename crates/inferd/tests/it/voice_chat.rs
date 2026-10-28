@@ -13,13 +13,14 @@ use hosting::rig::{Plan, SpeechPlan, World};
 use porter_capability::LlmFeature;
 use porter_client::{DbusSession, InferSession};
 use porter_core::consent::Usage;
-use porter_core::need::LlmNeed;
-use porter_core::{DataClass, Need, Tier};
+use porter_core::{DataClass, Tier};
 use porter_ids::Tokens;
 use porter_infer::{
     AudioFrame, AudioRate, Base64Bytes, ChatMessage, ChatRequest, ClientFrame, InferEvent,
     InferReply, InferRequest, LangPick, Role, StageRole, TranscribeBegin, TranscribeMode,
 };
+use porter_match::LlmNeed;
+use porter_match::Need;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::time::Duration;

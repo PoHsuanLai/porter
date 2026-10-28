@@ -8,8 +8,9 @@
 use porter_core::consent::Usage;
 use porter_core::store::RegistryStore;
 use porter_core::{AccountId, GrantId};
-use porter_core::{AgentState, AppId, DataClass, LauncherSession, Need, SecretText};
+use porter_core::{AgentState, AppId, DataClass, LauncherSession, SecretText};
 use porter_ids::clock::Clock;
+use porter_match::Need;
 use porter_provider::Provider;
 use porter_secrets::Secrets;
 use porter_service::{AccountService, AgentFault, AuditSink, Registry, Roster, Sheets};

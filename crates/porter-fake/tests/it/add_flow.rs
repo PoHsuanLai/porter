@@ -1763,9 +1763,9 @@ async fn only_an_access_the_provider_asks_on_use_can_be_asked_for_later() {
     assert_eq!(script.modes.lock().expect("modes").clone(), vec![]);
 }
 
-fn whole_store() -> porter_core::Need {
+fn whole_store() -> porter_match::Need {
     use porter_capability::{QuotaReport, StorageScope};
-    porter_core::Need::Storage(porter_core::need::StorageNeed::new(
+    porter_match::Need::Storage(porter_match::StorageNeed::new(
         Access::ReadWrite,
         Delta::Poll,
         StorageScope::Full,

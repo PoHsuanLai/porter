@@ -14,9 +14,8 @@ use porter_capability::{Capability, CapabilityKind, Offer};
 use porter_capability::{Offered, StorageScope};
 use porter_core::AccountId;
 use porter_core::consent::{Decision, Grant, GrantKey, Usage};
-use porter_core::{
-    Account, AppId, AppName, DataClass, Family, Isolation, Match, Need, SpaceScope, matches,
-};
+use porter_core::{Account, AppId, AppName, DataClass, Family, Isolation, SpaceScope};
+use porter_match::{Match, Need, matches};
 
 /// What syncd is allowed to keep of an account.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

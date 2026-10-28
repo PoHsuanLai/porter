@@ -12,13 +12,14 @@ use porter_capability::{AbsentReason, Offer};
 use porter_capability::{Access, CapabilityKind, Delta, QuotaReport, StorageScope};
 use porter_core::ProviderHint;
 use porter_core::consent::{GrantScope, Usage};
-use porter_core::need::StorageNeed;
 use porter_core::{AccountId, ProviderId};
-use porter_core::{AccountState, AppId, AppName, Audience, DataClass, Family, Isolation, Need};
+use porter_core::{AccountState, AppId, AppName, Audience, DataClass, Family, Isolation};
 use porter_fake::{Scripted, ScriptedSheets};
 use porter_fake_servers::{FakeNextcloud, LoginPolicy, NextcloudHandle, Running, shipped};
 use porter_families::{FamilyProvider, NextcloudProvider, Pacing};
 use porter_http::SharedHttp;
+use porter_match::Need;
+use porter_match::StorageNeed;
 use porter_service::AllowFor;
 use porter_service::audit::AuditEvent;
 use porter_sheet::{FieldKind, SheetView};
@@ -526,7 +527,7 @@ async fn add_and_allow_grants_nothing_when_the_new_account_does_not_meet_the_nee
         vec![provider()],
         TestSheets::new(vec![adding(nextcloud.base_url())], consent(vec![])),
     );
-    let mail = Need::Mail(porter_core::need::MailNeed::new(
+    let mail = Need::Mail(porter_match::MailNeed::new(
         Access::ReadWrite,
         porter_capability::Offered::Present,
         Delta::Poll,

@@ -141,7 +141,7 @@ async fn a_model_with_no_embedding_details_refuses_to_embed() {
     let request = InferRequest::Embed(porter_infer::EmbedRequest::new(
         vec!["a".into()],
         porter_infer::EmbedRole::Query,
-        porter_core::need::DimsNeed::Any,
+        porter_match::DimsNeed::Any,
         DataClass::Notes,
         Usage::Background,
     ));

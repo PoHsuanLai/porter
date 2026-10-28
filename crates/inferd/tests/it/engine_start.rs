@@ -12,14 +12,15 @@ use hosting::rig::{Plan, Processes, World};
 use porter_capability::LlmFeature;
 use porter_client::InferSession;
 use porter_core::consent::Usage;
-use porter_core::need::LlmNeed;
-use porter_core::{DataClass, Need, Tier};
+use porter_core::{DataClass, Tier};
 use porter_dbus::{Details, InferenceProxy, need_to_dbus};
 use porter_ids::Tokens;
 use porter_infer::{
     ChatMessage, ChatRequest, ClientFrame, InferEvent, InferReply, InferRequest, MessagePart,
     ModelError, Role as ChatRole,
 };
+use porter_match::LlmNeed;
+use porter_match::Need;
 use porter_router::startup::{Cause, Level};
 use std::io::{Read, Write};
 use std::os::unix::fs::PermissionsExt;

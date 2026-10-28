@@ -6,8 +6,7 @@
 use porter_client::{
     Accounts, ClientError, InProcess, InferSession, NoBroker, SessionHost, TransportError,
 };
-use porter_core::need::LlmNeed;
-use porter_core::{AppId, AppName, DataClass, Isolation, Need, Tier};
+use porter_core::{AppId, AppName, DataClass, Isolation, Tier};
 use porter_fake::fake_service;
 use porter_fake::{FakeService, ScriptedSheets};
 use porter_ids::Tokens;
@@ -16,6 +15,8 @@ use porter_infer::{
     ChatControl, ChatReply, ClientFrame, InferEvent, InferReply, InferRequest, OpenOptions,
     RequestKind, ServedBy, StopReason, TokenUsage, ToolParallelism, Traceparent,
 };
+use porter_match::LlmNeed;
+use porter_match::Need;
 use std::sync::{Arc, Mutex};
 
 fn app() -> AppId {

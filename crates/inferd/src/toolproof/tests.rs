@@ -3,9 +3,9 @@ use crate::testkit::Scratch;
 use porter_capability::LlmFeature;
 use porter_capability::ModelId;
 use porter_core::AccountId;
-use porter_core::need::LlmNeed;
 use porter_core::{DataClass, Locality, Tier};
 use porter_ids::{Count, Tokens};
+use porter_match::LlmNeed;
 use std::sync::Mutex as StdMutex;
 
 fn model(name: &str) -> ModelRef {

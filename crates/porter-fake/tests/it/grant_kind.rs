@@ -285,8 +285,8 @@ async fn a_token_is_asked_for_as_far_as_the_storage_grant_reaches() {
 #[tokio::test]
 async fn a_grant_reaches_as_far_as_the_need_it_was_chosen_for() {
     use porter_capability::{Access, Delta, QuotaReport};
-    use porter_core::need::StorageNeed;
     use porter_fake::Scripted;
+    use porter_match::StorageNeed;
     use porter_wire::ParentWindow;
     let files = AppId {
         name: AppName::parse("org.example.Files").expect("name"),
@@ -307,7 +307,7 @@ async fn a_grant_reaches_as_far_as_the_need_it_was_chosen_for() {
     )
     .with_store(MemoryStore::default());
     for reach in [StorageScope::Full, StorageScope::AppFolder] {
-        let need = porter_core::Need::Storage(StorageNeed::new(
+        let need = porter_match::Need::Storage(StorageNeed::new(
             Access::ReadWrite,
             Delta::Poll,
             reach,

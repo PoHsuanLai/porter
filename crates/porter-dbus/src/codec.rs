@@ -9,7 +9,8 @@
 use crate::args::{CandidateArg, NeedArg};
 use crate::json_value::{bad, from_vardict, to_vardict};
 use crate::names::account_path;
-use porter_core::{Candidate, CoreError, Need};
+use porter_core::{Candidate, CoreError};
+use porter_match::Need;
 use serde_json::{Map, Value as Json};
 use zbus::zvariant::{ObjectPath, OwnedObjectPath};
 
@@ -88,7 +89,7 @@ mod tests {
 
     #[test]
     fn a_need_with_no_fields_is_an_empty_vardict() {
-        let need = Need::Push(porter_core::need::PushNeed::new());
+        let need = Need::Push(porter_match::PushNeed::new());
         let (kind, details) = need_to_dbus(&need);
         assert_eq!(kind, "push");
         assert!(details.is_empty());

@@ -13,8 +13,7 @@ use porter_client::{
 };
 use porter_core::AccountId;
 use porter_core::consent::Usage;
-use porter_core::need::{DimsNeed, EmbedNeed, LlmNeed};
-use porter_core::{DataClass, Need, Tier};
+use porter_core::{DataClass, Tier};
 use porter_ids::{Dims, Permille, Tokens};
 use porter_infer::testing::{Script, ScriptStep};
 use porter_infer::{
@@ -24,6 +23,8 @@ use porter_infer::{
     ReplyShape, RequestKind, Role, ScoreOptions, ServedBy, StopReason, TokenUsage, ToolParallelism,
     Traceparent,
 };
+use porter_match::Need;
+use porter_match::{DimsNeed, EmbedNeed, LlmNeed};
 use std::os::fd::OwnedFd;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;

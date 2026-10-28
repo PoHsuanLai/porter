@@ -7,7 +7,8 @@
 //! use porter_client::{Accounts, ClientError, Found, Transport};
 //! use porter_core::consent::Usage;
 //! use porter_wire::ParentWindow;
-//! use porter_core::{Candidate, DataClass, Need};
+//! use porter_core::{Candidate, DataClass};
+//! use porter_match::Need;
 //!
 //! // `accounts` is `Accounts::connect()` (D-Bus) or `Accounts::over(transport)`.
 //! async fn photos_account<T: Transport>(

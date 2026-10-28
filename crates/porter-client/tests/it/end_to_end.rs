@@ -6,9 +6,10 @@ use porter_capability::{Access, Delta, QuotaReport, StorageScope};
 use porter_client::{Accounts, ClientError, ConsentOffer, Found, InProcess, NoAccount};
 use porter_core::AccountId;
 use porter_core::consent::{GrantScope, Usage};
-use porter_core::need::StorageNeed;
-use porter_core::{AppId, AppName, Audience, DataClass, Isolation, Need};
+use porter_core::{AppId, AppName, Audience, DataClass, Isolation};
 use porter_fake::{FakeService, Scripted, ScriptedSheets, fake_service};
+use porter_match::Need;
+use porter_match::StorageNeed;
 use porter_wire::{ParentWindow, Refusal};
 use std::sync::Arc;
 
@@ -195,13 +196,13 @@ async fn an_app_adds_an_account_through_a_family_is_granted_it_and_signs_it_in_a
     use porter_capability::{Access, Delta};
     use porter_core::ProviderId;
     use porter_core::SecretText;
-    use porter_core::need::PimNeed;
     use porter_fake::NOW;
     use porter_fake_servers::{FakeDav, FakeDns};
     use porter_families::{FamilyProvider, GenericProvider};
     use porter_http::SharedHttp;
     use porter_http_reqwest::ReqwestHttp;
     use porter_ids::clock::FixedClock;
+    use porter_match::PimNeed;
     use porter_provider::parse_provider;
     use porter_secrets::MemorySecrets;
     use porter_service::{AccountService, Registry};
@@ -406,7 +407,6 @@ async fn a_typed_pop3_server_is_added_through_the_sheet_and_found_by_a_mail_need
     use porter_capability::Offered;
     use porter_capability::Toggle;
     use porter_core::ProviderId;
-    use porter_core::need::MailNeed;
     use porter_core::{Family, SecretText};
     use porter_fake::NOW;
     use porter_fake_servers::net::{Bind, port_of};
@@ -414,6 +414,7 @@ async fn a_typed_pop3_server_is_added_through_the_sheet_and_found_by_a_mail_need
     use porter_families::{FamilyProvider, GenericProvider};
     use porter_http::SharedHttp;
     use porter_ids::clock::FixedClock;
+    use porter_match::MailNeed;
     use porter_provider::parse_provider;
     use porter_secrets::MemorySecrets;
     use porter_service::{AccountService, Registry};

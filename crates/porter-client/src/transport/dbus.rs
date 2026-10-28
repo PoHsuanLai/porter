@@ -15,10 +15,12 @@ use crate::error::TransportError;
 use porter_core::NodeId;
 use porter_core::lending::{ComputerCandidate, GuestAnswer, GuestRow};
 #[cfg(feature = "infer")]
-use porter_core::{DataClass, Need, Tier};
+use porter_core::{DataClass, Tier};
 use porter_dbus::{BusConnection, BusError, BusFailure, classify};
 #[cfg(feature = "infer")]
 use porter_infer::{ComputerName, OpenOptions, PlaceId, PlaceRow, Readiness};
+#[cfg(feature = "infer")]
+use porter_match::Need;
 use porter_wire::{AccountsReply, AccountsRequest};
 #[cfg(feature = "infer")]
 use serde::Serialize;

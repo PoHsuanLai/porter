@@ -12,13 +12,14 @@ use model_catalog::MiB;
 use porter_capability::ModelId;
 use porter_capability::{Capability, LlmCap, LlmFeature, LlmWire};
 use porter_core::AccountId;
-use porter_core::need::LlmNeed;
-use porter_core::{Billing, DataClass, Locality, Need, Tier};
+use porter_core::{Billing, DataClass, Locality, Tier};
 use porter_ids::{MicroUsd, Permille, Tokens};
 use porter_infer::{
     AutoEvict, EngineLoad, InferRefusal, LicenceClass, LocalOnly, ModelCard, ModelRef, Pick,
     PickRefusal, Policy, Readiness, ShowReason, Slot, SwapCost, Why,
 };
+use porter_match::LlmNeed;
+use porter_match::Need;
 use porter_router::router::{Decided, Listed, choose};
 use porter_router::session::SessionSpec;
 use std::time::Duration;

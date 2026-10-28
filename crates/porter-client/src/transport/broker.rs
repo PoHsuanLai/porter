@@ -6,9 +6,11 @@
 #[cfg(feature = "infer")]
 use crate::error::TransportError;
 #[cfg(feature = "infer")]
-use porter_core::{AppId, DataClass, Need, Tier};
+use porter_core::{AppId, DataClass, Tier};
 #[cfg(feature = "infer")]
 use porter_infer::{ClientFrame, InferEvent, InferSession, OpenOptions, Readiness, SessionError};
+#[cfg(feature = "infer")]
+use porter_match::Need;
 #[cfg(feature = "infer")]
 use std::future::Future;
 #[cfg(feature = "infer")]

@@ -17,8 +17,9 @@ use porter_capability::CapabilityKind;
 use porter_core::ProviderHint;
 use porter_core::store::RegistryStore;
 use porter_core::{AccountId, ProviderId};
-use porter_core::{AppId, AuthKind, Need, ServiceEndpoint};
+use porter_core::{AppId, AuthKind, ServiceEndpoint};
 use porter_ids::clock::Clock;
+use porter_match::Need;
 use porter_provider::{
     ConsentHistory, LoginHint, Provider, ProviderError, ProviderSpec, Readiness, SignIn,
     SignInMode, SignInStart, SignInStep, Signed,

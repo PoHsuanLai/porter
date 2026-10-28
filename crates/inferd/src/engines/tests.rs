@@ -9,10 +9,10 @@ use model_catalog::MiB;
 use porter_capability::ModelId;
 use porter_capability::{Capability, CuaEnv, LlmCap, LlmFeature, LlmWire, SpeechMode};
 use porter_core::AccountId;
-use porter_core::need::{CuaNeed, LlmNeed, SpeechNeed};
 use porter_core::{Billing, Locality};
 use porter_ids::Tokens;
 use porter_infer::{LocalOnly, Slot};
+use porter_match::{CuaNeed, LlmNeed, SpeechNeed};
 use porter_router::seams::Router;
 
 fn llm() -> Need {

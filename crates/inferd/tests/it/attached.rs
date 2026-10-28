@@ -15,14 +15,15 @@ use porter_capability::LlmFeature;
 use porter_capability::ModelId;
 use porter_client::InferSession;
 use porter_core::consent::Usage;
-use porter_core::need::LlmNeed;
-use porter_core::{DataClass, Locality, Need, Tier};
+use porter_core::{DataClass, Locality, Tier};
 use porter_fake_servers::net::Bind;
 use porter_ids::Tokens;
 use porter_infer::{
     ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRefusal, InferReply, InferRequest,
     MessagePart, ModelRef, Role as ChatRole,
 };
+use porter_match::LlmNeed;
+use porter_match::Need;
 use porter_router::seams::EngineHost;
 use porter_router::startup::Cause;
 use rustix::process::{Pid, Signal, kill_process};

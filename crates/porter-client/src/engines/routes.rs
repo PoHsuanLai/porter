@@ -5,10 +5,11 @@
 
 use super::engine::{Engine, EngineError, EngineId, KeyUse};
 use super::keys::KeySource;
-use porter_core::{Billing, DataClass, Need, Tier};
+use porter_core::{Billing, DataClass, Tier};
 use porter_infer::{
     InferRefusal, Permit, Policy, RouteAsk, RouteCandidate, Slot, SpendVerdict, admit,
 };
+use porter_match::Need;
 
 /// One row: these engines, most preferred first, serve `slot` at `tier`.
 #[derive(Debug, Clone, PartialEq, Eq)]

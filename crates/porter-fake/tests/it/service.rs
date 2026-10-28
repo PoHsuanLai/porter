@@ -4,11 +4,12 @@
 use porter_capability::CapabilityKind;
 use porter_capability::{Access, Delta, Offered, QuotaReport, StorageScope};
 use porter_core::consent::{GrantScope, Usage};
-use porter_core::need::{MailNeed, StorageNeed};
 use porter_core::{AccountId, GrantId};
-use porter_core::{AppId, AppName, Audience, DataClass, EndpointUrl, Family, Isolation, Need};
+use porter_core::{AppId, AppName, Audience, DataClass, EndpointUrl, Family, Isolation};
 use porter_fake::{MemoryStore, NOW, RecordingAudit, Scripted, ScriptedSheets, fake_service};
 use porter_ids::clock::FixedClock;
+use porter_match::Need;
+use porter_match::{MailNeed, StorageNeed};
 use porter_service::audit::AuditEvent;
 use porter_wire::ParentWindow;
 use porter_wire::Refusal;

@@ -48,10 +48,7 @@ fn nothing() -> Carried {
 
 fn spec() -> SessionSpec {
     SessionSpec {
-        need: porter_core::Need::Llm(porter_core::need::LlmNeed::new(
-            Default::default(),
-            Tokens(1),
-        )),
+        need: porter_match::Need::Llm(porter_match::LlmNeed::new(Default::default(), Tokens(1))),
         class: porter_core::DataClass::Notes,
         tier: porter_core::Tier::Fast,
         usage: porter_core::consent::Usage::Interactive,

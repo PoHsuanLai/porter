@@ -19,9 +19,10 @@ use porter_capability::{
 use porter_core::consent::{ConsentAnswer, GrantScope, Usage};
 use porter_core::store::AccountToggle;
 use porter_core::store::RegistryStore;
-use porter_core::{Account, AccountState, AppId, AuthKind, DataClass, LoginName, Need, SecretKey};
+use porter_core::{Account, AccountState, AppId, AuthKind, DataClass, LoginName, SecretKey};
 use porter_core::{AccountId, ProviderId};
 use porter_ids::clock::Clock;
+use porter_match::Need;
 use porter_provider::{Provider, ProviderSpec, SignInStep, Signed};
 use porter_secrets::Secrets;
 use porter_sheet::ServiceChoice;

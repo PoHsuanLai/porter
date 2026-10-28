@@ -5,9 +5,9 @@ use porter_capability::{
 };
 use porter_core::AccountId;
 use porter_core::Billing;
-use porter_core::need::{CuaNeed, LlmNeed};
 use porter_ids::{Px, Tokens};
 use porter_infer::{AutoMode, AutoRow, Declined, DeclinedBecause, LocalOnly, TierRow};
+use porter_match::{CuaNeed, LlmNeed};
 
 fn llm_cap() -> Capability {
     Capability::Llm(LlmCap {
@@ -64,7 +64,7 @@ fn cua_cap() -> Capability {
 }
 
 fn identity() -> Need {
-    Need::Identity(porter_core::need::IdentityNeed::new(
+    Need::Identity(porter_match::IdentityNeed::new(
         Offered::Absent,
         Offered::Absent,
     ))
@@ -283,7 +283,7 @@ fn the_users_tier_choice_decides_between_models_that_fit() {
 #[test]
 fn needs_map_to_the_picker_kinds() {
     use porter_capability::SpeechMode;
-    use porter_core::need::{DimsNeed, EmbedNeed, SpeechNeed};
+    use porter_match::{DimsNeed, EmbedNeed, SpeechNeed};
     let speech =
         |modes: &[SpeechMode]| Need::Speech(SpeechNeed::new(modes.iter().copied().collect()));
     let cases = [

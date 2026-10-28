@@ -15,14 +15,15 @@ use inferd::settings::{ConfigFile, InferdSettings, Reload, SpendLine, serve_sett
 use porter_capability::LlmFeature;
 use porter_client::InferSession;
 use porter_core::consent::Usage;
-use porter_core::need::LlmNeed;
-use porter_core::{AppId, AppName, DataClass, Isolation, Need, Tier};
+use porter_core::{AppId, AppName, DataClass, Isolation, Tier};
 use porter_dbus::InferenceProxy;
 use porter_ids::{MicroUsd, Tokens};
 use porter_infer::{
     ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRefusal, InferReply, InferRequest,
     LocalOnly, MessagePart, ModelError, OpenOptions, Policy, Role as ChatRole, StopReason,
 };
+use porter_match::LlmNeed;
+use porter_match::Need;
 use std::path::Path;
 
 /// OpenRouter's key, and OpenAI's: distinctive, so a scan for either cannot match by accident.

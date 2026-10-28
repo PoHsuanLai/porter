@@ -16,15 +16,16 @@ use porter_client::{
 use porter_core::ProviderHint;
 use porter_core::audit::Handoff;
 use porter_core::consent::Usage;
-use porter_core::need::{LlmNeed, MailNeed, NotesNeed, PimNeed, StorageNeed};
 use porter_core::{AccountId, KeyPermitId, ProviderId};
-use porter_core::{DataClass, IdentityId, LauncherSession, Need, Tier};
+use porter_core::{DataClass, IdentityId, LauncherSession, Tier};
 use porter_dbus::{SyncProxy, from_vardict};
 use porter_ids::Tokens;
 use porter_infer::{
     ChatControl, ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRequest, MessagePart,
     Role, ToolParallelism,
 };
+use porter_match::Need;
+use porter_match::{LlmNeed, MailNeed, NotesNeed, PimNeed, StorageNeed};
 use porter_wire::ParentWindow;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};

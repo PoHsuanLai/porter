@@ -26,10 +26,12 @@ use porter_core::store::RegistryStore;
 use porter_core::stream::duplex;
 use porter_core::{AppId, EndpointUrl, RelayPlan};
 #[cfg(feature = "infer")]
-use porter_core::{DataClass, Need, Tier};
+use porter_core::{DataClass, Tier};
 use porter_ids::clock::Clock;
 #[cfg(feature = "infer")]
 use porter_infer::{OpenOptions, Readiness};
+#[cfg(feature = "infer")]
+use porter_match::Need;
 use porter_provider::Provider;
 use porter_secrets::Secrets;
 use porter_service::{AccountService, AuditSink, Sheets};

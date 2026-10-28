@@ -15,14 +15,15 @@ use inferd::speech::Ears;
 use porter_capability::SpeechMode;
 use porter_client::{Accounts, ClientError, DbusSession, DbusTransport, InferSession};
 use porter_core::consent::Usage;
-use porter_core::need::SpeechNeed;
-use porter_core::{DataClass, Need, Tier};
+use porter_core::{DataClass, Tier};
 use porter_infer::{
     Answer, AudioFrame, AudioRate, AutoPolicy, Base64Bytes, ChatMessage, ChatReply, ChatRequest,
     ClientFrame, DescribeImages, Flow, HeardDelta, InferEvent, InferReply, InferRequest, LangPick,
     Modality, ModelError, ModelLabel, ModelRef, OpenOptions, Readiness, RequestShape, Role,
     ShowReason, StageRole, TierMap, TranscribeBegin, TranscribeMode,
 };
+use porter_match::Need;
+use porter_match::SpeechNeed;
 use porter_router::pipeline::plan;
 use porter_turns::pipeline::{PipelineInput, VecAudio, run_pipeline};
 use std::collections::BTreeSet;
@@ -403,7 +404,7 @@ async fn a_hear_then_answer_pipeline_hears_on_the_speech_host_and_answers_on_a_t
         inputs: BTreeSet::from([Modality::Audio]),
         answer: Answer::Text,
     };
-    let need = Need::Llm(porter_core::need::LlmNeed::new(
+    let need = Need::Llm(porter_match::LlmNeed::new(
         [porter_capability::LlmFeature::Chat].into(),
         porter_ids::Tokens(1000),
     ));

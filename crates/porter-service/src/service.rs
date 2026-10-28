@@ -18,10 +18,10 @@ use porter_core::consent::Usage;
 use porter_core::store::{NoStore, RegistryStore};
 use porter_core::{AccountId, GrantId, ProviderId};
 use porter_core::{
-    AccountState, AgentState, AppId, DataClass, EndpointUrl, LauncherSession, Need, RelayPlan,
-    SecretText,
+    AccountState, AgentState, AppId, DataClass, EndpointUrl, LauncherSession, RelayPlan, SecretText,
 };
 use porter_ids::clock::Clock;
+use porter_match::Need;
 use porter_provider::{Provider, ProviderSpec};
 use porter_secrets::{Secrets, SecretsError};
 use porter_wire::{AccountsReply, AccountsRequest};

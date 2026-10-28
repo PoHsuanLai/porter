@@ -37,6 +37,7 @@ porter-http-reqwest = { workspace = true }
 porter-secrets = { workspace = true, features = ["testing"] }
 porter-service = { workspace = true }
 porter-wire = { workspace = true }
+porter-match = { workspace = true }
 
 [features]
 # `set`: which provider files a daemon serves and the family of each (`set::load_specs`,

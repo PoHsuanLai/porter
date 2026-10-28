@@ -20,13 +20,14 @@ use model_catalog::Licence;
 use porter_capability::SpeechMode;
 use porter_core::AccountId;
 use porter_core::consent::{Availability, Usage};
-use porter_core::{AppId, DataClass, Locality, Need, Tier};
+use porter_core::{AppId, DataClass, Locality, Tier};
 use porter_ids::MicroUsd;
 use porter_infer::{
     Asker, InferRefusal, LicenceClass, ModelCard, ModelRef, Period, Permit, PickRefusal,
     PlaceRefusal, Policy, Readiness, ServedBy, Slot, SpendScope, SpendVerdict, SwapCost, TierMap,
     Why,
 };
+use porter_match::Need;
 use porter_router::local::{LocalModel, Weights};
 use porter_router::router::placed::{Allowed, Placed, Rules, Serving, Unplaced, choose_in};
 use porter_router::router::{Listed, Unchosen, choose, chosen_for};

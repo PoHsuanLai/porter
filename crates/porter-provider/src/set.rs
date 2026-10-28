@@ -4,7 +4,7 @@ use crate::spec::{DomainMatch, DomainName, ProviderSpec};
 use porter_capability::Offer;
 use porter_core::ProviderId;
 use porter_core::consent::Catalog;
-use porter_core::{Match, Need, matches};
+use porter_match::{Match, Need, matches};
 
 /// Every provider accountd knows, by id.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

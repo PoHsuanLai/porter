@@ -3,6 +3,7 @@ resolver = "3"
 members = [
   "crates/porter-ids",
   "crates/porter-capability",
+  "crates/porter-match",
   "crates/porter-core",
   "crates/porter-wire",
   "crates/porter-sheet",
@@ -65,6 +66,7 @@ publish = false
 [workspace.dependencies]
 porter-ids      = { path = "crates/porter-ids" }
 porter-capability = { path = "crates/porter-capability" }
+porter-match    = { path = "crates/porter-match" }
 porter-core     = { path = "crates/porter-core" }
 porter-wire     = { path = "crates/porter-wire" }
 porter-sheet    = { path = "crates/porter-sheet" }

@@ -8,18 +8,19 @@ use porter_capability::{
     Delta, HashKind, LibraryRead, LlmCap, LlmFeature, LlmWire, Modality, Offered, QuotaReport,
     SpeechMode, StorageCap, StorageScope,
 };
-use porter_core::need::{
-    AgentNeed, CuaNeed, DimsNeed, EmbedNeed, IdentityNeed, ImageGenNeed, KeyValueNeed, LlmNeed,
-    MailNeed, NotesNeed, PhotosNeed, PimNeed, PushNeed, RerankNeed, SpeechNeed, StorageNeed,
-};
 use porter_core::{AccountId, GrantId};
 use porter_core::{
-    Candidate, EndpointUrl, Family, Limit, LimitReason, LoginName, Need, Restriction,
-    ServiceEndpoint, TenantConsent, Tls, TokenLifetime, Verification,
+    Candidate, EndpointUrl, Family, Limit, LimitReason, LoginName, Restriction, ServiceEndpoint,
+    TenantConsent, Tls, TokenLifetime, Verification,
 };
 use porter_dbus::names::account_path;
 use porter_dbus::{candidate_from_dbus, candidate_to_dbus, need_from_dbus, need_to_dbus};
 use porter_ids::{Bytes, Count, Dims, Px, Tokens};
+use porter_match::Need;
+use porter_match::{
+    AgentNeed, CuaNeed, DimsNeed, EmbedNeed, IdentityNeed, ImageGenNeed, KeyValueNeed, LlmNeed,
+    MailNeed, NotesNeed, PhotosNeed, PimNeed, PushNeed, RerankNeed, SpeechNeed, StorageNeed,
+};
 use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
 
 fn every_need() -> Vec<(&'static str, Need)> {

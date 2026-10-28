@@ -16,6 +16,7 @@ testing = []
 [dependencies]
 porter-tailnet = { workspace = true }
 porter-core = { workspace = true }
+porter-match = { workspace = true }
 porter-capability = { workspace = true }
 porter-ids = { workspace = true }
 porter-engines = { workspace = true }
