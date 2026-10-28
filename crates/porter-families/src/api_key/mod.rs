@@ -128,3 +128,15 @@ impl<H: Http + 'static> Provider for ApiKeyProvider<H> {
             .map_or(RevokeOutcome::Unsupported, RevokeOutcome::Manual))
     }
 }
+
+/// This family for `spec` when it takes a pasted API key, else the spec back.
+#[cfg(feature = "set")]
+pub(crate) fn build(spec: ProviderSpec, _io: &crate::set::FamilyIo) -> crate::set::Built {
+    match spec.auth.kind {
+        porter_core::AuthKind::ApiKey => {
+            let provider: ApiKeyProvider = ApiKeyProvider::new(spec);
+            Ok(Box::new(provider))
+        }
+        _ => Err(Box::new(spec)),
+    }
+}

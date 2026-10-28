@@ -16,7 +16,7 @@ use porter_core::{AccountId, ProviderId};
 use porter_core::{AccountState, AppId, AppName, Audience, DataClass, Family, Isolation};
 use porter_fake::{Scripted, ScriptedSheets};
 use porter_fake_servers::{FakeNextcloud, LoginPolicy, NextcloudHandle, Running, shipped};
-use porter_families::{FamilyProvider, NextcloudProvider, Pacing};
+use porter_families::{DynProvider, NextcloudProvider, Pacing};
 use porter_http::SharedHttp;
 use porter_match::Need;
 use porter_match::StorageNeed;
@@ -51,8 +51,8 @@ fn query() -> AccountsRequest {
     }
 }
 
-fn provider() -> FamilyProvider {
-    FamilyProvider::Nextcloud(
+fn provider() -> Box<dyn DynProvider> {
+    DynProvider::boxed(
         NextcloudProvider::new(
             shipped::nextcloud(),
             SharedHttp::new(Fakes::loopback()),

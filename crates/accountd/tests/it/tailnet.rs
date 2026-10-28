@@ -17,7 +17,7 @@ use porter_dbus::callers::CallerRole;
 use porter_dbus::{BusStream, ManagerProxy, Sheet, SpacesProxy, TailnetProxy, machine_from_dbus};
 use porter_fake::{MemoryStore, RecordingAudit};
 use porter_fake_servers::{Daemon, FakeLocalApi, FakePeer, Network};
-use porter_families::{FamilyProvider, TailnetProvider};
+use porter_families::{DynProvider, TailnetProvider};
 use porter_http::{SharedSleep, Sleep};
 use porter_ids::clock::FixedClock;
 use porter_service::{AccountService, Registry};
@@ -31,7 +31,7 @@ use test_kit::{Deadline, Scratch};
 const LOGIN_PAGE: &str = "https://login.tailscale.com/a/0123456789abcdef";
 
 type Svc = AccountService<
-    FamilyProvider,
+    Box<dyn DynProvider>,
     Shared,
     BusSheets<TableCallers>,
     FixedClock,
@@ -137,7 +137,7 @@ impl World {
             .into_iter()
             .find(|s| s.id.as_str() == "tailscale")
             .expect("tailscale ships");
-        let providers = vec![FamilyProvider::Tailnet(TailnetProvider::new(
+        let providers = vec![DynProvider::boxed(TailnetProvider::new(
             spec,
             scene.api.clone(),
             SharedSleep::new(Quick),

@@ -24,7 +24,7 @@ use porter_daemon::xdg::PathError;
 use porter_dbus::BusTarget;
 use porter_dbus::callers::{CallerFileError, ProcCallers};
 use porter_drive_fuse::Mounter;
-use porter_families::FamilyProvider;
+use porter_families::DynProvider;
 use porter_families::set::{FamilyIo, ProviderNames, load_specs, served};
 use porter_ids::clock::SystemClock;
 use porter_provider::ProviderSet;
@@ -77,7 +77,7 @@ pub const KEYRING_NAMESPACE: &str = "porter.syncd";
 
 /// The service syncd hosts for its own accounts, over its own store, keys and sheets.
 pub type OwnService = AccountService<
-    FamilyProvider,
+    Box<dyn DynProvider>,
     AnyKeys,
     SyncSheets<BusSheets<ProcCallers>>,
     SystemClock,

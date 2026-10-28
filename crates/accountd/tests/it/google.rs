@@ -20,7 +20,7 @@ use porter_dbus::callers::CallerRole;
 use porter_dbus::{ManagerProxy, Sheet};
 use porter_fake::{MemoryStore, RecordingAudit};
 use porter_fake_servers::{Google, shipped};
-use porter_families::{FamilyProvider, GoogleEnv, GoogleProvider};
+use porter_families::{DynProvider, GoogleEnv, GoogleProvider};
 use porter_http_reqwest::ReqwestHttp;
 use porter_ids::clock::FixedClock;
 use porter_oauth::{ClientRegistry, ClientTraits};
@@ -35,7 +35,7 @@ const SECRET: &str = "GOCSPX-bus-test-application-secret";
 const CLIENT_ID: &str = "bus-test.apps.googleusercontent.com";
 
 type Svc = AccountService<
-    FamilyProvider,
+    Box<dyn DynProvider>,
     Shared,
     BusSheets<TableCallers>,
     FixedClock,
@@ -110,7 +110,7 @@ impl World {
         .with_channel(ClientChannel::Development)
         .with_poll_slice(Duration::from_millis(50))
         .with_userinfo(porter_core::EndpointUrl::parse(&google.api.userinfo_url()).expect("url"));
-        let providers = vec![FamilyProvider::Google(GoogleProvider::with_env(spec, env))];
+        let providers = vec![DynProvider::boxed(GoogleProvider::with_env(spec, env))];
 
         let bus = PrivateBus::start();
         let callers = Arc::new(TableCallers::new());

@@ -104,3 +104,12 @@ impl ProviderSession for AgentLoginSession {
         None
     }
 }
+
+/// This family for `spec` when the agent program signs itself in, else the spec back.
+#[cfg(feature = "set")]
+pub(crate) fn build(spec: ProviderSpec, _io: &crate::set::FamilyIo) -> crate::set::Built {
+    match spec.auth.kind {
+        porter_core::AuthKind::AgentLogin => Ok(Box::new(AgentLoginProvider::new(spec))),
+        _ => Err(Box::new(spec)),
+    }
+}

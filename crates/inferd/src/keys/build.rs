@@ -11,7 +11,7 @@ use crate::tailnet::{BusMachines, Machines};
 use porter_core::store::RegistryStore;
 use porter_dbus::callers::{CallerTable, Callers};
 use porter_families::set::{FamilyIo, Layer, ProviderNames, family_of, load_specs, local_runtimes};
-use porter_families::{ClientFiles, FamilyProvider};
+use porter_families::{ClientFiles, DynProvider};
 use porter_ids::clock::SystemClock;
 use porter_provider::{Provider, ProviderSet, ProviderSpec};
 use porter_secrets::Namespace;
@@ -41,7 +41,7 @@ pub enum KeysStartError {
 /// The service the daemon hosts: AI and agent families, the shell's sheets, the file registry
 /// that says when it was saved.
 pub type KeyService<C> = AccountService<
-    FamilyProvider,
+    Box<dyn DynProvider>,
     AnyKeys,
     BusSheets<C>,
     SystemClock,
@@ -53,7 +53,7 @@ pub type KeyService<C> = AccountService<
 #[derive(Debug)]
 pub struct Families {
     /// The family of each provider served.
-    pub families: Vec<FamilyProvider>,
+    pub families: Vec<Box<dyn DynProvider>>,
     /// The local runtimes (Ollama, llama.cpp, LM Studio): no family, reported by the probe.
     pub local: Vec<ProviderSpec>,
     /// What a person reads for each provider, and which group of the page it is under.
@@ -187,7 +187,7 @@ pub async fn open<C: Callers>(
 }
 
 /// Whether `provider` of `families` is served (what `inferd add` checks before it asks).
-pub fn served_ids(families: &[FamilyProvider]) -> Vec<porter_core::ProviderId> {
+pub fn served_ids(families: &[Box<dyn DynProvider>]) -> Vec<porter_core::ProviderId> {
     families
         .iter()
         .map(|family| Provider::spec(family).id.clone())

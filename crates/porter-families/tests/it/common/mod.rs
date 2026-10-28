@@ -138,7 +138,7 @@ use porter_core::AccountId;
 use porter_core::consent::{ConsentAnswer, ConsentAsk};
 use porter_core::{Credential, SecretKey};
 use porter_fake::{MemoryStore, RecordingAudit, ScriptedSheets};
-use porter_families::FamilyProvider;
+use porter_families::DynProvider;
 use porter_ids::clock::FixedClock;
 use porter_secrets::{MemorySecrets, Secrets, SecretsError};
 use porter_service::{AccountService, SheetFault, SheetLink, SheetOpen, Sheets};
@@ -320,7 +320,7 @@ impl Secrets for SharedSecrets {
 }
 
 pub type Service = AccountService<
-    FamilyProvider,
+    Box<dyn DynProvider>,
     SharedSecrets,
     TestSheets,
     FixedClock,
@@ -335,7 +335,7 @@ pub struct Kept {
     pub audit: RecordingAudit,
 }
 
-pub fn service(providers: Vec<FamilyProvider>, sheets: TestSheets) -> (Service, Kept) {
+pub fn service(providers: Vec<Box<dyn DynProvider>>, sheets: TestSheets) -> (Service, Kept) {
     let kept = Kept {
         secrets: SharedSecrets::default(),
         store: MemoryStore::default(),

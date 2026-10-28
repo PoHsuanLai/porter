@@ -100,3 +100,19 @@ impl ProviderSession for TailnetSession {
         None
     }
 }
+
+/// This family for `spec` when it is Tailscale on this computer, else the spec back.
+#[cfg(feature = "set")]
+pub(crate) fn build(spec: ProviderSpec, io: &crate::set::FamilyIo) -> crate::set::Built {
+    match spec.auth.kind {
+        porter_core::AuthKind::OwnProgram => {
+            let sleep = SharedSleep::new(porter_http_reqwest::TokioSleep);
+            Ok(Box::new(TailnetProvider::new(
+                spec,
+                io.tailscale.clone(),
+                sleep,
+            )))
+        }
+        _ => Err(Box::new(spec)),
+    }
+}

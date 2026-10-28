@@ -146,3 +146,19 @@ impl ProviderSession for NextcloudSession {
         None
     }
 }
+
+/// This family for `spec` when it signs in by Login Flow v2, else the spec back.
+#[cfg(feature = "set")]
+pub(crate) fn build(spec: ProviderSpec, io: &crate::set::FamilyIo) -> crate::set::Built {
+    match spec.auth.kind {
+        porter_core::AuthKind::LoginFlowV2 => {
+            let sleep = porter_http_reqwest::TokioSleep;
+            Ok(Box::new(NextcloudProvider::new(
+                spec,
+                io.http.clone(),
+                sleep,
+            )))
+        }
+        _ => Err(Box::new(spec)),
+    }
+}

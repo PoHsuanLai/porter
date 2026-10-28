@@ -1,7 +1,8 @@
 //! The protocol families as code (porter PLAN G6): one module and one cargo feature per family,
-//! and [`FamilyProvider`], the closed enum that dispatches the `Provider` seam over the ones
-//! built. accountd and an app hosting porter in process (mailo) both build it, so a family is
-//! written once. With no feature on, the set is empty and uninhabited.
+//! and [`DynProvider`], the object-safe twin of `Provider`: a family is picked at run time from a
+//! provider file, so the host holds `Box<dyn DynProvider>`, which is itself a `Provider`.
+//! accountd and an app hosting porter in process (mailo) both build it, so a family is written
+//! once.
 //!
 //! The `set` feature (every family a daemon maps) adds `set`: which provider files a daemon
 //! serves and the family of each, shared by accountd, inferd and syncd.
@@ -41,7 +42,7 @@ mod tailnet;
 pub use agent_login::{AgentLoginProvider, AgentLoginSession, AgentLoginSignIn};
 #[cfg(feature = "api_key")]
 pub use api_key::{ApiKeyProvider, ApiKeySession, ApiKeySignIn};
-pub use dispatch::{FamilyProvider, FamilySession, FamilySignIn};
+pub use dispatch::{DynProvider, DynSession, DynSignIn};
 #[cfg(any(feature = "microsoft", feature = "google"))]
 pub use env_common::ClientFiles;
 #[cfg(feature = "generic")]

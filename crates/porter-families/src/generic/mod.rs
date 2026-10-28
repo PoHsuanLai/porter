@@ -146,3 +146,16 @@ impl ProviderSession for GenericSession {
         None
     }
 }
+
+/// This family for `spec` when it signs in by a password or an app password, else the spec back.
+#[cfg(feature = "set")]
+pub(crate) fn build(spec: ProviderSpec, io: &crate::set::FamilyIo) -> crate::set::Built {
+    use porter_core::AuthKind;
+    match spec.auth.kind {
+        AuthKind::Password | AuthKind::AppPassword => {
+            let provider = GenericProvider::new(spec, io.http.clone(), io.dns.clone());
+            Ok(Box::new(provider.with_providers(io.providers.clone())))
+        }
+        _ => Err(Box::new(spec)),
+    }
+}

@@ -1,6 +1,6 @@
 [package]
 name = "porter-families"
-description = "The protocol families as code, one feature each: FamilyProvider dispatches porter-provider's Provider over the built families, for accountd and for an app hosting porter in process."
+description = "The protocol families as code, one feature each: DynProvider is porter-provider's Provider as a trait object, over the built families, for accountd and for an app hosting porter in process."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

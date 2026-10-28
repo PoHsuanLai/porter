@@ -1,5 +1,7 @@
-//! The closed enums over the built families: a variant per family, its arms present only when
-//! its feature is on.
+//! The object-safe twins of `Provider`, `ProviderSession` and `SignIn`, and the one impl of each
+//! trait over them. A family is chosen at run time from a provider file, so the host holds
+//! `Box<dyn DynProvider>`; the blanket impls here are the only place that boxes, the same way
+//! `SharedHttp` boxes an `Http`.
 
 use porter_capability::StorageScope;
 use porter_capability::{CapabilityKind, Claim};
@@ -10,116 +12,165 @@ use porter_provider::{
     SignIn, SignInStart, SignInStep,
 };
 use porter_sheet::SignInInput;
+use std::fmt::Debug;
+use std::future::Future;
+use std::pin::Pin;
 
-/// Expands `$body` once per built family, binding the variant's payload to `$p`.
-macro_rules! each_family {
-    ($value:expr, $p:ident => $body:expr) => {
-        match $value {
-            #[cfg(feature = "nextcloud")]
-            Self::Nextcloud($p) => $body,
-            #[cfg(feature = "generic")]
-            Self::Generic($p) => $body,
-            #[cfg(feature = "microsoft")]
-            Self::Microsoft($p) => $body,
-            #[cfg(feature = "google")]
-            Self::Google($p) => $body,
-            #[cfg(feature = "api_key")]
-            Self::ApiKey($p) => $body,
-            #[cfg(feature = "agent_login")]
-            Self::AgentLogin($p) => $body,
-            #[cfg(feature = "tailnet")]
-            Self::Tailnet($p) => $body,
-            // Present for the build with no family, where the enum has no variant to match.
-            #[allow(unreachable_patterns)]
-            _ => unreachable!("no family is built"),
-        }
-    };
+type BoxFut<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
+/// A [`Provider`] that can be held as a trait object: the host keeps one per provider file as a
+/// `Box<dyn DynProvider>`, which is itself a `Provider`.
+pub trait DynProvider: Debug + Send + Sync {
+    /// [`Provider::spec`].
+    fn spec(&self) -> &ProviderSpec;
+
+    /// [`Provider::discover`].
+    fn discover<'a>(
+        &'a self,
+        account: &'a Account,
+        presented: &'a Presented,
+    ) -> BoxFut<'a, Result<Vec<Claim>, ProviderError>>;
+
+    /// [`Provider::open`].
+    fn open<'a>(
+        &'a self,
+        account: &'a AccountId,
+        presented: Presented,
+    ) -> BoxFut<'a, Result<Box<dyn DynSession>, ProviderError>>;
+
+    /// [`Provider::sign_in`].
+    ///
+    /// # Errors
+    /// What [`Provider::sign_in`] refuses with.
+    fn sign_in(&self, start: SignInStart) -> Result<Box<dyn DynSignIn>, ProviderError>;
+
+    /// [`Provider::readiness`].
+    fn readiness(&self) -> Readiness;
+
+    /// [`Provider::revoke`].
+    fn revoke<'a>(
+        &'a self,
+        account: &'a Account,
+        presented: &'a Presented,
+    ) -> BoxFut<'a, Result<RevokeOutcome, ProviderError>>;
+
+    /// This provider, boxed.
+    fn boxed(self) -> Box<dyn DynProvider>
+    where
+        Self: Sized + 'static,
+    {
+        Box::new(self)
+    }
 }
 
-/// Every built family's provider.
-#[derive(Debug)]
-pub enum FamilyProvider {
-    /// Nextcloud.
-    #[cfg(feature = "nextcloud")]
-    Nextcloud(crate::NextcloudProvider),
-    /// Generic IMAP/SMTP and DAV.
-    #[cfg(feature = "generic")]
-    Generic(crate::GenericProvider),
-    /// Microsoft.
-    #[cfg(feature = "microsoft")]
-    Microsoft(crate::MicrosoftProvider),
-    /// Google.
-    #[cfg(feature = "google")]
-    Google(crate::GoogleProvider),
-    /// Pasted API keys.
-    #[cfg(feature = "api_key")]
-    ApiKey(crate::ApiKeyProvider),
-    /// An agent program that signs itself in.
-    #[cfg(feature = "agent_login")]
-    AgentLogin(crate::AgentLoginProvider),
-    /// Tailscale on this computer, which holds its own sign-in.
-    #[cfg(feature = "tailnet")]
-    Tailnet(crate::TailnetProvider),
+/// A [`ProviderSession`] that can be held as a trait object.
+pub trait DynSession: Debug + Send + Sync {
+    /// [`ProviderSession::access_token`].
+    fn access_token<'a>(
+        &'a self,
+        audience: &'a Audience,
+    ) -> BoxFut<'a, Result<IssuedToken, ProviderError>>;
+
+    /// [`ProviderSession::access_token_for`].
+    fn access_token_for<'a>(
+        &'a self,
+        audience: &'a Audience,
+        kind: CapabilityKind,
+        reach: StorageScope,
+    ) -> BoxFut<'a, Result<IssuedToken, ProviderError>>;
+
+    /// [`ProviderSession::renewed`].
+    fn renewed(&self) -> Option<Credential>;
 }
 
-/// An open account of a built family.
-#[derive(Debug)]
-pub enum FamilySession {
-    /// Nextcloud.
-    #[cfg(feature = "nextcloud")]
-    Nextcloud(crate::NextcloudSession),
-    /// Generic IMAP/SMTP and DAV.
-    #[cfg(feature = "generic")]
-    Generic(crate::GenericSession),
-    /// Microsoft.
-    #[cfg(feature = "microsoft")]
-    Microsoft(crate::MicrosoftSession),
-    /// Google.
-    #[cfg(feature = "google")]
-    Google(crate::GoogleSession),
-    /// Pasted API keys.
-    #[cfg(feature = "api_key")]
-    ApiKey(crate::ApiKeySession),
-    /// An agent program that signs itself in.
-    #[cfg(feature = "agent_login")]
-    AgentLogin(crate::AgentLoginSession),
-    /// Tailscale on this computer.
-    #[cfg(feature = "tailnet")]
-    Tailnet(crate::TailnetSession),
+/// A [`SignIn`] that can be held as a trait object.
+pub trait DynSignIn: Debug + Send {
+    /// [`SignIn::next`].
+    fn next(&mut self, input: SignInInput) -> BoxFut<'_, SignInStep>;
 }
 
-/// A sign-in conversation of a built family.
-#[derive(Debug)]
-pub enum FamilySignIn {
-    /// Nextcloud.
-    #[cfg(feature = "nextcloud")]
-    Nextcloud(crate::NextcloudSignIn),
-    /// Generic IMAP/SMTP and DAV.
-    #[cfg(feature = "generic")]
-    Generic(crate::GenericSignIn),
-    /// Microsoft.
-    #[cfg(feature = "microsoft")]
-    Microsoft(crate::MicrosoftSignIn),
-    /// Google.
-    #[cfg(feature = "google")]
-    Google(crate::GoogleSignIn),
-    /// Pasted API keys.
-    #[cfg(feature = "api_key")]
-    ApiKey(crate::ApiKeySignIn),
-    /// An agent program that signs itself in.
-    #[cfg(feature = "agent_login")]
-    AgentLogin(crate::AgentLoginSignIn),
-    /// Tailscale on this computer.
-    #[cfg(feature = "tailnet")]
-    Tailnet(crate::TailnetSignIn),
+impl<P: Provider + Debug + 'static> DynProvider for P
+where
+    P::Session: Debug + 'static,
+    P::SignIn: Debug + 'static,
+{
+    fn spec(&self) -> &ProviderSpec {
+        Provider::spec(self)
+    }
+
+    fn discover<'a>(
+        &'a self,
+        account: &'a Account,
+        presented: &'a Presented,
+    ) -> BoxFut<'a, Result<Vec<Claim>, ProviderError>> {
+        Box::pin(Provider::discover(self, account, presented))
+    }
+
+    fn open<'a>(
+        &'a self,
+        account: &'a AccountId,
+        presented: Presented,
+    ) -> BoxFut<'a, Result<Box<dyn DynSession>, ProviderError>> {
+        Box::pin(async move {
+            Provider::open(self, account, presented)
+                .await
+                .map(|session| Box::new(session) as Box<dyn DynSession>)
+        })
+    }
+
+    fn sign_in(&self, start: SignInStart) -> Result<Box<dyn DynSignIn>, ProviderError> {
+        Provider::sign_in(self, start).map(|sign_in| Box::new(sign_in) as Box<dyn DynSignIn>)
+    }
+
+    fn readiness(&self) -> Readiness {
+        Provider::readiness(self)
+    }
+
+    fn revoke<'a>(
+        &'a self,
+        account: &'a Account,
+        presented: &'a Presented,
+    ) -> BoxFut<'a, Result<RevokeOutcome, ProviderError>> {
+        Box::pin(Provider::revoke(self, account, presented))
+    }
 }
 
-impl Provider for FamilyProvider {
-    type Session = FamilySession;
-    type SignIn = FamilySignIn;
+impl<S: ProviderSession + Debug> DynSession for S {
+    fn access_token<'a>(
+        &'a self,
+        audience: &'a Audience,
+    ) -> BoxFut<'a, Result<IssuedToken, ProviderError>> {
+        Box::pin(ProviderSession::access_token(self, audience))
+    }
+
+    fn access_token_for<'a>(
+        &'a self,
+        audience: &'a Audience,
+        kind: CapabilityKind,
+        reach: StorageScope,
+    ) -> BoxFut<'a, Result<IssuedToken, ProviderError>> {
+        Box::pin(ProviderSession::access_token_for(
+            self, audience, kind, reach,
+        ))
+    }
+
+    fn renewed(&self) -> Option<Credential> {
+        ProviderSession::renewed(self)
+    }
+}
+
+impl<S: SignIn + Debug> DynSignIn for S {
+    fn next(&mut self, input: SignInInput) -> BoxFut<'_, SignInStep> {
+        Box::pin(SignIn::next(self, input))
+    }
+}
+
+impl Provider for Box<dyn DynProvider> {
+    type Session = Box<dyn DynSession>;
+    type SignIn = Box<dyn DynSignIn>;
 
     fn spec(&self) -> &ProviderSpec {
-        each_family!(self, p => p.spec())
+        DynProvider::spec(&**self)
     }
 
     async fn discover(
@@ -127,72 +178,23 @@ impl Provider for FamilyProvider {
         account: &Account,
         presented: &Presented,
     ) -> Result<Vec<Claim>, ProviderError> {
-        each_family!(self, p => p.discover(account, presented).await)
+        DynProvider::discover(&**self, account, presented).await
     }
 
     async fn open(
         &self,
         account: &AccountId,
         presented: Presented,
-    ) -> Result<FamilySession, ProviderError> {
-        match self {
-            #[cfg(feature = "nextcloud")]
-            Self::Nextcloud(p) => p
-                .open(account, presented)
-                .await
-                .map(FamilySession::Nextcloud),
-            #[cfg(feature = "generic")]
-            Self::Generic(p) => p.open(account, presented).await.map(FamilySession::Generic),
-            #[cfg(feature = "microsoft")]
-            Self::Microsoft(p) => p
-                .open(account, presented)
-                .await
-                .map(FamilySession::Microsoft),
-            #[cfg(feature = "google")]
-            Self::Google(p) => p.open(account, presented).await.map(FamilySession::Google),
-            #[cfg(feature = "api_key")]
-            Self::ApiKey(p) => p.open(account, presented).await.map(FamilySession::ApiKey),
-            #[cfg(feature = "agent_login")]
-            Self::AgentLogin(p) => p
-                .open(account, presented)
-                .await
-                .map(FamilySession::AgentLogin),
-            #[cfg(feature = "tailnet")]
-            Self::Tailnet(p) => p.open(account, presented).await.map(FamilySession::Tailnet),
-            #[allow(unreachable_patterns)]
-            _ => {
-                let _ = (account, presented);
-                unreachable!("no family is built")
-            }
-        }
+    ) -> Result<Box<dyn DynSession>, ProviderError> {
+        DynProvider::open(&**self, account, presented).await
     }
 
-    fn sign_in(&self, start: SignInStart) -> Result<FamilySignIn, ProviderError> {
-        match self {
-            #[cfg(feature = "nextcloud")]
-            Self::Nextcloud(p) => p.sign_in(start).map(FamilySignIn::Nextcloud),
-            #[cfg(feature = "generic")]
-            Self::Generic(p) => p.sign_in(start).map(FamilySignIn::Generic),
-            #[cfg(feature = "microsoft")]
-            Self::Microsoft(p) => p.sign_in(start).map(FamilySignIn::Microsoft),
-            #[cfg(feature = "google")]
-            Self::Google(p) => p.sign_in(start).map(FamilySignIn::Google),
-            #[cfg(feature = "api_key")]
-            Self::ApiKey(p) => p.sign_in(start).map(FamilySignIn::ApiKey),
-            #[cfg(feature = "agent_login")]
-            Self::AgentLogin(p) => p.sign_in(start).map(FamilySignIn::AgentLogin),
-            #[cfg(feature = "tailnet")]
-            Self::Tailnet(p) => p.sign_in(start).map(FamilySignIn::Tailnet),
-            #[allow(unreachable_patterns)]
-            _ => {
-                let _ = start;
-                unreachable!("no family is built")
-            }
-        }
+    fn sign_in(&self, start: SignInStart) -> Result<Box<dyn DynSignIn>, ProviderError> {
+        DynProvider::sign_in(&**self, start)
     }
 
     fn readiness(&self) -> Readiness {
-        each_family!(self, p => p.readiness())
+        DynProvider::readiness(&**self)
     }
 
     async fn revoke(
@@ -200,13 +202,13 @@ impl Provider for FamilyProvider {
         account: &Account,
         presented: &Presented,
     ) -> Result<RevokeOutcome, ProviderError> {
-        each_family!(self, p => p.revoke(account, presented).await)
+        DynProvider::revoke(&**self, account, presented).await
     }
 }
 
-impl ProviderSession for FamilySession {
+impl ProviderSession for Box<dyn DynSession> {
     async fn access_token(&self, audience: &Audience) -> Result<IssuedToken, ProviderError> {
-        each_family!(self, s => s.access_token(audience).await)
+        DynSession::access_token(&**self, audience).await
     }
 
     async fn access_token_for(
@@ -215,16 +217,16 @@ impl ProviderSession for FamilySession {
         kind: CapabilityKind,
         reach: StorageScope,
     ) -> Result<IssuedToken, ProviderError> {
-        each_family!(self, s => s.access_token_for(audience, kind, reach).await)
+        DynSession::access_token_for(&**self, audience, kind, reach).await
     }
 
     fn renewed(&self) -> Option<Credential> {
-        each_family!(self, s => s.renewed())
+        DynSession::renewed(&**self)
     }
 }
 
-impl SignIn for FamilySignIn {
+impl SignIn for Box<dyn DynSignIn> {
     async fn next(&mut self, input: SignInInput) -> SignInStep {
-        each_family!(self, s => s.next(input).await)
+        DynSignIn::next(&mut **self, input).await
     }
 }

@@ -181,3 +181,16 @@ impl<H: Http + 'static> Provider for GoogleProvider<H> {
         }
     }
 }
+
+/// This family for `spec` when it signs in by OAuth at Google, else the spec back.
+#[cfg(feature = "set")]
+pub(crate) fn build(spec: ProviderSpec, io: &crate::set::FamilyIo) -> crate::set::Built {
+    match (spec.auth.kind, spec.auth.issuer) {
+        (porter_core::AuthKind::OAuthPkce, Some(porter_provider::Issuer::Google)) => {
+            let clock = std::sync::Arc::clone(&io.clock);
+            let env = GoogleEnv::<ReqwestHttp>::with_client_files(io.clients.clone(), clock);
+            Ok(Box::new(GoogleProvider::with_env(spec, env)))
+        }
+        _ => Err(Box::new(spec)),
+    }
+}
