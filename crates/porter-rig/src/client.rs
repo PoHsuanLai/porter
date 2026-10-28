@@ -8,6 +8,7 @@
 //! there is nothing to ask a grant for or to open a relay to. The app's identity is the
 //! daemons' to find (see `fixture`).
 
+use clap::Subcommand;
 use porter_capability::Tier;
 use porter_capability::{Access, AgentProgram, Delta, Offered, QuotaReport, StorageScope};
 use porter_client::{
@@ -81,61 +82,35 @@ fn failure(why: impl std::fmt::Display) -> Value {
     json!({ "result": "error", "error": why.to_string() })
 }
 
-/// The commands.
-#[derive(Debug, Clone)]
+/// The commands: the command line of `porter-rig-client`, each word and id parsed where it enters
+/// (a word that is none is a `{"result":"error"}` line and exit 1, as a bus failure is).
+#[derive(Debug, Clone, Subcommand)]
 pub enum Command {
-    /// Lists the identities signed in on this machine (`Identities1.List`).
-    IdentitiesList,
-    /// "Continue as": shows the identity picker (`Identities1.Offer`) and prints the pick, never a
-    /// token.
-    IdentitiesOffer {
-        /// Limits the picker to one provider's identities; none: any.
-        provider: Option<ProviderId>,
-    },
-    /// Says this app signed in with the identity (`Identities1.RegisterUse`).
-    IdentitiesRegisterUse {
-        /// The identity.
-        identity: IdentityId,
-    },
-    /// Shows inferd's add-a-key sheet (`Inference1.Keys.AddAccount`) and waits for the answer.
-    AiKeysAdd {
-        /// The provider whose form opens first; none: the list.
-        provider: Option<ProviderId>,
-    },
-    /// Asks inferd for a permit to use the person's AI keys (`Inference1.Keys.RequestKey`).
-    AiKeysRequest {
-        /// Class and usage.
-        ask: Ask,
-    },
-    /// As the agent launcher: registers `program`, optionally opens `session`, and asks the person
-    /// which of their AI keys the agent may use (`Launcher.RequestAgentKey`).
-    LauncherRequestKey {
-        /// The agent program.
-        program: AgentProgram,
-        /// The data class.
-        class: DataClass,
-        /// A session to open first, for "this session only".
-        session: Option<LauncherSession>,
-    },
-    /// As the agent launcher: registers `program` and asks for a process credential under
-    /// `permit` (`Launcher.IssueProcessCredential`). Prints its id, never the key.
-    LauncherIssue {
-        /// The permit.
-        permit: KeyPermitId,
-        /// The agent program.
-        program: AgentProgram,
-        /// How the key is handed over.
-        target: Handoff,
-    },
+    /// The identities signed in on this machine, and "Continue as".
+    #[command(subcommand)]
+    Identities(IdentitiesCommand),
+    /// The person's AI keys: ask for a permit to use them, or add one.
+    #[command(subcommand)]
+    AiKeys(AiKeysCommand),
+    /// The agent launcher's calls to inferd.
+    #[command(subcommand)]
+    Launcher(LauncherCommand),
     /// Opens an AI session and, with a prompt, runs one chat turn on it.
     Open {
-        /// The need.
+        /// The need: `mail`, `storage`, `calendar`, `contacts`, `notes`, `llm` or a JSON `Need`.
+        #[arg(value_parser = parse_need)]
         need: Need,
-        /// Class and usage.
-        ask: Ask,
+        /// The data class.
+        #[arg(long, default_value = "public", value_parser = word::<DataClass>)]
+        class: DataClass,
         /// The tier.
+        #[arg(long, default_value = "fast", value_parser = word::<Tier>)]
         tier: Tier,
+        /// `interactive` or `background`.
+        #[arg(long, default_value = "interactive", value_parser = word::<Usage>)]
+        usage: Usage,
         /// What to say, if anything.
+        #[arg(long)]
         prompt: Option<String>,
     },
     /// Settles a stored sync conflict.
@@ -150,20 +125,24 @@ pub enum Command {
     /// Prints the conflicts syncd tells.
     WatchConflicts {
         /// Stop after this many.
+        #[arg(long)]
         count: Option<usize>,
-        /// Stop after this long.
+        /// Stop after this many seconds.
+        #[arg(long = "timeout-s", value_parser = seconds)]
         timeout: Option<Duration>,
     },
     /// Opens accountd's add-account sheet (`Manager.AddAccount`) and waits for the Request's
     /// `Response`: the account added, or why not.
     AddAccount {
-        /// The provider whose form opens first; none: the provider list.
+        /// The provider's file id (`microsoft`, `nextcloud`, ...); the list when absent.
+        #[arg(value_parser = provider)]
         provider: Option<ProviderId>,
     },
     /// Opens the sheet that signs an account in again (`Account.Reauthenticate`) and waits for
     /// the `Response`.
     Reauthenticate {
         /// The account.
+        #[arg(value_parser = account)]
         account: AccountId,
     },
     /// The datasets syncd shows this app.
@@ -173,6 +152,121 @@ pub enum Command {
         /// `<account>/<dataset>`.
         dataset: String,
     },
+    /// Only writes the identity fixture for process `pid` (it is kept); not a bus command.
+    WriteIdentity {
+        /// The process the fixture names.
+        #[arg(long)]
+        pid: u32,
+    },
+}
+
+/// The identities signed in on this machine, and "Continue as".
+#[derive(Debug, Clone, Subcommand)]
+pub enum IdentitiesCommand {
+    /// Lists the identities signed in on this machine (`Identities1.List`).
+    List,
+    /// "Continue as": shows the identity picker (`Identities1.Offer`) and prints the pick, never a
+    /// token.
+    Offer {
+        /// Limits the picker to one provider's identities (its file id); none: any.
+        #[arg(value_parser = provider)]
+        provider: Option<ProviderId>,
+    },
+    /// Says this app signed in with the identity (`Identities1.RegisterUse`).
+    RegisterUse {
+        /// The identity.
+        #[arg(value_parser = identity)]
+        identity: IdentityId,
+    },
+}
+
+/// The person's AI keys: ask for a permit to use them, or add one.
+#[derive(Debug, Clone, Subcommand)]
+pub enum AiKeysCommand {
+    /// Asks inferd for a permit to use the person's AI keys (`Inference1.Keys.RequestKey`).
+    Request {
+        /// The data class.
+        #[arg(long, default_value = "files", value_parser = word::<DataClass>)]
+        class: DataClass,
+        /// `interactive` or `background`.
+        #[arg(long, default_value = "interactive", value_parser = word::<Usage>)]
+        usage: Usage,
+    },
+    /// Shows inferd's add-a-key sheet (`Inference1.Keys.AddAccount`) and waits for the answer.
+    Add {
+        /// The provider whose form opens first (its file id); none: the list.
+        #[arg(value_parser = provider)]
+        provider: Option<ProviderId>,
+    },
+}
+
+/// The agent launcher's calls to inferd.
+#[derive(Debug, Clone, Subcommand)]
+pub enum LauncherCommand {
+    /// As the agent launcher: registers `program`, optionally opens `session`, and asks the person
+    /// which of their AI keys the agent may use (`Launcher.RequestAgentKey`).
+    RequestKey {
+        /// The agent program.
+        #[arg(value_parser = program)]
+        program: AgentProgram,
+        /// The data class.
+        #[arg(long, default_value = "files", value_parser = word::<DataClass>)]
+        class: DataClass,
+        /// A session to open first, for "this session only".
+        #[arg(long, value_parser = session)]
+        session: Option<LauncherSession>,
+    },
+    /// As the agent launcher: registers `program` and asks for a process credential under
+    /// `permit` (`Launcher.IssueProcessCredential`). Prints its id, never the key.
+    Issue {
+        /// The permit.
+        #[arg(value_parser = permit)]
+        permit: KeyPermitId,
+        /// The agent program.
+        #[arg(value_parser = program)]
+        program: AgentProgram,
+        /// How the key is handed over: `memfd` or `tmpfs_file`.
+        #[arg(long, default_value = "tmpfs_file", value_parser = handoff)]
+        target: Handoff,
+    },
+}
+
+fn provider(id: &str) -> Result<ProviderId, String> {
+    ProviderId::parse(id).map_err(|e| format!("`{id}` is not a provider: {e}"))
+}
+
+fn program(name: &str) -> Result<AgentProgram, String> {
+    AgentProgram::parse(name).map_err(|e| format!("`{name}` is not an agent program: {e}"))
+}
+
+fn identity(id: &str) -> Result<IdentityId, String> {
+    IdentityId::parse(id).map_err(|e| format!("`{id}` is not an identity id: {e}"))
+}
+
+fn account(id: &str) -> Result<AccountId, String> {
+    AccountId::parse(id).map_err(|e| format!("`{id}` is not an account id: {e}"))
+}
+
+fn permit(id: &str) -> Result<KeyPermitId, String> {
+    KeyPermitId::parse(id).map_err(|e| format!("`{id}` is not a permit id: {e}"))
+}
+
+fn session(text: &str) -> Result<LauncherSession, String> {
+    LauncherSession::parse(text).map_err(|e| format!("`{text}` is not a session: {e}"))
+}
+
+fn handoff(text: &str) -> Result<Handoff, String> {
+    match text {
+        "memfd" => Ok(Handoff::Memfd),
+        "tmpfs_file" => Ok(Handoff::TmpfsFile),
+        other => Err(format!("`{other}` is not memfd or tmpfs_file")),
+    }
+}
+
+fn seconds(text: &str) -> Result<Duration, String> {
+    text.parse::<u64>()
+        .map(Duration::from_secs)
+        .map_err(|_| format!("`{text}` is not a whole number of seconds"))
 }
 
 /// Runs `command` as the app on `connection`, handing every JSON line to `emit`; whether it
@@ -184,29 +278,39 @@ pub async fn run(
 ) -> bool {
     let accounts = Accounts::over(DbusTransport::over(connection.clone()));
     match command {
-        Command::IdentitiesList => identities_list(connection, emit).await,
-        Command::IdentitiesOffer { provider } => identities_offer(connection, provider, emit).await,
-        Command::IdentitiesRegisterUse { identity } => {
+        Command::Identities(IdentitiesCommand::List) => identities_list(connection, emit).await,
+        Command::Identities(IdentitiesCommand::Offer { provider }) => {
+            identities_offer(connection, provider, emit).await
+        }
+        Command::Identities(IdentitiesCommand::RegisterUse { identity }) => {
             identities_register_use(connection, &identity, emit).await
         }
-        Command::AiKeysAdd { provider } => ai_keys_add(connection, provider, emit).await,
-        Command::AiKeysRequest { ask } => ai_keys_request(connection, &ask, emit).await,
-        Command::LauncherRequestKey {
+        Command::AiKeys(AiKeysCommand::Add { provider }) => {
+            ai_keys_add(connection, provider, emit).await
+        }
+        Command::AiKeys(AiKeysCommand::Request { class, usage }) => {
+            ai_keys_request(connection, &Ask { class, usage }, emit).await
+        }
+        Command::Launcher(LauncherCommand::RequestKey {
             program,
             class,
             session,
-        } => launcher_request_key(connection, &program, class, session.as_ref(), emit).await,
-        Command::LauncherIssue {
+        }) => launcher_request_key(connection, &program, class, session.as_ref(), emit).await,
+        Command::Launcher(LauncherCommand::Issue {
             permit,
             program,
             target,
-        } => launcher_issue(connection, &permit, &program, target, emit).await,
+        }) => launcher_issue(connection, &permit, &program, target, emit).await,
         Command::Open {
             need,
-            ask,
+            class,
             tier,
+            usage,
             prompt,
-        } => open(&accounts, &need, &ask, tier, prompt, emit).await,
+        } => {
+            let ask = Ask { class, usage };
+            open(&accounts, &need, &ask, tier, prompt, emit).await
+        }
         Command::SyncResolve {
             dataset,
             number,
@@ -217,6 +321,10 @@ pub async fn run(
         }
         Command::AddAccount { provider } => add_account(&accounts, provider, emit).await,
         Command::Reauthenticate { account } => reauthenticate(&accounts, &account, emit).await,
+        Command::WriteIdentity { .. } => {
+            emit(failure("write-identity is not a bus command"));
+            false
+        }
         Command::Datasets => match SyncProxy::new(connection).await {
             Ok(sync) => match sync.datasets().await {
                 Ok(names) => {
