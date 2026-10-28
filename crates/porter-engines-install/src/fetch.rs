@@ -11,12 +11,13 @@ use porter_engines::{Artifact, file_digest, hex};
 use porter_http::http::header::RANGE;
 use porter_http::http::{HeaderMap, Method, StatusCode};
 use porter_http::{HeaderText, HttpError, request};
-use porter_http_reqwest::{BodySink, Flow, ReqwestHttp};
+use porter_http_reqwest::{BodySink, ReqwestHttp};
 use porter_ids::{UrlScheme, WebUrl};
 use sha2::{Digest, Sha256};
 use std::ffi::OsString;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
+use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -288,20 +289,20 @@ impl Sink {
 }
 
 impl BodySink for Sink {
-    fn head(&mut self, status: StatusCode, headers: &HeaderMap) -> Flow {
+    fn head(&mut self, status: StatusCode, headers: &HeaderMap) -> ControlFlow<()> {
         match status.as_u16() {
             301 | 302 | 303 | 307 | 308 => {
                 self.redirect = headers.header("location").map(str::to_owned);
-                Flow::Stop
+                ControlFlow::Break(())
             }
             200 => {
                 // The server sent the whole file whatever was asked: begin again.
                 if self.have > 0 && self.start_over().is_err() {
                     self.failed = Some(std::io::ErrorKind::Other);
-                    return Flow::Stop;
+                    return ControlFlow::Break(());
                 }
                 self.writing = true;
-                Flow::Continue
+                ControlFlow::Continue(())
             }
             206 => {
                 let wanted = format!("bytes {}-", self.have);
@@ -310,34 +311,34 @@ impl BodySink for Sink {
                     .is_some_and(|range| range.starts_with(&wanted));
                 self.writing = !self.misplaced;
                 if self.writing {
-                    Flow::Continue
+                    ControlFlow::Continue(())
                 } else {
-                    Flow::Stop
+                    ControlFlow::Break(())
                 }
             }
-            _ => Flow::Stop,
+            _ => ControlFlow::Break(()),
         }
     }
 
-    fn chunk(&mut self, bytes: &[u8]) -> Flow {
+    fn chunk(&mut self, bytes: &[u8]) -> ControlFlow<()> {
         if !self.writing {
-            return Flow::Stop;
+            return ControlFlow::Break(());
         }
         if self.cancel.is_cancelled() {
             self.stopped = true;
-            return Flow::Stop;
+            return ControlFlow::Break(());
         }
         if let Err(error) = self.file.write_all(bytes) {
             self.failed = Some(error.kind());
-            return Flow::Stop;
+            return ControlFlow::Break(());
         }
         self.hasher.update(bytes);
         self.have += bytes.len() as u64;
         self.meter.add(bytes.len() as u64);
         if self.have > self.expect {
             self.overrun = true;
-            return Flow::Stop;
+            return ControlFlow::Break(());
         }
-        Flow::Continue
+        ControlFlow::Continue(())
     }
 }

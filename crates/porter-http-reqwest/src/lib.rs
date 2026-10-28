@@ -15,6 +15,7 @@ use porter_ids::{Origin, UrlScheme};
 use reqwest::redirect::Policy;
 use reqwest::{Certificate, Client};
 use std::error::Error;
+use std::ops::ControlFlow;
 use std::time::Duration;
 
 /// How long a request may take and how much of a response is read.
@@ -112,7 +113,7 @@ impl ReqwestHttp {
             .map_err(|_| HttpError::TimedOut)?
             .map_err(fault)?;
         let status = response.status();
-        if sink.head(status, response.headers()) == Flow::Stop {
+        if sink.head(status, response.headers()).is_break() {
             return Ok(status);
         }
         loop {
@@ -123,7 +124,7 @@ impl ReqwestHttp {
             let Some(data) = next else {
                 return Ok(status);
             };
-            if sink.chunk(&data) == Flow::Stop {
+            if sink.chunk(&data).is_break() {
                 return Ok(status);
             }
         }
@@ -155,22 +156,14 @@ impl porter_http::Http for ReqwestHttp {
     }
 }
 
-/// What the reader of a streamed body says after each piece.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Flow {
-    /// Go on reading.
-    Continue,
-    /// Stop: the rest is not wanted. The connection is dropped.
-    Stop,
-}
-
 /// Receives a response as it arrives, for a body too long to hold: the head once, then each
-/// piece of the body in turn.
+/// piece of the body in turn. Each answers whether to go on reading (`Continue`) or to stop
+/// because the rest is not wanted (`Break`, and the connection is dropped).
 pub trait BodySink: Send {
-    /// The status and headers, before any of the body. `Stop` reads no body.
-    fn head(&mut self, status: StatusCode, headers: &HeaderMap) -> Flow;
+    /// The status and headers, before any of the body. `Break` reads no body.
+    fn head(&mut self, status: StatusCode, headers: &HeaderMap) -> ControlFlow<()>;
     /// The next piece of the body.
-    fn chunk(&mut self, bytes: &[u8]) -> Flow;
+    fn chunk(&mut self, bytes: &[u8]) -> ControlFlow<()>;
 }
 
 /// Plain `http` goes to this computer only: a request to any other host over `http` is `Tls`
