@@ -7,10 +7,6 @@ use porter_core::SecretText;
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
-/// The challenge sent with the authorize request: the verifier's SHA-256, base64url.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CodeChallenge(pub String);
-
 /// The `state` that ties a redirect to the sign-in that started it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OAuthState(pub String);
@@ -43,9 +39,10 @@ impl Pkce {
         }
     }
 
-    /// The `S256` challenge for the verifier.
-    pub fn challenge(&self) -> CodeChallenge {
-        CodeChallenge(URL_SAFE_NO_PAD.encode(Sha256::digest(self.verifier.expose().as_bytes())))
+    /// The `S256` challenge for the verifier, sent with the authorize request: its SHA-256,
+    /// base64url.
+    pub fn challenge(&self) -> String {
+        URL_SAFE_NO_PAD.encode(Sha256::digest(self.verifier.expose().as_bytes()))
     }
 }
 
@@ -95,7 +92,7 @@ mod tests {
         };
         assert_eq!(
             pkce.challenge(),
-            CodeChallenge("E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM".into())
+            "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
         );
     }
 }

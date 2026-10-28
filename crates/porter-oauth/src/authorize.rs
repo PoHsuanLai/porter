@@ -107,7 +107,7 @@ pub fn authorize_url_for(
     ];
     let challenge = pkce.challenge();
     pairs.extend([
-        ("code_challenge", challenge.0.as_str()),
+        ("code_challenge", challenge.as_str()),
         ("code_challenge_method", "S256"),
     ]);
     if let Some(hint) = &ask.login_hint {
@@ -187,7 +187,7 @@ mod tests {
         assert!(url.starts_with("https://login.microsoftonline.com/common/oauth2/v2.0/authorize?"));
         let q = query(&url);
         let get = |k: &str| q.iter().find(|(n, _)| n == k).map(|(_, v)| v.as_str());
-        assert_eq!(get("code_challenge"), Some(pkce.challenge().0.as_str()));
+        assert_eq!(get("code_challenge"), Some(pkce.challenge().as_str()));
         assert_eq!(get("code_challenge_method"), Some("S256"));
         assert_eq!(get("state"), Some(pkce.state.0.as_str()));
         assert_eq!(get("redirect_uri"), Some("http://127.0.0.1:4000"));
