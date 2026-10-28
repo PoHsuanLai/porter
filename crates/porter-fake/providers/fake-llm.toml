@@ -17,4 +17,7 @@ billing = { kind = "free" }
 [[capability]]
 family = "chat_completions"
 kind = "llm"
-v = { features = ["chat", "tools"], context = 32768, max_output = 4096, wire = "chat_completions" }
+features = ["chat", "tools"]
+context = 32768
+max_output = 4096
+wire = "chat_completions"

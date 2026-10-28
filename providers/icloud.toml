@@ -21,22 +21,36 @@ mx_suffixes = ["mail.icloud.com", "mail.me.com"]
 family = "imap"
 endpoint = "imaps://imap.mail.me.com:993"
 kind = "mail"
-v = { access = "read_write", send = "present", delta = "push", transport = "imap", labels = "folders" }
+access = "read_write"
+send = "present"
+delta = "push"
+transport = "imap"
+labels = "folders"
 
 [[capability]]
 family = "smtp"
 endpoint = "smtp://smtp.mail.me.com:587"
 kind = "mail"
-v = { access = "read_write", send = "present", delta = "push", transport = "imap", labels = "folders" }
+access = "read_write"
+send = "present"
+delta = "push"
+transport = "imap"
+labels = "folders"
 
 [[capability]]
 family = "caldav"
 endpoint = "https://caldav.icloud.com"
 kind = "calendar"
-v = { access = "read_write", delta = "poll", transport = "caldav", collections = "present" }
+access = "read_write"
+delta = "poll"
+transport = "caldav"
+collections = "present"
 
 [[capability]]
 family = "carddav"
 endpoint = "https://contacts.icloud.com"
 kind = "contacts"
-v = { access = "read_write", delta = "poll", transport = "carddav", collections = "present" }
+access = "read_write"
+delta = "poll"
+transport = "carddav"
+collections = "present"

@@ -23,4 +23,7 @@ kind = "fixed"
 [[capability]]
 family = "acp_agent"
 kind = "agent"
-v = { program = "claude-code", key_env = "ANTHROPIC_API_KEY", base_url_env = "ANTHROPIC_BASE_URL", protocols = ["anthropic_messages"] }
+program = "claude-code"
+key_env = "ANTHROPIC_API_KEY"
+base_url_env = "ANTHROPIC_BASE_URL"
+protocols = ["anthropic_messages"]

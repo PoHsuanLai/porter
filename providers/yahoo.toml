@@ -21,10 +21,18 @@ mx_suffixes = ["yahoodns.net"]
 family = "imap"
 endpoint = "imaps://imap.mail.yahoo.com:993"
 kind = "mail"
-v = { access = "read_write", send = "present", delta = "push", transport = "imap", labels = "folders" }
+access = "read_write"
+send = "present"
+delta = "push"
+transport = "imap"
+labels = "folders"
 
 [[capability]]
 family = "smtp"
 endpoint = "smtps://smtp.mail.yahoo.com:465"
 kind = "mail"
-v = { access = "read_write", send = "present", delta = "push", transport = "imap", labels = "folders" }
+access = "read_write"
+send = "present"
+delta = "push"
+transport = "imap"
+labels = "folders"

@@ -1,7 +1,7 @@
 use super::*;
 use crate::spec::{Discovery, Port};
 use porter_capability::Capability;
-use porter_capability::{Access, Delta, StorageScope};
+use porter_capability::{Access, Ask, Delta, StorageScope};
 use porter_core::{AuthKind, Family};
 
 const HEAD: &str = r#"
@@ -15,6 +15,19 @@ const STORAGE_ROW: &str = r#"
 family = "webdav"
 kind = "storage"
 v = { access = "read_write", delta = "poll", quota = "unreported", scope = "full", hashes = "none", ranges = "absent", chunked_upload = "absent" }
+"#;
+
+const FLAT_STORAGE_ROW: &str = r#"
+[[capability]]
+family = "webdav"
+kind = "storage"
+access = "read_write"
+delta = "poll"
+quota = "unreported"
+scope = "full"
+hashes = "none"
+ranges = "absent"
+chunked_upload = "absent"
 "#;
 
 const LLM_ROW: &str = r#"
@@ -42,6 +55,20 @@ fn file(auth: &str, discovery: &str, rest: &[&str]) -> String {
         "{HEAD}\n[auth]\n{auth}\n\n[discovery]\n{discovery}\n{}",
         rest.concat()
     )
+}
+
+#[test]
+fn a_capability_row_is_written_flat_and_the_old_shape_with_a_v_table_reads_the_same() {
+    let spec = |row: &str| {
+        let text = file(
+            r#"kind = "app_password""#,
+            r#"kind = "well_known""#,
+            &[row, "ask = \"on_use\"\n"],
+        );
+        parse_provider(&text).expect("parses")
+    };
+    assert_eq!(spec(FLAT_STORAGE_ROW), spec(STORAGE_ROW));
+    assert_eq!(spec(FLAT_STORAGE_ROW).capabilities[0].ask, Ask::OnUse);
 }
 
 #[test]

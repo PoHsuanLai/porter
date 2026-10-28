@@ -22,22 +22,36 @@ mx_suffixes = ["messagingengine.com"]
 family = "imap"
 endpoint = "imaps://imap.fastmail.com:993"
 kind = "mail"
-v = { access = "read_write", send = "present", delta = "push", transport = "imap", labels = "folders" }
+access = "read_write"
+send = "present"
+delta = "push"
+transport = "imap"
+labels = "folders"
 
 [[capability]]
 family = "smtp"
 endpoint = "smtps://smtp.fastmail.com:465"
 kind = "mail"
-v = { access = "read_write", send = "present", delta = "push", transport = "imap", labels = "folders" }
+access = "read_write"
+send = "present"
+delta = "push"
+transport = "imap"
+labels = "folders"
 
 [[capability]]
 family = "caldav"
 endpoint = "https://caldav.fastmail.com"
 kind = "calendar"
-v = { access = "read_write", delta = "poll", transport = "caldav", collections = "present" }
+access = "read_write"
+delta = "poll"
+transport = "caldav"
+collections = "present"
 
 [[capability]]
 family = "carddav"
 endpoint = "https://carddav.fastmail.com"
 kind = "contacts"
-v = { access = "read_write", delta = "poll", transport = "carddav", collections = "present" }
+access = "read_write"
+delta = "poll"
+transport = "carddav"
+collections = "present"

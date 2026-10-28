@@ -17,4 +17,8 @@ kind = "jmap_session"
 [[capability]]
 family = "jmap"
 kind = "mail"
-v = { access = "read_write", send = "present", delta = "push", transport = "jmap", labels = "labels" }
+access = "read_write"
+send = "present"
+delta = "push"
+transport = "jmap"
+labels = "labels"

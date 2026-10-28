@@ -23,4 +23,7 @@ billing = { kind = "free" }
 [[capability]]
 family = "ollama_native"
 kind = "llm"
-v = { features = ["chat"], context = 2048, max_output = 2048, wire = "ollama_native" }
+features = ["chat"]
+context = 2048
+max_output = 2048
+wire = "ollama_native"

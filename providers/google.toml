@@ -33,32 +33,51 @@ mx_suffixes = ["google.com", "googlemail.com"]
 family = "imap"
 endpoint = "imaps://imap.gmail.com:993"
 kind = "mail"
-v = { access = "read_write", send = "present", delta = "push", transport = "imap", labels = "labels" }
+access = "read_write"
+send = "present"
+delta = "push"
+transport = "imap"
+labels = "labels"
 
 [[capability]]
 family = "google_calendar"
 endpoint = "https://www.googleapis.com/calendar/v3"
 kind = "calendar"
-v = { access = "read_write", delta = "poll", transport = "google_api", collections = "present" }
+access = "read_write"
+delta = "poll"
+transport = "google_api"
+collections = "present"
 
 [[capability]]
 family = "google_people"
 endpoint = "https://people.googleapis.com/v1"
 kind = "contacts"
-v = { access = "read_write", delta = "poll", transport = "google_api", collections = "absent" }
+access = "read_write"
+delta = "poll"
+transport = "google_api"
+collections = "absent"
 
 [[capability]]
 family = "google_tasks"
 endpoint = "https://tasks.googleapis.com/tasks/v1"
 kind = "tasks"
-v = { access = "read_write", delta = "none", transport = "google_api", collections = "present" }
+access = "read_write"
+delta = "none"
+transport = "google_api"
+collections = "present"
 
 [[capability]]
 family = "google_drive"
 endpoint = "https://www.googleapis.com/drive/v3"
 kind = "storage"
 # The app data folder (scope drive.appdata): a hidden folder only this client reads.
-v = { access = "read_write", delta = "poll", quota = "reported", scope = "app_folder", hashes = "md5", ranges = "present", chunked_upload = "present" }
+access = "read_write"
+delta = "poll"
+quota = "reported"
+scope = "app_folder"
+hashes = "md5"
+ranges = "present"
+chunked_upload = "present"
 
 [[capability]]
 family = "google_drive"
@@ -67,17 +86,31 @@ kind = "storage"
 ask = "on_use"
 # The whole of My Drive (scope drive, restricted like Mail's), asked only when the person turns on
 # "Show in Files" for the account, in a sign-in that asks for it alone.
-v = { access = "read_write", delta = "poll", quota = "reported", scope = "full", hashes = "md5", ranges = "present", chunked_upload = "present" }
+access = "read_write"
+delta = "poll"
+quota = "reported"
+scope = "full"
+hashes = "md5"
+ranges = "present"
+chunked_upload = "present"
 
 [[capability]]
 family = "google_photos_upload"
 endpoint = "https://photoslibrary.googleapis.com/v1"
 kind = "photos"
-v = { library_read = "picker_only", upload = "present", albums = "app_created", video = "present", delta = "none" }
+library_read = "picker_only"
+upload = "present"
+albums = "app_created"
+video = "present"
+delta = "none"
 
 [[capability]]
 family = "google_photos_picker"
 endpoint = "https://photospicker.googleapis.com/v1"
 auth_origins = ["lh3.googleusercontent.com"]
 kind = "photos"
-v = { library_read = "picker_only", upload = "present", albums = "app_created", video = "present", delta = "none" }
+library_read = "picker_only"
+upload = "present"
+albums = "app_created"
+video = "present"
+delta = "none"

@@ -30,4 +30,7 @@ billing = { kind = "metered" }
 [[capability]]
 family = "chat_completions"
 kind = "llm"
-v = { features = ["chat"], context = 0, max_output = 0, wire = "chat_completions" }
+features = ["chat"]
+context = 0
+max_output = 0
+wire = "chat_completions"

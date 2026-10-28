@@ -57,14 +57,23 @@ pub struct ProviderSpec {
 }
 
 /// One declared capability and the family that serves it. In the file the capability's own
-/// `kind` and `v` keys sit beside `family`:
+/// `kind` and fields sit beside `family`:
 ///
 /// ```toml
 /// [[capability]]
 /// family = "webdav"
 /// kind = "storage"
-/// v = { access = "read_write", delta = "poll", quota = "reported", scope = "full", hashes = "none", ranges = "present", chunked_upload = "absent" }
+/// access = "read_write"
+/// delta = "poll"
+/// quota = "reported"
+/// scope = "full"
+/// hashes = "none"
+/// ranges = "present"
+/// chunked_upload = "absent"
 /// ```
+///
+/// The types are the bus form (`kind` and a `v` table of the fields); `parse_provider` moves the
+/// fields under `v`, and reads a file that still writes `v` as it is.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CapabilityRow {
     /// The protocol engine.

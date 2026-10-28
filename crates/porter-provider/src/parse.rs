@@ -8,9 +8,48 @@ use porter_core::{AuthKind, Family};
 
 /// The provider declared by one file's text, or why it is refused.
 pub fn parse_provider(text: &str) -> Result<ProviderSpec, ProviderFileError> {
-    let spec: ProviderSpec =
-        toml::from_str(text).map_err(|e| ProviderFileError::Syntax(e.to_string()))?;
+    let syntax = |e: &dyn std::fmt::Display| ProviderFileError::Syntax(e.to_string());
+    let mut file: toml::Table = toml::from_str(text).map_err(|e| syntax(&e))?;
+    if let Some(toml::Value::Array(rows)) = file.get_mut("capability") {
+        rows.iter_mut().for_each(nest_capability);
+    }
+    let spec: ProviderSpec = toml::Value::Table(file)
+        .try_into()
+        .map_err(|e| syntax(&e))?;
     check(spec)
+}
+
+/// The keys of a capability row that are the row's own; every other key of the row is a field of
+/// its capability.
+const ROW_KEYS: [&str; 6] = [
+    "family",
+    "endpoint",
+    "linked_origins",
+    "auth_origins",
+    "ask",
+    "kind",
+];
+
+/// A capability row is written flat: `kind = "mail"` with the capability's fields beside it
+/// (`access = "read_write"`, `send = "present"`). The types hold them in the bus form, the fields
+/// under `v`, so this moves them there. A row that already has a `v` table (the old file shape,
+/// which a person's own provider file may still be in) is left as it is.
+fn nest_capability(row: &mut toml::Value) {
+    let Some(row) = row.as_table_mut() else {
+        return;
+    };
+    if row.contains_key("v") {
+        return;
+    }
+    let fields: toml::Table = row
+        .keys()
+        .filter(|key| !ROW_KEYS.contains(&key.as_str()))
+        .cloned()
+        .collect::<Vec<_>>()
+        .into_iter()
+        .filter_map(|key| row.remove(&key).map(|value| (key, value)))
+        .collect();
+    row.insert("v".to_owned(), toml::Value::Table(fields));
 }
 
 /// The rules the types alone do not hold.
