@@ -25,6 +25,11 @@
 - `EngineConfig::program` is public and `EngineConfig::named_path` is new; `LocalModel::unit_with`
   returns an `Option`.
 
+### `porter_service::Service`
+
+- `Service` is the facade seen as the two domain traits a host asks of it: `accounts_api()` (`AccountsApi`) and
+  `grants_api()` (`GrantsApi`). `AccountService<..>` implements it; the client's hosted carrier is generic over it.
+
 ### Bus names, `LauncherFault` and `Destination` have one home each
 
 - `ACCOUNTS_BUS`, `ACCOUNTS_PATH`, `ACCOUNTS_SETTINGS_PATH`, `SPACES_PATH`, `IDENTITIES_PATH`, `TAILNET_PATH`,

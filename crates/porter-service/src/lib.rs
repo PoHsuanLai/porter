@@ -17,4 +17,4 @@
 
 mod service;
 
-pub use service::AccountService;
+pub use service::{AccountService, Service};
