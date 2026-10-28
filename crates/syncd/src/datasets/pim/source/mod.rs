@@ -94,17 +94,15 @@ pub trait Feed: Send + Sync + 'static {
     /// What the backend offers; the default is a read-only feed whose items the engine compares
     /// by SHA-256.
     fn features(&self) -> porter_capability::StorageCap {
-        use porter_capability::{
-            Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope,
-        };
+        use porter_capability::{Access, Delta, HashKind, StorageCap, StorageScope};
         StorageCap {
             access: Access::Read,
             delta: Delta::Poll,
-            quota: QuotaReport::Unreported,
+            quota: false,
             scope: StorageScope::Full,
             hashes: HashKind::Sha256,
-            ranges: Offered::Absent,
-            chunked_upload: Offered::Absent,
+            ranges: false,
+            chunked_upload: false,
         }
     }
 

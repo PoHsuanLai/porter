@@ -395,9 +395,7 @@ fn endpoints_for(
     let mut out = Vec::new();
     if let Some(Capability::Mail(mail)) = present(CapabilityKind::Mail) {
         out.push(endpoint(Family::Imap, apis.base(Family::Imap)));
-        if let (porter_capability::Offered::Present, Ok(smtp)) =
-            (mail.send, EndpointUrl::parse(SMTP_ORIGIN))
-        {
+        if let (true, Ok(smtp)) = (mail.send, EndpointUrl::parse(SMTP_ORIGIN)) {
             out.push(endpoint(Family::Smtp, smtp));
         }
     }

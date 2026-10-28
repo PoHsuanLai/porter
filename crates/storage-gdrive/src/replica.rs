@@ -4,7 +4,7 @@
 use crate::addr::{Addr, FILE_FIELDS, Root};
 use crate::json::{About, File};
 use crate::refuse::{export_error, read_error};
-use porter_capability::{Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope};
+use porter_capability::{Access, Delta, HashKind, StorageCap, StorageScope};
 use porter_http::http::header::{ACCEPT, HeaderValue, RANGE};
 use porter_http::http::{Method, Request, Response};
 use porter_http::{Http, request};
@@ -304,7 +304,7 @@ impl<H: Http> Replica for GdriveReplica<H> {
             // Drive can push through watch channels, which need a public endpoint; a change is
             // found by asking.
             delta: Delta::Poll,
-            quota: QuotaReport::Reported,
+            quota: true,
             // The replica touches its root only, whatever the token's scope allows.
             scope: match self.addr.root() {
                 Root::AppFolder => StorageScope::AppFolder,
@@ -313,8 +313,8 @@ impl<H: Http> Replica for GdriveReplica<H> {
             // Drive reports an MD5 for each binary file; this build compares SHA-256 only, so
             // an item whose version differs is compared by its bytes.
             hashes: HashKind::Md5,
-            ranges: Offered::Present,
-            chunked_upload: Offered::Present,
+            ranges: true,
+            chunked_upload: true,
         }
     }
 }

@@ -1,6 +1,6 @@
 //! Calendar, Contacts, Tasks and Notes (design/31 §2.2).
 
-use super::terms::{Access, Delta, Offered};
+use super::terms::{Access, Delta};
 use serde::{Deserialize, Serialize};
 
 /// A calendar, address book or task list store (one shape for the three kinds).
@@ -13,7 +13,8 @@ pub struct PimCap {
     /// The protocol family that reaches it.
     pub transport: PimTransport,
     /// Several named collections (calendars, address books, lists) rather than one.
-    pub collections: Offered,
+    #[serde(with = "crate::terms::present")]
+    pub collections: bool,
 }
 
 /// The protocol a PIM store is reached by.

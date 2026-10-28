@@ -16,7 +16,6 @@ mod tests;
 
 use crate::dataset::{Dataset, DatasetError, Direction, replica_hash};
 use crate::journal::{Journal, JournalError, Op};
-use porter_capability::QuotaReport;
 use porter_ids::UnixSeconds;
 use porter_ids::clock::Clock;
 use porter_sync::{
@@ -188,7 +187,7 @@ impl<R: Replica, D: Dataset, K: Clock> Engine<R, D, K> {
             Direction::PullOnly => Ok(()),
         };
         // Uploads that stopped for room still leave the cycle's other work and the quota read.
-        if self.replica.features().quota == QuotaReport::Reported {
+        if self.replica.features().quota {
             report.quota = self.replica.quota().await.ok();
         }
         if self

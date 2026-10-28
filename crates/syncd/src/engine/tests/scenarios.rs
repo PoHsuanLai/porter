@@ -2,7 +2,7 @@ use super::rig::*;
 use crate::dataset::{Dataset, DatasetError, DatasetId, MemoryDataset};
 use crate::engine::{Engine, Outcome};
 use crate::journal::Journal;
-use porter_capability::{Delta, HashKind, QuotaReport};
+use porter_capability::{Delta, HashKind};
 use porter_ids::{Bytes, WebUrl};
 use porter_sync::{
     Acknowledgement, BaseVersion, Blob, Change, ConflictRule, ItemKind, ItemPath, ItemState,
@@ -520,7 +520,7 @@ async fn a_transient_or_unauthorized_replica_stops_the_cycle_and_changes_nothing
 async fn a_full_replica_holds_uploads_back_but_removals_and_pulls_go_on_and_quota_is_reported() {
     let world = World::limited(
         "quota",
-        caps(HashKind::Sha256, QuotaReport::Reported, Delta::Poll),
+        caps(HashKind::Sha256, true, Delta::Poll),
         10,
         Some(Bytes(10)),
     );

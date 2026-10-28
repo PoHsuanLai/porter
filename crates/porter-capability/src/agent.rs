@@ -5,7 +5,6 @@
 //! typed facts about a program: what it is called, how it takes a key and a base URL, and which
 //! protocols it speaks to a model.
 
-use super::terms::Offered;
 use porter_ids::IdError;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -129,10 +128,7 @@ pub struct AgentCap {
 
 impl AgentCap {
     /// Whether the program can be pointed at another model endpoint.
-    pub fn base_url(&self) -> Offered {
-        match self.base_url_env {
-            Some(_) => Offered::Present,
-            None => Offered::Absent,
-        }
+    pub fn base_url(&self) -> bool {
+        self.base_url_env.is_some()
     }
 }

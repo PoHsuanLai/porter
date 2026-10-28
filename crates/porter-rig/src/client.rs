@@ -10,7 +10,7 @@
 
 use clap::Subcommand;
 use porter_capability::Tier;
-use porter_capability::{Access, AgentProgram, Delta, Offered, QuotaReport, StorageScope};
+use porter_capability::{Access, AgentProgram, Delta, StorageScope};
 use porter_client::{
     Accounts, AiKeys, AiKeysError, ClientError, DbusTransport, Identities, IdentitiesError,
     InferSession, Launcher, LauncherError, OpenOptions,
@@ -59,12 +59,12 @@ pub fn parse_need(text: &str) -> Result<Need, String> {
     }
     let pim = || PimNeed::new(Access::Read, Delta::None);
     Ok(match text {
-        "mail" => Need::Mail(MailNeed::new(Access::Read, Offered::Absent, Delta::None)),
+        "mail" => Need::Mail(MailNeed::new(Access::Read, false, Delta::None)),
         "storage" => Need::Storage(StorageNeed::new(
             Access::ReadWrite,
             Delta::Poll,
             StorageScope::AppFolder,
-            QuotaReport::Unreported,
+            false,
         )),
         "calendar" => Need::Calendar(pim()),
         "contacts" => Need::Contacts(pim()),

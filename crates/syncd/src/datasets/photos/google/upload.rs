@@ -18,7 +18,7 @@
 use super::api::{AlbumId, ApiError, MediaId, PhotosApi};
 use super::ledger::{Entry, Kept, LedgerError};
 use crate::dataset::fingerprint;
-use porter_capability::{Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope};
+use porter_capability::{Access, Delta, HashKind, StorageCap, StorageScope};
 use porter_http::Http;
 use porter_ids::Bytes;
 use porter_sync::DELETED;
@@ -189,11 +189,11 @@ impl<H: Http> Replica for UploadReplica<H> {
         StorageCap {
             access: Access::ReadWrite,
             delta: Delta::None,
-            quota: QuotaReport::Unreported,
+            quota: false,
             scope: StorageScope::AppFolder,
             hashes: HashKind::Sha256,
-            ranges: Offered::Absent,
-            chunked_upload: Offered::Absent,
+            ranges: false,
+            chunked_upload: false,
         }
     }
 }

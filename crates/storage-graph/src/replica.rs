@@ -3,7 +3,7 @@
 
 use crate::addr::{Addr, Root};
 use crate::json::{DriveInfo, DriveItem};
-use porter_capability::{Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope};
+use porter_capability::{Access, Delta, HashKind, StorageCap, StorageScope};
 use porter_http::http::header::{ACCEPT, HeaderValue, RANGE};
 use porter_http::http::{Method, Request, Response};
 use porter_http::{HeaderText, Http, request};
@@ -281,7 +281,7 @@ impl<H: Http> Replica for GraphReplica<H> {
             // No push for a Graph drive here (change notifications need a public endpoint);
             // a change is found by asking.
             delta: Delta::Poll,
-            quota: QuotaReport::Reported,
+            quota: true,
             // The replica touches its root only, whatever the token's scope allows.
             scope: match self.addr.root() {
                 Root::Drive => StorageScope::Full,
@@ -290,8 +290,8 @@ impl<H: Http> Replica for GraphReplica<H> {
             // OneDrive reports QuickXorHash; this build compares SHA-256 only, so an item whose
             // eTag differs is compared by its bytes.
             hashes: HashKind::QuickXor,
-            ranges: Offered::Present,
-            chunked_upload: Offered::Present,
+            ranges: true,
+            chunked_upload: true,
         }
     }
 }

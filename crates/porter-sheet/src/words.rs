@@ -63,17 +63,17 @@ pub fn access_words(capability: &Capability) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_capability::{Delta, HashKind, Offered, QuotaReport};
+    use porter_capability::{Delta, HashKind};
 
     fn storage(scope: StorageScope, access: Access) -> Capability {
         Capability::Storage(StorageCap {
             access,
             delta: Delta::Poll,
-            quota: QuotaReport::Reported,
+            quota: true,
             scope,
             hashes: HashKind::Sha1,
-            ranges: Offered::Present,
-            chunked_upload: Offered::Absent,
+            ranges: true,
+            chunked_upload: false,
         })
     }
 

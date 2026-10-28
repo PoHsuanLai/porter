@@ -2,7 +2,7 @@
 //! carries and a relay may dial, and what is saved and audited when the registry changes.
 
 use porter_capability::CapabilityKind;
-use porter_capability::{Access, Delta, Offered, QuotaReport, StorageScope};
+use porter_capability::{Access, Delta, StorageScope};
 use porter_core::consent::{GrantScope, Usage};
 use porter_core::{AccountId, GrantId};
 use porter_core::{AppId, AppName, Audience, DataClass, EndpointUrl, Family, Isolation};
@@ -27,12 +27,12 @@ fn files() -> Need {
         Access::ReadWrite,
         Delta::Poll,
         StorageScope::AppFolder,
-        QuotaReport::Unreported,
+        false,
     ))
 }
 
 fn mail() -> Need {
-    Need::Mail(MailNeed::new(Access::Read, Offered::Present, Delta::Poll))
+    Need::Mail(MailNeed::new(Access::Read, true, Delta::Poll))
 }
 
 fn url(text: &str) -> EndpointUrl {

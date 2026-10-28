@@ -1,17 +1,20 @@
 //! Identity and Mail (design/31 §2.2).
 
-use super::terms::{Access, Delta, Offered};
+use super::terms::{Access, Delta};
 use serde::{Deserialize, Serialize};
 
 /// Who the account is. Every account has at least its label; these say what else it offers.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct IdentityCap {
     /// A display name and an avatar.
-    pub profile: Offered,
+    #[serde(with = "crate::terms::present")]
+    pub profile: bool,
     /// An address the provider has verified.
-    pub verified_address: Offered,
+    #[serde(with = "crate::terms::present")]
+    pub verified_address: bool,
     /// It can act as an OpenID identity for other sites.
-    pub sign_in: Offered,
+    #[serde(with = "crate::terms::present")]
+    pub sign_in: bool,
 }
 
 /// A mailbox. The protocol detail (IMAP extensions, folder roles) stays with the mail engine;
@@ -21,7 +24,8 @@ pub struct MailCap {
     /// Reading and changing messages.
     pub access: Access,
     /// Sending.
-    pub send: Offered,
+    #[serde(with = "crate::terms::present")]
+    pub send: bool,
     /// How new mail becomes known.
     pub delta: Delta,
     /// The protocol family that reaches it.

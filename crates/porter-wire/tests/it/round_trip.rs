@@ -3,8 +3,7 @@
 
 use porter_capability::Subject;
 use porter_capability::{
-    Access, Capability, CapabilityKind, Delta, HashKind, Offered, QuotaReport, StorageCap,
-    StorageScope,
+    Access, Capability, CapabilityKind, Delta, HashKind, StorageCap, StorageScope,
 };
 use porter_core::token::Audience;
 use porter_core::{AccountId, GrantId, ProviderId};
@@ -49,11 +48,11 @@ fn storage() -> Capability {
     Capability::Storage(StorageCap {
         access: Access::ReadWrite,
         delta: Delta::Poll,
-        quota: QuotaReport::Reported,
+        quota: true,
         scope: StorageScope::Full,
         hashes: HashKind::Sha1,
-        ranges: Offered::Present,
-        chunked_upload: Offered::Absent,
+        ranges: true,
+        chunked_upload: false,
     })
 }
 
@@ -96,7 +95,7 @@ fn every_request_and_reply_round_trips() {
         Access::ReadWrite,
         Delta::Poll,
         StorageScope::Full,
-        QuotaReport::Reported,
+        true,
     ));
     let window = ParentWindow::Handle("wayland:abc".into());
     let requests = vec![

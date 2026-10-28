@@ -4,7 +4,7 @@ use crate::feed::{Known, Pending};
 use crate::path::Root;
 use crate::requests;
 use dav_proto::parse_multistatus;
-use porter_capability::{Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope};
+use porter_capability::{Access, Delta, HashKind, StorageCap, StorageScope};
 use porter_http::http::header::RANGE;
 use porter_http::http::{Method, Request, Response};
 use porter_http::{Http, request};
@@ -174,14 +174,14 @@ impl<H: Http> Replica for WebDavReplica<H> {
             access: Access::ReadWrite,
             // WebDAV has no push; a change is found by asking.
             delta: Delta::Poll,
-            quota: QuotaReport::Reported,
+            quota: true,
             scope: StorageScope::Full,
             // Nextcloud's checksums are SHA-1 or MD5 and only SHA-256 is one this build compares,
             // so identity is by etag, and by the bytes where an etag differs.
             hashes: HashKind::None,
-            ranges: Offered::Present,
+            ranges: true,
             // One PUT per item until the chunked upload (Nextcloud's `uploads` area) is built.
-            chunked_upload: Offered::Absent,
+            chunked_upload: false,
         }
     }
 }

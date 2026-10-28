@@ -9,7 +9,7 @@ use crate::common;
 
 use common::{Brief, Fakes, Kept, Person, Service, TestSheets, plain, service};
 use porter_capability::{AbsentReason, Offer};
-use porter_capability::{Access, CapabilityKind, Delta, QuotaReport, StorageScope};
+use porter_capability::{Access, CapabilityKind, Delta, StorageScope};
 use porter_core::ProviderHint;
 use porter_core::consent::{GrantScope, Usage};
 use porter_core::{AccountId, ProviderId};
@@ -39,7 +39,7 @@ fn storage() -> Need {
         Access::ReadWrite,
         Delta::Poll,
         StorageScope::Full,
-        QuotaReport::Reported,
+        true,
     ))
 }
 
@@ -529,7 +529,7 @@ async fn add_and_allow_grants_nothing_when_the_new_account_does_not_meet_the_nee
     );
     let mail = Need::Mail(porter_match::MailNeed::new(
         Access::ReadWrite,
-        porter_capability::Offered::Present,
+        true,
         Delta::Poll,
     ));
     let reply = service

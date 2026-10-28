@@ -277,7 +277,7 @@ async fn build(photos: PhotosGrant, media: Media, picker_only: bool) -> Rig {
             .retain(|e| e.family != Family::GooglePhotosUpload);
         for claim in &mut account.capabilities {
             if let Offer::Present(porter_capability::Capability::Photos(cap)) = &mut claim.offer {
-                cap.upload = porter_capability::Offered::Absent;
+                cap.upload = false;
             }
         }
     }

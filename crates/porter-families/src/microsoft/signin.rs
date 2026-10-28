@@ -15,7 +15,7 @@ use super::scopes::{GRAPH_DEFAULT, extend_scopes, graph_only, scopes_for};
 use super::{graph_origin, imap_origin};
 use crate::extend::{answered_as, asked_claims};
 use porter_capability::Offer;
-use porter_capability::{Capability, CapabilityKind, Offered};
+use porter_capability::{Capability, CapabilityKind};
 use porter_core::{
     AccountLabel, Credential, EndpointUrl, Family, GrantedScopes, LoginName, Restriction,
     SecretPurpose, ServiceEndpoint, TenantConsent, Tls,
@@ -363,7 +363,7 @@ fn endpoints_for(spec: &ProviderSpec, found: &Found) -> Vec<ServiceEndpoint> {
     let mut out = Vec::new();
     if let Some(Capability::Mail(mail)) = present(CapabilityKind::Mail) {
         out.push(endpoint(Family::Imap, imap_origin(spec)));
-        if let (Offered::Present, Ok(smtp)) = (mail.send, EndpointUrl::parse(SMTP_ORIGIN)) {
+        if let (true, Ok(smtp)) = (mail.send, EndpointUrl::parse(SMTP_ORIGIN)) {
             out.push(endpoint(Family::Smtp, smtp));
         }
     }

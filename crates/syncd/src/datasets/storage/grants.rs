@@ -9,7 +9,7 @@
 //! `google_photos_upload` and `google_photos_picker` endpoints are Google Photos.
 
 use crate::datasets::pim::AccountdUnavailable;
-use porter_capability::{Access, Albums, Delta, LibraryRead, Offered, QuotaReport, StorageScope};
+use porter_capability::{Access, Albums, Delta, LibraryRead, StorageScope};
 use porter_client::{Accounts, Found, Transport};
 use porter_core::consent::Usage;
 use porter_core::{Candidate, DataClass, Family, ServiceEndpoint};
@@ -63,7 +63,7 @@ pub fn storage_need() -> Need {
         Access::ReadWrite,
         Delta::Poll,
         StorageScope::AppFolder,
-        QuotaReport::Unreported,
+        false,
     ))
 }
 
@@ -74,7 +74,7 @@ pub fn drive_need() -> Need {
         Access::ReadWrite,
         Delta::Poll,
         StorageScope::Full,
-        QuotaReport::Unreported,
+        false,
     ))
 }
 
@@ -82,9 +82,9 @@ pub fn drive_need() -> Need {
 pub fn photos_need() -> Need {
     Need::Photos(PhotosNeed::new(
         LibraryRead::PickerOnly,
-        Offered::Present,
+        true,
         Albums::AppCreated,
-        Offered::Absent,
+        false,
         Delta::None,
     ))
 }
@@ -94,9 +94,9 @@ pub fn photos_need() -> Need {
 pub fn picker_need() -> Need {
     Need::Photos(PhotosNeed::new(
         LibraryRead::PickerOnly,
-        Offered::Absent,
+        false,
         Albums::None,
-        Offered::Absent,
+        false,
         Delta::None,
     ))
 }

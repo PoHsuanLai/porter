@@ -228,7 +228,7 @@ async fn onedrive_reports_its_quota() {
     let Offer::Present(porter_capability::Capability::Storage(cap)) = &storage.offer else {
         panic!("present storage")
     };
-    assert_eq!(cap.quota, porter_capability::QuotaReport::Reported);
+    assert!(cap.quota);
 }
 
 #[tokio::test]

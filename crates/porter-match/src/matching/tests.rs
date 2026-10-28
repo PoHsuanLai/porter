@@ -3,8 +3,7 @@ use crate::need::AgentNeed;
 use crate::need::{CuaNeed, LlmNeed, MailNeed, PhotosNeed, StorageNeed};
 use porter_capability::fixtures::{llm, mail, storage};
 use porter_capability::{
-    Access, Albums, CapabilityKind, Delta, LibraryRead, LlmFeature, Offered, PhotosCap,
-    QuotaReport, StorageScope,
+    Access, Albums, CapabilityKind, Delta, LibraryRead, LlmFeature, PhotosCap, StorageScope,
 };
 use porter_capability::{AgentCap, AgentProgram, AgentProtocol, EnvName};
 use porter_capability::{CuaBatching, CuaCap, CuaEnv, LlmWire};
@@ -19,7 +18,7 @@ fn agent(program: &str, base_url_env: Option<&str>, protocols: &[AgentProtocol])
     })))
 }
 
-fn agent_need(program: &str, protocols: &[AgentProtocol], base_url: Offered) -> Need {
+fn agent_need(program: &str, protocols: &[AgentProtocol], base_url: bool) -> Need {
     Need::Agent(AgentNeed {
         program: AgentProgram::parse(program).expect("program"),
         protocols: protocols.iter().copied().collect(),
@@ -32,7 +31,7 @@ fn storage_need(access: Access, delta: Delta, scope: StorageScope) -> Need {
         access,
         delta,
         scope,
-        quota: QuotaReport::Unreported,
+        quota: false,
     })
 }
 
@@ -44,7 +43,7 @@ fn computer_use(environments: &[CuaEnv]) -> Offer {
     present(Capability::ComputerUse(CuaCap {
         environments: environments.iter().copied().collect(),
         batching: CuaBatching::Many,
-        zoom: Offered::Absent,
+        zoom: false,
         max_image: Px(1568),
         wire: LlmWire::ChatCompletions,
     }))
@@ -59,9 +58,9 @@ fn cua_need(environments: &[CuaEnv]) -> Need {
 fn google_photos() -> Offer {
     present(Capability::Photos(PhotosCap {
         library_read: LibraryRead::PickerOnly,
-        upload: Offered::Present,
+        upload: true,
         albums: Albums::AppCreated,
-        video: Offered::Present,
+        video: true,
         delta: Delta::None,
     }))
 }
@@ -128,26 +127,26 @@ fn cases() -> Vec<(&'static str, Need, Offer, Match)> {
         (
             "mail offer does not answer a storage need",
             storage_need(Read, Delta::None, AppFolder),
-            present(mail(Offered::Present)),
+            present(mail(true)),
             Match::OtherKind,
         ),
         (
             "mail without send falls short on send",
             Need::Mail(MailNeed {
                 access: Read,
-                send: Offered::Present,
+                send: true,
                 delta: Delta::None,
             }),
-            present(mail(Offered::Absent)),
+            present(mail(false)),
             Match::Short(Shortfall::Send),
         ),
         (
             "google photos cannot mirror a library",
             Need::Photos(PhotosNeed {
                 library_read: LibraryRead::Full,
-                upload: Offered::Absent,
+                upload: false,
                 albums: Albums::None,
-                video: Offered::Absent,
+                video: false,
                 delta: Delta::None,
             }),
             google_photos(),
@@ -157,9 +156,9 @@ fn cases() -> Vec<(&'static str, Need, Offer, Match)> {
             "google photos is an upload target",
             Need::Photos(PhotosNeed {
                 library_read: LibraryRead::None,
-                upload: Offered::Present,
+                upload: true,
                 albums: Albums::AppCreated,
-                video: Offered::Absent,
+                video: false,
                 delta: Delta::None,
             }),
             google_photos(),
@@ -206,39 +205,31 @@ fn cases() -> Vec<(&'static str, Need, Offer, Match)> {
         ),
         (
             "the agent asked for fits the agent offered",
-            agent_need("claude-code", &[], Offered::Absent),
+            agent_need("claude-code", &[], false),
             agent("claude-code", None, &[AgentProtocol::AnthropicMessages]),
             Match::Fits,
         ),
         (
             "another agent program is not the one asked for",
-            agent_need("codex", &[], Offered::Absent),
+            agent_need("codex", &[], false),
             agent("claude-code", Some("ANTHROPIC_BASE_URL"), &[]),
             Match::Short(Shortfall::Program),
         ),
         (
             "an agent that speaks only Messages falls short of an OpenAI-compatible need",
-            agent_need(
-                "claude-code",
-                &[AgentProtocol::OpenAiCompatible],
-                Offered::Absent,
-            ),
+            agent_need("claude-code", &[AgentProtocol::OpenAiCompatible], false),
             agent("claude-code", None, &[AgentProtocol::AnthropicMessages]),
             Match::Short(Shortfall::Protocols),
         ),
         (
             "an agent with no base-url variable falls short of a routed need",
-            agent_need("gemini-cli", &[], Offered::Present),
+            agent_need("gemini-cli", &[], true),
             agent("gemini-cli", None, &[AgentProtocol::OpenAiCompatible]),
             Match::Short(Shortfall::BaseUrl),
         ),
         (
             "an agent with a base-url variable fits a routed need",
-            agent_need(
-                "codex",
-                &[AgentProtocol::OpenAiCompatible],
-                Offered::Present,
-            ),
+            agent_need("codex", &[AgentProtocol::OpenAiCompatible], true),
             agent(
                 "codex",
                 Some("OPENAI_BASE_URL"),
@@ -248,7 +239,7 @@ fn cases() -> Vec<(&'static str, Need, Offer, Match)> {
         ),
         (
             "an llm offer is another kind for an agent need",
-            agent_need("codex", &[], Offered::Absent),
+            agent_need("codex", &[], false),
             present(llm(&[LlmFeature::Chat], 8_000)),
             Match::OtherKind,
         ),

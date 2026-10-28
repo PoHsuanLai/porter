@@ -2,7 +2,7 @@
 
 use crate::found::{DiscoverFault, Found, Source};
 use crate::mail::mail_claim;
-use porter_capability::{Access, Capability, CapabilityKind, Delta, MailTransport, Offered};
+use porter_capability::{Access, Capability, CapabilityKind, Delta, MailTransport};
 use porter_capability::{Claim, Offer, Provenance, Subject};
 use porter_capability::{PimCap, PimTransport};
 use porter_core::{EndpointUrl, Family, LoginName, ServiceEndpoint, Tls};
@@ -124,7 +124,7 @@ fn well_known_claim(kind: CapabilityKind) -> Claim {
         access: Access::ReadWrite,
         delta: Delta::Poll,
         transport,
-        collections: Offered::Present,
+        collections: true,
     };
     let offer = match kind {
         CapabilityKind::Calendar => Offer::Present(Capability::Calendar(pim(PimTransport::CalDav))),
@@ -132,7 +132,7 @@ fn well_known_claim(kind: CapabilityKind) -> Claim {
         CapabilityKind::Contacts => {
             Offer::Present(Capability::Contacts(pim(PimTransport::CardDav)))
         }
-        _ => return mail_claim(MailTransport::Jmap, Offered::Absent),
+        _ => return mail_claim(MailTransport::Jmap, false),
     };
     Claim {
         subject: Subject::Account,
@@ -173,10 +173,7 @@ pub fn parse_jmap_session(json: &str) -> Result<Found, DiscoverFault> {
     };
     endpoint.check().map_err(|_| DiscoverFault::NoServers)?;
     let has = |name: &str| session.capabilities.contains_key(name);
-    let send = match has(SUBMISSION) {
-        true => Offered::Present,
-        false => Offered::Absent,
-    };
+    let send = has(SUBMISSION);
     let claims = [
         has(MAIL).then(|| mail_claim(MailTransport::Jmap, send)),
         has(CONTACTS).then(|| jmap_pim(Capability::Contacts)),
@@ -201,7 +198,7 @@ fn jmap_pim(wrap: fn(PimCap) -> Capability) -> Claim {
             access: Access::ReadWrite,
             delta: Delta::Poll,
             transport: PimTransport::Jmap,
-            collections: Offered::Present,
+            collections: true,
         })),
         provenance: Provenance::Discovered,
     }

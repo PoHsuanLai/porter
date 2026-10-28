@@ -1,7 +1,7 @@
 //! The sync contract (design/31 §6.1), driven through the reference replica: anchors, base
 //! versions, conflicts as values, tombstones, and cursor reset.
 
-use porter_capability::{Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope};
+use porter_capability::{Access, Delta, HashKind, StorageCap, StorageScope};
 use porter_ids::{Bytes, UnixSeconds};
 use porter_sync::{
     BaseVersion, Blob, ByteRange, Change, ChangePage, Conflict, Cursor, ItemPath, MemoryReplica,
@@ -13,11 +13,11 @@ fn replica(page: usize) -> MemoryReplica {
     let features = StorageCap {
         access: Access::ReadWrite,
         delta: Delta::Poll,
-        quota: QuotaReport::Unreported,
+        quota: false,
         scope: StorageScope::AppFolder,
         hashes: HashKind::Sha256,
-        ranges: Offered::Present,
-        chunked_upload: Offered::Absent,
+        ranges: true,
+        chunked_upload: false,
     };
     MemoryReplica::new(features, page, UnixSeconds(1_000))
 }

@@ -284,7 +284,7 @@ async fn a_token_is_asked_for_as_far_as_the_storage_grant_reaches() {
 
 #[tokio::test]
 async fn a_grant_reaches_as_far_as_the_need_it_was_chosen_for() {
-    use porter_capability::{Access, Delta, QuotaReport};
+    use porter_capability::{Access, Delta};
     use porter_fake::Scripted;
     use porter_match::StorageNeed;
     use porter_wire::ParentWindow;
@@ -311,7 +311,7 @@ async fn a_grant_reaches_as_far_as_the_need_it_was_chosen_for() {
             Access::ReadWrite,
             Delta::Poll,
             reach,
-            QuotaReport::Unreported,
+            false,
         ));
         let reply = service
             .handle(

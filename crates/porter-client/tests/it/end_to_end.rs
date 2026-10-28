@@ -2,7 +2,7 @@
 //! capability, is asked for consent, and gets a token; a refusal sticks; a once-grant is spent.
 #![cfg(feature = "in-process")]
 
-use porter_capability::{Access, Delta, QuotaReport, StorageScope};
+use porter_capability::{Access, Delta, StorageScope};
 use porter_client::{Accounts, ClientError, ConsentOffer, Found, InProcess, NoAccount};
 use porter_core::AccountId;
 use porter_core::consent::{GrantScope, Usage};
@@ -28,7 +28,7 @@ fn storage(delta: Delta) -> Need {
         Access::ReadWrite,
         delta,
         StorageScope::AppFolder,
-        QuotaReport::Unreported,
+        false,
     ))
 }
 
@@ -404,7 +404,6 @@ impl porter_http::Http for NothingPublished {
 /// endpoints and a login name that is not the address.
 #[tokio::test]
 async fn a_typed_pop3_server_is_added_through_the_sheet_and_found_by_a_mail_need() {
-    use porter_capability::Offered;
     use porter_capability::Toggle;
     use porter_core::ProviderId;
     use porter_core::{Family, SecretText};
@@ -482,7 +481,7 @@ async fn a_typed_pop3_server_is_added_through_the_sheet_and_found_by_a_mail_need
         .await
         .expect("added");
 
-    let need = Need::Mail(MailNeed::new(Access::Read, Offered::Present, Delta::Poll));
+    let need = Need::Mail(MailNeed::new(Access::Read, true, Delta::Poll));
     let offer = needs_consent(
         mail.find(&need, DataClass::Mail, Usage::Interactive)
             .await

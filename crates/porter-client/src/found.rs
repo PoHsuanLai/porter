@@ -61,7 +61,7 @@ pub fn found(candidates: Vec<Candidate>, availability: Availability, offer: Cons
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_capability::{Access, Delta, QuotaReport, StorageScope};
+    use porter_capability::{Access, Delta, StorageScope};
     use porter_capability::{Capability, Subject};
     use porter_core::{AccountLabel, Restriction};
     use porter_core::{GrantId, ProviderId};
@@ -72,7 +72,7 @@ mod tests {
             Access::Read,
             Delta::None,
             StorageScope::AppFolder,
-            QuotaReport::Unreported,
+            false,
         ));
         ConsentOffer {
             need,

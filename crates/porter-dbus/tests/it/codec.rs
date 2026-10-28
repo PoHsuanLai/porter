@@ -5,8 +5,8 @@ use porter_capability::ModelId;
 use porter_capability::Subject;
 use porter_capability::{
     Access, AgentCap, AgentProgram, AgentProtocol, Albums, Capability, CapabilityKind, CuaEnv,
-    Delta, HashKind, LibraryRead, LlmCap, LlmFeature, LlmWire, Modality, Offered, QuotaReport,
-    SpeechMode, StorageCap, StorageScope,
+    Delta, HashKind, LibraryRead, LlmCap, LlmFeature, LlmWire, Modality, SpeechMode, StorageCap,
+    StorageScope,
 };
 use porter_core::{AccountId, GrantId};
 use porter_core::{
@@ -28,11 +28,11 @@ fn every_need() -> Vec<(&'static str, Need)> {
     vec![
         (
             "identity",
-            Need::Identity(IdentityNeed::new(Offered::Present, Offered::Absent)),
+            Need::Identity(IdentityNeed::new().with_profile()),
         ),
         (
             "mail",
-            Need::Mail(MailNeed::new(Access::Read, Offered::Present, Delta::Push)),
+            Need::Mail(MailNeed::new(Access::Read, true, Delta::Push)),
         ),
         ("calendar", Need::Calendar(pim.clone())),
         ("contacts", Need::Contacts(pim.clone())),
@@ -47,16 +47,16 @@ fn every_need() -> Vec<(&'static str, Need)> {
                 Access::ReadWrite,
                 Delta::Poll,
                 StorageScope::AppFolder,
-                QuotaReport::Unreported,
+                false,
             )),
         ),
         (
             "photos",
             Need::Photos(PhotosNeed::new(
                 LibraryRead::None,
-                Offered::Present,
+                true,
                 Albums::None,
-                Offered::Absent,
+                false,
                 Delta::None,
             )),
         ),
@@ -104,7 +104,7 @@ fn every_need() -> Vec<(&'static str, Need)> {
             Need::Agent(AgentNeed::new(
                 AgentProgram::parse("claude-code").expect("program"),
                 [AgentProtocol::AnthropicMessages].into(),
-                Offered::Present,
+                true,
             )),
         ),
     ]
@@ -162,11 +162,11 @@ fn candidates() -> Vec<Candidate> {
     let storage = Capability::Storage(StorageCap {
         access: Access::ReadWrite,
         delta: Delta::Poll,
-        quota: QuotaReport::Reported,
+        quota: true,
         scope: StorageScope::AppFolder,
         hashes: HashKind::QuickXor,
-        ranges: Offered::Present,
-        chunked_upload: Offered::Present,
+        ranges: true,
+        chunked_upload: true,
     });
     let llm = Capability::Llm(LlmCap {
         features: [LlmFeature::Chat, LlmFeature::Tools].into(),

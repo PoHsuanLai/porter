@@ -44,14 +44,10 @@ fn chunked_upload_follows_the_dav_chunking_advertisement() {
         };
         storage.chunked_upload
     };
-    assert_eq!(
-        chunked(include_str!("../../fixtures/ocs-capabilities.json")),
-        Offered::Present
-    );
-    assert_eq!(
-        chunked(include_str!("../../fixtures/ocs-minimal.json")),
-        Offered::Absent
-    );
+    assert!(chunked(include_str!(
+        "../../fixtures/ocs-capabilities.json"
+    )));
+    assert!(!chunked(include_str!("../../fixtures/ocs-minimal.json")));
 }
 
 #[test]

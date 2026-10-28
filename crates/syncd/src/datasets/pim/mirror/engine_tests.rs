@@ -7,7 +7,7 @@ use crate::clock::ManualClock;
 use crate::datasets::pim::items_in;
 use crate::engine::Engine;
 use crate::testing::scratch;
-use porter_capability::{Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope};
+use porter_capability::{Access, Delta, HashKind, StorageCap, StorageScope};
 use porter_ids::UnixSeconds;
 use porter_sync::RemoteId;
 use porter_sync::{
@@ -69,11 +69,11 @@ impl Server {
         let features = StorageCap {
             access: Access::ReadWrite,
             delta: Delta::Poll,
-            quota: QuotaReport::Unreported,
+            quota: false,
             scope: StorageScope::AppFolder,
             hashes: HashKind::None,
-            ranges: Offered::Present,
-            chunked_upload: Offered::Absent,
+            ranges: true,
+            chunked_upload: false,
         };
         Self(Arc::new(Counted {
             inner: MemoryReplica::new(features, 10, UnixSeconds(1_000)),

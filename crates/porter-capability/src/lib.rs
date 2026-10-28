@@ -37,7 +37,7 @@ pub use photos::{Albums, LibraryRead, PhotosCap};
 pub use pim::{NotesCap, NotesTransport, PimCap, PimTransport};
 pub use storage::{HashKind, StorageCap, StorageScope};
 pub use sync_kinds::{KeyValueCap, PushCap, PushChannel};
-pub use terms::{Access, Ask, Delta, Offered, QuotaReport};
+pub use terms::{Access, Ask, Delta, present, reported};
 
 use serde::{Deserialize, Serialize};
 

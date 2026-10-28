@@ -3,8 +3,8 @@
 use crate::found::{DiscoverFault, Found, Source};
 use porter_capability::{AbsentReason, Claim, Offer, Provenance, Subject};
 use porter_capability::{
-    Access, Capability, CapabilityKind, Delta, HashKind, NotesCap, NotesTransport, Offered, PimCap,
-    PimTransport, QuotaReport, StorageCap, StorageScope,
+    Access, Capability, CapabilityKind, Delta, HashKind, NotesCap, NotesTransport, PimCap,
+    PimTransport, StorageCap, StorageScope,
 };
 use serde_json::{Map, Value};
 
@@ -35,21 +35,18 @@ pub fn parse_ocs_capabilities(json: &str) -> Result<Found, DiscoverFault> {
         access: Access::ReadWrite,
         delta: Delta::Poll,
         transport,
-        collections: Offered::Present,
+        collections: true,
     };
     let dav_or = |key: &str| has("dav") || has(key);
-    let chunked = match chunking(caps) {
-        true => Offered::Present,
-        false => Offered::Absent,
-    };
+    let chunked = chunking(caps);
     let claims = vec![
         present(Capability::Storage(StorageCap {
             access: Access::ReadWrite,
             delta: Delta::Poll,
-            quota: QuotaReport::Reported,
+            quota: true,
             scope: StorageScope::Full,
             hashes: HashKind::Sha1,
-            ranges: Offered::Present,
+            ranges: true,
             chunked_upload: chunked,
         })),
         app(

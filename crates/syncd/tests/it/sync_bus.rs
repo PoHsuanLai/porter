@@ -6,7 +6,7 @@ use crate::common;
 
 use common::bus::PrivateBus;
 use common::{ACCESS_DENIED, INVALID_ARGS, Known, NO_FITTING, client, error_name, eventually};
-use porter_capability::{Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope};
+use porter_capability::{Access, Delta, HashKind, StorageCap, StorageScope};
 use porter_dbus::SyncProxy;
 use porter_dbus::callers::CallerRole;
 use porter_dbus::names::{STATUS_KEY_QUOTA, SYNC_BUS, SYNC_ERROR_PAUSED, SYNC_PATH};
@@ -329,11 +329,11 @@ fn storage() -> StorageCap {
     StorageCap {
         access: Access::ReadWrite,
         delta: Delta::Poll,
-        quota: QuotaReport::Reported,
+        quota: true,
         scope: StorageScope::AppFolder,
         hashes: HashKind::Sha256,
-        ranges: Offered::Present,
-        chunked_upload: Offered::Absent,
+        ranges: true,
+        chunked_upload: false,
     }
 }
 

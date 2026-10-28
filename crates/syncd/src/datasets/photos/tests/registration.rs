@@ -6,9 +6,7 @@ use crate::removal::wipe;
 use crate::scheduler::{Network, Settings};
 use crate::service::{Access, DatasetName, Hub};
 use crate::testing::scratch;
-use porter_capability::{
-    Access as Rights, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope,
-};
+use porter_capability::{Access as Rights, Delta, HashKind, StorageCap, StorageScope};
 use porter_core::{AppId, AppName, Isolation};
 use porter_dbus::callers::{Caller, CallerRole};
 use porter_ids::UnixSeconds;
@@ -22,11 +20,11 @@ fn replica() -> MemoryReplica {
         StorageCap {
             access: Rights::ReadWrite,
             delta: Delta::Poll,
-            quota: QuotaReport::Unreported,
+            quota: false,
             scope: StorageScope::AppFolder,
             hashes: HashKind::Sha256,
-            ranges: Offered::Present,
-            chunked_upload: Offered::Absent,
+            ranges: true,
+            chunked_upload: false,
         },
         100,
         UnixSeconds(1_000),

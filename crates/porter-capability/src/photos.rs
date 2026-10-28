@@ -1,6 +1,6 @@
 //! Photos (design/31 §2.2; R1).
 
-use super::terms::{Delta, Offered};
+use super::terms::Delta;
 use serde::{Deserialize, Serialize};
 
 /// A provider with photo semantics. A Storage folder is a Photos library through the Photos
@@ -10,11 +10,13 @@ pub struct PhotosCap {
     /// How much of the user's existing library can be read.
     pub library_read: LibraryRead,
     /// New items can be uploaded.
-    pub upload: Offered,
+    #[serde(with = "crate::terms::present")]
+    pub upload: bool,
     /// Which albums can be read and written.
     pub albums: Albums,
     /// Videos as well as stills.
-    pub video: Offered,
+    #[serde(with = "crate::terms::present")]
+    pub video: bool,
     /// How changes become known.
     pub delta: Delta,
 }

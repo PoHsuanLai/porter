@@ -7,7 +7,7 @@
 
 use super::scopes::is_personal;
 use porter_capability::{AbsentReason, Claim, Offer, Provenance, Subject};
-use porter_capability::{Capability, CapabilityKind, QuotaReport};
+use porter_capability::{Capability, CapabilityKind};
 use porter_core::EndpointUrl;
 use porter_http::http::header::{ACCEPT, AUTHORIZATION};
 use porter_http::http::{Method, Response};
@@ -159,10 +159,7 @@ fn with_quota(declared: &Capability, answer: &Response<Vec<u8>>) -> Capability {
                 .and_then(|q| q.total)
                 .is_some();
             Capability::Storage(porter_capability::StorageCap {
-                quota: match reported {
-                    true => QuotaReport::Reported,
-                    false => QuotaReport::Unreported,
-                },
+                quota: reported,
                 ..storage.clone()
             })
         }

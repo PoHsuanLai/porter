@@ -1,9 +1,7 @@
 use super::*;
 use porter_capability::Billing;
 use porter_capability::ModelId;
-use porter_capability::{
-    Capability, CuaBatching, CuaCap, CuaEnv, LlmCap, LlmFeature, LlmWire, Offered,
-};
+use porter_capability::{Capability, CuaBatching, CuaCap, CuaEnv, LlmCap, LlmFeature, LlmWire};
 use porter_core::AccountId;
 use porter_ids::{Px, Tokens};
 use porter_infer::{AutoMode, AutoRow, Declined, DeclinedBecause, LocalOnly, TierRow};
@@ -57,17 +55,14 @@ fn cua_cap() -> Capability {
     Capability::ComputerUse(CuaCap {
         environments: [CuaEnv::Desktop].into(),
         batching: CuaBatching::One,
-        zoom: Offered::Absent,
+        zoom: false,
         max_image: Px(1024),
         wire: LlmWire::ChatCompletions,
     })
 }
 
 fn identity() -> Need {
-    Need::Identity(porter_match::IdentityNeed::new(
-        Offered::Absent,
-        Offered::Absent,
-    ))
+    Need::Identity(porter_match::IdentityNeed::new())
 }
 
 fn off() -> Policy {

@@ -410,9 +410,9 @@ async fn photos_after_unticking(unticked: &[&str]) -> (porter_capability::Photos
 
 #[tokio::test]
 async fn a_person_who_grants_only_the_picker_gets_no_upload_to_offer() {
-    use porter_capability::{Albums, LibraryRead, Offered};
+    use porter_capability::{Albums, LibraryRead};
     let (photos, families) = photos_after_unticking(&[UPLOAD_SCOPE]).await;
-    assert_eq!(photos.upload, Offered::Absent);
+    assert!(!photos.upload);
     assert_eq!(photos.albums, Albums::None);
     assert_eq!(photos.library_read, LibraryRead::PickerOnly);
     assert_eq!(families, [Family::GooglePhotosPicker]);
@@ -420,9 +420,9 @@ async fn a_person_who_grants_only_the_picker_gets_no_upload_to_offer() {
 
 #[tokio::test]
 async fn a_person_who_grants_only_the_upload_gets_no_picker_to_offer() {
-    use porter_capability::{Albums, LibraryRead, Offered};
+    use porter_capability::{Albums, LibraryRead};
     let (photos, families) = photos_after_unticking(&[PICKER_SCOPE]).await;
-    assert_eq!(photos.upload, Offered::Present);
+    assert!(photos.upload);
     assert_eq!(photos.albums, Albums::AppCreated);
     assert_eq!(photos.library_read, LibraryRead::None);
     assert_eq!(families, [Family::GooglePhotosUpload]);
@@ -430,9 +430,8 @@ async fn a_person_who_grants_only_the_upload_gets_no_picker_to_offer() {
 
 #[tokio::test]
 async fn both_photos_scopes_offer_both_and_neither_turns_photos_off() {
-    use porter_capability::Offered;
     let (photos, families) = photos_after_unticking(&[]).await;
-    assert_eq!(photos.upload, Offered::Present);
+    assert!(photos.upload);
     assert_eq!(
         families,
         [Family::GooglePhotosUpload, Family::GooglePhotosPicker]

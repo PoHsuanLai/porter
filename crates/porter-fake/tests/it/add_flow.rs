@@ -3,7 +3,7 @@
 
 use porter_capability::CapabilityKind;
 use porter_capability::StorageScope;
-use porter_capability::{Access, Capability, Delta, LabelModel, MailCap, MailTransport, Offered};
+use porter_capability::{Access, Capability, Delta, LabelModel, MailCap, MailTransport};
 use porter_capability::{Claim, Offer, Provenance, Subject, Toggle};
 use porter_core::ProviderHint;
 use porter_core::{
@@ -430,7 +430,7 @@ fn imap_claim() -> Claim {
         subject: Subject::Account,
         offer: Offer::Present(Capability::Mail(MailCap {
             access: Access::ReadWrite,
-            send: Offered::Present,
+            send: true,
             delta: Delta::Poll,
             transport: MailTransport::Imap,
             labels: LabelModel::Folders,
@@ -1767,12 +1767,12 @@ async fn only_an_access_the_provider_asks_on_use_can_be_asked_for_later() {
 }
 
 fn whole_store() -> porter_match::Need {
-    use porter_capability::{QuotaReport, StorageScope};
+    use porter_capability::StorageScope;
     porter_match::Need::Storage(porter_match::StorageNeed::new(
         Access::ReadWrite,
         Delta::Poll,
         StorageScope::Full,
-        QuotaReport::Unreported,
+        false,
     ))
 }
 

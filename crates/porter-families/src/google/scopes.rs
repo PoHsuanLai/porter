@@ -5,7 +5,7 @@
 //! unverified (FINDINGS), and docs/google.md, which tells the owner what to put on the consent
 //! screen, is checked against this table by a test.
 
-use porter_capability::{Albums, Ask, Capability, CapabilityKind, LibraryRead, Offered};
+use porter_capability::{Albums, Ask, Capability, CapabilityKind, LibraryRead};
 use porter_core::{Family, GrantedScopes};
 
 /// Gmail over IMAP and SMTP (XOAUTH2). Restricted.
@@ -183,7 +183,7 @@ impl Granted {
             Capability::Photos(photos) => {
                 let mut photos = photos.clone();
                 if !self.allows(Family::GooglePhotosUpload) {
-                    photos.upload = Offered::Absent;
+                    photos.upload = false;
                     photos.albums = Albums::None;
                 }
                 if !self.allows(Family::GooglePhotosPicker) {

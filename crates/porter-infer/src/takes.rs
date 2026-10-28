@@ -128,7 +128,7 @@ pub const NO_MODEL_SEES_SCREEN: &str =
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_capability::{CuaBatching, CuaCap, CuaEnv, LlmCap, LlmWire, Offered};
+    use porter_capability::{CuaBatching, CuaCap, CuaEnv, LlmCap, LlmWire};
     use porter_ids::{Px, Tokens};
 
     fn llm(features: &[LlmFeature]) -> Capability {
@@ -144,7 +144,7 @@ mod tests {
         Capability::ComputerUse(CuaCap {
             environments: [CuaEnv::Desktop].into(),
             batching: CuaBatching::One,
-            zoom: Offered::Absent,
+            zoom: false,
             max_image: Px(1024),
             wire: LlmWire::ChatCompletions,
         })

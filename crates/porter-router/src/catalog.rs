@@ -17,7 +17,7 @@ use model_provider::{
 use porter_capability::ModelId;
 use porter_capability::{
     Capability, CuaBatching, CuaCap, CuaEnv, EmbedCap, EmbedPrompts, LanguageSet, LanguageTag,
-    LlmCap, LlmFeature, LlmWire, Modality, Offered, PrefixText, SpeechCap, SpeechMode,
+    LlmCap, LlmFeature, LlmWire, Modality, PrefixText, SpeechCap, SpeechMode,
 };
 use porter_capability::{Claim, Offer, Provenance, Subject};
 use porter_ids::{Count, Dims, Px, Tokens};
@@ -195,8 +195,8 @@ fn cua_cap(caps: &Caps) -> Option<CuaCap> {
             model_provider::Batching::Many => CuaBatching::Many,
         },
         zoom: match zoom {
-            Zoom::Absent => Offered::Absent,
-            Zoom::Native => Offered::Present,
+            Zoom::Absent => false,
+            Zoom::Native => true,
         },
         max_image: Px(longest_side(&caps.images.rule)),
         wire: LlmWire::ChatCompletions,

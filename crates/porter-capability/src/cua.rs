@@ -3,7 +3,6 @@
 //! companion may ask for.
 
 use super::ai::LlmWire;
-use super::terms::Offered;
 use porter_ids::Px;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -16,7 +15,8 @@ pub struct CuaCap {
     /// Whether it proposes one action per step or several.
     pub batching: CuaBatching,
     /// Whether it can ask to zoom into a region.
-    pub zoom: Offered,
+    #[serde(with = "crate::terms::present")]
+    pub zoom: bool,
     /// The longest side of a screenshot it takes.
     pub max_image: Px,
     /// The wire format inferd's adapter speaks to it.

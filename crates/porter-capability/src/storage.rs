@@ -1,6 +1,6 @@
 //! Storage (design/31 §2.2; R2).
 
-use super::terms::{Access, Delta, Offered, QuotaReport};
+use super::terms::{Access, Delta};
 use serde::{Deserialize, Serialize};
 
 /// A file store.
@@ -11,15 +11,18 @@ pub struct StorageCap {
     /// How changes become known.
     pub delta: Delta,
     /// Whether used and total space are reported.
-    pub quota: QuotaReport,
+    #[serde(with = "crate::terms::reported")]
+    pub quota: bool,
     /// How much of the store the account can see.
     pub scope: StorageScope,
     /// The content hash the store reports, if any.
     pub hashes: HashKind,
     /// Partial downloads (HTTP ranges).
-    pub ranges: Offered,
+    #[serde(with = "crate::terms::present")]
+    pub ranges: bool,
     /// Resumable uploads in chunks.
-    pub chunked_upload: Offered,
+    #[serde(with = "crate::terms::present")]
+    pub chunked_upload: bool,
 }
 
 /// How much of a store the account reaches. Ordered: a need for `AppFolder` is met by `Full`.

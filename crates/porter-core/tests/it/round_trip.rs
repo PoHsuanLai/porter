@@ -6,9 +6,9 @@ use porter_capability::{
     Access, AgentCap, AgentProgram, AgentProtocol, Albums, Capability, CapabilityKind, CuaBatching,
     CuaCap, CuaEnv, Delta, EmbedCap, EmbedPrompts, EnvName, HashKind, IdentityCap, ImageGenCap,
     ImageMode, KeyValueCap, LabelModel, LanguageSet, LanguageTag, LibraryRead, LlmCap, LlmFeature,
-    LlmWire, MailCap, MailTransport, Modality, NotesCap, NotesTransport, Offered, PhotosCap,
-    PimCap, PimTransport, PrefixText, PushCap, PushChannel, QuotaReport, RerankCap, SpeechCap,
-    SpeechMode, StorageCap, StorageScope, VocabVersion,
+    LlmWire, MailCap, MailTransport, Modality, NotesCap, NotesTransport, PhotosCap, PimCap,
+    PimTransport, PrefixText, PushCap, PushChannel, RerankCap, SpeechCap, SpeechMode, StorageCap,
+    StorageScope, VocabVersion,
 };
 use porter_core::store::{AccountToggle, Persisted};
 use porter_core::*;
@@ -53,17 +53,17 @@ fn every_capability() -> Vec<Capability> {
         access: Access::ReadWrite,
         delta: Delta::Poll,
         transport: PimTransport::CalDav,
-        collections: Offered::Present,
+        collections: true,
     };
     vec![
         Capability::Identity(IdentityCap {
-            profile: Offered::Present,
-            verified_address: Offered::Present,
-            sign_in: Offered::Absent,
+            profile: true,
+            verified_address: true,
+            sign_in: false,
         }),
         Capability::Mail(MailCap {
             access: Access::ReadWrite,
-            send: Offered::Present,
+            send: true,
             delta: Delta::Push,
             transport: MailTransport::Jmap,
             labels: LabelModel::Labels,
@@ -85,17 +85,17 @@ fn every_capability() -> Vec<Capability> {
         Capability::Storage(StorageCap {
             access: Access::ReadWrite,
             delta: Delta::Poll,
-            quota: QuotaReport::Reported,
+            quota: true,
             scope: StorageScope::AppFolder,
             hashes: HashKind::QuickXor,
-            ranges: Offered::Present,
-            chunked_upload: Offered::Present,
+            ranges: true,
+            chunked_upload: true,
         }),
         Capability::Photos(PhotosCap {
             library_read: LibraryRead::PickerOnly,
-            upload: Offered::Present,
+            upload: true,
             albums: Albums::AppCreated,
-            video: Offered::Present,
+            video: true,
             delta: Delta::None,
         }),
         Capability::Llm(LlmCap {
@@ -128,7 +128,7 @@ fn every_capability() -> Vec<Capability> {
         Capability::ComputerUse(CuaCap {
             environments: [CuaEnv::Desktop, CuaEnv::Browser].into(),
             batching: CuaBatching::Many,
-            zoom: Offered::Present,
+            zoom: true,
             max_image: Px(1568),
             wire: LlmWire::ChatCompletions,
         }),
@@ -161,8 +161,8 @@ fn claude_code() -> AgentCap {
 fn every_need() -> Vec<Need> {
     let pim = PimNeed::new(Access::Read, Delta::Poll);
     vec![
-        Need::Identity(IdentityNeed::new(Offered::Present, Offered::Absent)),
-        Need::Mail(MailNeed::new(Access::Read, Offered::Present, Delta::Push)),
+        Need::Identity(IdentityNeed::new().with_profile()),
+        Need::Mail(MailNeed::new(Access::Read, true, Delta::Push)),
         Need::Calendar(pim.clone()),
         Need::Contacts(pim.clone()),
         Need::Tasks(pim),
@@ -171,13 +171,13 @@ fn every_need() -> Vec<Need> {
             Access::ReadWrite,
             Delta::Poll,
             StorageScope::AppFolder,
-            QuotaReport::Unreported,
+            false,
         )),
         Need::Photos(PhotosNeed::new(
             LibraryRead::None,
-            Offered::Present,
+            true,
             Albums::None,
-            Offered::Absent,
+            false,
             Delta::None,
         )),
         Need::Llm(LlmNeed::new([LlmFeature::Vision].into(), Tokens(32_000))),
@@ -194,7 +194,7 @@ fn every_need() -> Vec<Need> {
         Need::Agent(AgentNeed::new(
             AgentProgram::parse("claude-code").expect("program"),
             [AgentProtocol::AnthropicMessages].into(),
-            Offered::Present,
+            true,
         )),
     ]
 }
@@ -524,7 +524,7 @@ fn a_grant_keeps_its_reach_and_one_stored_without_a_reach_reaches_the_app_folder
             Access::ReadWrite,
             Delta::Poll,
             StorageScope::Full,
-            QuotaReport::Unreported,
+            false,
         ))
         .reach(),
         StorageScope::Full

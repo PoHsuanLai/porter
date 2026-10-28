@@ -6,7 +6,7 @@ use crate::dataset::MemoryDataset;
 use crate::engine::{Engine, Report};
 use crate::journal::Journal;
 use crate::testing::scratch;
-use porter_capability::{Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope};
+use porter_capability::{Access, Delta, HashKind, StorageCap, StorageScope};
 use porter_ids::{Bytes, UnixSeconds};
 use porter_sync::{
     BaseVersion, Blob, ByteRange, Change, ChangePage, ConflictRule, Cursor, ItemPath,
@@ -17,15 +17,15 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
-pub fn caps(hashes: HashKind, quota: QuotaReport, delta: Delta) -> StorageCap {
+pub fn caps(hashes: HashKind, quota: bool, delta: Delta) -> StorageCap {
     StorageCap {
         access: Access::ReadWrite,
         delta,
         quota,
         scope: StorageScope::AppFolder,
         hashes,
-        ranges: Offered::Present,
-        chunked_upload: Offered::Absent,
+        ranges: true,
+        chunked_upload: false,
     }
 }
 
@@ -250,11 +250,11 @@ impl World {
 }
 
 pub fn sha() -> StorageCap {
-    caps(HashKind::Sha256, QuotaReport::Reported, Delta::Poll)
+    caps(HashKind::Sha256, true, Delta::Poll)
 }
 
 pub fn hashless() -> StorageCap {
-    caps(HashKind::None, QuotaReport::Unreported, Delta::Poll)
+    caps(HashKind::None, false, Delta::Poll)
 }
 
 /// Syncs until a cycle does nothing, at most `limit` cycles; the last report.

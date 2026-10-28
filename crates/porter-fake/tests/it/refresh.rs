@@ -5,7 +5,7 @@
 //! caller holds the account's turn, so the second is queued behind it at any load.
 
 use porter_capability::Claim;
-use porter_capability::{Access, Delta, Offered};
+use porter_capability::{Access, Delta};
 use porter_core::AccountId;
 use porter_core::consent::{GrantScope, Usage};
 use porter_core::{
@@ -186,7 +186,7 @@ async fn service() -> (Svc, Seen, Candidate) {
         .handle(
             &app(),
             AccountsRequest::Choose {
-                need: Need::Mail(MailNeed::new(Access::Read, Offered::Present, Delta::Poll)),
+                need: Need::Mail(MailNeed::new(Access::Read, true, Delta::Poll)),
                 class: DataClass::Mail,
                 usage: Usage::Interactive,
                 window: ParentWindow::Unparented,

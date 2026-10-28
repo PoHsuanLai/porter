@@ -6,7 +6,7 @@
 use crate::common;
 
 use common::{Flavor, Replica, Server};
-use porter_capability::{Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope};
+use porter_capability::{Access, Delta, HashKind, StorageCap, StorageScope};
 use porter_ids::{Bytes, UnixSeconds};
 use porter_sync::{
     BaseVersion, Blob, ByteRange, Change, Conflict, Cursor, ItemPath, MemoryReplica, More, PutItem,
@@ -32,11 +32,11 @@ impl Harness for Memory {
         let features = StorageCap {
             access: Access::ReadWrite,
             delta: Delta::Poll,
-            quota: QuotaReport::Unreported,
+            quota: false,
             scope: StorageScope::AppFolder,
             hashes: HashKind::Sha256,
-            ranges: Offered::Present,
-            chunked_upload: Offered::Absent,
+            ranges: true,
+            chunked_upload: false,
         };
         let replica = MemoryReplica::new(features, page, UnixSeconds(1_000));
         Self(match limit {

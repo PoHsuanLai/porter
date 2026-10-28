@@ -3,7 +3,7 @@
 //! the families that serve its kind in the provider file. A mail grant also covers `smtp` when
 //! the account sends, because SMTP submission has no row of its own.
 
-use porter_capability::{Capability, CapabilityKind, Offered};
+use porter_capability::{Capability, CapabilityKind};
 use porter_core::{Audience, Family};
 use porter_provider::ProviderSpec;
 
@@ -13,8 +13,7 @@ pub(crate) fn covers(spec: &ProviderSpec, kind: CapabilityKind, audience: &Audie
         .iter()
         .filter(|row| row.capability.kind() == kind)
         .any(|row| {
-            let sends =
-                matches!(&row.capability, Capability::Mail(mail) if mail.send == Offered::Present);
+            let sends = matches!(&row.capability, Capability::Mail(mail) if mail.send);
             audience.0 == row.family.slug()
                 || row.endpoint.as_ref().is_some_and(|e| e.0 == audience.0)
                 || (sends && audience.0 == Family::Smtp.slug())

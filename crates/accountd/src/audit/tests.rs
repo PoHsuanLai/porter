@@ -1,5 +1,5 @@
 use super::*;
-use porter_capability::{Access, Delta, QuotaReport, StorageScope};
+use porter_capability::{Access, Delta, StorageScope};
 use porter_core::consent::{GrantScope, Usage};
 use porter_core::{AppId, AppName, Audience, DataClass, Isolation};
 use porter_fake::{Scripted, ScriptedSheets, fake_service};
@@ -79,7 +79,7 @@ async fn the_file_a_service_writes_holds_none_of_the_fake_secrets() {
         Access::ReadWrite,
         Delta::Poll,
         StorageScope::AppFolder,
-        QuotaReport::Unreported,
+        false,
     ));
     let chosen = service
         .handle(

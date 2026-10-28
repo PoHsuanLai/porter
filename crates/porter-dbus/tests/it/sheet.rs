@@ -2,8 +2,8 @@
 //! real `(u, a{sv})` wire encoding), the request path and the handle token.
 
 use porter_capability::Subject;
-use porter_capability::{Access, Capability, Delta, HashKind, Offered};
-use porter_capability::{QuotaReport, StorageCap, StorageScope};
+use porter_capability::{Access, Capability, Delta, HashKind};
+use porter_capability::{StorageCap, StorageScope};
 use porter_core::{AccountId, GrantId, ProviderId};
 use porter_core::{
     AccountLabel, Candidate, EndpointUrl, Family, LoginName, Restriction, ServiceEndpoint, Tls,
@@ -27,11 +27,11 @@ fn candidate() -> Candidate {
         Capability::Storage(StorageCap {
             access: Access::ReadWrite,
             delta: Delta::Poll,
-            quota: QuotaReport::Reported,
+            quota: true,
             scope: StorageScope::AppFolder,
             hashes: HashKind::QuickXor,
-            ranges: Offered::Present,
-            chunked_upload: Offered::Present,
+            ranges: true,
+            chunked_upload: true,
         }),
         Restriction::none(),
         GrantId::parse("grant-1").expect("grant"),

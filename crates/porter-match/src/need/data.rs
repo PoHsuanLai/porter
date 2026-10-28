@@ -2,7 +2,7 @@
 //!
 //! Each need grows by adding a minimum, so each is `#[non_exhaustive]` and built with `new`.
 
-use porter_capability::{Access, Albums, Delta, LibraryRead, Offered, QuotaReport, StorageScope};
+use porter_capability::{Access, Albums, Delta, LibraryRead, StorageScope};
 use porter_ids::Bytes;
 use serde::{Deserialize, Serialize};
 
@@ -11,18 +11,38 @@ use serde::{Deserialize, Serialize};
 #[non_exhaustive]
 pub struct IdentityNeed {
     /// A display name and avatar.
-    pub profile: Offered,
+    #[serde(with = "porter_capability::present")]
+    pub profile: bool,
     /// A verified address.
-    pub verified_address: Offered,
+    #[serde(with = "porter_capability::present")]
+    pub verified_address: bool,
 }
 
 impl IdentityNeed {
-    /// An identity with these parts.
-    pub fn new(profile: Offered, verified_address: Offered) -> Self {
+    /// An identity with no part asked for.
+    pub fn new() -> Self {
         Self {
-            profile,
-            verified_address,
+            profile: false,
+            verified_address: false,
         }
+    }
+
+    /// The same need, also asking for a display name and avatar.
+    pub fn with_profile(mut self) -> Self {
+        self.profile = true;
+        self
+    }
+
+    /// The same need, also asking for a verified address.
+    pub fn with_verified_address(mut self) -> Self {
+        self.verified_address = true;
+        self
+    }
+}
+
+impl Default for IdentityNeed {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -32,15 +52,16 @@ impl IdentityNeed {
 pub struct MailNeed {
     /// At least this access.
     pub access: Access,
-    /// Sending, if `Present`.
-    pub send: Offered,
+    /// Sending, if set.
+    #[serde(with = "porter_capability::present")]
+    pub send: bool,
     /// At least this change feed.
     pub delta: Delta,
 }
 
 impl MailNeed {
-    /// A mailbox with at least this access, sending if `send` is `Present`, and this change feed.
-    pub fn new(access: Access, send: Offered, delta: Delta) -> Self {
+    /// A mailbox with at least this access, sending if `send` is set, and this change feed.
+    pub fn new(access: Access, send: bool, delta: Delta) -> Self {
         Self {
             access,
             send,
@@ -93,14 +114,15 @@ pub struct StorageNeed {
     pub delta: Delta,
     /// At least this reach: `AppFolder` accepts either scope, `Full` only a full one.
     pub scope: StorageScope,
-    /// A quota report, if `Reported`.
-    pub quota: QuotaReport,
+    /// A quota report, if set.
+    #[serde(with = "porter_capability::reported")]
+    pub quota: bool,
 }
 
 impl StorageNeed {
     /// A file store with at least this access, change feed and reach, and a quota report if
-    /// `quota` is `Reported`.
-    pub fn new(access: Access, delta: Delta, scope: StorageScope, quota: QuotaReport) -> Self {
+    /// `quota` is set.
+    pub fn new(access: Access, delta: Delta, scope: StorageScope, quota: bool) -> Self {
         Self {
             access,
             delta,
@@ -116,24 +138,26 @@ impl StorageNeed {
 pub struct PhotosNeed {
     /// At least this much of the existing library.
     pub library_read: LibraryRead,
-    /// Upload, if `Present`.
-    pub upload: Offered,
+    /// Upload, if set.
+    #[serde(with = "porter_capability::present")]
+    pub upload: bool,
     /// At least these albums.
     pub albums: Albums,
-    /// Video, if `Present`.
-    pub video: Offered,
+    /// Video, if set.
+    #[serde(with = "porter_capability::present")]
+    pub video: bool,
     /// At least this change feed.
     pub delta: Delta,
 }
 
 impl PhotosNeed {
     /// A photo library with at least this much read, albums and change feed, and upload and
-    /// video where those are `Present`.
+    /// video where those are set.
     pub fn new(
         library_read: LibraryRead,
-        upload: Offered,
+        upload: bool,
         albums: Albums,
-        video: Offered,
+        video: bool,
         delta: Delta,
     ) -> Self {
         Self {

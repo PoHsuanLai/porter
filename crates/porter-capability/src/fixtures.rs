@@ -4,7 +4,7 @@
 use crate::offer::{Claim, Offer, Provenance, Subject};
 use crate::{
     Access, Capability, Delta, HashKind, LabelModel, LlmCap, LlmFeature, LlmWire, MailCap,
-    MailTransport, Offered, QuotaReport, StorageCap, StorageScope,
+    MailTransport, StorageCap, StorageScope,
 };
 use porter_ids::Tokens;
 
@@ -13,16 +13,16 @@ pub fn storage(access: Access, delta: Delta, scope: StorageScope) -> Capability 
     Capability::Storage(StorageCap {
         access,
         delta,
-        quota: QuotaReport::Reported,
+        quota: true,
         scope,
         hashes: HashKind::Sha1,
-        ranges: Offered::Present,
-        chunked_upload: Offered::Absent,
+        ranges: true,
+        chunked_upload: false,
     })
 }
 
 /// A mail capability that offers `send` as given.
-pub fn mail(send: Offered) -> Capability {
+pub fn mail(send: bool) -> Capability {
     Capability::Mail(MailCap {
         access: Access::ReadWrite,
         send,
