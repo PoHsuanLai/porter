@@ -23,7 +23,7 @@ use porter_core::{Audience, Credential, Family, IssuedToken, TokenKind};
 use porter_http::Http;
 use porter_ids::UnixSeconds;
 use porter_oauth::{
-    ExchangeFault, MailRights, Renewal, endpoints_of, refresh_scoped_detailed, renewal,
+    ExchangeFault, Renewal, endpoints_of, refresh_scoped_detailed, renewal,
 };
 use porter_provider::{Issuer, Presented, ProviderError, ProviderSession, ProviderSpec};
 use std::collections::HashMap;
@@ -116,7 +116,7 @@ impl<H: Http> GoogleSession<H> {
             &self.spec,
             &address,
             token.value.expose(),
-            (&granted, self.mail_rights()),
+            (&granted, self.byo()),
         )
         .await
     }
@@ -127,11 +127,12 @@ impl<H: Http> GoogleSession<H> {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    fn mail_rights(&self) -> MailRights {
+    /// Whether the client is the person's own, which is what lets mail be asked.
+    fn byo(&self) -> bool {
         self.env
             .clients()
             .traits(Issuer::Google, self.env.channel)
-            .mail
+            .byo
     }
 
     fn fresh(&self, key: &str, now: UnixSeconds) -> Option<IssuedToken> {
@@ -188,9 +189,9 @@ impl<H: Http> GoogleSession<H> {
             // `invalid_scope`: the grant is good, the scope was never given.
             _ if failure.wants_consent() => ProviderError::NeedsConsent,
             ExchangeFault::Refused => {
-                let review = clients.traits(Issuer::Google, self.env.channel).review;
+                let testing = clients.traits(Issuer::Google, self.env.channel).testing;
                 let mut state = self.state();
-                state.reauth = Some(ReauthReason::of_refusal(review, state.signed_in, now));
+                state.reauth = Some(ReauthReason::of_refusal(testing, state.signed_in, now));
                 ProviderError::Unauthorized
             }
             ExchangeFault::Unreachable => ProviderError::Unreachable,
@@ -239,8 +240,8 @@ impl<H: Http> GoogleSession<H> {
         kind: CapabilityKind,
     ) -> Result<(Family, TokenKind), ProviderError> {
         let wanted = audience.0.trim_end_matches('/');
-        let mail = |family| match (kind, self.mail_rights()) {
-            (CapabilityKind::Mail, MailRights::Byo) => Ok((family, TokenKind::Xoauth2)),
+        let mail = |family| match (kind, self.byo()) {
+            (CapabilityKind::Mail, true) => Ok((family, TokenKind::Xoauth2)),
             _ => Err(ProviderError::Forbidden),
         };
         match wanted {
@@ -286,9 +287,9 @@ impl<H: Http> GoogleSession<H> {
     fn token_kind(&self, audience: &Audience) -> Result<TokenKind, ProviderError> {
         let wanted = audience.0.trim_end_matches('/');
         if wanted == "imap" || wanted == "smtp" {
-            return match self.mail_rights() {
-                MailRights::Byo => Ok(TokenKind::Xoauth2),
-                MailRights::Withheld => Err(ProviderError::Forbidden),
+            return match self.byo() {
+                true => Ok(TokenKind::Xoauth2),
+                false => Err(ProviderError::Forbidden),
             };
         }
         let named = self.spec.capabilities.iter().any(|row| {

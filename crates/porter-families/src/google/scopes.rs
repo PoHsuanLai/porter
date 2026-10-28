@@ -7,7 +7,6 @@
 
 use porter_capability::{Albums, Ask, Capability, CapabilityKind, LibraryRead, Offered};
 use porter_core::{Family, GrantedScopes};
-use porter_oauth::MailRights;
 
 /// Gmail over IMAP and SMTP (XOAUTH2). Restricted.
 pub(super) const MAIL: &str = "https://mail.google.com/";
@@ -91,10 +90,10 @@ pub fn scope_sensitivity(scope: &str) -> Sensitivity {
 
 /// The scopes for the kinds that are on: identity always, a kind's own when it is on, and mail's
 /// restricted scope only for a person's own client.
-pub(super) fn scopes_for(kinds: &[CapabilityKind], mail: MailRights) -> Vec<String> {
+pub(super) fn scopes_for(kinds: &[CapabilityKind], byo: bool) -> Vec<String> {
     let mut scopes: Vec<String> = IDENTITY.iter().map(|s| (*s).to_owned()).collect();
     for kind in kinds {
-        let allowed = *kind != CapabilityKind::Mail || mail == MailRights::Byo;
+        let allowed = *kind != CapabilityKind::Mail || byo;
         if allowed {
             scopes.extend(scopes_of(*kind).iter().map(|s| (*s).to_owned()));
         }
@@ -211,23 +210,23 @@ mod tests {
                 .map(|s| (*s).to_owned())
                 .collect::<Vec<_>>()
         };
-        assert_eq!(scopes_for(&[], MailRights::Withheld), with(&[]));
+        assert_eq!(scopes_for(&[], false), with(&[]));
         assert_eq!(
-            scopes_for(&[K::Calendar, K::Storage], MailRights::Withheld),
+            scopes_for(&[K::Calendar, K::Storage], false),
             with(&[CALENDAR, DRIVE_APP_FOLDER])
         );
         assert_eq!(
-            scopes_for(&[K::Photos, K::Tasks, K::Contacts], MailRights::Withheld),
+            scopes_for(&[K::Photos, K::Tasks, K::Contacts], false),
             with(&[PHOTOS_UPLOAD, PHOTOS_PICKER, TASKS, CONTACTS])
         );
         assert_eq!(
-            scopes_for(&[K::Mail], MailRights::Withheld),
+            scopes_for(&[K::Mail], false),
             with(&[]),
             "mail's restricted scope is not asked of a client that is not the person's own"
         );
-        assert_eq!(scopes_for(&[K::Mail], MailRights::Byo), with(&[MAIL]));
+        assert_eq!(scopes_for(&[K::Mail], true), with(&[MAIL]));
         assert_eq!(
-            scopes_for(&[K::Agent, K::Notes], MailRights::Byo),
+            scopes_for(&[K::Agent, K::Notes], true),
             with(&[]),
             "kinds Google has no service for ask nothing"
         );
@@ -318,7 +317,7 @@ mod tests {
             K::Storage,
             K::Photos,
         ];
-        assert!(!scopes_for(&every, MailRights::Byo).contains(&DRIVE.to_owned()));
+        assert!(!scopes_for(&every, true).contains(&DRIVE.to_owned()));
         assert_eq!(
             grant_scopes(K::Storage, Family::GoogleDrive, Ask::OnUse),
             [DRIVE]

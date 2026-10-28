@@ -16,42 +16,24 @@ use porter_provider::{
 use serde::Deserialize;
 use std::path::Path;
 
-/// Whether a client may be used for mail.
-///
-/// Gmail's IMAP and SMTP need the restricted scope `https://mail.google.com/`, which Google
-/// grants a client only after a security assessment. A person's own client may use it (it is
-/// their own project, in testing mode, for their own addresses), so a row says `byo = true`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum MailRights {
-    /// Not a client of the person's own: mail's restricted scope is not asked.
-    #[default]
-    Withheld,
-    /// The person's own client: mail may be asked.
-    Byo,
-}
-
-/// Whether the client's consent screen is verified.
-///
-/// An app Google has not verified is in *testing*: only its test users may sign in, and Google
-/// ends their sign-ins after seven days (design/31 R5). A row says `testing = true`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum AppReview {
-    /// Verified, or not an issuer that has the notion: sign-ins last until revoked.
-    #[default]
-    Verified,
-    /// In testing: sign-ins last seven days.
-    Testing,
-}
-
 /// What a client row says besides its id, secret and endpoints. [`porter_provider::ClientEntry`]
 /// does not carry these (it is shared with mailo, which builds it field by field), so the
 /// registry reads them from the same files beside it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct ClientTraits {
-    /// Whether mail may be asked.
-    pub mail: MailRights,
-    /// Whether the app is in testing.
-    pub review: AppReview,
+    /// Whether the client is the person's own (`byo = true`), so mail may be asked.
+    ///
+    /// Gmail's IMAP and SMTP need the restricted scope `https://mail.google.com/`, which Google
+    /// grants a client only after a security assessment. A person's own client may use it (it is
+    /// their own project, in testing mode, for their own addresses). Without it that scope is not
+    /// asked.
+    pub byo: bool,
+    /// Whether the client's consent screen is in testing (`testing = true`).
+    ///
+    /// An app Google has not verified is in *testing*: only its test users may sign in, and Google
+    /// ends their sign-ins after seven days (design/31 R5). Otherwise sign-ins last until revoked
+    /// (verified, or not an issuer that has the notion).
+    pub testing: bool,
 }
 
 /// One row's traits, keyed as the row is.
@@ -220,16 +202,8 @@ fn traits_of(text: &str) -> Vec<TraitRow> {
                 .into_iter()
                 .map(|row| {
                     let traits = ClientTraits {
-                        mail: if row.byo {
-                            MailRights::Byo
-                        } else {
-                            MailRights::Withheld
-                        },
-                        review: if row.testing {
-                            AppReview::Testing
-                        } else {
-                            AppReview::Verified
-                        },
+                        byo: row.byo,
+                        testing: row.testing,
                     };
                     (row.issuer, row.channel, traits)
                 })
@@ -525,8 +499,8 @@ mod tests {
         assert_eq!(
             at(&alone, ClientChannel::Stable),
             ClientTraits {
-                mail: MailRights::Withheld,
-                review: AppReview::Testing
+                byo: false,
+                testing: true,
             }
         );
         std::fs::write(
@@ -539,8 +513,8 @@ mod tests {
         assert_eq!(
             at(&both, ClientChannel::Stable),
             ClientTraits {
-                mail: MailRights::Byo,
-                review: AppReview::Verified
+                byo: true,
+                testing: false,
             }
         );
         // No row, no traits to speak of.
@@ -549,8 +523,8 @@ mod tests {
             Issuer::Google,
             ClientChannel::Stable,
             ClientTraits {
-                mail: MailRights::Byo,
-                review: AppReview::Testing,
+                byo: true,
+                testing: true,
             },
         );
         // A traits entry for a row that does not exist says nothing.
@@ -563,10 +537,10 @@ mod tests {
             Issuer::Google,
             ClientChannel::Stable,
             ClientTraits {
-                mail: MailRights::Byo,
-                review: AppReview::Testing,
+                byo: true,
+                testing: true,
             },
         );
-        assert_eq!(at(&held, ClientChannel::Stable).review, AppReview::Testing);
+        assert!(at(&held, ClientChannel::Stable).testing);
     }
 }

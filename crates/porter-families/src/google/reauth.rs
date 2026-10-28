@@ -8,7 +8,6 @@
 //! person signed in, from the age of the sign-in.
 
 use porter_ids::UnixSeconds;
-use porter_oauth::AppReview;
 
 /// Seconds a refresh token of a client in testing lasts.
 pub const TESTING_SIGN_IN_SECONDS: i64 = 7 * 24 * 60 * 60;
@@ -29,13 +28,13 @@ pub enum ReauthReason {
 }
 
 impl ReauthReason {
-    /// What a refused refresh means for a client with `review`, given when the person signed in
-    /// when that is known. A client in testing whose sign-in is old, or of unknown age, is the
-    /// seven day rule; a young sign-in was ended by someone.
-    pub fn of_refusal(review: AppReview, signed_in: Option<UnixSeconds>, now: UnixSeconds) -> Self {
+    /// What a refused refresh means for a client that is `testing` or not, given when the person
+    /// signed in when that is known. A client in testing whose sign-in is old, or of unknown age,
+    /// is the seven day rule; a young sign-in was ended by someone.
+    pub fn of_refusal(testing: bool, signed_in: Option<UnixSeconds>, now: UnixSeconds) -> Self {
         let aged = signed_in.is_none_or(|at| now.0 - at.0 >= TESTING_REFUSAL_FROM_SECONDS);
-        match (review, aged) {
-            (AppReview::Testing, true) => ReauthReason::TestingExpiry,
+        match (testing, aged) {
+            (true, true) => ReauthReason::TestingExpiry,
             _ => ReauthReason::Revoked,
         }
     }
@@ -56,8 +55,8 @@ mod tests {
         const DAY: i64 = 86_400;
         let now = UnixSeconds(100 * DAY);
         let at = |days_ago: i64| Some(UnixSeconds(now.0 - days_ago * DAY));
-        const T: AppReview = AppReview::Testing;
-        const V: AppReview = AppReview::Verified;
+        const T: bool = true;
+        const V: bool = false;
         let cases = [
             ("testing, a week old", T, at(7), ReauthReason::TestingExpiry),
             (

@@ -17,7 +17,6 @@ use porter_http::http::header::{ACCEPT, AUTHORIZATION};
 use porter_http::http::{Method, Response};
 use porter_http::{Http, SensitiveHeader, request};
 use porter_ids::WebUrl;
-use porter_oauth::MailRights;
 use porter_provider::{ProviderError, ProviderSpec};
 use serde::Deserialize;
 
@@ -76,7 +75,7 @@ pub(super) async fn probe<H: Http>(
     spec: &ProviderSpec,
     address: &str,
     token: &str,
-    (granted, mail): (&Granted, MailRights),
+    (granted, byo): (&Granted, bool),
 ) -> Result<Vec<Claim>, ProviderError> {
     let mut claims = Vec::new();
     // An on-use row (the whole of Drive) is not the account's until it is asked for.
@@ -88,16 +87,7 @@ pub(super) async fn probe<H: Http>(
         else {
             continue;
         };
-        claims.push(
-            claim_for(
-                http,
-                (spec, address, token),
-                (granted, mail),
-                kind,
-                declared,
-            )
-            .await?,
-        );
+        claims.push(claim_for(http, (spec, address, token), (granted, byo), kind, declared).await?);
     }
     Ok(claims)
 }
@@ -105,7 +95,7 @@ pub(super) async fn probe<H: Http>(
 async fn claim_for<H: Http>(
     http: &H,
     (spec, address, token): (&ProviderSpec, &str, &str),
-    (granted, mail): (&Granted, MailRights),
+    (granted, byo): (&Granted, bool),
     kind: CapabilityKind,
     declared: &Capability,
 ) -> Result<Claim, ProviderError> {
@@ -116,7 +106,7 @@ async fn claim_for<H: Http>(
     };
     let absent = |reason| Offer::Absent { kind, reason };
     let present = || Offer::Present(granted.narrow(declared));
-    if kind == CapabilityKind::Mail && mail != MailRights::Byo {
+    if kind == CapabilityKind::Mail && !byo {
         // The restricted scope was never asked: this build cannot read mail (R2).
         return Ok(claim(
             absent(AbsentReason::UnverifiedBuild),

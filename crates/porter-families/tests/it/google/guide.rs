@@ -4,7 +4,7 @@
 
 use porter_capability::CapabilityKind as K;
 use porter_families::{Sensitivity, on_use_scopes_of, scope_sensitivity, scopes_of};
-use porter_oauth::{AppReview, ClientRegistry, MailRights};
+use porter_oauth::ClientRegistry;
 use porter_provider::{ClientChannel, Issuer};
 
 fn guide() -> String {
@@ -72,15 +72,12 @@ fn the_row_in_the_guide_is_a_row_the_registry_reads() {
     assert_eq!(client.client_id.0, "123-abc.apps.googleusercontent.com");
     assert!(client.client_secret.is_some());
     let traits = registry.traits(Issuer::Google, ClientChannel::Stable);
-    assert_eq!(traits.review, AppReview::Testing);
-    assert_eq!(traits.mail, MailRights::Withheld);
+    assert!(traits.testing);
+    assert!(!traits.byo);
     let with_mail = block.replace("# byo = true", "byo = true");
     std::fs::write(&own, with_mail).expect("write");
     let registry = ClientRegistry::from_paths(&shipped, &own).expect("the row parses");
-    assert_eq!(
-        registry.traits(Issuer::Google, ClientChannel::Stable).mail,
-        MailRights::Byo
-    );
+    assert!(registry.traits(Issuer::Google, ClientChannel::Stable).byo);
 }
 
 #[test]

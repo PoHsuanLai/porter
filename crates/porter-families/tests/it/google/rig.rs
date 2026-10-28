@@ -10,7 +10,7 @@ use porter_families::{GoogleEnv, GoogleProvider};
 use porter_http::http::{Request, Response};
 use porter_http::{Http, HttpError};
 use porter_ids::UnixSeconds;
-use porter_oauth::{AppReview, ClientRegistry, ClientTraits, MailRights};
+use porter_oauth::{ClientRegistry, ClientTraits};
 use porter_provider::{
     ClientChannel, ClientEntry, ClientId, ClientsFile, Issuer, ProviderSpec, SignIn, SignInMode,
     SignInStart, SignInStep,
@@ -76,16 +76,16 @@ pub enum Row {
 }
 
 pub const PLAIN: Row = Row::Of(ClientTraits {
-    mail: MailRights::Withheld,
-    review: AppReview::Verified,
+    byo: false,
+    testing: false,
 });
 pub const TESTING: Row = Row::Of(ClientTraits {
-    mail: MailRights::Withheld,
-    review: AppReview::Testing,
+    byo: false,
+    testing: true,
 });
 pub const BYO: Row = Row::Of(ClientTraits {
-    mail: MailRights::Byo,
-    review: AppReview::Testing,
+    byo: true,
+    testing: true,
 });
 
 pub struct Rig {

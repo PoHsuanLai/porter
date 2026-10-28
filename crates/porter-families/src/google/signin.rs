@@ -23,8 +23,8 @@ use porter_core::{
 use porter_http::Http;
 use porter_ids::{Count, UnixSeconds, UrlScheme, WebUrl};
 use porter_oauth::{
-    AppReview, AuthCode, AuthorizeAsk, ClientTraits, ExchangeFault, LoopbackFault, LoopbackServer,
-    OAuthState, Pkce, TokenResponse, authorize_url_for, endpoints_of, exchange_code,
+    AuthCode, AuthorizeAsk, ClientTraits, ExchangeFault, LoopbackFault, LoopbackServer, OAuthState,
+    Pkce, TokenResponse, authorize_url_for, endpoints_of, exchange_code,
 };
 use porter_provider::{
     ClientEntry, Issuer, IssuerEndpoints, ProviderSpec, SignIn, SignInMode, SignInStart,
@@ -131,7 +131,7 @@ impl<H: Http + 'static> GoogleSignIn<H> {
         let traits = clients.traits(Issuer::Google, self.env.channel);
         let scopes = match &self.start.mode {
             SignInMode::Extend { kinds, .. } => extend_scopes(kinds),
-            _ => scopes_for(&self.spec.sign_in_kinds(), traits.mail),
+            _ => scopes_for(&self.spec.sign_in_kinds(), traits.byo),
         };
         let (verifier, state) = (self.env.random)().ok_or(SignInFault::Unreadable)?;
         let pkce = Pkce::from_random(verifier, state);
@@ -212,13 +212,13 @@ impl<H: Http + 'static> GoogleSignIn<H> {
             &self.spec,
             &address,
             &token,
-            (&granted, traits.mail),
+            (&granted, traits.byo),
         )
         .await
         .map_err(provider_fault)?;
         let apis = apis_of(&self.spec);
         let endpoints = endpoints_for(&self.spec, &apis, (&claims, &granted), &address);
-        let restriction = restriction_for(traits.review, &claims, now);
+        let restriction = restriction_for(traits.testing, &claims, now);
         let signed = Signed::new(
             AccountLabel(address.clone()),
             vec![(
@@ -278,7 +278,7 @@ impl<H: Http + 'static> GoogleSignIn<H> {
             )],
             asked_claims(&self.spec, kinds),
             answered_as(stored, &address),
-            restriction_for(traits.review, &[], now),
+            restriction_for(traits.testing, &[], now),
         );
         let step = review_of(&signed);
         self.phase = Phase::Review(Box::new(signed));
@@ -327,7 +327,7 @@ fn review_of(signed: &Signed) -> SignInStep {
 
 /// What limits the account: a client in testing is unverified (100 users, and a sign-in that
 /// lasts seven days), and the Drive and Photos scopes are narrow by design (R3, R4).
-fn restriction_for(review: AppReview, claims: &[Claim], now: UnixSeconds) -> Restriction {
+fn restriction_for(testing: bool, claims: &[Claim], now: UnixSeconds) -> Restriction {
     let present = |kind| {
         claims
             .iter()
@@ -343,14 +343,14 @@ fn restriction_for(review: AppReview, claims: &[Claim], now: UnixSeconds) -> Res
     if present(CapabilityKind::Photos) {
         limits.push(Limit::new(CapabilityKind::Photos, LimitReason::PickerOnly));
     }
-    let (verification, token_lifetime) = match review {
-        AppReview::Testing => (
+    let (verification, token_lifetime) = match testing {
+        true => (
             Verification::Unverified {
                 user_cap: Count(TESTING_USER_CAP),
             },
             TokenLifetime::SevenDays,
         ),
-        AppReview::Verified => (Verification::Verified, TokenLifetime::Standard),
+        false => (Verification::Verified, TokenLifetime::Standard),
     };
     let restriction = Restriction::none()
         .with_verification(verification)
@@ -477,7 +477,7 @@ mod tests {
 
     #[test]
     fn a_client_in_testing_is_unverified_for_a_hundred_users_and_seven_days() {
-        let testing = restriction_for(AppReview::Testing, &[], UnixSeconds(1_000));
+        let testing = restriction_for(true, &[], UnixSeconds(1_000));
         assert_eq!(
             testing.verification,
             Verification::Unverified {
@@ -486,7 +486,7 @@ mod tests {
         );
         assert_eq!(testing.token_lifetime, TokenLifetime::SevenDays);
         assert_eq!(testing.signed_in, Some(UnixSeconds(1_000)));
-        let verified = restriction_for(AppReview::Verified, &[], UnixSeconds(1_000));
+        let verified = restriction_for(false, &[], UnixSeconds(1_000));
         assert_eq!(verified.verification, Verification::Verified);
         assert_eq!(verified.token_lifetime, TokenLifetime::Standard);
         assert_eq!(verified.signed_in, None);

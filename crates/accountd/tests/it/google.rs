@@ -23,7 +23,7 @@ use porter_fake_servers::{Google, shipped};
 use porter_families::{FamilyProvider, GoogleEnv, GoogleProvider};
 use porter_http_reqwest::ReqwestHttp;
 use porter_ids::clock::FixedClock;
-use porter_oauth::{AppReview, ClientRegistry, ClientTraits, MailRights};
+use porter_oauth::{ClientRegistry, ClientTraits};
 use porter_provider::{ClientChannel, ClientEntry, ClientId, ClientsFile, Issuer};
 use porter_secrets::Secrets;
 use porter_service::{AccountService, Registry};
@@ -94,8 +94,8 @@ fn client_with(google: &Google, traits: ClientTraits) -> ClientRegistry {
 }
 
 const TESTING: ClientTraits = ClientTraits {
-    mail: MailRights::Withheld,
-    review: AppReview::Testing,
+    byo: false,
+    testing: true,
 };
 
 impl World {
