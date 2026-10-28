@@ -4,7 +4,7 @@
 //! these. What a daemon's settings page or the add-account sheet shows comes from here.
 
 use crate::ProviderGroup;
-use porter_capability::{Access, Capability, CapabilityKind, StorageCap, StorageScope};
+use porter_capability::{Access, Capability, StorageCap, StorageScope};
 
 /// The group as a person reads it, the heading of its part of the page.
 pub fn group_heading(group: ProviderGroup) -> &'static str {
@@ -12,33 +12,6 @@ pub fn group_heading(group: ProviderGroup) -> &'static str {
         ProviderGroup::Internet => "Internet Accounts",
         ProviderGroup::Intelligence => "Intelligence",
         ProviderGroup::Agent => "Assistants",
-    }
-}
-
-/// The kind as a person reads it: the one source for the account sheet's service names,
-/// Settings' Services switches and the noun in a grant's row ("Sync can use Files"). No
-/// wildcard arm, so a new kind must be named here.
-pub fn service_name(kind: CapabilityKind) -> &'static str {
-    match kind {
-        CapabilityKind::Identity => "Account details",
-        CapabilityKind::Mail => "Mail",
-        CapabilityKind::Calendar => "Calendar",
-        CapabilityKind::Contacts => "Contacts",
-        CapabilityKind::Tasks => "Tasks",
-        CapabilityKind::Notes => "Notes",
-        CapabilityKind::Storage => "Files",
-        CapabilityKind::Photos => "Photos",
-        CapabilityKind::Llm => "Language model",
-        CapabilityKind::Embeddings => "Search by meaning",
-        CapabilityKind::Speech => "Speech",
-        CapabilityKind::ImageGen => "Image generation",
-        CapabilityKind::Rerank => "Result ranking",
-        CapabilityKind::ComputerUse => "Operating windows",
-        CapabilityKind::KeyValue => "Small synced items",
-        CapabilityKind::Push => "Notifications",
-        CapabilityKind::Agent => "Assistant",
-        // A kind a later porter-capability adds: named by its own words once this crate knows it.
-        _ => "Other service",
     }
 }
 
@@ -75,13 +48,6 @@ mod tests {
             ranges: true,
             chunked_upload: false,
         })
-    }
-
-    #[test]
-    fn a_service_is_named_in_the_words_of_its_page() {
-        assert_eq!(service_name(CapabilityKind::Storage), "Files");
-        assert_eq!(service_name(CapabilityKind::Llm), "Language model");
-        assert_eq!(service_name(CapabilityKind::Identity), "Account details");
     }
 
     #[test]

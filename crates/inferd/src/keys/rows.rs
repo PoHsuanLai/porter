@@ -220,7 +220,7 @@ fn grant_label(grant: &Grant, names: &AppNames) -> String {
     format!(
         "{} {can} use {}{lasting}",
         names.title_of(&grant.key.app.name).0,
-        porter_sheet::words::service_name(grant.key.kind)
+        grant.key.kind.name()
     )
 }
 
@@ -351,7 +351,7 @@ fn account_keys(
         keys.push(spec(
             &Key::Service(id.clone(), kind),
             section,
-            porter_sheet::words::service_name(kind).to_owned(),
+            kind.name().to_owned(),
             "Whether apps may use this service of the account.",
             KeyKind::Toggle {
                 variants: ["on".to_owned(), "off".to_owned()],
@@ -396,7 +396,7 @@ fn account_keys(
             section,
             "Service",
             &service,
-            &[(&service, porter_sheet::words::service_name(grant.key.kind))],
+            &[(&service, grant.key.kind.name())],
         ));
     }
     // A program on this computer costs nothing: only an account reached over the network spends.

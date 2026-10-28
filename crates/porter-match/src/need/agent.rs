@@ -1,6 +1,7 @@
 //! The need for an account that runs an agent program.
 
-use porter_capability::{AgentProgram, AgentProtocol};
+use crate::short::{Shortfall, Wants, first_short};
+use porter_capability::{AgentCap, AgentProgram, AgentProtocol};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -27,5 +28,18 @@ impl AgentNeed {
             protocols,
             base_url,
         }
+    }
+}
+
+impl Wants<AgentCap> for AgentNeed {
+    fn short_of(&self, offer: &AgentCap) -> Option<Shortfall> {
+        first_short(&[
+            (self.program == offer.program, Shortfall::Program),
+            (
+                self.protocols.is_subset(&offer.protocols),
+                Shortfall::Protocols,
+            ),
+            (offer.base_url() >= self.base_url, Shortfall::BaseUrl),
+        ])
     }
 }

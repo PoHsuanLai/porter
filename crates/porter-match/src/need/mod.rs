@@ -12,80 +12,50 @@ pub use data::{
     IdentityNeed, KeyValueNeed, MailNeed, NotesNeed, PhotosNeed, PimNeed, PushNeed, StorageNeed,
 };
 
-use porter_capability::{CapabilityKind, StorageScope};
+use porter_capability::{CapabilityKind, Service, StorageScope, service};
 use serde::{Deserialize, Serialize};
 
-/// A capability query: "an account that can do at least this".
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(tag = "kind", content = "v", rename_all = "snake_case")]
-#[non_exhaustive]
-pub enum Need {
-    /// Who the account is.
-    Identity(IdentityNeed),
-    /// A mailbox.
-    Mail(MailNeed),
-    /// Calendars.
-    Calendar(PimNeed),
-    /// Address books.
-    Contacts(PimNeed),
-    /// Task lists.
-    Tasks(PimNeed),
-    /// Notes.
-    Notes(NotesNeed),
-    /// Files.
-    Storage(StorageNeed),
-    /// A provider photo library.
-    Photos(PhotosNeed),
-    /// A language model.
-    Llm(LlmNeed),
-    /// An embedding model.
-    Embeddings(EmbedNeed),
-    /// Speech in or out.
-    Speech(SpeechNeed),
-    /// Image generation.
-    ImageGen(ImageGenNeed),
-    /// Reranking.
-    Rerank(RerankNeed),
-    /// A model that operates a window from screenshots.
-    ComputerUse(CuaNeed),
-    /// Small synced items.
-    KeyValue(KeyValueNeed),
-    /// A push channel.
-    Push(PushNeed),
-    /// An account that runs an agent program.
-    Agent(AgentNeed),
+macro_rules! define_needs {
+    ($($(#[$doc:meta])* $variant:ident($cap:ty, $need:ty, $name:literal $(, $ai:ident)?),)*) => {
+        /// A capability query: "an account that can do at least this".
+        #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+        #[serde(tag = "kind", content = "v", rename_all = "snake_case")]
+        #[non_exhaustive]
+        pub enum Need {
+            $($(#[$doc])* $variant($need),)*
+        }
+
+        impl Need {
+            /// The kind asked for.
+            pub fn kind(&self) -> CapabilityKind {
+                match self {
+                    $(Need::$variant(_) => CapabilityKind::$variant,)*
+                }
+            }
+
+            /// How far a grant made for this need reaches: a Storage need's scope (the app
+            /// folder, or the whole store), and the app folder for every other kind, which has
+            /// no reach of its own.
+            pub fn reach(&self) -> StorageScope {
+                match self {
+                    Need::Storage(storage) => storage.scope,
+                    _ => StorageScope::AppFolder,
+                }
+            }
+        }
+
+        /// The need a service asks with, beside what the service is ([`Service`]).
+        pub trait Asks: Service {
+            /// The need struct of this kind.
+            type Need;
+        }
+
+        $(
+            impl Asks for service::$variant {
+                type Need = $need;
+            }
+        )*
+    };
 }
 
-impl Need {
-    /// The kind asked for.
-    pub fn kind(&self) -> CapabilityKind {
-        match self {
-            Need::Identity(_) => CapabilityKind::Identity,
-            Need::Mail(_) => CapabilityKind::Mail,
-            Need::Calendar(_) => CapabilityKind::Calendar,
-            Need::Contacts(_) => CapabilityKind::Contacts,
-            Need::Tasks(_) => CapabilityKind::Tasks,
-            Need::Notes(_) => CapabilityKind::Notes,
-            Need::Storage(_) => CapabilityKind::Storage,
-            Need::Photos(_) => CapabilityKind::Photos,
-            Need::Llm(_) => CapabilityKind::Llm,
-            Need::Embeddings(_) => CapabilityKind::Embeddings,
-            Need::Speech(_) => CapabilityKind::Speech,
-            Need::ImageGen(_) => CapabilityKind::ImageGen,
-            Need::Rerank(_) => CapabilityKind::Rerank,
-            Need::ComputerUse(_) => CapabilityKind::ComputerUse,
-            Need::KeyValue(_) => CapabilityKind::KeyValue,
-            Need::Push(_) => CapabilityKind::Push,
-            Need::Agent(_) => CapabilityKind::Agent,
-        }
-    }
-
-    /// How far a grant made for this need reaches: a Storage need's scope (the app folder, or
-    /// the whole store), and the app folder for every other kind, which has no reach of its own.
-    pub fn reach(&self) -> StorageScope {
-        match self {
-            Need::Storage(storage) => storage.scope,
-            _ => StorageScope::AppFolder,
-        }
-    }
-}
+porter_capability::capability_kinds!(define_needs);

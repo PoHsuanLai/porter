@@ -2,7 +2,11 @@
 //!
 //! Each need grows by adding a minimum, so each is `#[non_exhaustive]` and built with `new`.
 
-use porter_capability::{CuaEnv, ImageMode, LlmFeature, Modality, SpeechMode};
+use crate::short::{Shortfall, Wants, first_short};
+use porter_capability::{
+    CuaCap, CuaEnv, EmbedCap, ImageGenCap, ImageMode, LlmCap, LlmFeature, Modality, RerankCap,
+    SpeechCap, SpeechMode,
+};
 use porter_ids::{Count, Dims, Px, Tokens};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -111,5 +115,67 @@ impl CuaNeed {
     /// A computer-use model that operates these environments.
     pub fn new(environments: BTreeSet<CuaEnv>) -> Self {
         Self { environments }
+    }
+}
+
+impl Wants<LlmCap> for LlmNeed {
+    fn short_of(&self, offer: &LlmCap) -> Option<Shortfall> {
+        first_short(&[
+            (
+                self.features.is_subset(&offer.features),
+                Shortfall::Features,
+            ),
+            // A window of zero is one nobody stated (a server of the person's own lists its
+            // models and no limits): it is not known to be too small.
+            (
+                offer.context.0 == 0 || offer.context >= self.context,
+                Shortfall::Context,
+            ),
+        ])
+    }
+}
+
+impl Wants<EmbedCap> for EmbedNeed {
+    fn short_of(&self, offer: &EmbedCap) -> Option<Shortfall> {
+        first_short(&[
+            (
+                matches!(self.dims, DimsNeed::Any) || self.dims == DimsNeed::Exactly(offer.dims),
+                Shortfall::Dims,
+            ),
+            (
+                self.modalities.is_subset(&offer.modalities),
+                Shortfall::Modalities,
+            ),
+        ])
+    }
+}
+
+impl Wants<SpeechCap> for SpeechNeed {
+    fn short_of(&self, offer: &SpeechCap) -> Option<Shortfall> {
+        first_short(&[(self.modes.is_subset(&offer.modes), Shortfall::Modes)])
+    }
+}
+
+impl Wants<ImageGenCap> for ImageGenNeed {
+    fn short_of(&self, offer: &ImageGenCap) -> Option<Shortfall> {
+        first_short(&[
+            (self.modes.is_subset(&offer.modes), Shortfall::Modes),
+            (offer.max_side >= self.max_side, Shortfall::MaxSide),
+        ])
+    }
+}
+
+impl Wants<RerankCap> for RerankNeed {
+    fn short_of(&self, offer: &RerankCap) -> Option<Shortfall> {
+        first_short(&[(offer.max_docs >= self.max_docs, Shortfall::MaxDocs)])
+    }
+}
+
+impl Wants<CuaCap> for CuaNeed {
+    fn short_of(&self, offer: &CuaCap) -> Option<Shortfall> {
+        first_short(&[(
+            self.environments.is_subset(&offer.environments),
+            Shortfall::Environments,
+        )])
     }
 }

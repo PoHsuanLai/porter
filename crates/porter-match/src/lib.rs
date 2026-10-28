@@ -5,6 +5,8 @@
 
 mod matching;
 mod need;
+mod short;
 
-pub use matching::{Match, Shortfall, matches};
+pub use matching::{Match, matches};
 pub use need::*;
+pub use short::{Shortfall, Wants};

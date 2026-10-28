@@ -2,7 +2,11 @@
 //!
 //! Each need grows by adding a minimum, so each is `#[non_exhaustive]` and built with `new`.
 
-use porter_capability::{Access, Albums, Delta, LibraryRead, StorageScope};
+use crate::short::{Shortfall, Wants, first_short};
+use porter_capability::{
+    Access, Albums, Delta, IdentityCap, KeyValueCap, LibraryRead, MailCap, NotesCap, PhotosCap,
+    PimCap, PushCap, StorageCap, StorageScope,
+};
 use porter_ids::Bytes;
 use serde::{Deserialize, Serialize};
 
@@ -196,5 +200,88 @@ impl PushNeed {
     /// Any push channel.
     pub fn new() -> Self {
         Self {}
+    }
+}
+
+impl Wants<IdentityCap> for IdentityNeed {
+    fn short_of(&self, offer: &IdentityCap) -> Option<Shortfall> {
+        first_short(&[
+            (offer.profile >= self.profile, Shortfall::Profile),
+            (
+                offer.verified_address >= self.verified_address,
+                Shortfall::VerifiedAddress,
+            ),
+        ])
+    }
+}
+
+impl Wants<MailCap> for MailNeed {
+    fn short_of(&self, offer: &MailCap) -> Option<Shortfall> {
+        first_short(&[
+            (offer.access >= self.access, Shortfall::Access),
+            (offer.send >= self.send, Shortfall::Send),
+            (offer.delta >= self.delta, Shortfall::Delta),
+        ])
+    }
+}
+
+/// One shape serves calendars, address books and task lists.
+impl Wants<PimCap> for PimNeed {
+    fn short_of(&self, offer: &PimCap) -> Option<Shortfall> {
+        first_short(&[
+            (offer.access >= self.access, Shortfall::Access),
+            (offer.delta >= self.delta, Shortfall::Delta),
+        ])
+    }
+}
+
+impl Wants<NotesCap> for NotesNeed {
+    fn short_of(&self, offer: &NotesCap) -> Option<Shortfall> {
+        first_short(&[
+            (offer.access >= self.access, Shortfall::Access),
+            (offer.delta >= self.delta, Shortfall::Delta),
+        ])
+    }
+}
+
+impl Wants<StorageCap> for StorageNeed {
+    fn short_of(&self, offer: &StorageCap) -> Option<Shortfall> {
+        first_short(&[
+            (offer.access >= self.access, Shortfall::Access),
+            (offer.delta >= self.delta, Shortfall::Delta),
+            (offer.scope >= self.scope, Shortfall::Scope),
+            (offer.quota >= self.quota, Shortfall::Quota),
+        ])
+    }
+}
+
+impl Wants<PhotosCap> for PhotosNeed {
+    fn short_of(&self, offer: &PhotosCap) -> Option<Shortfall> {
+        first_short(&[
+            (
+                offer.library_read >= self.library_read,
+                Shortfall::LibraryRead,
+            ),
+            (offer.upload >= self.upload, Shortfall::Upload),
+            (offer.albums >= self.albums, Shortfall::Albums),
+            (offer.video >= self.video, Shortfall::Video),
+            (offer.delta >= self.delta, Shortfall::Delta),
+        ])
+    }
+}
+
+impl Wants<KeyValueCap> for KeyValueNeed {
+    fn short_of(&self, offer: &KeyValueCap) -> Option<Shortfall> {
+        first_short(&[
+            (offer.delta >= self.delta, Shortfall::Delta),
+            (offer.max_item >= self.max_item, Shortfall::MaxItem),
+        ])
+    }
+}
+
+/// Any push channel meets a push need.
+impl Wants<PushCap> for PushNeed {
+    fn short_of(&self, _offer: &PushCap) -> Option<Shortfall> {
+        None
     }
 }
