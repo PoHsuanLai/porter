@@ -12,7 +12,6 @@ use crate::race::{Raced, race};
 use crate::sheets::{SheetLink, SheetOpen, Sheets};
 use crate::token::refusal_of;
 use porter_capability::LoginOutcome;
-use porter_core::consent::Decision;
 use porter_core::store::RegistryStore;
 use porter_core::{AccountId, ProviderId};
 use porter_core::{AppId, AuthKind};
@@ -22,15 +21,6 @@ use porter_secrets::Secrets;
 use porter_sheet::{ProviderRow, SheetInput, SheetView, SignInFault};
 use porter_wire::AccountsReply;
 use porter_wire::{ParentWindow, Refusal};
-
-/// Who asks for the login.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Asker {
-    /// An app: it needs a grant for the account.
-    Held,
-    /// The sheet host or Settings: any account.
-    Shell,
-}
 
 impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSink>
     Ctx<P, S, U, K, R, A>
@@ -43,7 +33,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         window: ParentWindow,
         launchers: &impl Launchers,
     ) -> AccountsReply {
-        self.run_agent_login(caller, account, window, launchers, Asker::Held)
+        self.run_agent_login(caller, account, window, launchers, false)
             .await
     }
 
@@ -55,7 +45,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         window: ParentWindow,
         launchers: &impl Launchers,
     ) -> AccountsReply {
-        self.run_agent_login(caller, account, window, launchers, Asker::Shell)
+        self.run_agent_login(caller, account, window, launchers, true)
             .await
     }
 
@@ -68,15 +58,13 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         account: &AccountId,
         window: ParentWindow,
         launchers: &impl Launchers,
-        who: Asker,
+        any_account: bool,
     ) -> AccountsReply {
         let (provider, program) = {
             let registry = self.lock();
-            let held = registry.grants.iter().any(|g| {
-                g.key.app == *caller && g.key.account == *account && g.decision == Decision::Allow
-            });
+            let held = registry.holds(caller, account);
             let row = registry.accounts.iter().find(|a| a.id == *account);
-            match (held || who == Asker::Shell, row) {
+            match (held || any_account, row) {
                 (true, Some(row)) if row.auth == AuthKind::AgentLogin => match program_of(row) {
                     Some(program) => (row.provider.clone(), program),
                     None => return AccountsReply::Refused(Refusal::Unavailable),
@@ -103,9 +91,9 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             let end = match launchers.ask_login(account, &program).await {
                 Err(NoLauncher) => Err(SignInFault::NoLauncher),
                 Ok(waiting) => match wait(&mut link, waiting).await {
-                    Waited::Left => return AccountsReply::Refused(Refusal::Dismissed),
-                    Waited::Ended(LoginEnd::Reported(LoginOutcome::Ready)) => Ok(()),
-                    Waited::Ended(end) => Err(end.fault()),
+                    None => return AccountsReply::Refused(Refusal::Dismissed),
+                    Some(LoginEnd::Reported(LoginOutcome::Ready)) => Ok(()),
+                    Some(end) => Err(end.fault()),
                 },
             };
             match end {
@@ -114,44 +102,36 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                     let _ = link.update(SheetView::Done).await;
                     return AccountsReply::Reauthenticated;
                 }
-                Err(fault) => match failed(&mut link, (&provider, &row), fault).await {
-                    Next::Retry => continue,
-                    Next::Close => return AccountsReply::Refused(refusal_of(fault)),
-                },
+                Err(fault) => {
+                    if !failed(&mut link, (&provider, &row), fault).await {
+                        return AccountsReply::Refused(refusal_of(fault));
+                    }
+                }
             }
         }
     }
 }
 
-enum Waited {
-    /// The person closed the sheet, or it went away.
-    Left,
-    Ended(LoginEnd),
-}
-
-/// Waits for the launcher's answer while the sheet is up. Nothing the person can press on
-/// `Working` changes the wait except closing it.
-async fn wait<L: SheetLink>(link: &mut L, mut waiting: Waiting) -> Waited {
+/// Waits for the launcher's answer while the sheet is up: how it ended, or `None` when the person
+/// closed the sheet or it went away. Nothing the person can press on `Working` changes the wait
+/// except closing it.
+async fn wait<L: SheetLink>(link: &mut L, mut waiting: Waiting) -> Option<LoginEnd> {
     loop {
         match race(link.input(), &mut waiting).await {
-            Raced::Second(end) => return Waited::Ended(end),
-            Raced::First(Ok(SheetInput::Dismiss) | Err(_)) => return Waited::Left,
+            Raced::Second(end) => return Some(end),
+            Raced::First(Ok(SheetInput::Dismiss) | Err(_)) => return None,
             Raced::First(Ok(_)) => {}
         }
     }
 }
 
-enum Next {
-    Retry,
-    Close,
-}
-
-/// Shows why it failed and waits for the person.
+/// Shows why it failed and waits for the person: whether they asked to try again (`false`: they
+/// closed the sheet).
 async fn failed<L: SheetLink>(
     link: &mut L,
     (provider, row): (&ProviderId, &Option<ProviderRow>),
     fault: SignInFault,
-) -> Next {
+) -> bool {
     let shown = link
         .update(SheetView::Failed {
             provider: provider.clone(),
@@ -160,8 +140,8 @@ async fn failed<L: SheetLink>(
         })
         .await;
     match (shown, link.input().await) {
-        (Ok(()), Ok(SheetInput::Retry)) => Next::Retry,
+        (Ok(()), Ok(SheetInput::Retry)) => true,
         // Updating a closed sheet fails; the person closing it is the same answer.
-        _ => Next::Close,
+        _ => false,
     }
 }

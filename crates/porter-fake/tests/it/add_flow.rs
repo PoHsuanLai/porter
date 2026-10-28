@@ -1498,7 +1498,7 @@ async fn a_provider_that_cannot_revoke_never_stops_the_removal() {
         .remove_with_revoke(&key.account)
         .await
         .expect("removed");
-    assert_eq!(report, porter_service::RevokeReport::Skipped);
+    assert_eq!(report, None);
     assert_eq!(script.revoked.lock().expect("revoked").len(), 1);
     assert!(service.registry().accounts.is_empty());
     assert_eq!(kept.secrets.get(&key).await, Err(SecretsError::Missing));

@@ -19,47 +19,32 @@ use porter_provider::{Presented, Provider, ProviderSession, RevokeOutcome};
 use porter_secrets::{Secrets, SecretsError};
 use porter_wire::Refusal;
 
-/// What removing an account did at the provider.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RevokeReport {
-    /// The provider was asked, and answered this.
-    Asked(RevokeOutcome),
-    /// The provider could not be asked (no credential, unreachable, refused): the wipe went on.
-    Skipped,
-}
-
 impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSink>
     Ctx<P, S, U, K, R, A>
 {
-    /// The body of [`AccountService::remove_with_revoke`](crate::AccountService::remove_with_revoke).
+    /// The body of [`AccountService::remove_with_revoke`](crate::AccountService::remove_with_revoke):
+    /// what the provider answered, or `None` when it could not be asked (no credential,
+    /// unreachable, refused) and the wipe went on.
     pub(crate) async fn remove_with_revoke(
         &self,
         id: &AccountId,
-    ) -> Result<RevokeReport, SecretsError> {
+    ) -> Result<Option<RevokeOutcome>, SecretsError> {
         let account = self.lock().accounts.iter().find(|a| a.id == *id).cloned();
         let report = match account {
             Some(account) => self.revoke_at_provider(&account).await,
-            None => RevokeReport::Skipped,
+            None => None,
         };
         self.wipe_account(id).await?;
         Ok(report)
     }
 
-    async fn revoke_at_provider(&self, account: &porter_core::Account) -> RevokeReport {
-        let Some(provider) = self
+    async fn revoke_at_provider(&self, account: &porter_core::Account) -> Option<RevokeOutcome> {
+        let provider = self
             .providers
             .iter()
-            .find(|p| p.spec().id == account.provider)
-        else {
-            return RevokeReport::Skipped;
-        };
-        let Ok(presented) = self.presented(account).await else {
-            return RevokeReport::Skipped;
-        };
-        match provider.revoke(account, &presented).await {
-            Ok(outcome) => RevokeReport::Asked(outcome),
-            Err(_) => RevokeReport::Skipped,
-        }
+            .find(|p| p.spec().id == account.provider)?;
+        let presented = self.presented(account).await.ok()?;
+        provider.revoke(account, &presented).await.ok()
     }
 
     /// What the account presents to its provider: its stored credential, or nothing for a

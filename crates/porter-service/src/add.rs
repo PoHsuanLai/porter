@@ -1,7 +1,7 @@
 //! The entry points that start an add, a sign-in again, or a request for more access, and the
 //! API key a host that runs the agent launcher reads. The loops they start are `add_flow`'s.
 
-use crate::add_flow::{Reauth, SignInAs};
+use crate::add_flow::SignInAs;
 use crate::audit::AuditSink;
 use crate::ctx::Ctx;
 use crate::sheets::Sheets;
@@ -66,7 +66,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         account: &AccountId,
         window: ParentWindow,
     ) -> AccountsReply {
-        self.run_reauthenticate(caller, account, window, Reauth::Held)
+        self.run_reauthenticate(caller, account, window, false)
             .await
     }
 
@@ -77,8 +77,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         account: &AccountId,
         window: ParentWindow,
     ) -> AccountsReply {
-        self.run_reauthenticate(caller, account, window, Reauth::Shell)
-            .await
+        self.run_reauthenticate(caller, account, window, true).await
     }
 
     /// The body of [`AccountService::extend_access`](crate::AccountService::extend_access).

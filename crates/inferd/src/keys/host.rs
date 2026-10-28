@@ -7,11 +7,10 @@ use porter_core::store::RegistryStore;
 use porter_core::{AccountId, GrantId, ProviderId};
 use porter_core::{AccountState, AgentState, AppId, Candidate};
 use porter_ids::clock::Clock;
-use porter_provider::Provider;
+use porter_provider::{Provider, RevokeOutcome};
 use porter_secrets::{Secrets, SecretsError};
 use porter_service::{
-    AccountService, AgentFault, AuditSink, Launchers as LaunchersSeam, LocalFault, Registry,
-    RevokeReport, Sheets,
+    AccountService, AgentFault, AuditSink, Launchers as LaunchersSeam, LocalFault, Registry, Sheets,
 };
 use porter_wire::{AccountsReply, AccountsRequest};
 use porter_wire::{ParentWindow, Refusal};
@@ -103,7 +102,7 @@ pub trait KeyHost: Send + Sync + 'static {
     fn remove(
         &self,
         id: &AccountId,
-    ) -> impl Future<Output = Result<RevokeReport, SecretsError>> + Send;
+    ) -> impl Future<Output = Result<Option<RevokeOutcome>, SecretsError>> + Send;
 
     /// Switches one kind of one account on or off.
     fn set_toggle(
@@ -183,7 +182,7 @@ where
     fn remove(
         &self,
         id: &AccountId,
-    ) -> impl Future<Output = Result<RevokeReport, SecretsError>> + Send {
+    ) -> impl Future<Output = Result<Option<RevokeOutcome>, SecretsError>> + Send {
         AccountService::remove_with_revoke(self, id)
     }
 

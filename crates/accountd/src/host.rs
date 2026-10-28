@@ -5,9 +5,9 @@ use porter_core::AccountId;
 use porter_core::store::RegistryStore;
 use porter_core::{AccountState, AppId};
 use porter_ids::clock::Clock;
-use porter_provider::Provider;
+use porter_provider::{Provider, RevokeOutcome};
 use porter_secrets::{Secrets, SecretsError};
-use porter_service::{AccountService, AuditSink, Registry, RevokeReport, Sheets};
+use porter_service::{AccountService, AuditSink, Registry, Sheets};
 use porter_wire::{AccountsReply, AccountsRequest};
 use porter_wire::{ParentWindow, Refusal};
 use std::future::Future;
@@ -43,7 +43,7 @@ pub trait Host: Send + Sync + 'static {
     fn remove(
         &self,
         id: &AccountId,
-    ) -> impl Future<Output = Result<RevokeReport, SecretsError>> + Send {
+    ) -> impl Future<Output = Result<Option<RevokeOutcome>, SecretsError>> + Send {
         let _ = id;
         async { Err(SecretsError::Unavailable) }
     }
@@ -100,7 +100,7 @@ where
     fn remove(
         &self,
         id: &AccountId,
-    ) -> impl Future<Output = Result<RevokeReport, SecretsError>> + Send {
+    ) -> impl Future<Output = Result<Option<RevokeOutcome>, SecretsError>> + Send {
         AccountService::remove_with_revoke(self, id)
     }
 

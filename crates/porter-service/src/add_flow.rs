@@ -167,15 +167,6 @@ struct Run<S> {
     already: Option<AccountId>,
 }
 
-/// Who asks for a sign-in again.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Reauth {
-    /// An app: it needs a grant for the account.
-    Held,
-    /// The sheet host or Settings: any account, no grant.
-    Shell,
-}
-
 impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSink>
     Ctx<P, S, U, K, R, A>
 {
@@ -238,25 +229,21 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         }
     }
 
-    /// Runs the sign-in again for `account` and replaces its credential. `Held` asks that
-    /// `caller` hold a grant for the account; `Shell` is for the sheet host and Settings, which
-    /// sign any account in again (accountd decides by role who may).
+    /// Runs the sign-in again for `account` and replaces its credential. Without `any_account`
+    /// `caller` must hold a grant for the account; with it (the sheet host and Settings) any
+    /// account is signed in again (accountd decides by role who may).
     pub(crate) async fn run_reauthenticate(
         &self,
         caller: &AppId,
         account: &AccountId,
         window: ParentWindow,
-        who: Reauth,
+        any_account: bool,
     ) -> AccountsReply {
         let (provider, endpoints) = {
             let registry = self.lock();
-            let held = registry.grants.iter().any(|g| {
-                g.key.app == *caller
-                    && g.key.account == *account
-                    && g.decision == porter_core::consent::Decision::Allow
-            });
+            let held = registry.holds(caller, account);
             let row = registry.accounts.iter().find(|a| a.id == *account);
-            match (held || who == Reauth::Shell, row) {
+            match (held || any_account, row) {
                 (true, Some(row)) => (row.provider.clone(), row.endpoints.clone()),
                 _ => return AccountsReply::Refused(Refusal::UnknownGrant),
             }

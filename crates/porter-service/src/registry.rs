@@ -6,7 +6,7 @@ use porter_capability::{StorageScope, VocabVersion};
 use porter_core::GrantId;
 use porter_core::SpaceScope;
 use porter_core::store::{AccountToggle, Persisted};
-use porter_core::{Account, AppId, Candidate, DataClass, EndpointUrl, ServiceEndpoint};
+use porter_core::{Account, AccountId, AppId, Candidate, DataClass, EndpointUrl, ServiceEndpoint};
 use porter_core::{
     GrantKey,
     consent::{Decision, Grant, Usage, Verdict},
@@ -80,6 +80,13 @@ impl Asker<'_> {
 }
 
 impl Registry {
+    /// Whether `app` holds a grant that allows it `account`.
+    pub(crate) fn holds(&self, app: &AppId, account: &AccountId) -> bool {
+        self.grants.iter().any(|g| {
+            g.key.app == *app && g.key.account == *account && g.decision == Decision::Allow
+        })
+    }
+
     /// Each account's first effective capability that meets `need`, in registry order.
     pub(crate) fn fitting(&self, need: &Need) -> Vec<Fit<'_>> {
         self.accounts

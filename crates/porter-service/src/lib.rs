@@ -50,7 +50,6 @@ pub use agent::AgentFault;
 pub use audit::{AuditSink, NoAudit};
 pub use launcher::{Launchers, LoginEnd, NoLauncher, Roster, Waiting, program_of};
 pub use local::{LocalFault, MAX_LOCAL_CLAIMS};
-pub use manage::RevokeReport;
 pub use own_machines::OwnMachines;
 pub use registry::Registry;
 pub use service::AccountService;

@@ -8,7 +8,6 @@ use crate::audit::{AuditEvent, AuditSink, NoAudit};
 use crate::ctx::Ctx;
 use crate::launcher::{Launchers, Roster};
 use crate::local::LocalFault;
-use crate::manage::RevokeReport;
 use crate::own_machines::OwnMachines;
 use crate::registry::Registry;
 use crate::sheets::Sheets;
@@ -21,7 +20,7 @@ use porter_core::{AccountId, GrantId, ProviderId};
 use porter_core::{AccountState, AgentState, AppId, DataClass, EndpointUrl, RelayPlan, SecretText};
 use porter_ids::clock::Clock;
 use porter_match::Need;
-use porter_provider::{Provider, ProviderSpec};
+use porter_provider::{Provider, ProviderSpec, RevokeOutcome};
 use porter_secrets::{Secrets, SecretsError};
 use porter_wire::{AccountsReply, AccountsRequest};
 use porter_wire::{ParentWindow, Refusal};
@@ -258,8 +257,12 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
 
     /// Removes an account (PLAN §2.9): asks its provider to stop honouring the credential, best
     /// effort, then wipes its secrets, grants, toggles and row, and audits `Removed`. The
-    /// provider's answer never stops the wipe.
-    pub async fn remove_with_revoke(&self, id: &AccountId) -> Result<RevokeReport, SecretsError> {
+    /// provider's answer never stops the wipe. It answers what the provider said, or `None` when
+    /// the provider could not be asked (no credential, unreachable, refused).
+    pub async fn remove_with_revoke(
+        &self,
+        id: &AccountId,
+    ) -> Result<Option<RevokeOutcome>, SecretsError> {
         self.ctx.remove_with_revoke(id).await
     }
 
