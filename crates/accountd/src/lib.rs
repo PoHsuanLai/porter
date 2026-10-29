@@ -4,7 +4,9 @@
 //! accountd holds identities (the accounts a person signs in to: OAuth, a password, an app
 //! password), Spaces and Tailscale, and the AI keys with the grants that let an app use them:
 //! one registry, one secret namespace, one grant store. The agent logins and the local runtimes
-//! the AI broker reports are accounts of it too. syncd signs in for itself.
+//! the AI broker reports are accounts of it too. An app, or a daemon such as ferry's syncd, finds
+//! the accounts it holds a grant for, asks for one and opens a signed-in stream to an account's
+//! server through `org.quire.Grants1` (`grants_object`, `relay`): the credential stays here.
 //!
 //! - `Manager` (`AddAccount`, `NeedingReauth`, the signals `AccountAdded` and `AccountRemoved`) at
 //!   the accountd path; one `Account` object per account (`Reauthenticate`, and the `State`
@@ -30,6 +32,13 @@
 //!   may call `Broker` and read the computers on the tailnet, and nothing else.
 //! - `BusSheets` is the sheet link to the host over `org.quire.AccountsSheet1`
 //!   (porter-sheets).
+//!
+//! - `org.quire.Grants1` at `/org/quire/Grants1`: `Candidates`, `Availability` and `Grants` for the
+//!   caller's own grants, `RequestGrant` (a Request object; the sheet is drawn each time, and the
+//!   answer is kept as a grant), `Revoke`, `OpenAuthenticated` and `OpenLinked` (a descriptor whose other end
+//!   accountd's relay holds), `Accounts` for a porter daemon, Settings or the shell, and
+//!   `ExtendAccess` and `AsksOnUse` for the access a provider asks only on use. Apps and the
+//!   porter daemons use it; every other role is refused.
 //!
 //! - The AI keys: `org.quire.Accounts1.Keys` (`keys`: an app's `RequestKey`, answered with the
 //!   permit it already holds or a consent sheet), `org.quire.Accounts1.Launcher` (`launcher`:
@@ -73,6 +82,7 @@ mod callers;
 mod core;
 pub mod daemon;
 mod errors;
+mod grants_object;
 mod host;
 mod hub;
 mod identities_object;
@@ -84,6 +94,7 @@ mod news;
 mod open_sheets;
 pub mod paths;
 mod publish;
+mod relay;
 mod request;
 mod roster;
 mod settings;
@@ -105,6 +116,7 @@ pub use news::NewsStore;
 pub use porter_families::set::ProviderNames;
 #[doc(inline)]
 pub use porter_sheets::{AppNames, BusLink, BusSheets};
+pub use relay::Relays;
 pub use settings::settings_path;
 pub use store::EXIT_REGISTRY_REFUSED;
 pub use tailnet::TailnetWatch;

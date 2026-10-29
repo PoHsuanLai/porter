@@ -86,7 +86,11 @@ impl Bus {
     /// One sheet method: listen, call (naming the Request object through `handle_token`), then
     /// wait for the `Response` of the object the call returned. An error the call itself returns
     /// (a refusal before any sheet) is settled like an immediate call's.
-    async fn sheet<F, Fut>(&self, kind: SheetKind, call: F) -> Result<AccountsReply, AccountsError>
+    pub(crate) async fn sheet<F, Fut>(
+        &self,
+        kind: SheetKind,
+        call: F,
+    ) -> Result<AccountsReply, AccountsError>
     where
         F: FnOnce(Details) -> Fut,
         Fut: Future<Output = Result<OwnedObjectPath, BusError>>,

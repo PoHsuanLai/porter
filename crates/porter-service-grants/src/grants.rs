@@ -69,6 +69,7 @@ impl<E: Ports> Grants<'_, E> {
         caller: &AppId,
         need: Need,
         (class, usage): (DataClass, Usage),
+        only: Option<&AccountId>,
         window: &ParentWindow,
         session: Option<&SessionToken>,
     ) -> AccountsReply {
@@ -80,29 +81,32 @@ impl<E: Ports> Grants<'_, E> {
         let ask = {
             let registry = self.ctx.lock();
             // Choose draws the sheet each time, except when the person has already said Don't
-            // Allow for every account that fits: asking again would badger them, and undoing a
-            // Don't Allow is theirs to do, in Settings. This holds for a launcher's session ask
-            // too, which is held under the agent's app.
-            let verdicts = registry.verdicts(&need, asker);
+            // Allow for every account that fits (the one account `only` names, when it is set):
+            // asking again would badger them, and undoing a Don't Allow is theirs to do, in
+            // Settings. This holds for a launcher's session ask too, which is held under the
+            // agent's app.
+            let verdicts = registry.verdicts_of(&need, asker, only);
             if !verdicts.is_empty() && verdicts.iter().all(|v| *v == Verdict::Denied) {
                 return AccountsReply::Refused(Refusal::Denied);
             }
-            ask_for(&registry, &need, asker, session)
+            ask_for(&registry, &need, asker, only, session)
         };
         let Some(ask) = ask else {
             return AccountsReply::Refused(Refusal::NoFittingAccount);
         };
         let answer = self.ctx.sheets().consent(ask, window).await;
         if answer == ConsentAnswer::AddAccount {
-            return match session {
-                None => self.add_and_allow_for(caller, need, asker, window).await,
-                Some(_) => AccountsReply::Refused(Refusal::Dismissed),
+            // An ask about one account has no "Add Account…": what it would add is another one.
+            return match (session, only) {
+                (None, None) => self.add_and_allow_for(caller, need, asker, window).await,
+                _ => AccountsReply::Refused(Refusal::Dismissed),
             };
         }
         let reply = settle(
             &mut self.ctx.lock(),
             &need,
             asker,
+            only,
             session,
             answer,
             self.ctx.clock().now(),

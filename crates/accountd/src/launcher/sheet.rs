@@ -85,6 +85,7 @@ impl<H: Host, C: Callers> Core<H, C> {
                     &agent,
                     llm_need(),
                     (class, Usage::Interactive),
+                    None,
                     &window,
                     session.as_ref(),
                 )

@@ -139,9 +139,17 @@ where
                 class,
                 usage,
                 window,
+                account,
             } => {
-                self.choose(caller, need, (class, usage), &window, None)
-                    .await
+                self.choose(
+                    caller,
+                    need,
+                    (class, usage),
+                    account.as_ref(),
+                    &window,
+                    None,
+                )
+                .await
             }
             AccountsRequest::AddAccount { hint, window } => {
                 self.accounts().add_account(caller, hint, window).await
@@ -202,11 +210,12 @@ where
         caller: &AppId,
         need: Need,
         class_usage: (DataClass, Usage),
+        only: Option<&AccountId>,
         window: &ParentWindow,
         session: Option<&SessionToken>,
     ) -> AccountsReply {
         self.grants_domain()
-            .choose(caller, need, class_usage, window, session)
+            .choose(caller, need, class_usage, only, window, session)
             .await
     }
 

@@ -2,6 +2,51 @@
 
 ## Unreleased
 
+### Grants are on the bus
+
+- `org.quire.Grants1` at `/org/quire/Grants1` on accountd's name (`dbus/org.quire.Grants1.xml`):
+  `Candidates`, `Availability` and `Grants` for the caller's own grants, `RequestGrant` (a Request
+  object, like `Keys.RequestKey`; the sheet is drawn each time it is asked for, and the person's
+  answer is kept as a grant that `Candidates` and `Grants` show), `Revoke`, `OpenAuthenticated` and `OpenLinked` (a descriptor, `h`, a Unix stream
+  socket whose other end accountd's relay holds, so no token or password crosses the bus),
+  `Accounts` (every account with accountd's name for its provider, for a porter daemon, Settings
+  or the shell), and `ExtendAccess` and `AsksOnUse` (the access a provider asks only on use).
+  Apps and the porter daemons use it; every other role is `AccessDenied`.
+  `RequestGrant` takes the one account to ask about (empty for none): the sheet then has no
+  chooser and the answer is a grant for that account or a refusal, never another account. In
+  `porter-client`, `ConsentOffer` has `account: Option<AccountId>` for it (`find` leaves it `None`);
+  `AccountsRequest::Choose` carries it too.
+  `porter_dbus::accounts::{GrantsProxy, GrantsServer, GrantsServed, to_text, from_text}`;
+  `porter_wire::names::GRANTS_PATH`.
+- `porter_client_dbus::Bus` implements `GrantsLink`. `GrantsLink` and `Grants` gain `accounts()`
+  (`ListedAccount`: the account and its provider's name), `extend_access(account, kinds, window)`
+  and `asks_on_use(provider, kind)`; `GrantsError` gains `Busy`. `porter-client-inproc`'s `Hosted`
+  implements the three (`porter_service_grants::GrantsApi::accounts` is new).
+- accountd runs the relays (`accountd::Relays`, `Options::relays`: the default trusts the
+  platform's roots; a test passes a connector that trusts its scratch CA) and depends on
+  `porter-proxy`.
+
+### The sync daemon moved to the ferry repo
+
+- `syncd`, `syncd-fakes`, `porter-sync` (now `ferry-sync`), `porter-drive` (`ferry-drive`),
+  `porter-drive-fuse` (`ferry-drive-fuse`), `porter-mountd` (`ferry-mountd`; its binary, units and
+  socket keep the name `porter-mountd`), `storage-webdav`, `storage-graph`, `storage-gdrive`,
+  `quickxorhash` and `windows-zones` left porter for the ferry repo, which depends on porter by git
+  rev. The units `syncd.service`, `porter-mountd.service` and `.socket`, the activation file
+  `org.quire.Sync1.service`, `docs/drive-files.md` and the interface files `dbus/org.quire.Sync1.xml`
+  and `dbus/org.quire.Storage1.xml` went with them, byte for byte; `scripts/install.sh` installs
+  accountd only, and ferry's installs syncd and the helper.
+- `porter_dbus::sync` and the `photos-picker` feature are gone: `Sync1`, `Storage1` and the Photos
+  Picker are ferry's `ferry-bus`. `porter-dbus-macros`' `#[bus_interface]` names `::porter_dbus::Call`
+  and `::porter_dbus::Unserved`, so a crate in another repo uses it by depending on `porter-dbus`.
+- `porter-fake-servers` loses the Graph fake (`FakeGraph`, `GraphHandle`: it served the drive's
+  `quickXorHash`); it is ferry's `ferry-fake-graph`. `porter-rig-servers` loses `--graph` and its
+  `/graph/...` levers, `porter-rig-client` loses `sync-resolve`, `watch-conflicts`, `datasets` and
+  `status`, and `rig.json` loses `graph`: ferry's `ferry-rig-servers` and `ferry-rig-client` do
+  those, with the same lever routes and command words.
+- `scripts/check-boundary.sh` fails if a manifest names `syncd`, a `storage-*` or a `ferry-*`
+  crate, or the workspace's dependency trees reach one.
+
 ### The `NeedsReauth` signal is gone (wire change)
 
 - `org.quire.Accounts1.Manager` no longer emits the `NeedsReauth(o)` signal. An account that needs

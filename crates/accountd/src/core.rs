@@ -1,5 +1,5 @@
 //! Serving accountd's objects: [`serve`] puts `Manager`, the `Account` objects, `Spaces1`,
-//! `Identities1`, `Tailnet1`, the AI keys' `Keys`, `Launcher` and `Broker` and the settings module
+//! `Identities1`, `Tailnet1`, `Grants1`, the AI keys' `Keys`, `Launcher` and `Broker` and the settings module
 //! on a connection over a [`Host`], and takes the name. What the objects share is `state`; this module is the one that names them all.
 
 use crate::account::publish_accounts;
@@ -7,7 +7,9 @@ use crate::callers::Callers;
 use crate::host::Host;
 use crate::manager::Manager;
 use crate::state::Core;
-use porter_dbus::accounts::{BrokerServed, IdentitiesServed, KeysServed, LauncherServed};
+use porter_dbus::accounts::{
+    BrokerServed, GrantsServed, IdentitiesServed, KeysServed, LauncherServed,
+};
 use porter_dbus::accounts::{ManagerServed, SpacesServed, TailnetServed};
 use porter_families::set::ProviderNames;
 use porter_ids::{clock::Clock, clock::SystemClock};
@@ -51,6 +53,9 @@ pub struct Options {
     /// Woken after each save of the registry (a [`crate::NewsStore`]); each wake tells the
     /// clients what moved. None leaves the objects to tell them after their own changes.
     pub saved: Option<Arc<tokio::sync::Notify>>,
+    /// Runs the relays of `Grants1.OpenAuthenticated` and `OpenLinked`; the default dials with the
+    /// platform's trusted roots, and a test hands one that trusts its scratch CA.
+    pub relays: Option<crate::relay::Relays>,
 }
 
 impl std::fmt::Debug for Options {
@@ -66,6 +71,7 @@ impl std::fmt::Debug for Options {
             .field("identities", &self.identities)
             .field("launchers", &self.launchers)
             .field("saved", &self.saved.as_ref().map(|_| "<set>"))
+            .field("relays", &self.relays.as_ref().map(|_| "<injected>"))
             .finish()
     }
 }
@@ -128,6 +134,7 @@ pub async fn serve_with<H: Host, C: Callers>(
         picks: porter_identities::Picks::default(),
         publisher: OnceLock::new(),
         launchers,
+        relays: options.relays.unwrap_or_default(),
         credentials: crate::launcher::Credentials::default(),
     });
     crate::publish::start(&core);
@@ -157,6 +164,12 @@ pub async fn serve_with<H: Host, C: Callers>(
         .at(
             ACCOUNTS_PATH,
             BrokerServed(crate::broker::BrokerObject::new(Arc::clone(&core))),
+        )
+        .await?;
+    server
+        .at(
+            porter_wire::names::GRANTS_PATH,
+            GrantsServed(crate::grants_object::GrantsObject::new(Arc::clone(&core))),
         )
         .await?;
     server

@@ -5,6 +5,7 @@
 mod common;
 mod dbus_accounts;
 mod dbus_ai_accounts;
+mod dbus_grants;
 mod dbus_keys;
 mod dbus_spaces;
 mod dbus_tailnet;

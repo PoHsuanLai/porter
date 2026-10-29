@@ -13,6 +13,7 @@ porter-client = { workspace = true }
 porter-core = { workspace = true }
 porter-wire = { workspace = true }
 porter-capability = { workspace = true }
+porter-match = { workspace = true }
 porter-dbus = { workspace = true }
 porter-ids = { workspace = true }
 porter-tailscale = { workspace = true }

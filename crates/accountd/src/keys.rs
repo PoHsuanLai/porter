@@ -70,6 +70,7 @@ impl<H: Host, C: Callers> KeysServer for KeysObject<H, C> {
             class,
             usage,
             window: window(&parent_window),
+            account: None,
         };
         self.0
             .sheet(&header, SheetKind::Choose, &options, request)

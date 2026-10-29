@@ -9,16 +9,18 @@ use porter_match::Need;
 use porter_wire::AccountsReply;
 use porter_wire::Refusal;
 
-/// The sheet to show for `need`, or `None` when no account fits. `session` is the open launcher
-/// session the request was made in, which lets the sheet offer "This session only".
+/// The sheet to show for `need`, or `None` when no account fits. `only` narrows the sheet to that
+/// one account (no chooser). `session` is the open launcher session the request was made in,
+/// which lets the sheet offer "This session only".
 pub fn ask_for(
     registry: &Registry,
     need: &Need,
     asker: Asker<'_>,
+    only: Option<&AccountId>,
     session: Option<&SessionToken>,
 ) -> Option<ConsentAsk> {
     let accounts: Vec<AccountChoice> = registry
-        .fitting(need)
+        .fitting_only(need, only)
         .iter()
         .map(|fit| {
             AccountChoice::new(
@@ -43,13 +45,15 @@ pub fn ask_for(
     })
 }
 
-/// Records `answer` in `registry` and gives the reply. An `Allow` for an account that was not
+/// Records `answer` in `registry` and gives the reply. `only` is the account the ask was narrowed
+/// to: a Don't Allow is recorded for it alone. An `Allow` for an account that was not
 /// offered is treated as dismissed, and so is one whose scope is a session other than the one
 /// the ask carried (`session`): a sheet cannot make a session scope the ask did not offer.
 pub fn settle(
     registry: &mut Registry,
     need: &Need,
     asker: Asker<'_>,
+    only: Option<&AccountId>,
     session: Option<&SessionToken>,
     answer: ConsentAnswer,
     at: UnixSeconds,
@@ -62,7 +66,7 @@ pub fn settle(
         ConsentAnswer::Dismissed => AccountsReply::Refused(Refusal::Dismissed),
         ConsentAnswer::Deny => {
             let keys: Vec<_> = registry
-                .fitting(need)
+                .fitting_only(need, only)
                 .iter()
                 .map(|fit| asker.key(fit))
                 .collect();
@@ -81,6 +85,9 @@ pub fn settle(
         // The service runs the add sheet for this answer before it settles (`add_and_allow`); a
         // settle that is handed it records nothing.
         ConsentAnswer::AddAccount => AccountsReply::Refused(Refusal::Dismissed),
+        ConsentAnswer::Allow { account, .. } if only.is_some_and(|only| *only != account) => {
+            AccountsReply::Refused(Refusal::Dismissed)
+        }
         ConsentAnswer::Allow { account, scope } => {
             allow(registry, need, asker, &account, scope, at)
         }

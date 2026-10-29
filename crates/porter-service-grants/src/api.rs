@@ -2,7 +2,9 @@
 
 use crate::Grants;
 use porter_core::consent::{Availability, Grant, Usage};
-use porter_core::{AppId, Candidate, DataClass, EndpointUrl, GrantId, LlmVerdict, ProviderId};
+use porter_core::{
+    Account, AccountId, AppId, Candidate, DataClass, EndpointUrl, GrantId, LlmVerdict, ProviderId,
+};
 use porter_core::{RelayPlan, SecretText, SessionToken};
 use porter_match::Need;
 use porter_service_core::Ports;
@@ -33,16 +35,23 @@ pub trait GrantsApi {
     /// The grants `caller` holds.
     fn grants(&self, caller: &AppId) -> Vec<Grant>;
 
+    /// Every account the registry holds, whoever holds a grant for it: for the transport that
+    /// answers a porter daemon, Settings or the shell, which keep a switch per account. An app
+    /// is never answered this.
+    fn accounts(&self) -> Vec<Account>;
+
     /// Shows the chooser and consent sheet for `need` and records the grant the person gives.
     /// `session` is the open session the request was made in, which lets the sheet offer "This
     /// session only"; with one, "Add Account…" is not offered a second route: it ends the
     /// request dismissed, since the account it would add and allow gets an `Always` grant, not
-    /// the session one.
+    /// the session one. `only` narrows the sheet to that one account (no chooser, no "Add
+    /// Account…"), and the reply is a grant for it or a refusal.
     fn choose(
         &self,
         caller: &AppId,
         need: Need,
         class_usage: (DataClass, Usage),
+        only: Option<&AccountId>,
         window: &ParentWindow,
         session: Option<&SessionToken>,
     ) -> impl Future<Output = AccountsReply> + Send;
@@ -157,15 +166,20 @@ impl<E: Ports> GrantsApi for Grants<'_, E> {
         self.grants_of(caller)
     }
 
+    fn accounts(&self) -> Vec<Account> {
+        self.ctx.lock().accounts.clone()
+    }
+
     fn choose(
         &self,
         caller: &AppId,
         need: Need,
         class_usage: (DataClass, Usage),
+        only: Option<&AccountId>,
         window: &ParentWindow,
         session: Option<&SessionToken>,
     ) -> impl Future<Output = AccountsReply> + Send {
-        Grants::choose(self, caller, need, class_usage, window, session)
+        Grants::choose(self, caller, need, class_usage, only, window, session)
     }
 
     fn revoke(

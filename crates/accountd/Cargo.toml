@@ -22,6 +22,7 @@ porter-dbus = { workspace = true }
 porter-families = { workspace = true, features = ["set"] }
 porter-family-oauth = { workspace = true }
 porter-provider = { workspace = true }
+porter-proxy = { workspace = true, features = ["tls"] }
 porter-secrets = { workspace = true, features = ["oo7"] }
 porter-service = { workspace = true }
 porter-service-accounts = { workspace = true }

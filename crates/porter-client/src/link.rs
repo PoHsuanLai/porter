@@ -11,10 +11,10 @@ use crate::authenticated::AuthenticatedStream;
 use crate::changes::Changes;
 use crate::error::LinkError;
 use crate::found::ConsentOffer;
-use crate::grants::GrantsError;
+use crate::grants::{GrantsError, ListedAccount};
 use crate::identities::{IdentitiesError, Picked};
 use crate::spaces::SpacesError;
-use porter_capability::Claim;
+use porter_capability::{CapabilityKind, Claim};
 use porter_core::consent::{Availability, Grant, Usage};
 use porter_core::{
     AccountId, AccountState, AiAccountRow, AppId, AppName, Candidate, DataClass, DesktopSpace,
@@ -55,7 +55,7 @@ pub trait ServerEdits: AccountsLink {
     ) -> impl Future<Output = Result<EditedServers, EditError>> + Send;
 }
 
-/// The grants domain: who may use which account, and the relays a grant opens. No bus carries it.
+/// The grants domain: who may use which account, and the relays a grant opens.
 pub trait GrantsLink: Send + Sync + 'static {
     /// The accounts that fit `need` for this app and that it holds a grant for.
     fn candidates(
@@ -76,7 +76,9 @@ pub trait GrantsLink: Send + Sync + 'static {
     /// The grants this app holds.
     fn grants(&self) -> impl Future<Output = Result<Vec<Grant>, GrantsError>> + Send;
 
-    /// Shows the chooser and consent sheet for `offer`; the account the person picked, granted.
+    /// Shows the chooser and consent sheet for `offer` (for the one account it names, when it
+    /// names one, without a chooser); the account the person picked, granted. An offer that
+    /// names an account is answered with a grant for it or a refusal, never another account.
     fn request_grant(
         &self,
         offer: &ConsentOffer,
@@ -85,6 +87,24 @@ pub trait GrantsLink: Send + Sync + 'static {
 
     /// Withdraws one of this app's own grants.
     fn revoke(&self, grant: &GrantId) -> impl Future<Output = Result<(), GrantsError>> + Send;
+
+    /// The accounts the person has, for a porter daemon that keeps a switch per account.
+    fn accounts(&self) -> impl Future<Output = Result<Vec<ListedAccount>, GrantsError>> + Send;
+
+    /// Asks the person for the access the account's provider asks only on use, for `kinds`.
+    fn extend_access(
+        &self,
+        account: &AccountId,
+        kinds: &[CapabilityKind],
+        window: &ParentWindow,
+    ) -> impl Future<Output = Result<(), GrantsError>> + Send;
+
+    /// Whether `provider` asks some access of `kind` only on use.
+    fn asks_on_use(
+        &self,
+        provider: &ProviderId,
+        kind: CapabilityKind,
+    ) -> impl Future<Output = Result<bool, GrantsError>> + Send;
 
     /// A byte stream to `endpoint`, one of the account's servers, authenticated by a relay.
     fn open_authenticated(

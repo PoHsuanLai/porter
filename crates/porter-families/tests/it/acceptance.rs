@@ -163,6 +163,7 @@ async fn adding_a_nextcloud_account_by_login_flow_then_a_second_app_asks_and_is_
                 class: DataClass::Files,
                 usage: Usage::Interactive,
                 window: ParentWindow::Unparented,
+                account: None,
             },
         )
         .await;
@@ -420,6 +421,7 @@ async fn signing_in_again_replaces_the_password_for_an_app_that_holds_a_grant() 
                 class: DataClass::Files,
                 usage: Usage::Interactive,
                 window: ParentWindow::Unparented,
+                account: None,
             },
         )
         .await
@@ -559,6 +561,7 @@ fn choose_as(files: &AppId) -> (AppId, AccountsRequest) {
             class: DataClass::Files,
             usage: Usage::Interactive,
             window: ParentWindow::Unparented,
+            account: None,
         },
     )
 }

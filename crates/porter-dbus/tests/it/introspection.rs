@@ -12,6 +12,7 @@ fn checked_in_introspection_matches_the_interfaces() {
         accounts::ACCOUNTS_SHEET,
         sync::SYNC,
         accounts::KEYS,
+        accounts::GRANTS,
         accounts::LAUNCHER,
         accounts::BROKER,
         accounts::SPACES,
@@ -331,4 +332,29 @@ fn the_broker_declares_six_methods_and_one_signal_and_hands_keys_only_on_descrip
             .introspection()
             .contains("Broker")
     );
+}
+
+#[test]
+fn grants1_declares_the_grant_calls_and_hands_streams_only_on_descriptors() {
+    let xml = porter_dbus::accounts::GRANTS.introspection();
+    assert!(xml.contains("<interface name=\"org.quire.Grants1\">"));
+    for member in [
+        "Candidates",
+        "Availability",
+        "Grants",
+        "RequestGrant",
+        "Revoke",
+        "OpenAuthenticated",
+        "OpenLinked",
+        "Accounts",
+        "ExtendAccess",
+        "AsksOnUse",
+    ] {
+        assert!(xml.contains(&format!("<method name=\"{member}\">")), "{member}");
+    }
+    assert_eq!(xml.matches("<method ").count(), 10);
+    assert_eq!(xml.matches("<signal ").count(), 0);
+    // A relayed stream is a descriptor, and no member answers a token or a password.
+    assert_eq!(xml.matches("type=\"h\" direction=\"out\"").count(), 2);
+    assert_eq!(porter_wire::names::GRANTS_PATH, "/org/quire/Grants1");
 }

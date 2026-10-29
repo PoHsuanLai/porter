@@ -1,15 +1,18 @@
 //! [`Hosted`]: `porter-client`'s accounts and grants answered by a service this process runs.
 
 use crate::relays::{NoRelays, RelayHost};
+use porter_capability::CapabilityKind;
 use porter_client::{
     AccountsError, AccountsLink, AuthenticatedStream, ConsentOffer, EditError, GrantsError,
-    GrantsLink, Porter, ServerEdits,
+    GrantsLink, ListedAccount, Porter, ServerEdits,
 };
 use porter_core::RelayPlan;
 use porter_core::consent::{Availability, Grant, Usage};
 use porter_core::store::{NoStore, Persisted, RegistryStore};
 use porter_core::stream::duplex;
-use porter_core::{AccountId, AppId, Candidate, DataClass, EndpointUrl, GrantId, ProviderHint};
+use porter_core::{
+    AccountId, AppId, Candidate, DataClass, EndpointUrl, GrantId, ProviderHint, ProviderId,
+};
 use porter_ids::clock::{Clock, SystemClock};
 use porter_match::Need;
 use porter_provider::Provider;
@@ -156,6 +159,7 @@ impl<C: Service + 'static, H: RelayHost + 'static> GrantsLink for Hosted<C, H> {
                 &self.app,
                 offer.need.clone(),
                 (offer.class, offer.usage),
+                offer.account.as_ref(),
                 window,
                 None,
             )
@@ -173,6 +177,38 @@ impl<C: Service + 'static, H: RelayHost + 'static> GrantsLink for Hosted<C, H> {
             .revoke(&self.app, grant)
             .await
             .map_err(GrantsError::Refused)
+    }
+
+    async fn accounts(&self) -> Result<Vec<ListedAccount>, GrantsError> {
+        // No provider names are kept here: the labels are accountd's (`provider_names`).
+        Ok(self
+            .service
+            .grants_api()
+            .accounts()
+            .into_iter()
+            .map(|account| ListedAccount::new(account, None))
+            .collect())
+    }
+
+    async fn extend_access(
+        &self,
+        account: &AccountId,
+        kinds: &[CapabilityKind],
+        window: &ParentWindow,
+    ) -> Result<(), GrantsError> {
+        self.service
+            .accounts_api()
+            .extend_access(&self.app, account, kinds.to_vec(), window.clone())
+            .await
+            .map_err(GrantsError::Refused)
+    }
+
+    async fn asks_on_use(
+        &self,
+        provider: &ProviderId,
+        kind: CapabilityKind,
+    ) -> Result<bool, GrantsError> {
+        Ok(self.service.accounts_api().asks_on_use(provider, kind))
     }
 
     async fn open_authenticated(

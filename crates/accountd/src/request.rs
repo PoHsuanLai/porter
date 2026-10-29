@@ -33,6 +33,30 @@ impl<H: Host, C: Callers> Core<H, C> {
         options: &Details,
         request: AccountsRequest,
     ) -> Result<OwnedObjectPath, RefusedError> {
+        self.sheet_with(header, kind, options, request, true).await
+    }
+
+    /// [`Core::sheet`], except that a `Choose` always draws its sheet: the answer is the
+    /// person's for this ask, not a grant the app holds for another account that fits the same
+    /// need. `Grants1.RequestGrant` is this one; the app has `Candidates` to see what it holds.
+    pub(crate) async fn sheet_anew(
+        self: &Arc<Self>,
+        header: &Header<'_>,
+        kind: SheetKind,
+        options: &Details,
+        request: AccountsRequest,
+    ) -> Result<OwnedObjectPath, RefusedError> {
+        self.sheet_with(header, kind, options, request, false).await
+    }
+
+    async fn sheet_with(
+        self: &Arc<Self>,
+        header: &Header<'_>,
+        kind: SheetKind,
+        options: &Details,
+        request: AccountsRequest,
+        reuse_permit: bool,
+    ) -> Result<OwnedObjectPath, RefusedError> {
         let caller = self.identify(header, Standing::Acting).await?;
         let app = caller.app.clone();
         let shell = matches!(caller.role, CallerRole::SheetHost | CallerRole::Settings);
@@ -59,7 +83,8 @@ impl<H: Host, C: Callers> Core<H, C> {
                     class,
                     usage,
                     window,
-                } => match core.host.existing_permit(&app, &need, class, usage) {
+                    account: None,
+                } if reuse_permit => match core.host.existing_permit(&app, &need, class, usage) {
                     Some(best) => AccountsReply::Chosen(best),
                     None => {
                         core.host
@@ -70,6 +95,7 @@ impl<H: Host, C: Callers> Core<H, C> {
                                     class,
                                     usage,
                                     window,
+                                    account: None,
                                 },
                             )
                             .await

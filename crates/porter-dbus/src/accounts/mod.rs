@@ -1,14 +1,15 @@
 //! accountd's interfaces and vocabulary: the add-account sheet (`Manager`, `Account`, and the
 //! `Request` object every sheet service returns), the sheet host's side (`AccountsSheet`), the
 //! identities signed in on this machine (`Identities`), the desktop-wide Spaces (`Spaces`), the
-//! person's computers on their Tailscale network (`Tailnet`), and the AI keys accountd keeps (`Keys`
+//! person's computers on their Tailscale network (`Tailnet`), who may use which account and the relays a grant opens (`Grants`), and the AI keys accountd keeps (`Keys`
 //! for an app's permit, `Launcher` for the agent launcher, `Broker` for the daemon that sends a
 //! key to an AI company), with the bus names, object paths and row keys that go with them; and the portal shape of a sheet's answer ([`sheet`], [`Sheet`]),
-//! which the three services that show a sheet share ([`ServiceRoot`]).
+//! which the services that show a sheet share ([`ServiceRoot`]).
 
 mod account;
 mod broker;
 mod candidate;
+mod grants;
 mod identities;
 mod keys;
 mod launcher;
@@ -35,6 +36,7 @@ pub use broker::{
     own_server_from_dbus, own_server_to_dbus, verdict_from_dbus, verdict_to_dbus,
 };
 pub use candidate::{CandidateArg, candidate_from_dbus, candidate_to_dbus};
+pub use grants::{ACCOUNT_OPTION, GrantsProxy, GrantsServed, GrantsServer, from_text, to_text};
 pub use identities::{
     IDENTITY_KEY_ADDRESS, IDENTITY_KEY_KIND, IDENTITY_KEY_NAME, IDENTITY_KEY_PROVIDER,
     IdentitiesProxy, IdentitiesServed, IdentitiesServer, IdentityRemoved, IdentityRemovedStream,
@@ -90,6 +92,11 @@ pub const ACCOUNTS: Document = Document {
 pub const KEYS: Document = Document {
     file_name: "org.quire.Accounts1.Keys.xml",
     interfaces: &[KeysServed::<Unserved>::introspect],
+};
+/// `org.quire.Grants1`, on accountd's bus name.
+pub const GRANTS: Document = Document {
+    file_name: "org.quire.Grants1.xml",
+    interfaces: &[GrantsServed::<Unserved>::introspect],
 };
 /// `org.quire.Accounts1.Launcher`, on accountd's bus name.
 pub const LAUNCHER: Document = Document {

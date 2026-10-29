@@ -307,6 +307,7 @@ async fn a_grant_reaches_as_far_as_the_need_it_was_chosen_for() {
                     class: DataClass::Files,
                     usage: Usage::Background,
                     window: ParentWindow::Unparented,
+                    account: None,
                 },
             )
             .await;
