@@ -57,8 +57,8 @@ pub use found::{ConsentOffer, Found, NoAccount, found};
 pub use grants::{Grants, GrantsError};
 pub use identities::{Identities, IdentitiesError, Picked};
 pub use link::{
-    AccountWatch, AccountsLink, AiAccountsLink, AiKeysLink, GrantsLink, IdentitiesLink, ServerEdits,
-    SpacesLink, TailnetLink,
+    AccountWatch, AccountsLink, AiAccountsLink, AiKeysLink, GrantsLink, IdentitiesLink,
+    ServerEdits, SpacesLink, TailnetLink,
 };
 pub use porter::Porter;
 pub use spaces::{Spaces, SpacesError};

@@ -316,7 +316,7 @@ EDGES=(
   "porter-callers: porter-core"
   "porter-dbus: porter-core porter-dbus-macros porter-tailscale porter-wire porter-ids"
   "porter-sheets: porter-core porter-capability porter-sheet porter-wire porter-callers porter-dbus porter-provider porter-service-core"
-  "porter-client: porter-core porter-tailscale porter-match porter-capability porter-wire porter-ids"
+  "porter-client: porter-core porter-tailscale porter-match porter-capability porter-wire porter-ids porter-sheet"
   "porter-client-dbus: porter-client porter-core porter-wire porter-capability porter-dbus porter-ids porter-tailscale"
   "porter-client-inproc: porter-client porter-core porter-ids porter-match porter-provider porter-proxy porter-secrets porter-service porter-service-accounts porter-service-core porter-service-grants porter-sheet porter-wire"
   "porter-fake: porter-core porter-capability porter-sheet porter-wire porter-ids porter-provider porter-secrets porter-service porter-service-core"

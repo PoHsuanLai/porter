@@ -12,10 +12,10 @@
 mod add;
 mod add_flow;
 mod add_store;
-mod edit;
 mod agent;
 mod agent_login;
 mod api;
+mod edit;
 mod launcher;
 mod local;
 mod manage;

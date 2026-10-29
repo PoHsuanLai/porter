@@ -164,9 +164,13 @@ async fn a_hosted_app_edits_an_imap_accounts_host_and_port_and_the_stored_accoun
     let attempts = [world.imap.attempts(), world.smtp.attempts()].concat();
     assert!(attempts.len() >= 2, "{attempts:?}");
     assert!(
-        attempts.iter().all(
-            |a| a.accepted && a.user == ADDRESS && a.secret == Secret::Password(PASSWORD.into())
-        ),
+        attempts.iter().all(|a| a.accepted && a.user == ADDRESS),
+        "{attempts:?}"
+    );
+    assert!(
+        attempts
+            .iter()
+            .all(|a| a.secret == Secret::Password(PASSWORD.into())),
         "{attempts:?}"
     );
 }

@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Editing an account's servers (hosted apps)
+
+- `porter_client::Accounts::edit_servers(EditServers, &ParentWindow) -> Result<EditedServers, EditError>`,
+  over a transport that implements `ServerEdits` (the hosted one only; no bus method, no wire change).
+  The sheet opens on the server form prefilled from the account, the servers the person types are
+  logged in at (the incoming server, and the outgoing one when it, the login name or the password
+  changed) before anything is handed back, and a refusal marks its field so the person sends again.
+  Porter stores nothing: the app keeps the servers, the name and the new password in the
+  `EditedServers` (`into_parts`, once; no `Clone`, no `PartialEq`, no public password field).
+- `porter_sheet`: `Purpose::EditServers`, `Stage::Checking`, `FieldKind::Name` (asked only when the
+  app names one with `EditServers::with_name`), `edit_form`, `servers_editable`, `servers_fixed`,
+  `ServersFixed`, `EditServers`, `EditedServers`. `porter_provider::SignInMode::EditServers`; the
+  generic family tries the typed servers with a password, never a bearer token.
+- `porter_service_accounts::AccountsApi::edit_servers` and `EditError`. The add flow's `Job` is a trait
+  whose `Done` is what its own entry point returns (`Add`, `Reauthenticate`, `Extend`, `EditServers`).
+- `porter_client::AccountChange::NeedsReauth(AccountRef)` is gone: `AccountChange::State(AccountRef,
+  AccountState)` says every change of an account's state, so signing in again and recovering are one
+  path. `Bus::watch` hears the `State` property change of any account object and reads the state.
+
 ### The AI broker leaves porter for steward
 
 - Deleted: `inferd`, `inferd-client`, `porter-infer`, `porter-router`, `porter-turns`, `porter-bridge`

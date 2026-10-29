@@ -123,8 +123,9 @@ impl<T: AccountWatch> Accounts<T> {
         self.link.reauthenticate_shown(account, window).await
     }
 
-    /// The accounts added, removed and needing a sign-in again, from now on. Subscribe before
-    /// reading [`Accounts::needing_reauth`], so no change falls between the two.
+    /// The accounts added and removed, and every change of an account's state (an account that
+    /// needs signing in again is one such change, and so is its recovery), from now on. Subscribe
+    /// before reading [`Accounts::needing_reauth`], so no change falls between the two.
     pub async fn watch(&self) -> Result<Changes<AccountChange>, LinkError> {
         self.link.watch().await
     }
@@ -223,8 +224,10 @@ pub enum AccountChange {
     Added(AccountRef),
     /// An account was removed.
     Removed(AccountRef),
-    /// An account needs signing in again.
-    NeedsReauth(AccountRef),
+    /// An account is in this state now, whichever it came from: signing in again is the state
+    /// `AccountState::NeedsReauth`, and an account that recovers is `AccountState::Ok`, so a
+    /// shell follows one path for both.
+    State(AccountRef, AccountState),
 }
 
 #[cfg(test)]

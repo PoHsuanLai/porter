@@ -121,7 +121,7 @@ pub trait AccountWatch: AccountsLink {
         window: &ParentWindow,
     ) -> impl Future<Output = Result<(), AccountsError>> + Send;
 
-    /// The accounts added, removed and needing a sign-in again, from now on.
+    /// The accounts added and removed, and every change of an account's state, from now on.
     fn watch(&self) -> impl Future<Output = Result<Changes<AccountChange>, LinkError>> + Send;
 }
 

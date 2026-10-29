@@ -16,7 +16,6 @@ use porter_client::{
     LinkError, Malformed, NeedsReauth,
 };
 use porter_core::{AccountId, AccountLabel, AccountState, ProviderHint, ProviderId, ReauthReason};
-use porter_dbus::accounts::NeedsReauth as NeedsReauthSignal;
 use porter_dbus::accounts::account_path;
 use porter_dbus::accounts::sheet::{SheetKind, reply_of};
 use porter_dbus::accounts::{
@@ -163,6 +162,39 @@ impl Bus {
     }
 }
 
+/// The interface whose `State` property a shell is told changed.
+const ACCOUNT_INTERFACE: &str = "org.quire.Accounts1.Account";
+
+/// What a `PropertiesChanged` heard is, when it says an account's `State` changed: the account
+/// and the state it has now, read from its object. A signal about anything else is not a change;
+/// an account that went before it could be read is not one either (its removal is told by
+/// `AccountRemoved`).
+async fn state_change(
+    bus: &Bus,
+    message: zbus::Result<zbus::Message>,
+) -> Option<Result<AccountChange, Malformed>> {
+    let message = message.ok()?;
+    let account = AccountRef::of_object_path(message.header().path()?.as_str())?;
+    let (interface, changed, invalidated) = message
+        .body()
+        .deserialize::<(
+            String,
+            std::collections::HashMap<String, porter_dbus::zvariant::OwnedValue>,
+            Vec<String>,
+        )>()
+        .ok()?;
+    let says_state = changed.contains_key("State") || invalidated.iter().any(|n| n == "State");
+    if interface != ACCOUNT_INTERFACE || !says_state {
+        return None;
+    }
+    let word = bus.account_proxy(&account).await.ok()?.state().await.ok()?;
+    Some(
+        from_word::<AccountState>(&word)
+            .map(|state| AccountChange::State(account, state))
+            .ok_or(Malformed::Row),
+    )
+}
+
 fn account_ref(path: &str) -> Result<AccountRef, Malformed> {
     AccountRef::of_object_path(path).ok_or(Malformed::Row)
 }
@@ -241,16 +273,24 @@ impl AccountWatch for Bus {
                 let args = signal.args().map_err(|_| Malformed::Signal)?;
                 account_ref(args.account.as_str()).map(AccountChange::Removed)
             });
-        let needs = manager
-            .receive_needs_reauth()
+        // A change of any account's state is a `PropertiesChanged` of its object, sent to the shell
+        // alone; the new state is read from the object, which is where the shell may read it.
+        let rule = zbus::MatchRule::builder()
+            .msg_type(zbus::message::Type::Signal)
+            .interface("org.freedesktop.DBus.Properties")
+            .and_then(|rule| rule.member("PropertiesChanged"))
+            .map_err(|e| link_error(&e))?
+            .build();
+        let bus = self.clone();
+        let states = zbus::MessageStream::for_match_rule(rule, &self.connection, None)
             .await
             .map_err(|e| link_error(&e))?
-            .map(|signal: NeedsReauthSignal| {
-                let args = signal.args().map_err(|_| Malformed::Signal)?;
-                account_ref(args.account.as_str()).map(AccountChange::NeedsReauth)
+            .filter_map(move |message| {
+                let bus = bus.clone();
+                async move { state_change(&bus, message).await }
             });
-        // Asking is how accountd learns this connection, which it then sends `NeedsReauth` to.
+        // Asking is how accountd learns this connection, which it then sends state changes to.
         manager.needing_reauth().await.map_err(|e| link_error(&e))?;
-        Ok(Changes::new(select(select(added, removed), needs)))
+        Ok(Changes::new(select(select(added, removed), states)))
     }
 }

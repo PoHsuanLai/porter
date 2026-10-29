@@ -794,15 +794,8 @@ impl<E: Ports> Accounts<'_, E> {
         // Boxed, like each entry point's call of `drive`: the futures of the four jobs, each
         // generic over the service, are not laid out inside one another.
         let provider = stage_provider(&sheet.stage);
-        let stored = Box::pin(job.store(
-            self,
-            caller,
-            provider,
-            &signed,
-            answers.as_deref(),
-            choices,
-        ))
-        .await;
+        let stored =
+            Box::pin(job.store(self, caller, provider, &signed, answers.as_deref(), choices)).await;
         match stored {
             Ok(done) => {
                 run.stored = Some(done);

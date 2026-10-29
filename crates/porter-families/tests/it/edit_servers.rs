@@ -274,5 +274,5 @@ async fn a_lookup_whose_accounts_have_no_typed_servers_cannot_be_edited() {
         SignInStep::Failed(SignInFault::Unreadable)
     );
     // The mail lookup is the one that can.
-    assert!(<MailLookup as porter_family_generic::Lookup>::EDITS_SERVERS);
+    const { assert!(<MailLookup as porter_family_generic::Lookup>::EDITS_SERVERS) };
 }
