@@ -25,6 +25,9 @@
 - accountd runs the relays (`accountd::Relays`, `Options::relays`: the default trusts the
   platform's roots; a test passes a connector that trusts its scratch CA) and depends on
   `porter-proxy`.
+- `porter_dbus::accounts::ServiceRoot::Sync` is gone, and with it the sync daemon's request root
+  and error prefix: the sync daemon asks accountd for what it needs, and porter-sheets and
+  porter-daemon name accountd alone.
 
 ### The sync daemon moved to the ferry repo
 

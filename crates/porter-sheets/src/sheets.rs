@@ -1,6 +1,6 @@
 //! The sheets drawn by the sheet host (sill) over `org.quire.AccountsSheet1`.
 //!
-//! The daemon (accountd, inferd or syncd) is the only caller of `Open`, `Update` and `Close`; the
+//! The daemon (accountd) is the only caller of `Open`, `Update` and `Close`; the
 //! host answers with `Input` signals. Who counts:
 //!
 //! - the host is the connection that owns `org.quire.AccountsSheet1` **and** whose caller role is

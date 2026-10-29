@@ -9,7 +9,7 @@
 //!    gives the raw `(response, results)`, which `reply_of` reads.
 //!
 //! A signal counts only when it comes from the connection that owns the service's name
-//! (`org.quire.Accounts1`, or with [`Sheet::subscribe_on`] inferd's or syncd's, see
+//! (`org.quire.Accounts1`, or with [`Sheet::subscribe_on`] another service's, see
 //! [`ServiceRoot`]) and from the returned path, so another process on the bus cannot answer for the person. If that
 //! owner leaves the bus before it answered, the wait ends in [`SheetError::Gone`] instead of
 //! never. [`Closer`] is the caller giving up (`Request.Close`): the task that waits for a sheet is
@@ -81,7 +81,7 @@ impl Sheet {
         Self::subscribe_on(connection, ServiceRoot::Accounts).await
     }
 
-    /// Starts listening for the sheets of `service` (inferd's and syncd's show their own), under
+    /// Starts listening for the sheets of `service`, under
     /// a token of its own. Call this before the sheet method.
     pub async fn subscribe_on(
         connection: &BusConnection,

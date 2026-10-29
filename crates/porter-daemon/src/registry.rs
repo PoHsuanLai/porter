@@ -1,6 +1,6 @@
-//! What a daemon tells the person when its registry file is refused at start. The three daemons
-//! (accountd, syncd, inferd) refuse the same way and differ only in the service they name, so
-//! the paragraph is written once, here, from the parts of the library's refusal.
+//! What a daemon tells the person when its registry file is refused at start. A daemon
+//! that keeps a registry refuses the same way and differs only in the service it names, so the
+//! paragraph is written once, here, from the parts of the library's refusal.
 
 use std::path::Path;
 
@@ -33,18 +33,23 @@ mod tests {
             Path::new("/r/registry.json"),
             Some(Path::new("/r/registry.json.bak")),
             "oops",
-            "sync service",
+            "accounts service",
         );
         for part in [
             "/r/registry.json ",
             "/r/registry.json.bak",
             "oops",
-            "sync service",
+            "accounts service",
             "Nothing was changed",
         ] {
             assert!(said.contains(part), "{said}");
         }
-        let alone = registry_words(Path::new("/r/registry.json"), None, "oops", "sync service");
+        let alone = registry_words(
+            Path::new("/r/registry.json"),
+            None,
+            "oops",
+            "accounts service",
+        );
         assert!(alone.contains("no earlier copy"), "{alone}");
     }
 }

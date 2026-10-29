@@ -1,6 +1,6 @@
-//! The bus side of porter's sheets. Three daemons show the person a sheet (accountd for an
-//! identity, inferd for an AI key, syncd for "Continue as"); what they share lives here, so each
-//! is thin wiring over it:
+//! The bus side of porter's sheets. accountd shows the person a sheet (for an identity, an AI key
+//! or a grant), and what a daemon that shows one needs lives here, so each is thin wiring over
+//! it:
 //!
 //! - [`BusSheets`] draws a sheet in the sheet host (sill) over `org.quire.AccountsSheet1`, as
 //!   porter-service's `Sheets` seam, and checks that the host is who it says (its caller role is
