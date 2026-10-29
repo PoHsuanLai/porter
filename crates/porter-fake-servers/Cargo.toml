@@ -17,7 +17,6 @@ porter-ids = { workspace = true }
 porter-discover = { workspace = true }
 porter-fake = { workspace = true }
 porter-provider = { workspace = true }
-quickxorhash = { workspace = true }
 rustls = { workspace = true }
 rustls-pki-types = { workspace = true }
 serde_json = { workspace = true }

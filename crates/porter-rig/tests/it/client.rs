@@ -1,8 +1,7 @@
 //! `porter-rig-client` as a process, on a private bus with the real accountd service (a fake
-//! provider with one signed-in identity) and syncd's `Sync1` served over a hub. The daemons name
-//! the client from the identity fixture the client writes under a proc root (`fixture`), the way
-//! a scenario's `test-proc-root` daemons do: the client is `org.example.Rig`, a Flatpak app, and
-//! nothing else says so.
+//! provider with one signed-in identity). The daemon names the client from the identity fixture
+//! the client writes under a proc root (`fixture`), the way a scenario's `test-proc-root` daemons
+//! do: the client is `org.example.Rig`, a Flatpak app, and nothing else says so.
 
 use crate::common;
 
@@ -12,7 +11,7 @@ use porter_callers::{CallerTable, ProcCallers};
 use porter_capability::{Claim, Offer, Provenance, Subject};
 use porter_core::AccountId;
 use porter_core::{
-    Account, AccountLabel, AccountState, AppName, AuthKind, Credential, Restriction, SecretKey,
+    Account, AccountLabel, AccountState, AuthKind, Credential, Restriction, SecretKey,
     SecretPurpose, SecretText,
 };
 use porter_fake::{FakeProvider, MemoryStore, RecordingAudit};
@@ -22,19 +21,14 @@ use porter_provider::Provider;
 use porter_secrets::{MemorySecrets, Secrets};
 use porter_service::AccountService;
 use porter_service_core::registry::Registry;
-use porter_sync::{BaseVersion, Conflict, RemoteId, RemoteSide, RemoteVersion, StoredConflict};
 use serde_json::Value;
-use std::collections::BTreeSet;
 use std::process::Stdio;
-use std::sync::{Arc, Mutex};
-use syncd::service::{Access, DatasetName, Event, Hub, Nudge, serve};
+use std::sync::Arc;
 use test_kit::Scratch;
-use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
 const ACCOUNT: &str = "graph-acct";
 const APP: &str = "org.example.Rig";
-const DATASET: &str = "a1/notes";
 
 const PROVIDER: &str = r#"
 id = "fake-graph"
@@ -56,8 +50,6 @@ v = { access = "read_write", delta = "poll", quota = "reported", scope = "app_fo
 
 struct Rig {
     bus: PrivateBus,
-    hub: Hub,
-    settled: Arc<Mutex<Vec<(i64, String)>>>,
     _keep: Vec<zbus::Connection>,
     /// Last, so it goes after the bus and the connections.
     proc_root: Scratch,
@@ -158,46 +150,9 @@ async fn rig() -> Rig {
         .await
         .expect("accountd serves");
 
-    let hub = Hub::default();
-    let server = bus.connect().await;
-    let sync_callers = Arc::new(ProcCallers::with_proc_root(
-        server.clone(),
-        CallerTable::default(),
-        proc_root.to_path_buf(),
-    ));
-    serve(&server, hub.clone(), sync_callers)
-        .await
-        .expect("sync1");
-    let handle = hub.register(
-        DatasetName::parse(DATASET).expect("name"),
-        Access {
-            owners: BTreeSet::from([AppName::parse(APP).expect("app")]),
-        },
-    );
-    // The dataset's driver, as far as settling goes: it records what the owner asks.
-    let settled = Arc::new(Mutex::new(Vec::new()));
-    let recorded = Arc::clone(&settled);
-    tokio::spawn(async move {
-        let mut own = handle;
-        loop {
-            match own.nudged().await {
-                Nudge::Settle(request) => {
-                    recorded
-                        .lock()
-                        .expect("lock")
-                        .push((request.number.0, format!("{:?}", request.how.0)));
-                    let _ = request.reply.send(Ok(()));
-                }
-                Nudge::Pause | Nudge::Confirm(_) | Nudge::SyncNow => {}
-                Nudge::Dropped => break,
-            }
-        }
-    });
     Rig {
         bus,
-        hub,
-        settled,
-        _keep: vec![accountd, server],
+        _keep: vec![accountd],
         proc_root,
     }
 }
@@ -237,86 +192,6 @@ async fn the_client_lists_identities_and_continues_as_one_as_the_app_the_fixture
         .expect("proc")
         .collect();
     assert!(left.is_empty(), "{left:?}");
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn the_client_lists_datasets_watches_conflicts_and_settles_one() {
-    let rig = rig().await;
-    let (lines, ok) = rig.run(&["datasets"]).await;
-    assert!(ok, "{lines:?}");
-    assert_eq!(lines[0]["datasets"][0], DATASET);
-
-    // watch-conflicts joins syncd's roster, says so, and prints the next conflict.
-    let mut watching = rig
-        .client(&["watch-conflicts", "--count", "1", "--timeout-s", "60"])
-        .spawn()
-        .expect("spawns");
-    let stdout = watching.stdout.take().expect("piped");
-    let mut lines = BufReader::new(stdout).lines();
-    let first = tokio::time::timeout(test_kit::GENEROUS, lines.next_line())
-        .await
-        .expect("a line in time")
-        .expect("read")
-        .expect("a line");
-    let first: Value = serde_json::from_str(&first).expect("JSON");
-    assert_eq!(first["event"], "watching");
-    assert_eq!(first["datasets"][0], DATASET);
-
-    let name = DatasetName::parse(DATASET).expect("name");
-    let stored = StoredConflict {
-        number: Some(7),
-        conflict: Conflict {
-            item: RemoteId("r1".into()),
-            base: BaseVersion::Absent,
-            remote: RemoteSide::Exists(RemoteId("r1".into()), RemoteVersion("v2".into())),
-        },
-        local: porter_sync::LocalId("a.txt".into()),
-        local_hash: None,
-        at: UnixSeconds(5),
-    };
-    // Any handle of the hub may tell: the dataset's own is held by the driver task, so a second
-    // registration under another name would not be seen; use the event the hub relays.
-    let teller = rig.hub.register(
-        DatasetName::parse("a1/other").expect("name"),
-        Access {
-            owners: BTreeSet::from([AppName::parse(APP).expect("app")]),
-        },
-    );
-    teller.tell(Event::Conflict {
-        dataset: name,
-        conflict: Box::new(stored),
-    });
-    let second = tokio::time::timeout(test_kit::GENEROUS, lines.next_line())
-        .await
-        .expect("a line in time")
-        .expect("read")
-        .expect("a line");
-    let second: Value = serde_json::from_str(&second).expect("JSON");
-    assert_eq!(second["event"], "conflict");
-    assert_eq!(second["dataset"], DATASET);
-    assert_eq!(second["conflict"]["number"], 7);
-    let status = watching.wait().await.expect("ends");
-    assert!(status.success(), "--count 1 ends it after one");
-
-    let (lines, ok) = rig
-        .run(&["sync-resolve", DATASET, "7", "keep_remote"])
-        .await;
-    assert!(ok, "{lines:?}");
-    assert_eq!(result_of(&lines), "resolved");
-    assert_eq!(
-        rig.settled.lock().expect("lock").as_slice(),
-        [(7, "KeepRemote".to_owned())]
-    );
-
-    let (lines, ok) = rig.run(&["sync-resolve", DATASET, "7", "keep_both"]).await;
-    assert!(!ok);
-    assert_eq!(result_of(&lines), "error");
-    assert!(
-        lines[0]["name"]
-            .as_str()
-            .is_some_and(|n| n.contains("InvalidArgs")),
-        "{lines:?}"
-    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

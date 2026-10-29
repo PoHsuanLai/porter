@@ -344,6 +344,8 @@ impl Daemon {
                     .with_audit(Arc::new(FileAudit::new(paths.audit.clone()))),
             )),
             saved: Some(saved),
+            // The platform's trusted roots.
+            relays: None,
         };
         serve_with(&connection, service, callers, options)
             .await

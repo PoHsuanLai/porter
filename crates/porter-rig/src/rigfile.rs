@@ -146,9 +146,6 @@ pub struct RigFile {
     /// The OAuth issuer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub oauth: Option<OauthAt>,
-    /// The Graph drive (it accepts the issuer's access tokens).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub graph: Option<HttpAt>,
     /// The fake Google (its own issuer, not the OAuth issuer above).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub google: Option<GoogleAt>,

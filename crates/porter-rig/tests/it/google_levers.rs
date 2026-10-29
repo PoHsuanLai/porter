@@ -11,7 +11,6 @@ use tokio::sync::Notify;
 fn levers(google: Option<porter_fake_servers::GoogleHandle>) -> Levers {
     Levers {
         issuer: None,
-        graph: None,
         google,
         imap: None,
         smtp: None,

@@ -21,18 +21,17 @@ cd "$(dirname "$0")/.."
 # purpose: a test target's helpers are dead code in a default build (accountd's tests/it/ fails
 # -D warnings with default features on master, and no consumer compiles it).
 BUILDS=(
-  # The two daemons, each alone with its default features: `-p` alone, so no other package's
-  # features are unified in.
+  # The daemon alone with its default features: `-p` alone, so no other package's features are
+  # unified in.
   "accountd (default) :: -p accountd"
-  "syncd (default) :: -p syncd"
 
   # porter-client and its two transports, in the sets their consumers name. No feature is on by
-  # default: mailo takes the hosted transport alone, syncd the hosted transport with its relays,
+  # default: mailo takes the hosted transport alone, ferry's syncd the hosted transport with its relays,
   # detent, sill, docket and almanac the bus transport.
   "porter-client :: -p porter-client"
   "porter-client-dbus :: -p porter-client-dbus"
   "porter-client-inproc (no features: mailo) :: -p porter-client-inproc --no-default-features"
-  "porter-client-inproc (relays: syncd) :: -p porter-client-inproc --features relays"
+  "porter-client-inproc (relays: ferry syncd) :: -p porter-client-inproc --features relays"
 
   # The other porter crates a consumer takes with default-features = false (mailo's workspace
   # block, which mail-core, mail-app and mail-runtime name), in the features each one turns on.

@@ -8,15 +8,9 @@ members = [
   "crates/porter-wire",
   "crates/porter-sheet",
   "crates/porter-fs",
-  "crates/quickxorhash",
-  "crates/windows-zones",
   "crates/keyring-chunked",
   "crates/porter-provider",
   "crates/porter-secrets",
-  "crates/porter-sync",
-  "crates/porter-drive",
-  "crates/porter-drive-fuse",
-  "crates/porter-mountd",
   "crates/porter-service-core",
   "crates/porter-service-accounts",
   "crates/porter-service-grants",
@@ -53,13 +47,8 @@ members = [
   "crates/porter-tailscale",
   "crates/porter-daemon",
   "crates/accountd",
-  "crates/syncd",
-  "crates/storage-webdav",
-  "crates/storage-graph",
-  "crates/storage-gdrive",
   "crates/porter-rig",
   "crates/fake-secret-service",
-  "crates/syncd-fakes",
 ]
 
 [workspace.package]
@@ -79,15 +68,9 @@ porter-core     = { path = "crates/porter-core" }
 porter-wire     = { path = "crates/porter-wire" }
 porter-sheet    = { path = "crates/porter-sheet" }
 porter-fs        = { path = "crates/porter-fs" }
-quickxorhash    = { path = "crates/quickxorhash" }
-windows-zones   = { path = "crates/windows-zones" }
 keyring-chunked = { path = "crates/keyring-chunked" }
 porter-provider = { path = "crates/porter-provider" }
 porter-secrets  = { path = "crates/porter-secrets" }
-porter-sync     = { path = "crates/porter-sync" }
-porter-drive    = { path = "crates/porter-drive" }
-porter-drive-fuse = { path = "crates/porter-drive-fuse" }
-porter-mountd = { path = "crates/porter-mountd" }
 porter-service-core = { path = "crates/porter-service-core" }
 porter-service-accounts = { path = "crates/porter-service-accounts" }
 porter-service-grants = { path = "crates/porter-service-grants" }
@@ -107,7 +90,6 @@ porter-fake     = { path = "crates/porter-fake" }
 test-kit        = { path = "crates/test-kit" }
 porter-fake-servers = { path = "crates/porter-fake-servers" }
 fake-secret-service = { path = "crates/fake-secret-service" }
-syncd-fakes     = { path = "crates/syncd-fakes" }
 porter-http     = { path = "crates/porter-http" }
 porter-http-reqwest = { path = "crates/porter-http-reqwest" }
 porter-http-relay = { path = "crates/porter-http-relay" }
@@ -127,9 +109,6 @@ porter-tailscale = { path = "crates/porter-tailscale" }
 # Without the settings-file watch: a daemon that watches asks for `features = ["watch"]`, so
 # porter-dbus (and every bus client through it) never pulls a file watcher in.
 porter-daemon   = { path = "crates/porter-daemon", default-features = false }
-storage-webdav  = { path = "crates/storage-webdav" }
-storage-graph   = { path = "crates/storage-graph" }
-storage-gdrive  = { path = "crates/storage-gdrive" }
 
 # quire's live settings modules (`org.quire.SettingsModule1`), for accountd only: the one porter -> quire
 # edge (ARCHITECTURE section 1). By git at quire's pinned rev (a local checkout overrides it: ARCHITECTURE section 1); `live` is the module, `tokio` drives its zbus.
@@ -156,19 +135,8 @@ roxmltree = "0.21"
 # The request and response types (MIT OR Apache-2.0, already in Cargo.lock at 1.5.0 through
 # hyper): porter-http's `HttpRequest` and `HttpResponse`, and dav-proto's `http` feature.
 http = "1"
-# syncd's media type by extension (MIT, 2.0.5) and porter-http's Retry-After dates (MIT OR Apache-2.0,
-# 1.0.3).
-mime_guess = { version = "2", default-features = false }
+# porter-http's Retry-After dates (MIT OR Apache-2.0, 1.0.3).
 httpdate = "1"
-# syncd's HTML-to-text of a Graph event body (MIT, 0.3.0, no dependencies; html2text brings
-# html5ever and its tree for a task this small).
-nanohtml2text = "0.3"
-# porter-mountd's socket activation (Apache-2.0, 1.0.2; brings libc).
-listenfd = "1"
-# Scratch directories that remove themselves when dropped (MIT OR Apache-2.0; already in Cargo.lock).
-tempfile = "3"
-# porter-drive's cached byte ranges (MIT OR Apache-2.0, 1.8.0).
-rangemap = "1.8"
 # Calendar dates and RFC 3339 times (MIT OR Apache-2.0; owner's choice 2026-10-28). No default
 # features: no system clock, no time zone database, no locale; `alloc` is for `format`.
 chrono = { version = "0.4", default-features = false, features = ["alloc"] }
@@ -199,8 +167,6 @@ rustls-pki-types = "1"
 rustls-native-certs = "0.8"
 webpki-roots = "1"
 sha2 = "0.10"
-# The RustCrypto hasher traits quickxorhash implements, at the line sha2 and md-5 already bring.
-digest = "0.10"
 # A constant-time compare (BSD-3-Clause; already in Cargo.lock).
 subtle = "2.6.1"
 md-5 = "0.10"
@@ -223,8 +189,6 @@ apple-native-keyring-store = { version = "1", features = ["keychain"] }
 windows-native-keyring-store = "1"
 # porter-discover: SRV and MX behind the `Dns` seam.
 hickory-resolver = "0.26"
-# syncd's journal: SQLCipher built from source with a vendored OpenSSL, used unkeyed (quire's pinned line).
-rusqlite = { version = "0.40", features = ["bundled-sqlcipher-vendored-openssl"] }
 rustix = { version = "1.1", default-features = false, features = ["std", "event", "fs", "net", "time", "process"] }
 
 [workspace.lints.rust]

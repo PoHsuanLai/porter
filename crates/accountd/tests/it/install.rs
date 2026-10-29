@@ -18,7 +18,7 @@ fn repo() -> PathBuf {
 fn stand_ins(root: &Path) -> PathBuf {
     let bins = root.join("bins");
     fs::create_dir_all(&bins).expect("bins");
-    for daemon in ["accountd", "syncd", "engine-helper", "porter-mountd"] {
+    for daemon in ["accountd", "engine-helper"] {
         let file = bins.join(daemon);
         fs::write(&file, format!("#!/bin/sh\necho {daemon}\n")).expect("write");
         fs::set_permissions(&file, fs::Permissions::from_mode(0o755)).expect("chmod");
@@ -112,15 +112,13 @@ fn every_file_a_unit_or_an_activation_file_names_is_installed_at_the_path_it_nam
         run.install(&["--prefix", prefix]);
         let units = run.at(&format!("{prefix}/lib/systemd/user"));
         let mut checked = 0;
-        for unit in ["accountd", "syncd", "porter-mountd"] {
-            let text = fs::read_to_string(units.join(format!("{unit}.service"))).expect("unit");
-            let exec = value(&text, "ExecStart").expect("ExecStart");
-            assert_eq!(program(&exec), format!("{prefix}/libexec/quire/{unit}"));
-            assert!(run.at(program(&exec)).is_file(), "{exec}");
-            checked += 1;
-        }
+        let text = fs::read_to_string(units.join("accountd.service")).expect("unit");
+        let exec = value(&text, "ExecStart").expect("ExecStart");
+        assert_eq!(program(&exec), format!("{prefix}/libexec/quire/accountd"));
+        assert!(run.at(program(&exec)).is_file(), "{exec}");
+        checked += 1;
         let activations = files_under(&run.at(&format!("{prefix}/share/dbus-1/services")));
-        assert_eq!(activations.len(), 2);
+        assert_eq!(activations.len(), 1);
         for path in activations {
             let text = fs::read_to_string(&path).expect("activation");
             let exec = value(&text, "Exec").expect("Exec");
@@ -131,7 +129,7 @@ fn every_file_a_unit_or_an_activation_file_names_is_installed_at_the_path_it_nam
             assert_eq!(value(&unit, "ExecStart"), Some(exec));
             checked += 1;
         }
-        assert_eq!(checked, 5);
+        assert_eq!(checked, 2);
     }
 }
 
@@ -229,43 +227,16 @@ fn the_sandbox_drop_ins_land_next_to_their_units_without_a_probe_when_staging() 
     // With a destdir the script does not ask this computer whether it allows mount namespaces.
     let out = run.install(&["--prefix", "/opt/porter"]);
     assert!(!out.contains("without their extra sandbox"), "{out}");
-    for unit in ["accountd", "syncd"] {
-        let installed = run.at(&format!(
-            "/opt/porter/lib/systemd/user/{unit}.service.d/sandbox.conf"
-        ));
-        assert_eq!(
-            fs::read(&installed).expect("the drop-in is installed"),
-            fs::read(repo().join(format!("dist/{unit}.service.d/sandbox.conf"))).expect("shipped")
-        );
-        assert_eq!(
-            fs::metadata(&installed).expect("meta").permissions().mode() & 0o777,
-            0o644
-        );
-    }
-    assert!(files_under(&run.home).is_empty());
-}
-
-#[test]
-fn the_drive_folder_helper_is_installed_with_its_socket_enabled_for_everyone() {
-    let run = Run::new("mountd");
-    run.install(&["--prefix", "/opt/porter"]);
-    let units = run.at("/opt/porter/lib/systemd/user");
-    for unit in ["porter-mountd.service", "porter-mountd.socket"] {
-        assert!(units.join(unit).is_file(), "{unit}");
-    }
-    // Enabled as a package enables it: a link beside the units, nothing under /etc or a home.
-    let wants = units.join("sockets.target.wants/porter-mountd.socket");
+    let installed = run.at("/opt/porter/lib/systemd/user/accountd.service.d/sandbox.conf");
     assert_eq!(
-        fs::read_link(&wants).expect("the socket is enabled"),
-        Path::new("../porter-mountd.socket")
+        fs::read(&installed).expect("the drop-in is installed"),
+        fs::read(repo().join("dist/accountd.service.d/sandbox.conf")).expect("shipped")
     );
-    assert!(wants.is_file(), "the link resolves to the socket unit");
-    assert!(!run.at("/etc/systemd").exists());
+    assert_eq!(
+        fs::metadata(&installed).expect("meta").permissions().mode() & 0o777,
+        0o644
+    );
     assert!(files_under(&run.home).is_empty());
-    // It has no sandbox drop-in: its unit says what it may not have.
-    assert!(!units.join("porter-mountd.service.d").exists());
-    let again = run.install(&["--prefix", "/opt/porter"]);
-    assert_eq!(again.trim(), "nothing to change");
 }
 
 #[test]

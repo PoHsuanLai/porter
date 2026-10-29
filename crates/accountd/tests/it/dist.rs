@@ -227,7 +227,6 @@ fn nothing_that_ships_names_the_file_key_store() {
         "accountd.service",
         "callers.toml",
         "dbus/org.quire.Accounts1.service",
-        "syncd.service",
     ] {
         let file = dist(name);
         for knob in ["ACCOUNTD_KEYS", "test-keys"] {

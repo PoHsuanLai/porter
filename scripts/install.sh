@@ -1,6 +1,7 @@
 #!/bin/sh
-# Install porter: the three daemons, their systemd user units and D-Bus activation files, the
-# helper that shows drives in ~/Cloud with its socket, the provider files and the caller table.
+# Install porter: its daemon, its systemd user unit and D-Bus activation file, the provider files
+# and the caller table. The sync daemon, and the helper that shows drives in ~/Cloud, are ferry's
+# (its scripts/install.sh).
 #
 #   scripts/install.sh [--prefix DIR] [--destdir DIR] [--sysconfdir DIR] [--bin-dir DIR] [--no-build]
 #
@@ -8,22 +9,16 @@
 # --destdir     a staging root put in front of every path, for packagers and for trying the install
 #               (default none; the environment variable DESTDIR also sets it)
 # --sysconfdir  where the caller table goes (default /etc)
-# --bin-dir     install the already built daemons found in DIR instead of building them
+# --bin-dir     install the already built daemon found in DIR instead of building it
 # --no-build    install from target/release (or $CARGO_TARGET_DIR/release) without building first
 #               (building needs git and cargo and is refused as root: build as your user, then
 #               install with --no-build as root)
 #
 # What goes where (DESTDIR, when given, is in front of all of it):
-#   PREFIX/libexec/quire/{accountd,syncd}             the daemons
-#   PREFIX/libexec/quire/porter-mountd                       the helper syncd asks to show a drive in
-#                                                            ~/Cloud (runs fusermount3, which syncd's
-#                                                            sandbox refuses)
-#   PREFIX/lib/systemd/user/porter-mountd.{service,socket}   its user units; the socket is enabled for
-#                                                            every user by the link
-#                                                            sockets.target.wants/porter-mountd.socket
-#   PREFIX/lib/systemd/user/{accountd,syncd}.service  the user units
-#   PREFIX/lib/systemd/user/{accountd,syncd}.service.d/sandbox.conf
-#                                                            the part of each unit's sandbox that needs a
+#   PREFIX/libexec/quire/accountd                     the daemon
+#   PREFIX/lib/systemd/user/accountd.service          the user unit
+#   PREFIX/lib/systemd/user/accountd.service.d/sandbox.conf
+#                                                            the part of the unit's sandbox that needs a
 #                                                            mount namespace; left out (with one line saying
 #                                                            so) when a probe shows this system refuses a user
 #                                                            service one (Ubuntu 24.04's AppArmor restriction
@@ -109,19 +104,6 @@ put() {
     fi
 }
 
-# link TARGET PATH: DESTDIR/PATH is a symbolic link to TARGET. One already so is left alone.
-link() {
-    path=$destdir$2
-    if [ -L "$path" ] && [ "$(readlink "$path")" = "$1" ]; then
-        return
-    fi
-    mkdir -p "$(dirname "$path")"
-    rm -f "$path"
-    ln -s "$1" "$path"
-    changed=$((changed + 1))
-    echo "installed $2"
-}
-
 mode_of() {
     stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"
 }
@@ -136,7 +118,7 @@ mount_namespace_for_user_units() {
 }
 
 # --- The daemons ---------------------------------------------------------------------------------
-daemons="accountd syncd"
+daemons="accountd"
 if [ -n "$bin_dir" ]; then
     built=$bin_dir
 else
@@ -178,7 +160,7 @@ else
                     export RUSTUP_TOOLCHAIN
                 fi &&
                 cargo build --release --manifest-path "$root/Cargo.toml" \
-                    --config net.git-fetch-with-cli=true -p accountd -p syncd -p porter-mountd
+                    --config net.git-fetch-with-cli=true -p accountd
         )
     fi
     built=$target_dir/release
@@ -186,16 +168,6 @@ fi
 for daemon in $daemons; do
     if [ ! -x "$built/$daemon" ]; then
         echo "install.sh: $built/$daemon is not there; build first or point --bin-dir at the daemons" >&2
-        exit 1
-    fi
-done
-
-# The helper that shows drives in ~/Cloud, built beside the daemons. It is not a daemon on the bus
-# (its socket starts it), so it is not in the list above. The helper that installs an engine for
-# everyone is stoker's (its scripts/install.sh puts it and its polkit action in place).
-for helper in porter-mountd; do
-    if [ ! -x "$built/$helper" ]; then
-        echo "install.sh: $built/$helper is not there; build first or point --bin-dir at it" >&2
         exit 1
     fi
 done
@@ -217,13 +189,6 @@ else
     done
     echo "The daemons run without their extra sandbox on this system, which does not let a user service have its own mount namespace. On Ubuntu, allow it with the kernel.apparmor_restrict_unprivileged_userns setting or an AppArmor profile, then run this again."
 fi
-# porter-mountd and its socket. The socket is enabled for every user as a package does it: a link
-# in sockets.target.wants beside the units (no `systemctl`, which would write under /etc or a home).
-# The service has no sandbox drop-in: what it may not have is said in its header.
-put 755 "$built/porter-mountd" "$libexec/porter-mountd"
-put 644 "$dist/porter-mountd.service" "$prefix/lib/systemd/user/porter-mountd.service" /usr/libexec/quire "$libexec"
-put 644 "$dist/porter-mountd.socket" "$prefix/lib/systemd/user/porter-mountd.socket"
-link "../porter-mountd.socket" "$prefix/lib/systemd/user/sockets.target.wants/porter-mountd.socket"
 for activation in "$dist"/dbus/*.service; do
     put 644 "$activation" "$prefix/share/dbus-1/services/$(basename "$activation")" /usr/libexec/quire "$libexec"
 done

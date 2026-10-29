@@ -14,10 +14,7 @@ cd "$(dirname "$0")/.."
 # porter-http is the pure seam and reaches none of them; porter-proxy and porter-oauth reach tokio
 # only through their named I/O feature (`io`). reqwest is named by one crate, porter-http-reqwest
 # (see ONE CLIENT below), and reached through it by the families that send directly. porter-families reaches none with default features;
-# each of its family features is checked on its own in FAMILY_FORBIDS below. porter-drive and
-# porter-drive-fuse reach tokio (a drive fetches in the background) but never a bus or a client.
-# porter-mountd, the mount helper outside syncd's sandbox, reaches no effect crate and none of
-# porter's own: std, rustix and listenfd only (no network, keyring or account data).
+# each of its family features is checked on its own in FAMILY_FORBIDS below.
 EFFECTS="zbus zvariant tokio reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
 RULES=(
   "porter-ids: $EFFECTS toml"
@@ -29,7 +26,6 @@ RULES=(
   "porter-fs: $EFFECTS"
   "porter-provider: $EFFECTS"
   "porter-secrets: $EFFECTS"
-  "porter-sync: $EFFECTS"
   "porter-service-core: $EFFECTS"
   "porter-service-accounts: $EFFECTS"
   "porter-service-grants: $EFFECTS"
@@ -59,12 +55,6 @@ RULES=(
   "porter-family-nextcloud: $EFFECTS"
   "porter-family-generic: zbus zvariant hyper reqwest ureq oo7 keyring secret-service interprocess latchkey ds-settings"
   "porter-family-oauth: zbus zvariant ureq oo7 keyring secret-service interprocess latchkey ds-settings"
-  "storage-webdav: $EFFECTS"
-  "storage-graph: $EFFECTS"
-  "storage-gdrive: $EFFECTS"
-  "porter-drive: zbus zvariant reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
-  "porter-mountd: $EFFECTS fuser porter-ids porter-core porter-fs porter-http porter-secrets porter-service porter-client porter-sync porter-drive porter-drive-fuse"
-  "porter-drive-fuse: zbus zvariant reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
   "porter-dbus: reqwest hyper ureq oo7 keyring secret-service ds-settings"
   "porter-callers: reqwest hyper ureq oo7 keyring secret-service ds-settings"
 )
@@ -228,12 +218,12 @@ for pure in porter-ids porter-core; do
   fi
 done
 
-# The two daemons' libraries read the environment in no function but `from_env` (the daemon's
+# The daemon's library reads the environment in no function but `from_env` (the daemon's
 # `Config::from_env` and the directory helpers it calls), so a program that runs a daemon inside
 # itself gives it a `Config` and nothing else. The binaries (main.rs) and the test-only files are
 # outside the rule; `std::env::temp_dir` is a scratch name in tests, not a read of a variable.
 # The awk remembers the last `fn` it saw, which is the function the next line is in.
-env_reads=$(find crates/accountd/src crates/syncd/src -name '*.rs' \
+env_reads=$(find crates/accountd/src -name '*.rs' \
   ! -name main.rs ! -name tests.rs ! -name testing.rs ! -name testkit.rs ! -path '*/tests/*' -print0 \
   | xargs -0 awk '
     FNR == 1 { current = "" }
@@ -250,7 +240,7 @@ if [ -n "$env_reads" ]; then
   echo "LEAK: a daemon library reads the environment outside a from_env function"
   fail=1
 else
-  echo "pure: accountd and syncd read the environment only in from_env functions"
+  echo "pure: accountd reads the environment only in from_env functions"
 fi
 
 # porter-daemon reads no environment variable at all: what a daemon or an app knows is passed in
@@ -282,7 +272,6 @@ ratchet() {
 ratchet "a hand-rolled percent encoder or decoder" 'fn percent_(en|de)code\b' "" "porter_ids::percent"
 ratchet "hand-rolled civil-date arithmetic" '(days_from_civil|civil_from_days|719_468)' "" "chrono"
 ratchet "a hand-written MD5 (its first round constant)" '0xd76aa478' "" "md-5"
-ratchet "a second Windows-to-IANA zone table" 'Pacific Standard Time", *"America/Los_Angeles' "crates/windows-zones/" "windows_zones::iana"
 ratchet "an XOAUTH2 format string" '(\\x01|\\u\{1\})auth=Bearer|auth=Bearer \{|"auth=Bearer' "crates/porter-core/src/token.rs" "porter_core::token"
 ratchet "a hand-written scratch directory type" '^[[:space:]]*(pub(\([a-z]+\))? )?struct Scratch\b' "crates/test-kit/" "test_kit::Scratch"
 
@@ -298,12 +287,9 @@ EDGES=(
   "porter-sheet: porter-core porter-tailscale porter-capability porter-ids porter-wire"
   "porter-daemon:"
   "porter-fs:"
-  "quickxorhash:"
-  "windows-zones:"
   "keyring-chunked:"
   "porter-provider: porter-core porter-match porter-capability porter-sheet porter-ids"
   "porter-secrets: keyring-chunked porter-core porter-capability porter-ids porter-fs"
-  "porter-sync: porter-capability porter-ids porter-http"
   "porter-service-core: porter-core porter-match porter-capability porter-sheet porter-wire porter-ids porter-provider porter-secrets"
   "porter-service-accounts: porter-service-core porter-core porter-tailscale porter-match porter-capability porter-sheet porter-wire porter-ids porter-provider porter-secrets"
   "porter-service-grants: porter-service-core porter-service-accounts porter-core porter-match porter-capability porter-wire porter-ids porter-provider porter-secrets porter-sheet"
@@ -321,7 +307,7 @@ EDGES=(
   "porter-client-inproc: porter-capability porter-client porter-core porter-ids porter-match porter-provider porter-proxy porter-secrets porter-service porter-service-accounts porter-service-core porter-service-grants porter-sheet porter-wire"
   "porter-fake: porter-core porter-capability porter-sheet porter-wire porter-ids porter-provider porter-secrets porter-service porter-service-core"
   "test-kit:"
-  "porter-fake-servers: dav-proto porter-core porter-ids porter-discover porter-fake porter-provider quickxorhash test-kit"
+  "porter-fake-servers: dav-proto porter-core porter-ids porter-discover porter-fake porter-provider test-kit"
   "porter-http: porter-core porter-ids"
   "porter-http-reqwest: porter-ids porter-http"
   "porter-http-relay: porter-client porter-core porter-wire porter-ids porter-http"
@@ -339,16 +325,8 @@ EDGES=(
   "porter-family-generic: porter-family-kit generic-proto porter-core porter-capability porter-sheet porter-provider porter-http porter-discover porter-proxy"
   "porter-family-oauth: porter-family-kit oauth-probe-proto porter-core porter-capability porter-sheet porter-ids porter-provider porter-http porter-http-reqwest porter-oauth"
   "accountd: ds-settings porter-core porter-match porter-capability porter-sheet porter-wire porter-ids porter-daemon porter-callers porter-dbus porter-families porter-family-oauth porter-fs porter-identities porter-provider porter-proxy porter-secrets porter-service porter-service-accounts porter-service-core porter-settings porter-sheets porter-spaces porter-store porter-tailscale"
-  "storage-webdav: dav-proto porter-capability porter-ids porter-http porter-sync"
-  "storage-graph: porter-capability porter-ids porter-http porter-sync"
-  "storage-gdrive: porter-capability porter-ids porter-http porter-sync"
-  "porter-drive: porter-capability porter-ids porter-fs porter-sync quickxorhash"
-  "porter-drive-fuse: porter-drive porter-mountd"
-  "porter-mountd:"
-  "syncd: dav-proto ds-settings porter-client porter-core porter-match porter-capability porter-sheet porter-wire porter-ids porter-daemon porter-callers porter-dbus porter-drive porter-drive-fuse porter-families porter-family-oauth porter-fs porter-http porter-http-relay porter-provider porter-secrets porter-service porter-service-accounts porter-service-core porter-sheets porter-store porter-sync storage-gdrive storage-graph storage-webdav windows-zones porter-client-inproc porter-client-dbus"
-  "porter-rig: fake-secret-service porter-client porter-core porter-capability porter-wire porter-ids porter-callers porter-dbus porter-fake porter-fake-servers test-kit porter-client-dbus"
+  "porter-rig: fake-secret-service porter-client porter-core porter-capability porter-wire porter-ids porter-callers porter-fake porter-fake-servers test-kit porter-client-dbus"
   "fake-secret-service:"
-  "syncd-fakes: porter-dbus"
 )
 for edge in "${EDGES[@]}"; do
   crate="${edge%%:*}"
@@ -371,17 +349,17 @@ done
 # porter-client-inproc the service. porter-rig (test tooling) uses porter-dbus's sync group; its
 # row goes with it.
 HIDDEN=(
-  "porter-dbus: accountd porter-client-dbus porter-rig porter-sheets syncd syncd-fakes"
-  "porter-callers: accountd porter-rig porter-sheets syncd"
-  "porter-service-core: accountd porter-client-inproc porter-fake porter-identities porter-service porter-service-accounts porter-service-grants porter-settings porter-sheets syncd"
-  "porter-service-accounts: accountd porter-client-inproc porter-service porter-service-grants syncd"
+  "porter-dbus: accountd porter-client-dbus porter-sheets"
+  "porter-callers: accountd porter-rig porter-sheets"
+  "porter-service-core: accountd porter-client-inproc porter-fake porter-identities porter-service porter-service-accounts porter-service-grants porter-settings porter-sheets"
+  "porter-service-accounts: accountd porter-client-inproc porter-service porter-service-grants"
   "porter-service-grants: porter-client-inproc porter-service"
-  "porter-service: accountd porter-client-inproc porter-fake syncd"
+  "porter-service: accountd porter-client-inproc porter-fake"
   "porter-identities: accountd"
   "porter-spaces: accountd"
   "porter-settings: accountd"
-  "porter-store: accountd syncd"
-  "porter-sheets: accountd syncd"
+  "porter-store: accountd"
+  "porter-sheets: accountd"
 )
 for row in "${HIDDEN[@]}"; do
   hidden="${row%%:*}"
@@ -402,7 +380,7 @@ done
 # or a service crate; the tests that need accountd are accountd's (crates/accountd/tests/it/client).
 client_dev=""
 for manifest in crates/porter-client*/Cargo.toml; do
-  named=$(awk '/^\[/ { dev = ($0 ~ /dev-dependencies\]$/) } dev && /^(accountd|syncd|porter-service[a-z-]*)[ .=]/ { print $1 }' "$manifest")
+  named=$(awk '/^\[/ { dev = ($0 ~ /dev-dependencies\]$/) } dev && /^(accountd|syncd|ferry-[a-z-]*|porter-service[a-z-]*)[ .=]/ { print $1 }' "$manifest")
   if [ -n "$named" ]; then
     client_dev="$client_dev$manifest: $(echo $named)"$'\n'
   fi
@@ -416,9 +394,9 @@ else
 fi
 
 # `porter_dbus::accounts` is named only where accountd's interfaces are served or called: the
-# daemons, the sheet crate, the bus transport of the client, the test tooling and the fakes.
+# daemons, the sheet crate and the bus transport of the client.
 accounts_users=$(grep -rlE --include='*.rs' 'porter_dbus::(accounts|\{[^}]*accounts)' crates \
-  | grep -vE '^crates/(accountd|syncd|porter-sheets|porter-client-dbus|syncd-fakes|porter-rig|porter-dbus)/' || true)
+  | grep -vE '^crates/(accountd|porter-sheets|porter-client-dbus|porter-dbus)/' || true)
 if [ -n "$accounts_users" ]; then
   echo "$accounts_users"
   echo "LEAK: porter_dbus::accounts is named outside the daemons and the client's bus transport"
@@ -439,7 +417,7 @@ fi
 # accountd's file key store (`ACCOUNTD_KEYS=file:`, feature `test-keys`, porter-secrets'
 # `FileSecrets`) keeps credentials as plain text: neither crate's default build, nor accountd's
 # whole normal dependency tree, may have the feature on.
-for crate in accountd syncd porter-secrets; do
+for crate in accountd porter-secrets; do
   if cargo tree -p "$crate" -e normal --prefix none -f '{p} {f}' 2>/dev/null | grep -q 'test-keys'; then
     echo "LEAK: $crate's default build enables test-keys"
     fail=1
@@ -448,17 +426,9 @@ for crate in accountd syncd porter-secrets; do
   fi
 done
 
-# syncd's test-only knob (`SYNCD_PROC_ROOT`, feature `test-proc-root`), the same rule.
-if cargo tree -p syncd --depth 0 -f '{p} {f}' 2>/dev/null | grep -q 'test-proc-root'; then
-  echo "LEAK: syncd enables test-proc-root by default"
-  fail=1
-else
-  echo "test-only: syncd's default features do not include test-proc-root"
-fi
-
 # porter-callers' test-only caller fixtures (feature `test-proc-root`, which turns on peephole's
 # `fake`) are never in a daemon's normal dependency tree.
-for crate in accountd syncd; do
+for crate in accountd; do
   if cargo tree -p "$crate" -e normal --prefix none -f '{p} {f}' 2>/dev/null | grep -E '^(porter-callers|peephole) ' | grep -Eq 'test-proc-root|fake'; then
     echo "LEAK: $crate's default build enables porter-callers test-proc-root or peephole fake"
     fail=1
@@ -466,6 +436,22 @@ for crate in accountd syncd; do
     echo "test-only: $crate's default build has no caller fixtures"
   fi
 done
+
+# THE SYNC REPO IS NOT A DEPENDENCY: porter is accounts only. syncd and everything that is sync
+# (the storage replicas, the drive, the mount helper, the Graph fake, the bus interfaces of
+# Sync1 and Storage1) are ferry's, in a repo of its own that pins porter by git rev. No manifest
+# here names one of ferry's crates, and no dependency tree of the workspace (normal, build or dev)
+# reaches one.
+FERRY_CRATES='syncd|syncd-fakes|storage-[a-z]+|ferry-[a-z-]+'
+named=$(grep -lE "^($FERRY_CRATES)[ .=]" Cargo.toml crates/*/Cargo.toml || true)
+reached=$(cargo tree --workspace -e normal,build,dev --prefix none 2>/dev/null \
+  | awk '{print $1}' | grep -xE "$FERRY_CRATES" | sort -u | tr '\n' ' ')
+if [ -n "$named" ] || [ -n "$reached" ]; then
+  echo "LEAK: a manifest names [$(echo $named)] or the workspace reaches [${reached% }], which are ferry's"
+  fail=1
+else
+  echo "boundary holds: nothing in this workspace names or reaches syncd, a storage replica or a ferry crate"
+fi
 
 # Every workspace member has a row above, so a new crate cannot slip in unchecked.
 for member in $(sed -n 's#^  "crates/\(.*\)",$#\1#p' Cargo.toml); do
