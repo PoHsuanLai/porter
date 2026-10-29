@@ -1,7 +1,7 @@
 //! The checked-in introspection files are the interfaces as they are declared once. A change to a
 //! signature changes the file in the same commit.
 
-use porter_dbus::{accounts, inference, sync};
+use porter_dbus::{accounts, sync};
 use std::path::PathBuf;
 
 #[test]
@@ -11,8 +11,6 @@ fn checked_in_introspection_matches_the_interfaces() {
         accounts::ACCOUNTS,
         accounts::ACCOUNTS_SHEET,
         sync::SYNC,
-        inference::INFERENCE,
-        inference::AGENTS,
         accounts::KEYS,
         accounts::LAUNCHER,
         accounts::BROKER,
@@ -185,98 +183,6 @@ fn accountd_declares_identities_and_no_grant_keyed_member() {
 }
 
 #[test]
-fn inference1_xml_unchanged_members() {
-    let xml = porter_dbus::inference::INFERENCE.introspection();
-    let members = [
-        "<method name=\"Availability\">",
-        "<method name=\"Open\">",
-        "<method name=\"Prepare\">",
-        "<method name=\"Usage\">",
-        "<method name=\"Rescan\">",
-        "<signal name=\"EnginesChanged\">",
-        "<property name=\"Gpu\" type=\"s\" access=\"read\"/>",
-    ];
-    for member in members {
-        assert!(xml.contains(member), "missing {member}");
-    }
-    // `Places` was added after the freeze: an additive method (no existing member, argument or
-    // error changes), as `Sync1.ConfirmDiscard` was.
-    assert!(xml.contains("<method name=\"Places\">"));
-    assert!(xml.contains("<arg type=\"a(sa{sv})\" direction=\"out\"/>"));
-    // So were `AddComputer` and `RemoveComputer`, for Settings.
-    assert!(xml.contains("<method name=\"AddComputer\">"));
-    assert!(xml.contains("<method name=\"RemoveComputer\">"));
-    assert!(xml.contains("<arg name=\"models\" type=\"a(sa{sv})\" direction=\"in\"/>"));
-    // And these, for lending models to the person's other computers over their Tailscale
-    // network (all additive): the computers that could be added, adding one, and the computers
-    // that ask to use this one (who is asking, the answer, taking an answer back).
-    for member in [
-        "<method name=\"Candidates\">",
-        "<method name=\"AddTailnetComputer\">",
-        "<method name=\"Guests\">",
-        "<method name=\"AnswerGuest\">",
-        "<method name=\"ForgetGuest\">",
-        "<method name=\"SetHelperPool\">",
-        "<signal name=\"GuestAsks\">",
-        "<signal name=\"GuestsChanged\">",
-        "<arg name=\"answer\" type=\"s\" direction=\"in\"/>",
-    ] {
-        assert!(xml.contains(member), "missing {member}");
-    }
-    // And `LocalEngines`, which engines inferd found on this computer (additive).
-    assert!(xml.contains("<method name=\"LocalEngines\">"));
-    // And `HardwareNotes`, facts about the machine beside a choice (helpers, swarm.md 6.4).
-    assert!(xml.contains("<method name=\"HardwareNotes\">"));
-    // And `Start`, `Stop`, `Running` and `RunningChanged`: starting and stopping the models
-    // inferd runs itself, and seeing them run (additive).
-    for member in [
-        "<method name=\"Start\">",
-        "<method name=\"Stop\">",
-        "<method name=\"Running\">",
-        "<signal name=\"RunningChanged\">",
-    ] {
-        assert!(xml.contains(member), "missing {member}");
-    }
-    let declared = xml.matches("<method ").count()
-        + xml.matches("<signal ").count()
-        + xml.matches("<property ").count();
-    assert_eq!(
-        declared,
-        members.len() + 3 + 7 + 1 + 1 + 1 + 1 + 4,
-        "no member beyond the frozen seven, Places, AddComputer, RemoveComputer, and the five \
-         methods and two signals of lending models across the person's network, LocalEngines, \
-         PointEngine, HardwareNotes, SetHelperPool, and Start, Stop, Running and RunningChanged"
-    );
-    assert_eq!(
-        porter_dbus::inference::COMPUTER_ERROR_PREFIX,
-        "org.quire.Inference1.Error.Computer."
-    );
-}
-
-#[test]
-fn speech_and_computer_use_are_fd_only() {
-    let xml = porter_dbus::inference::INFERENCE.introspection();
-    for word in ["Transcribe", "Speak", "Audio", "Cua", "Listen"] {
-        assert!(
-            !xml.contains(word),
-            "{word} must travel on the Open fd, not as a member"
-        );
-    }
-}
-
-#[test]
-fn inference_calls_carry_an_options_dict_for_the_reserved_traceparent() {
-    let xml = porter_dbus::inference::INFERENCE.introspection();
-    assert_eq!(
-        xml.matches("<arg name=\"options\" type=\"a{sv}\" direction=\"in\"/>")
-            .count(),
-        4,
-        "Availability, Open, Prepare and HardwareNotes"
-    );
-    assert_eq!(porter_dbus::inference::OPTION_TRACEPARENT, "traceparent");
-}
-
-#[test]
 fn the_sheet_backend_takes_views_in_and_sends_inputs_out() {
     let xml = porter_dbus::accounts::ACCOUNTS_SHEET.introspection();
     for member in [
@@ -293,7 +199,7 @@ fn the_sheet_backend_takes_views_in_and_sends_inputs_out() {
 }
 
 #[test]
-fn syncd_and_inferd_declare_what_they_did() {
+fn syncd_declares_what_it_did() {
     let sync = porter_dbus::sync::SYNC.introspection();
     let sync1 = without_picker(&sync);
     assert_eq!(sync1.matches("<method ").count(), 8);

@@ -30,10 +30,6 @@ RULES=(
   "porter-provider: $EFFECTS"
   "porter-secrets: $EFFECTS"
   "porter-sync: $EFFECTS"
-  "porter-infer: $EFFECTS"
-  "porter-bridge: $EFFECTS"
-  "porter-router: $EFFECTS inferd"
-  "porter-turns: zbus zvariant ureq oo7 keyring secret-service interprocess latchkey ds-settings inferd"
   "porter-service-core: $EFFECTS"
   "porter-service-accounts: $EFFECTS"
   "porter-service-grants: $EFFECTS"
@@ -45,7 +41,6 @@ RULES=(
   "porter-client: $EFFECTS porter-dbus porter-callers porter-service porter-service-core porter-service-accounts porter-service-grants porter-secrets porter-provider porter-fs"
   "porter-client-dbus: reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings porter-service porter-service-core porter-service-accounts porter-service-grants porter-secrets porter-provider porter-fs"
   "porter-client-inproc: zbus zvariant hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings porter-dbus"
-  "inferd-client: $EFFECTS"
   "porter-sheets: reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
   "porter-fake: $EFFECTS"
   "test-kit: $EFFECTS"
@@ -55,7 +50,6 @@ RULES=(
   "porter-discover: $EFFECTS"
   "porter-daemon: $EFFECTS"
   "porter-tailscale: $EFFECTS"
-  "porter-tailnet: $EFFECTS"
   "dav-proto: $EFFECTS"
   "nextcloud-proto: $EFFECTS"
   "generic-proto: $EFFECTS"
@@ -234,12 +228,12 @@ for pure in porter-ids porter-core; do
   fi
 done
 
-# The three daemons' libraries read the environment in no function but `from_env` (the daemon's
+# The two daemons' libraries read the environment in no function but `from_env` (the daemon's
 # `Config::from_env` and the directory helpers it calls), so a program that runs a daemon inside
 # itself gives it a `Config` and nothing else. The binaries (main.rs) and the test-only files are
 # outside the rule; `std::env::temp_dir` is a scratch name in tests, not a read of a variable.
 # The awk remembers the last `fn` it saw, which is the function the next line is in.
-env_reads=$(find crates/accountd/src crates/syncd/src crates/inferd/src -name '*.rs' \
+env_reads=$(find crates/accountd/src crates/syncd/src -name '*.rs' \
   ! -name main.rs ! -name tests.rs ! -name testing.rs ! -name testkit.rs ! -path '*/tests/*' -print0 \
   | xargs -0 awk '
     FNR == 1 { current = "" }
@@ -256,20 +250,19 @@ if [ -n "$env_reads" ]; then
   echo "LEAK: a daemon library reads the environment outside a from_env function"
   fail=1
 else
-  echo "pure: accountd, syncd and inferd read the environment only in from_env functions"
+  echo "pure: accountd and syncd read the environment only in from_env functions"
 fi
 
-# The inference libraries (porter-router, porter-turns) and porter-daemon read no environment
-# variable at all: what a daemon or an app knows is passed in (porter-daemon takes the lookup). Their test helpers are outside the
-# rule, as above.
-lib_env_reads=$(find crates/porter-router/src crates/porter-turns/src crates/porter-daemon/src -name '*.rs' ! -name tests.rs ! -name testkit.rs ! -path '*/testkit/*' -print0 \
+# porter-daemon reads no environment variable at all: what a daemon or an app knows is passed in
+# (porter-daemon takes the lookup). Its test helpers are outside the rule, as above.
+lib_env_reads=$(find crates/porter-daemon/src -name '*.rs' ! -name tests.rs ! -name testkit.rs ! -path '*/testkit/*' -print0 \
   | xargs -0 grep -nE 'env::(var|var_os|vars|vars_os|args|args_os|current_dir|home_dir)\b' | grep -vE '^[^:]*:[0-9]+:[[:space:]]*//' || true)
 if [ -n "$lib_env_reads" ]; then
   echo "$lib_env_reads"
-  echo "LEAK: an inference library reads the environment"
+  echo "LEAK: porter-daemon reads the environment"
   fail=1
 else
-  echo "pure: the inference libraries and porter-daemon read no environment variable"
+  echo "pure: porter-daemon reads no environment variable"
 fi
 
 # DELETED HELPERS: hand-rolled code that a crate or one shared function replaced must not come
@@ -311,7 +304,6 @@ EDGES=(
   "porter-provider: porter-core porter-match porter-capability porter-sheet porter-ids"
   "porter-secrets: keyring-chunked porter-core porter-capability porter-ids porter-fs"
   "porter-sync: porter-capability porter-ids porter-http"
-  "porter-infer: porter-core porter-match porter-capability porter-ids cua-action model-provider"
   "porter-service-core: porter-core porter-match porter-capability porter-sheet porter-wire porter-ids porter-provider porter-secrets"
   "porter-service-accounts: porter-service-core porter-core porter-tailscale porter-match porter-capability porter-sheet porter-wire porter-ids porter-provider porter-secrets"
   "porter-service-grants: porter-service-core porter-service-accounts porter-core porter-match porter-capability porter-wire porter-ids porter-provider porter-secrets porter-sheet"
@@ -320,17 +312,13 @@ EDGES=(
   "porter-identities: porter-service-core porter-core porter-ids porter-fs porter-secrets porter-wire porter-sheet"
   "porter-spaces: porter-core porter-ids porter-fs"
   "porter-settings: ds-settings porter-service-core porter-capability porter-core porter-ids porter-provider porter-sheet"
-  "porter-router: porter-core porter-tailnet porter-tailscale porter-match porter-capability porter-ids porter-infer cua-action engine-probe engine-spec engine-supervisor model-catalog model-http model-openai-compat model-provider speech-provider vision-prep"
-  "porter-turns: porter-core porter-match porter-capability porter-ids porter-infer porter-bridge porter-router cua-action cua-parse cua-session cua-vendors engine-supervisor model-extract model-http model-openai-compat model-provider vision-prep"
   "porter-dbus-macros:"
   "porter-callers: porter-core"
-  "porter-dbus: porter-core porter-dbus-macros porter-tailscale porter-match porter-wire porter-ids"
-  "porter-bridge: porter-core porter-capability porter-match porter-ids porter-infer model-catalog model-openai-compat model-provider vision-prep"
+  "porter-dbus: porter-core porter-dbus-macros porter-tailscale porter-wire porter-ids"
   "porter-sheets: porter-core porter-capability porter-sheet porter-wire porter-callers porter-dbus porter-provider porter-service-core"
   "porter-client: porter-core porter-tailscale porter-match porter-capability porter-wire porter-ids"
   "porter-client-dbus: porter-client porter-core porter-wire porter-capability porter-dbus porter-ids porter-tailscale"
   "porter-client-inproc: porter-client porter-core porter-ids porter-match porter-provider porter-proxy porter-secrets porter-service porter-service-accounts porter-service-core porter-service-grants porter-sheet porter-wire"
-  "inferd-client: porter-core porter-tailnet porter-tailscale porter-match porter-capability porter-wire porter-ids porter-infer porter-bridge porter-turns porter-callers porter-dbus porter-fs model-http model-openai-compat model-provider model-wire"
   "porter-fake: porter-core porter-capability porter-sheet porter-wire porter-ids porter-provider porter-secrets porter-service porter-service-core"
   "test-kit:"
   "porter-fake-servers: dav-proto porter-core porter-ids porter-discover porter-fake porter-provider quickxorhash test-kit"
@@ -341,7 +329,6 @@ EDGES=(
   "porter-oauth: porter-core porter-ids porter-http porter-provider"
   "porter-discover: porter-core porter-capability porter-ids porter-http porter-provider"
   "porter-tailscale: porter-ids"
-  "porter-tailnet: porter-ids porter-fs porter-tailscale"
   "dav-proto:"
   "nextcloud-proto: porter-core porter-capability porter-ids"
   "oauth-probe-proto: porter-capability porter-ids"
@@ -359,10 +346,9 @@ EDGES=(
   "porter-drive-fuse: porter-drive porter-mountd"
   "porter-mountd:"
   "syncd: dav-proto ds-settings porter-client porter-core porter-match porter-capability porter-sheet porter-wire porter-ids porter-daemon porter-callers porter-dbus porter-drive porter-drive-fuse porter-families porter-family-oauth porter-fs porter-http porter-http-relay porter-provider porter-secrets porter-service porter-service-accounts porter-service-core porter-sheets porter-store porter-sync storage-gdrive storage-graph storage-webdav windows-zones porter-client-inproc porter-client-dbus"
-  "porter-rig: fake-secret-service porter-client porter-core porter-match porter-capability porter-wire porter-ids porter-callers porter-dbus porter-fake porter-fake-servers porter-infer test-kit inferd-client porter-client-dbus"
+  "porter-rig: fake-secret-service porter-client porter-core porter-capability porter-wire porter-ids porter-callers porter-dbus porter-fake porter-fake-servers test-kit porter-client-dbus"
   "fake-secret-service:"
   "syncd-fakes: porter-dbus"
-  "inferd: ds-settings porter-bridge porter-client porter-settings porter-store porter-router porter-turns porter-core porter-match porter-capability porter-wire porter-ids porter-daemon porter-callers porter-dbus porter-discover porter-fs porter-http porter-http-reqwest porter-infer porter-provider porter-tailnet porter-tailscale cua-action cua-parse cua-session cua-vendors engine-manifest engine-probe engine-spec engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-host-client speech-provider vision-prep porter-client-dbus"
 )
 for edge in "${EDGES[@]}"; do
   crate="${edge%%:*}"
@@ -382,20 +368,19 @@ done
 # below may be depended on (normal or build edge) only by the crates named, so an app-facing
 # crate (porter-client, the families, the drive crates, ...) can never come to name one. The
 # transport crates are the only client-side names: porter-client-dbus holds the bus, and
-# porter-client-inproc the service. porter-rig (test tooling) and inferd-client (the inference
-# half, until the steward lane takes it) use porter-dbus's inference and sync groups; their rows
-# go with them.
+# porter-client-inproc the service. porter-rig (test tooling) uses porter-dbus's sync group; its
+# row goes with it.
 HIDDEN=(
-  "porter-dbus: accountd inferd inferd-client porter-client-dbus porter-rig porter-sheets syncd syncd-fakes"
-  "porter-callers: accountd inferd inferd-client porter-rig porter-sheets syncd"
+  "porter-dbus: accountd porter-client-dbus porter-rig porter-sheets syncd syncd-fakes"
+  "porter-callers: accountd porter-rig porter-sheets syncd"
   "porter-service-core: accountd porter-client-inproc porter-fake porter-identities porter-service porter-service-accounts porter-service-grants porter-settings porter-sheets syncd"
   "porter-service-accounts: accountd porter-client-inproc porter-service porter-service-grants syncd"
   "porter-service-grants: porter-client-inproc porter-service"
   "porter-service: accountd porter-client-inproc porter-fake syncd"
   "porter-identities: accountd"
   "porter-spaces: accountd"
-  "porter-settings: accountd inferd"
-  "porter-store: accountd inferd syncd"
+  "porter-settings: accountd"
+  "porter-store: accountd syncd"
   "porter-sheets: accountd syncd"
 )
 for row in "${HIDDEN[@]}"; do
@@ -417,7 +402,7 @@ done
 # or a service crate; the tests that need accountd are accountd's (crates/accountd/tests/it/client).
 client_dev=""
 for manifest in crates/porter-client*/Cargo.toml; do
-  named=$(awk '/^\[/ { dev = ($0 ~ /dev-dependencies\]$/) } dev && /^(accountd|inferd|syncd|porter-service[a-z-]*)[ .=]/ { print $1 }' "$manifest")
+  named=$(awk '/^\[/ { dev = ($0 ~ /dev-dependencies\]$/) } dev && /^(accountd|syncd|porter-service[a-z-]*)[ .=]/ { print $1 }' "$manifest")
   if [ -n "$named" ]; then
     client_dev="$client_dev$manifest: $(echo $named)"$'\n'
   fi
@@ -433,7 +418,7 @@ fi
 # `porter_dbus::accounts` is named only where accountd's interfaces are served or called: the
 # daemons, the sheet crate, the bus transport of the client, the test tooling and the fakes.
 accounts_users=$(grep -rlE --include='*.rs' 'porter_dbus::(accounts|\{[^}]*accounts)' crates \
-  | grep -vE '^crates/(accountd|syncd|inferd|porter-sheets|porter-client-dbus|syncd-fakes|porter-rig|porter-dbus|inferd-client)/' || true)
+  | grep -vE '^crates/(accountd|syncd|porter-sheets|porter-client-dbus|syncd-fakes|porter-rig|porter-dbus)/' || true)
 if [ -n "$accounts_users" ]; then
   echo "$accounts_users"
   echo "LEAK: porter_dbus::accounts is named outside the daemons and the client's bus transport"
@@ -454,7 +439,7 @@ fi
 # accountd's file key store (`ACCOUNTD_KEYS=file:`, feature `test-keys`, porter-secrets'
 # `FileSecrets`) keeps credentials as plain text: neither crate's default build, nor accountd's
 # whole normal dependency tree, may have the feature on.
-for crate in accountd inferd syncd porter-secrets; do
+for crate in accountd syncd porter-secrets; do
   if cargo tree -p "$crate" -e normal --prefix none -f '{p} {f}' 2>/dev/null | grep -q 'test-keys'; then
     echo "LEAK: $crate's default build enables test-keys"
     fail=1
@@ -473,7 +458,7 @@ fi
 
 # porter-callers' test-only caller fixtures (feature `test-proc-root`, which turns on peephole's
 # `fake`) are never in a daemon's normal dependency tree.
-for crate in accountd inferd syncd; do
+for crate in accountd syncd; do
   if cargo tree -p "$crate" -e normal --prefix none -f '{p} {f}' 2>/dev/null | grep -E '^(porter-callers|peephole) ' | grep -Eq 'test-proc-root|fake'; then
     echo "LEAK: $crate's default build enables porter-callers test-proc-root or peephole fake"
     fail=1

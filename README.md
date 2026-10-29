@@ -13,17 +13,16 @@ the real services.
 
 ## What runs
 
-Porter is three background services. They start when an app first needs them and stop when
+Porter is two background services. They start when an app first needs them and stop when
 nothing does.
 
 | Service | Name on the session bus | What it does |
 | --- | --- | --- |
 | `accountd` | `org.quire.Accounts1` | Holds the accounts, the consent you gave each app and the audit trail. Signs you in, keeps the passwords and keys in your keyring, and gives apps a short-lived pass or a connection already signed in, never the secret itself. |
 | `syncd` | `org.quire.Sync1` | Keeps copies of calendars, contacts, tasks, files and photos in step with the service, for the apps that hold a grant. "Sync now" brings one up to date at once. |
-| `inferd` | `org.quire.Inference1` | The AI service. Lets apps use a model on this computer, on another of your computers (if you allow it) or one you have an account for, under the limits you set (what may leave the machine, how much it may spend). |
 
 The windows you see (the sign-in sheet, the Settings pages) belong to the desktop, not to porter.
-Porter supplies what they show.
+Porter supplies what they show. The AI service (`org.quire.Inference1`) is not porter's: it lives in the steward repository, which depends on porter.
 
 ## Install
 
@@ -49,14 +48,11 @@ Installed by the script (under the prefix, `/usr` by default):
 
 | What | Where |
 | --- | --- |
-| The three services | `libexec/quire/` |
+| The services | `libexec/quire/` |
 | Their systemd user units | `lib/systemd/user/` |
 | What lets the session bus start them | `share/dbus-1/services/` |
 | The providers porter knows (one file each) | `share/porter/providers/` |
 | The sign-in client ids for Microsoft and others, when some ship | `share/porter/clients.toml` |
-| The AI page's settings description | `share/quire/settings/inferd.settings.toml` |
-| The file that lets the AI service answer your other computers (kept as data; the Settings switch installs it, with your say-so) | `share/porter/inferd-tailnet.conf` |
-| Examples to copy: the AI service's configuration and the optional file that lets it reach hosted models | `share/doc/porter/examples/` |
 | The table that says which app is Settings, which draws the sheets, which are the services | `/etc/porter/callers.toml` |
 
 Yours, made as you use porter:
@@ -68,7 +64,6 @@ Yours, made as you use porter:
 | Your own provider files, which win over the shipped ones | `$XDG_DATA_HOME/porter/providers/` |
 | Your own client ids (Settings writes this), and callers | `$XDG_CONFIG_HOME/porter/` |
 | Synced copies (calendars, contacts, files, photos) | `$XDG_DATA_HOME/porter/` |
-| The AI service's configuration | `$XDG_CONFIG_HOME/inferd/inferd.toml` |
 
 Secrets (passwords, keys, tokens) are in your keyring, never in these files.
 

@@ -375,7 +375,7 @@ impl Daemon {
 }
 
 /// The bus name of an inferd.
-const INFERD_NAME: &str = porter_dbus::inference::INFERENCE_BUS;
+const INFERD_NAME: &str = porter_wire::names::INFERENCE_BUS;
 
 /// Whether an inferd that still keeps its own keys is on the bus: the name has an owner, and the
 /// owner serves the `org.quire.Inference1.Keys` interface the inferd that moved the keys here no
@@ -393,7 +393,7 @@ pub(crate) async fn old_inferd_serves_keys(connection: &Connection) -> bool {
     }
     let Ok(builder) = zbus::fdo::IntrospectableProxy::builder(connection)
         .destination(INFERD_NAME)
-        .and_then(|builder| builder.path(porter_dbus::inference::INFERENCE_PATH))
+        .and_then(|builder| builder.path(porter_wire::names::INFERENCE_PATH))
     else {
         return false;
     };

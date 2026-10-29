@@ -24,18 +24,15 @@ path = "src/bin/porter-rig-secrets.rs"
 test-kit = { workspace = true }
 fake-secret-service = { workspace = true }
 porter-core = { workspace = true }
-porter-match = { workspace = true }
 porter-capability = { workspace = true }
 porter-wire = { workspace = true }
 porter-ids = { workspace = true }
 porter-client = { workspace = true }
 porter-client-dbus = { workspace = true }
-inferd-client = { workspace = true, features = ["dbus"] }
 porter-callers = { workspace = true, features = ["test-proc-root"] }
 porter-dbus = { workspace = true }
 porter-fake = { workspace = true }
 porter-fake-servers = { workspace = true }
-porter-infer = { workspace = true }
 clap = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

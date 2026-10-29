@@ -4,14 +4,12 @@
 //!
 //! The commands are the app side of the scenarios: list the identities and continue as one,
 //! ask for a permit to use the person's AI keys and add a key, run the agent launcher's calls,
-//! open an AI session, settle a sync conflict, watch for them. No credential crosses a bus, so
+//! settle a sync conflict, watch for them. No credential crosses a bus, so
 //! there is nothing to ask a grant for or to open a relay to. The app's identity is the
 //! daemons' to find (see `fixture`).
 
 use clap::Subcommand;
-use inferd_client::{DbusTransport as InferdTransport, InferSession, Inference, OpenOptions};
-use porter_capability::Tier;
-use porter_capability::{Access, AgentProgram, Delta, StorageScope};
+use porter_capability::AgentProgram;
 use porter_client::{Accounts, AccountsError, AiKeysError, Identities, IdentitiesError, Porter};
 use porter_client_dbus::{Bus, Launcher, LauncherError};
 use porter_core::ProviderHint;
@@ -21,13 +19,6 @@ use porter_core::{AccountId, GrantId, ProviderId};
 use porter_core::{DataClass, IdentityId};
 use porter_dbus::from_vardict;
 use porter_dbus::sync::SyncProxy;
-use porter_ids::Tokens;
-use porter_infer::{
-    ChatControl, ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRequest, MessagePart,
-    Role, ToolParallelism,
-};
-use porter_match::Need;
-use porter_match::{LlmNeed, MailNeed, NotesNeed, PimNeed, StorageNeed};
 use porter_wire::ParentWindow;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -49,34 +40,6 @@ pub fn word<T: DeserializeOwned>(text: &str) -> Result<T, String> {
         .map_err(|_| format!("`{text}` is not one of the words"))
 }
 
-/// The need a command line names: a preset (`mail`, `storage`, `calendar`, `contacts`,
-/// `notes`, `llm`), each asking for the least that is useful, or a JSON `Need` (porter-core's
-/// serde form, `{"kind":"storage","v":{...}}`).
-pub fn parse_need(text: &str) -> Result<Need, String> {
-    if text.trim_start().starts_with('{') {
-        return serde_json::from_str(text).map_err(|e| format!("not a Need: {e}"));
-    }
-    let pim = || PimNeed::new(Access::Read, Delta::None);
-    Ok(match text {
-        "mail" => Need::Mail(MailNeed::new(Access::Read, false, Delta::None)),
-        "storage" => Need::Storage(StorageNeed::new(
-            Access::ReadWrite,
-            Delta::Poll,
-            StorageScope::AppFolder,
-            false,
-        )),
-        "calendar" => Need::Calendar(pim()),
-        "contacts" => Need::Contacts(pim()),
-        "notes" => Need::Notes(NotesNeed::new(Access::Read, Delta::None)),
-        "llm" => Need::Llm(LlmNeed::new(Default::default(), Tokens(1_000))),
-        other => {
-            return Err(format!(
-                "`{other}` is not a need (mail, storage, calendar, contacts, notes, llm, or JSON)"
-            ));
-        }
-    })
-}
-
 fn failure(why: impl std::fmt::Display) -> Value {
     json!({ "result": "error", "error": why.to_string() })
 }
@@ -91,27 +54,9 @@ pub enum Command {
     /// The person's AI keys: ask for a permit to use them (adding one is `add-account`).
     #[command(subcommand)]
     AiKeys(AiKeysCommand),
-    /// The agent launcher's calls to inferd.
+    /// The agent launcher's calls to accountd.
     #[command(subcommand)]
     Launcher(LauncherCommand),
-    /// Opens an AI session and, with a prompt, runs one chat turn on it.
-    Open {
-        /// The need: `mail`, `storage`, `calendar`, `contacts`, `notes`, `llm` or a JSON `Need`.
-        #[arg(value_parser = parse_need)]
-        need: Need,
-        /// The data class.
-        #[arg(long, default_value = "public", value_parser = word::<DataClass>)]
-        class: DataClass,
-        /// The tier.
-        #[arg(long, default_value = "fast", value_parser = word::<Tier>)]
-        tier: Tier,
-        /// `interactive` or `background`.
-        #[arg(long, default_value = "interactive", value_parser = word::<Usage>)]
-        usage: Usage,
-        /// What to say, if anything.
-        #[arg(long)]
-        prompt: Option<String>,
-    },
     /// Settles a stored sync conflict.
     SyncResolve {
         /// `<account>/<dataset>`.
@@ -259,7 +204,6 @@ pub async fn run(
     emit: &mut impl FnMut(Value),
 ) -> bool {
     let accounts = Porter::over(Bus::over(connection.clone())).accounts();
-    let inference = Inference::over(InferdTransport::over(connection.clone()));
     match command {
         Command::Identities(IdentitiesCommand::List) => identities_list(connection, emit).await,
         Command::Identities(IdentitiesCommand::Offer { provider }) => {
@@ -278,16 +222,6 @@ pub async fn run(
         }) => launcher_request_key(connection, &program, class, session.as_ref(), emit).await,
         Command::Launcher(LauncherCommand::Issue { permit, program }) => {
             launcher_issue(connection, &permit, &program, emit).await
-        }
-        Command::Open {
-            need,
-            class,
-            tier,
-            usage,
-            prompt,
-        } => {
-            let ask = Ask { class, usage };
-            open(&inference, &need, &ask, tier, prompt, emit).await
         }
         Command::SyncResolve {
             dataset,
@@ -542,68 +476,6 @@ async fn reauthenticate(
             true
         }
         Err(why) => sheet_failure(why, emit),
-    }
-}
-
-fn chat(prompt: &str, ask: &Ask, tier: Tier) -> InferRequest {
-    InferRequest::Chat(
-        ChatRequest::new(
-            vec![ChatMessage {
-                role: Role::User,
-                parts: vec![MessagePart::Text(prompt.to_owned())],
-            }],
-            tier,
-            ask.class,
-            ask.usage,
-        )
-        .with_control(ChatControl::new().with_tool_calls(ToolParallelism::Many)),
-    )
-}
-
-async fn open(
-    inference: &Inference<InferdTransport>,
-    need: &Need,
-    ask: &Ask,
-    tier: Tier,
-    prompt: Option<String>,
-    emit: &mut impl FnMut(Value),
-) -> bool {
-    let options = OpenOptions::default().with_usage(ask.usage);
-    let mut session = match inference
-        .session_with(need, ask.class, tier, &options)
-        .await
-    {
-        Ok(session) => session,
-        Err(why) => {
-            emit(failure(why));
-            return false;
-        }
-    };
-    emit(json!({ "result": "opened" }));
-    let Some(prompt) = prompt else {
-        return true;
-    };
-    if let Err(why) = session
-        .send(ClientFrame::Request(chat(&prompt, ask, tier)))
-        .await
-    {
-        emit(failure(format!("cannot send: {why}")));
-        return false;
-    }
-    loop {
-        match session.next().await {
-            Ok(event) => {
-                let finished = matches!(event, InferEvent::Finished(_));
-                emit(json!({ "event": serde_json::to_value(&event).unwrap_or(Value::Null) }));
-                if finished {
-                    return true;
-                }
-            }
-            Err(why) => {
-                emit(failure(format!("the session ended: {why}")));
-                return false;
-            }
-        }
     }
 }
 

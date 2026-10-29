@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### The AI broker leaves porter for steward
+
+- Deleted: `inferd`, `inferd-client`, `porter-infer`, `porter-router`, `porter-turns`, `porter-bridge`
+  and `porter-tailnet`, with `porter_dbus::inference`, `dbus/org.quire.Inference1*.xml`, `dist/inferd*`,
+  `dist/dbus/org.quire.Inference1.service` and `porter_discover::probe_ports`. They live in the steward
+  repo, cut from e9e7cdcd; steward depends on porter by git rev, porter never on steward.
+- `porter_wire::names::{INFERENCE_BUS, INFERENCE_PATH}` name steward's model service; accountd's
+  old-key import reads them (they were `porter_dbus::inference::{INFERENCE_BUS, INFERENCE_PATH}`).
+- `porter-rig-client open` is gone. `scripts/install.sh`, `check-boundary.sh`, `check-features.sh`,
+  `check-portable.sh` and the CI test lines no longer name the moved crates.
+- Workspace dependencies only they used are dropped: stoker's crates (`cua-action`, `model-*`,
+  `engine-*`, `speech-*`, `vision-prep`, `cua-*`), `rust_decimal`, `iso_currency` and `getrandom`.
+- `porter-dbus` no longer depends on `porter-match`; `porter-rig` neither.
+
 ### Engines go through stoker's `Engine` trait
 
 - `porter-engines` and `porter-engines-install` are deleted. inferd and porter-router use stoker's

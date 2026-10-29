@@ -21,3 +21,8 @@ pub const SHEET_PATH: &str = "/org/quire/AccountsSheet1";
 /// accountd's settings module (`org.quire.SettingsModule1`): the account, grant and client-id
 /// rows the Accounts pane reads.
 pub const ACCOUNTS_SETTINGS_PATH: &str = "/org/quire/Accounts1/settings";
+/// The bus name of steward's model service (`org.quire.Inference1`). Porter keeps the name because
+/// accountd's old-key import probes for it (`old_inferd_serves_keys`).
+pub const INFERENCE_BUS: &str = "org.quire.Inference1";
+/// The root object of steward's model service; kept for the same probe.
+pub const INFERENCE_PATH: &str = "/org/quire/Inference1";

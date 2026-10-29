@@ -17,8 +17,6 @@ members = [
   "crates/porter-drive",
   "crates/porter-drive-fuse",
   "crates/porter-mountd",
-  "crates/porter-infer",
-  "crates/porter-bridge",
   "crates/porter-service-core",
   "crates/porter-service-accounts",
   "crates/porter-service-grants",
@@ -34,7 +32,6 @@ members = [
   "crates/porter-client",
   "crates/porter-client-dbus",
   "crates/porter-client-inproc",
-  "crates/inferd-client",
   "crates/porter-fake",
   "crates/porter-fake-servers",
   "crates/test-kit",
@@ -54,13 +51,9 @@ members = [
   "crates/porter-family-generic",
   "crates/porter-family-oauth",
   "crates/porter-tailscale",
-  "crates/porter-tailnet",
-  "crates/porter-router",
-  "crates/porter-turns",
   "crates/porter-daemon",
   "crates/accountd",
   "crates/syncd",
-  "crates/inferd",
   "crates/storage-webdav",
   "crates/storage-graph",
   "crates/storage-gdrive",
@@ -95,8 +88,6 @@ porter-sync     = { path = "crates/porter-sync" }
 porter-drive    = { path = "crates/porter-drive" }
 porter-drive-fuse = { path = "crates/porter-drive-fuse" }
 porter-mountd = { path = "crates/porter-mountd" }
-porter-infer    = { path = "crates/porter-infer" }
-porter-bridge   = { path = "crates/porter-bridge" }
 porter-service-core = { path = "crates/porter-service-core" }
 porter-service-accounts = { path = "crates/porter-service-accounts" }
 porter-service-grants = { path = "crates/porter-service-grants" }
@@ -112,7 +103,6 @@ porter-sheets   = { path = "crates/porter-sheets" }
 porter-client   = { path = "crates/porter-client" }
 porter-client-dbus = { path = "crates/porter-client-dbus" }
 porter-client-inproc = { path = "crates/porter-client-inproc" }
-inferd-client   = { path = "crates/inferd-client" }
 porter-fake     = { path = "crates/porter-fake" }
 test-kit        = { path = "crates/test-kit" }
 porter-fake-servers = { path = "crates/porter-fake-servers" }
@@ -134,9 +124,6 @@ porter-family-nextcloud = { path = "crates/porter-family-nextcloud" }
 porter-family-generic = { path = "crates/porter-family-generic" }
 porter-family-oauth = { path = "crates/porter-family-oauth" }
 porter-tailscale = { path = "crates/porter-tailscale" }
-porter-tailnet  = { path = "crates/porter-tailnet" }
-porter-router   = { path = "crates/porter-router" }
-porter-turns    = { path = "crates/porter-turns" }
 # Without the settings-file watch: a daemon that watches asks for `features = ["watch"]`, so
 # porter-dbus (and every bus client through it) never pulls a file watcher in.
 porter-daemon   = { path = "crates/porter-daemon", default-features = false }
@@ -154,36 +141,6 @@ ds-settings     = { git = "https://github.com/PoHsuanLai/quire.git", rev = "d17e
 peephole        = { git = "https://github.com/PoHsuanLai/peephole", tag = "v0.1.11" }
 peephole-core   = { git = "https://github.com/PoHsuanLai/peephole", tag = "v0.1.11", default-features = false }
 peephole-bus    = { git = "https://github.com/PoHsuanLai/peephole", tag = "v0.1.11", default-features = false, features = ["tokio"] }
-
-# stoker's computer-use vocabulary, by git at stoker's pinned rev (quire
-# CONSUMING.md section 1; a local checkout overrides it, ARCHITECTURE section 1). stoker has no porter dependency, so there is no cycle.
-cua-action      = { git = "https://github.com/PoHsuanLai/stoker", rev = "98621a2f3730ea1c3e0b8abce00f8e4fe91fe7d7" }
-# inferd's other stoker edges (it is the one place porter's types and stoker's meet), by git at
-# the same rev. `model-http` carries the reqwest client behind its `client` feature;
-# `vision-prep` the frame resize behind `pixels`; the testing features hold stoker's scripted
-# fakes of the supervisor's seams.
-model-provider      = { git = "https://github.com/PoHsuanLai/stoker", rev = "98621a2f3730ea1c3e0b8abce00f8e4fe91fe7d7" }
-model-catalog       = { git = "https://github.com/PoHsuanLai/stoker", rev = "98621a2f3730ea1c3e0b8abce00f8e4fe91fe7d7" }
-engine-supervisor   = { git = "https://github.com/PoHsuanLai/stoker", rev = "98621a2f3730ea1c3e0b8abce00f8e4fe91fe7d7" }
-model-http          = { git = "https://github.com/PoHsuanLai/stoker", rev = "98621a2f3730ea1c3e0b8abce00f8e4fe91fe7d7" }
-model-openai-compat = { git = "https://github.com/PoHsuanLai/stoker", rev = "98621a2f3730ea1c3e0b8abce00f8e4fe91fe7d7" }
-speech-provider     = { git = "https://github.com/PoHsuanLai/stoker", rev = "98621a2f3730ea1c3e0b8abce00f8e4fe91fe7d7" }
-# the client of the speech host (the STT engine process): inferd's `SttBackend::SpeechHost`.
-speech-host-client  = { git = "https://github.com/PoHsuanLai/stoker", rev = "98621a2f3730ea1c3e0b8abce00f8e4fe91fe7d7" }
-vision-prep         = { git = "https://github.com/PoHsuanLai/stoker", rev = "98621a2f3730ea1c3e0b8abce00f8e4fe91fe7d7" }
-cua-parse           = { git = "https://github.com/PoHsuanLai/stoker", rev = "98621a2f3730ea1c3e0b8abce00f8e4fe91fe7d7" }
-cua-session         = { git = "https://github.com/PoHsuanLai/stoker", rev = "98621a2f3730ea1c3e0b8abce00f8e4fe91fe7d7" }
-cua-vendors         = { git = "https://github.com/PoHsuanLai/stoker", rev = "98621a2f3730ea1c3e0b8abce00f8e4fe91fe7d7" }
-model-extract       = { git = "https://github.com/PoHsuanLai/stoker", rev = "98621a2f3730ea1c3e0b8abce00f8e4fe91fe7d7" }
-model-replay        = { git = "https://github.com/PoHsuanLai/stoker", rev = "98621a2f3730ea1c3e0b8abce00f8e4fe91fe7d7" }
-# The engines: what differs between them (`Engine`), the pinned manifest, the reads of this computer
-# and the installer with its privileged helper (`engine-helper`).
-engine-spec         = { git = "https://github.com/PoHsuanLai/stoker", rev = "98621a2f3730ea1c3e0b8abce00f8e4fe91fe7d7" }
-engine-manifest     = { git = "https://github.com/PoHsuanLai/stoker", rev = "98621a2f3730ea1c3e0b8abce00f8e4fe91fe7d7" }
-engine-probe        = { git = "https://github.com/PoHsuanLai/stoker", rev = "98621a2f3730ea1c3e0b8abce00f8e4fe91fe7d7" }
-# the codec-over-transport `Driver`: inferd's TLS transport to a cloud model is a `model_http::Transport`
-# of its own (stoker's hyper client does not speak TLS yet), so it names the driver that takes one.
-model-wire          = { git = "https://github.com/PoHsuanLai/stoker", rev = "98621a2f3730ea1c3e0b8abce00f8e4fe91fe7d7" }
 
 # From quire's pinned block (`docs/workspace-deps.toml`), copied verbatim: only the lines porter
 # names itself, as mailo does.
@@ -234,10 +191,6 @@ proc-macro2 = "1"
 quote = "1"
 syn = { version = "2", features = ["full"] }
 base64 = "0.22"
-# stoker's `Money` (model-provider) is an exact decimal amount in an ISO 4217 currency; the crates
-# that make or read one name these two (both MIT, which deny.toml allows).
-rust_decimal = { version = "1", default-features = false, features = ["std", "serde"] }
-iso_currency = { version = "0.7", features = ["with-serde"] }
 # The fake servers' TLS and PKCE (quire accounts-pins 21c453eb, pending): rustls on `ring`, no
 # default features.
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
@@ -248,9 +201,7 @@ webpki-roots = "1"
 sha2 = "0.10"
 # The RustCrypto hasher traits quickxorhash implements, at the line sha2 and md-5 already bring.
 digest = "0.10"
-# inferd's agent token (both already in Cargo.lock): random bytes from the system (MIT OR
-# Apache-2.0) and a constant-time compare (BSD-3-Clause).
-getrandom = "0.4.3"
+# A constant-time compare (BSD-3-Clause; already in Cargo.lock).
 subtle = "2.6.1"
 md-5 = "0.10"
 # Lower-case hex of a digest or a byte string (MIT OR Apache-2.0; already in Cargo.lock).

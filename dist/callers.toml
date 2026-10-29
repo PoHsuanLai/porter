@@ -15,7 +15,7 @@
 # `Launcher` interface (its programs, sessions, the consent sheet for an agent's key, the keys
 # it hands the processes it spawns) and nothing else of accountd. It is never listed by default:
 # a machine that runs the launcher writes its row here (below) and in inferd's own table
-# (dist/inferd-callers.toml), which serves the launcher's `Agents` endpoints.
+# (steward's dist/inferd-callers.toml), which serves the launcher's `Agents` endpoints.
 # An optional `name = "..."` is what a person reads for the app (Settings' account page lists
 # "Mail" under an identity, not "org.quire.Mail"); an app without one is named by its desktop
 # entry (`<app id>.desktop`, its `Name=`), else by its id.
@@ -23,7 +23,7 @@
 # the unit (peephole's `Full` proof): the process is the unit's main process, the unit comes from
 # files root owns (its fragment and every drop-in, in directories only root can write), it is not
 # transient, it starts one of the row's programs, and it unsets the loader variables
-# (`UnsetEnvironment=` of the 22 names of peephole's LOADER_VARIABLES, as dist/inferd.service
+# (`UnsetEnvironment=` of the 22 names of peephole's LOADER_VARIABLES, as steward's dist/inferd.service
 # does). Otherwise the caller is a plain app. A row names its programs with
 # `exe = ["/usr/bin/sill", ...]` (absolute paths, one `*` allowed per segment); a row for a daemon
 # unit (`inferd.service`) that names none runs `libexec/quire/<name>` under /usr, /usr/local or
@@ -103,7 +103,7 @@ role = "agent"
 exe = ["/usr/bin/docket-acp", "/usr/local/bin/docket-acp", "/opt/quire/releases/*/bin/docket-acp"]
 
 # memoryd and voiced hold permits for the AI keys like any app, so accountd knows them as inferd
-# does (dist/inferd-callers.toml names the same units; a test holds the two tables to it).
+# does (steward's dist/inferd-callers.toml names the same units).
 [[caller]]
 app = "org.quire.Memory"
 unit = "memoryd.service"

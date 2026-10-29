@@ -2,10 +2,9 @@
 # The feature sets the consumers of porter's crates build, each one clippy with -D warnings.
 #
 # The workspace gate builds `--workspace --all-features`, which unifies every feature into one
-# build and so never sees the build a consumer makes on its own. docket builds inferd that way
-# (`cargo install --git porter`, -D warnings): the client with `dbus` and `infer` (now inferd-client's `dbus`) and no
-# other feature once left two framed.rs methods unused, and the gate passed (porter 5bdda62;
-# fixed in b12886e). Each set below is checked here, alone, so the same break fails this script.
+# build and so never sees the build a consumer makes on its own. A consumer that builds with one
+# feature and no other once left two methods unused, and the gate passed (porter 5bdda62; fixed
+# in b12886e). Each set below is checked here, alone, so the same break fails this script.
 #
 # The sets come from the consumers' manifests at origin/master (porter-client and the other
 # porter crates each consumer takes with default-features = false). The comment above each set
@@ -22,10 +21,8 @@ cd "$(dirname "$0")/.."
 # purpose: a test target's helpers are dead code in a default build (accountd's tests/it/ fails
 # -D warnings with default features on master, and no consumer compiles it).
 BUILDS=(
-  # The three daemons, each alone with its default features: `-p` alone, so no other package's
-  # features are unified in. inferd is docket's sibling binary; accountd and syncd are the
-  # desktop's.
-  "inferd (default) :: -p inferd"
+  # The two daemons, each alone with its default features: `-p` alone, so no other package's
+  # features are unified in.
   "accountd (default) :: -p accountd"
   "syncd (default) :: -p syncd"
 
@@ -36,14 +33,6 @@ BUILDS=(
   "porter-client-dbus :: -p porter-client-dbus"
   "porter-client-inproc (no features: mailo) :: -p porter-client-inproc --no-default-features"
   "porter-client-inproc (relays: syncd) :: -p porter-client-inproc --features relays"
-
-  # inferd-client, in the sets its consumers name (it sits in porter until steward takes it):
-  # detent's Settings (dbus, lending), docket and almanac (dbus), inferd's tests (dbus), an app
-  # that hosts inference itself (engines).
-  "inferd-client (no features) :: -p inferd-client --no-default-features"
-  "inferd-client (dbus: inferd's tests, docket, almanac) :: -p inferd-client --no-default-features --features dbus"
-  "inferd-client (dbus,lending: detent's Settings) :: -p inferd-client --no-default-features --features dbus,lending"
-  "inferd-client (engines) :: -p inferd-client --features engines"
 
   # The other porter crates a consumer takes with default-features = false (mailo's workspace
   # block, which mail-core, mail-app and mail-runtime name), in the features each one turns on.
