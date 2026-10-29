@@ -111,6 +111,8 @@ impl MailLookup {
 impl Lookup for MailLookup {
     type Mid = Typed;
 
+    const EDITS_SERVERS: bool = true;
+
     fn form(spec: &ProviderSpec) -> Vec<FieldSpec> {
         address_form(spec)
     }

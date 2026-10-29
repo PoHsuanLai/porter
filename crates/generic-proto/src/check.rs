@@ -18,7 +18,14 @@ pub fn incoming(endpoints: &[ServiceEndpoint]) -> Option<&ServiceEndpoint> {
 /// `None` when there is nothing to try (a token, a JMAP-only account): the token's own call
 /// already proved it.
 pub fn plan(credential: &Credential, endpoints: &[ServiceEndpoint]) -> Option<RelayPlan> {
-    let (Credential::Password(password), Some(endpoint)) = (credential, incoming(endpoints)) else {
+    plan_at(credential, incoming(endpoints)?)
+}
+
+/// The relay plan that tries `credential` at `endpoint`, a mail server (IMAP, POP3 or SMTP: the
+/// relay says `EHLO` or `CAPABILITY` and authenticates before its first write). `None` when
+/// there is nothing to try (a token).
+pub fn plan_at(credential: &Credential, endpoint: &ServiceEndpoint) -> Option<RelayPlan> {
+    let Credential::Password(password) = credential else {
         return None;
     };
     Some(RelayPlan::new(

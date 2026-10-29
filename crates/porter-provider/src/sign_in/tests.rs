@@ -153,3 +153,27 @@ fn a_sign_in_starts_without_a_hint_and_with_a_first_consent() {
     assert_eq!(again.login_hint, Some(hint));
     assert_eq!(again.consent, ConsentHistory::SignedInBefore);
 }
+
+#[test]
+fn an_edit_mode_shows_no_password_in_debug() {
+    use porter_sheet::{Hop, MailServers, Manual, Security};
+    let hop = |host: &str| Hop {
+        host: host.to_owned(),
+        port: 993,
+        security: Security::Tls,
+    };
+    let mode = SignInMode::EditServers {
+        account: AccountId::parse("ada").expect("id"),
+        auth: AuthKind::Password,
+        label: AccountLabel("ada@example.test".into()),
+        current: Manual::Imap(MailServers {
+            incoming: hop("imap.example.test"),
+            outgoing: hop("smtp.example.test"),
+            login: None,
+        }),
+        name: None,
+        keep: Some(SecretText::new("held-pw-example")),
+    };
+    let shown = format!("{mode:?} {:?}", SignInStart::new(mode.clone()));
+    assert!(!shown.contains("held-pw-example"), "{shown}");
+}
