@@ -15,7 +15,6 @@ use host::HostLog;
 use porter_callers::{Caller, CallerRole};
 use porter_core::AccountId;
 use porter_core::{AppId, AppName, Credential, Isolation, SecretKey, SecretPurpose, SecretText};
-use porter_dbus::accounts::{SHEET_BUS, SHEET_PATH};
 use porter_fake::{
     FakeProvider, MemoryStore, RecordingAudit, cloud_provider, llm_account, llm_provider,
     mail_provider,
@@ -25,6 +24,7 @@ use porter_ids::clock::FixedClock;
 use porter_secrets::{MemorySecrets, Secrets, SecretsError};
 use porter_service::AccountService;
 use porter_service_core::registry::Registry;
+use porter_wire::names::{SHEET_BUS, SHEET_PATH};
 use std::sync::Arc;
 use test_kit::Scratch;
 

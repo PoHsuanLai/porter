@@ -14,7 +14,7 @@ use porter_ids::clock::Clock;
 use porter_secrets::{Secrets, SecretsError};
 use porter_service_core::audit::AuditSink;
 use porter_service_core::audit::{AuditEntry, AuditEvent};
-use porter_service_core::sheets::Sheets;
+use porter_sheet::host::Sheets;
 use porter_wire::{ParentWindow, Refusal};
 use std::future::Future;
 use std::pin::Pin;

@@ -19,10 +19,11 @@ use ds_settings::live::{
 };
 use ds_settings::schema::KeyPath;
 use porter_callers::CallerRole;
-use porter_capability::Toggle;
+use porter_capability::{CapabilityKind, Toggle};
 use porter_core::ProviderId;
-use porter_core::{Account, AgentState, AppId, AppName, AuthKind, IdentityId, Isolation};
-use porter_dbus::accounts::ACCOUNTS_SETTINGS_PATH;
+use porter_core::{
+    Account, AccountId, AgentState, AppId, AppName, AuthKind, GrantId, IdentityId, Isolation,
+};
 use porter_families::set::ProviderNames;
 use porter_identities::IdentitiesApi;
 use porter_provider::{ClientChannel, ClientsFile, Issuer, parse_clients};
@@ -31,11 +32,12 @@ use porter_service_core::audit::{AuditEvent, ClientIdChange};
 use porter_service_core::registry::Registry;
 use porter_settings::accounts::{Directory, Key, UsedBy, listed, parse, read, schema};
 use porter_settings::clients::{RowEdit, RowRefused, edited};
-use porter_settings::{REAUTH, REMOVE};
+use porter_settings::{Acts, At, Boxed, REAUTH, SIGN_OUT};
 use porter_sheet::ProviderGroup;
 use porter_sheets::AppNames;
 use porter_wire::AccountsReply;
 use porter_wire::ParentWindow;
+use porter_wire::names::ACCOUNTS_SETTINGS_PATH;
 use std::sync::Arc;
 use zbus::Connection;
 
@@ -211,17 +213,6 @@ fn refused(refusal: porter_wire::Refusal) -> LiveError {
     failed("That could not be done.")
 }
 
-/// The switch a row's value stands for.
-fn toggle_of(value: &toml::Value) -> Option<Toggle> {
-    match value {
-        toml::Value::String(s) if s == "on" => Some(Toggle::On),
-        toml::Value::String(s) if s == "off" => Some(Toggle::Off),
-        toml::Value::Boolean(true) => Some(Toggle::On),
-        toml::Value::Boolean(false) => Some(Toggle::Off),
-        _ => None,
-    }
-}
-
 impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
     async fn permit(&self, caller: &Caller, _access: Access) -> Verdict {
         match self.0.callers.caller_of(&caller.sender.0).await {
@@ -253,61 +244,8 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
 
     async fn set(&self, key: &KeyPath, value: toml::Value) -> Result<(), LiveError> {
         let registry = self.0.host.registry();
-        let parsed =
-            parse(&key.0, &registry).ok_or_else(|| LiveError::UnknownKey(key.0.clone()))?;
-        match parsed {
-            Key::Account(id, row) if row == REMOVE => {
-                self.0.host.remove(&id).await.map_err(failed)?;
-            }
-            Key::Account(id, row) if row == REAUTH => {
-                // A program on this computer has nothing to sign in to (the row is not offered).
-                let local = registry.accounts.iter().any(|a| {
-                    a.id == id && matches!(a.auth, AuthKind::LocalRuntime | AuthKind::None)
-                });
-                if local {
-                    return Err(LiveError::NotPermitted(
-                        "this account has nothing to sign in to".into(),
-                    ));
-                }
-                let agent = registry
-                    .accounts
-                    .iter()
-                    .any(|a| a.id == id && a.auth == AuthKind::AgentLogin);
-                let core = Arc::clone(&self.0);
-                tokio::spawn(async move {
-                    // An assistant signs itself in, through its launcher, with a sheet that shows
-                    // the wait; any other account is signed in again through its provider.
-                    let reply = match agent {
-                        true => {
-                            core.host
-                                .login_agent_any(
-                                    &settings_app(),
-                                    &id,
-                                    ParentWindow::Unparented,
-                                    &core.launchers,
-                                )
-                                .await
-                        }
-                        false => {
-                            core.host
-                                .reauthenticate_any(&settings_app(), &id, ParentWindow::Unparented)
-                                .await
-                        }
-                    };
-                    if let AccountsReply::Refused(why) = &reply {
-                        eprintln!("accountd: sign in again from Settings refused: {why:?}");
-                    }
-                    // The pane hears how it ended on the row.
-                    announce_row(
-                        &core,
-                        &Key::Account(id, REAUTH),
-                        porter_ids::word::word(&ReauthNews::of(&reply)),
-                    )
-                    .await;
-                    core.publish().await;
-                });
-            }
-            Key::SignOut(id) => self.sign_out(&id).await?,
+        let unknown = || LiveError::UnknownKey(key.0.clone());
+        match parse(&key.0, &registry).ok_or_else(unknown)? {
             Key::Client(issuer) => {
                 let text = match &value {
                     toml::Value::String(text) => text.trim().to_owned(),
@@ -333,26 +271,15 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
                 };
                 self.write_client(issuer, RowEdit::Secret(&text))?;
             }
-            Key::Service(id, kind) => {
-                let toggle = toggle_of(&value)
-                    .ok_or_else(|| LiveError::BadValue("a service is `on` or `off`".into()))?;
-                self.0
-                    .host
-                    .set_toggle(&id, kind, toggle)
-                    .await
-                    .map_err(refused)?;
-            }
-            Key::Grant(_, grant) => {
-                self.0.host.revoke_grant(&grant).await.map_err(refused)?;
-            }
-            Key::Account(..)
-            | Key::Expires(_)
-            | Key::UsedBy(..)
-            | Key::Since(..)
-            | Key::Scope(..)
-            | Key::App(..)
-            | Key::GrantService(..) => {
-                return Err(LiveError::NotPermitted("this row is a read-out".into()));
+            Key::Account(id, row, tail) => {
+                let account = registry
+                    .accounts
+                    .iter()
+                    .find(|a| a.id == id)
+                    .ok_or_else(unknown)?;
+                let (directory, used) = (self.directory(), UsedBy::new());
+                let at = At::of(account, &registry, &used, &directory);
+                row.0.write(&tail, value, &at, self).await?;
             }
         }
         self.0.publish().await;
@@ -360,11 +287,79 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
     }
 }
 
+/// What the action rows do, over the daemon's state.
+impl<H: Host, C: Callers> Acts for AccountsSettings<H, C> {
+    fn remove<'a>(&'a self, id: &'a AccountId) -> Boxed<'a, Result<(), LiveError>> {
+        Box::pin(async move {
+            self.0.host.remove(id).await.map_err(failed)?;
+            Ok(())
+        })
+    }
+
+    /// An assistant signs itself in, through its launcher, with a sheet that shows the wait; any
+    /// other account is signed in again through its provider. The pane hears how it ended on the
+    /// row.
+    fn sign_in_again<'a>(&'a self, account: &'a Account) -> Boxed<'a, Result<(), LiveError>> {
+        let core = Arc::clone(&self.0);
+        let id = account.id.clone();
+        let agent = account.auth == AuthKind::AgentLogin;
+        Box::pin(async move {
+            tokio::spawn(async move {
+                let reply = match agent {
+                    true => {
+                        core.host
+                            .login_agent_any(
+                                &settings_app(),
+                                &id,
+                                ParentWindow::Unparented,
+                                &core.launchers,
+                            )
+                            .await
+                    }
+                    false => {
+                        core.host
+                            .reauthenticate_any(&settings_app(), &id, ParentWindow::Unparented)
+                            .await
+                    }
+                };
+                if let AccountsReply::Refused(why) = &reply {
+                    eprintln!("accountd: sign in again from Settings refused: {why:?}");
+                }
+                announce_row(
+                    &core,
+                    &Key::row(id, REAUTH),
+                    porter_ids::word::word(&ReauthNews::of(&reply)),
+                )
+                .await;
+                core.publish().await;
+            });
+            Ok(())
+        })
+    }
+
+    fn sign_out<'a>(&'a self, id: &'a AccountId) -> Boxed<'a, Result<(), LiveError>> {
+        Box::pin(self.sign_out_of(id))
+    }
+
+    fn switch<'a>(
+        &'a self,
+        id: &'a AccountId,
+        kind: CapabilityKind,
+        to: Toggle,
+    ) -> Boxed<'a, Result<(), LiveError>> {
+        Box::pin(async move { self.0.host.set_toggle(id, kind, to).await.map_err(refused) })
+    }
+
+    fn revoke<'a>(&'a self, grant: &'a GrantId) -> Boxed<'a, Result<(), LiveError>> {
+        Box::pin(async move { self.0.host.revoke_grant(grant).await.map_err(refused) })
+    }
+}
+
 impl<H: Host, C: Callers> AccountsSettings<H, C> {
     /// "Sign out" of an assistant: the launcher that runs its program is asked to have it sign
     /// itself out, and the pane hears how that ended; with no launcher, accountd only forgets
     /// that it was signed in and the assistant's own login is not touched.
-    async fn sign_out(&self, id: &porter_core::AccountId) -> Result<(), LiveError> {
+    async fn sign_out_of(&self, id: &AccountId) -> Result<(), LiveError> {
         let core = &self.0;
         let program = core
             .host
@@ -377,7 +372,7 @@ impl<H: Host, C: Callers> AccountsSettings<H, C> {
             Some(program) => core.launchers.ask_logout(id, &program).await.ok(),
             None => None,
         };
-        let key = Key::SignOut(id.clone());
+        let key = Key::row(id.clone(), SIGN_OUT);
         let Some(waiting) = waiting else {
             core.host
                 .set_agent_state(id, AgentState::NeedsLogin)

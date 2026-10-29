@@ -10,7 +10,7 @@ use crate::common::{Known, PhotosGrant, client};
 use porter_callers::CallerRole;
 use porter_capability::StorageScope;
 use porter_capability::{CapabilityKind, Claim, Offer, Provenance, Subject};
-use porter_client::Accounts;
+use porter_client::Grants;
 use porter_core::{
     Account, AccountLabel, AccountState, AuthKind, Candidate, Credential, DataClass, EndpointUrl,
     Family, LoginName, Restriction, SecretKey, SecretPurpose, SecretText, ServiceEndpoint,
@@ -146,7 +146,7 @@ pub struct Rig {
     pub files_shown: Arc<AtomicBool>,
     pub photos_shown: Arc<AtomicBool>,
     pub supervisor: StorageSupervisor<Link, Gate>,
-    pub accounts: Arc<Accounts<Link>>,
+    pub accounts: Arc<Grants<Link>>,
     pub network: watch::Receiver<Network>,
     pub _keep: Vec<zbus::Connection>,
     pub _network: watch::Sender<Network>,
@@ -351,7 +351,7 @@ async fn build(photos: PhotosGrant, media: Media, picker_only: bool) -> Rig {
 
 /// A supervisor that is never ticked, to fill the field until the real one can be made.
 fn placeholder(
-    accounts: &Arc<Accounts<Link>>,
+    accounts: &Arc<Grants<Link>>,
     network: &watch::Receiver<Network>,
 ) -> StorageSupervisor<Link, Gate> {
     let hub = Hub::default();

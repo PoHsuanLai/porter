@@ -2,6 +2,120 @@
 
 ## Unreleased
 
+### The AI broker leaves porter for steward
+
+- Deleted: `inferd`, `inferd-client`, `porter-infer`, `porter-router`, `porter-turns`, `porter-bridge`
+  and `porter-tailnet`, with `porter_dbus::inference`, `dbus/org.quire.Inference1*.xml`, `dist/inferd*`,
+  `dist/dbus/org.quire.Inference1.service` and `porter_discover::probe_ports`. They live in the steward
+  repo, cut from e9e7cdcd; steward depends on porter by git rev, porter never on steward.
+- `porter_wire::names::{INFERENCE_BUS, INFERENCE_PATH}` name steward's model service; accountd's
+  old-key import reads them (they were `porter_dbus::inference::{INFERENCE_BUS, INFERENCE_PATH}`).
+- `porter-rig-client open` is gone. `scripts/install.sh`, `check-boundary.sh`, `check-features.sh`,
+  `check-portable.sh` and the CI test lines no longer name the moved crates.
+- Workspace dependencies only they used are dropped: stoker's crates (`cua-action`, `model-*`,
+  `engine-*`, `speech-*`, `vision-prep`, `cua-*`), `rust_decimal`, `iso_currency` and `getrandom`.
+- `porter-dbus` no longer depends on `porter-match`; `porter-rig` neither.
+
+### Engines go through stoker's `Engine` trait
+
+- `porter-engines` and `porter-engines-install` are deleted. inferd and porter-router use stoker's
+  `engine-spec`, `engine-manifest`, `engine-probe` and `engine-install` (stoker 80bf1239 and the
+  commit that adds the trait methods below). The mirror enums are gone too: `porter_engines::EngineId`,
+  inferd's `settings::missing::Engine` and `settings::programs::Program`. `model_catalog::EngineKind`
+  is the one engine type.
+- Words are unchanged: the bus ids (`llama_cpp`, `vllm`, `strata`, `speech`, `kokoro`), the running
+  list's engine words (`vllm`, `llama-server`, `speech-host`, `kokoro`, `strata`), the `engines.*`
+  settings keys, the install folders, the unit names and sockets (`llama_server:<model>`), the
+  helper's arguments and each engine's command line and environment.
+- The catalogue loader runs `engine_spec::check_entry` after the parser: a vLLM line with no GPU
+  estimate or a llama-server line whose weights are not GGUF is skipped, as before, with the check's
+  own message. `porter_router::catalog::parse_entry_text` returns `EntryError`.
+- The privileged helper is stoker's `engine-helper` (it was `porter-engine-helper`), at
+  `/usr/libexec/quire/engine-helper` under the polkit action `org.quire.engines.install`; stoker's
+  `scripts/install.sh` installs both, and porter's no longer builds a helper or ships
+  `dist/org.quire.porter.engines.policy` (stoker's install removes the old file). A caller of
+  `engine_install::EngineInstalls` passes `HelperProgram { pkexec: "/usr/bin/pkexec", program:
+  "/usr/libexec/quire/engine-helper" }`.
+- `EngineConfig::program` is public and `EngineConfig::named_path` is new; `LocalModel::unit_with`
+  returns an `Option`.
+
+### Every domain of accountd is a client of `Porter<T>`
+
+- `porter.identities()`, `spaces()`, `tailnet()`, `ai_keys()`, `ai_accounts()` and `launcher()` over `Bus`, and the
+  shell's view of the accounts on `accounts()` (`needing_reauth`, `view`, `reauthenticate_shown`, `watch`, with
+  `AccountRef`). They are the old `Identities`, `Spaces`, `Tailnet`, `AiKeys`, `AiAccounts` and `Launcher` without
+  `connect(&BusConnection)`: they take a `Porter<Bus>` (`Bus::over(connection)`). `Spaces` gains `register`, `rename`,
+  `set_look` and `remove`.
+- Every watch is a `Changes<T>` (a `Stream` of `Result<T, Malformed>`, with `next`), replacing `SpaceChanges`,
+  `MachineChanges`, `IdentityRemovals`, `Changes` (AI accounts), `Requests` and `Revocations`; an item is
+  `Err(Malformed::Signal)` for a signal that is not well formed. `Spaces::watch` gives
+  `Changes<(DesktopSpace, SpaceChange)>`; no domain has an alias.
+- Errors carry no text: `CallFailure` and its three `String` variants are `LinkError`; each domain's error has
+  `Link(LinkError)` where it had `Bus(CallFailure)`. A sheet already open for the app is `AccountsError::Busy`,
+  where detent searched an error's text for `LimitsExceeded`; an object the daemon does not serve (an account that is
+  not there) is `LinkError::Invalid`.
+- `porter-client` reaches no zbus, no `porter-dbus` and no service crate, and the bus tests of the client are accountd's
+  (`crates/accountd/tests/it/client`); check-boundary.sh has a table of the
+  crates that may depend on `porter-dbus`, `porter-callers`, the `porter-service*` crates, `porter-identities`,
+  `porter-spaces`, `porter-settings`, `porter-store` and `porter-sheets`, and fails on any other, and on
+  `porter_dbus::accounts` named outside the daemons and `porter-client-dbus`.
+
+### `Porter`: one handle over a transport
+
+- `porter_client::Porter<T>` is the app's handle: `porter.accounts()` (`add`, `reauthenticate`) over any transport that
+  signs an account in, and `porter.grants()` (`find`, `request_grant`, `grants`, `revoke`, `open_authenticated`,
+  `open_linked`) over a transport that carries grants, which is the hosted one only. A transport implements
+  `AccountsLink` and `GrantsLink`; a domain a transport does not carry has no accessor on it, so the
+  `Unsupported`/`Unreachable` defaults are gone.
+- The transports are crates of their own. `porter-client-dbus`: `Bus::over(connection)`, `Bus::accounts_at(owner)`,
+  `connect()`. `porter-client-inproc`: `Hosted::new(service, app)`, `HostConfig` and `hosted(config)` for an app that
+  brings its providers, secrets and sheet host, `RelayHost`, `NoRelays`, `PorterRelays` (feature `relays`).
+- The agent launcher is `porter_client_dbus::Launcher` (`Bus::launcher()`), not a `Porter` domain: its process credential
+  is a sealed memfd accountd hands over on the bus, a Linux descriptor, so `ProcessCredential`, `ChildKey`, `Delivery`,
+  `Inherit` and `Revoked` live in `porter-client-dbus` and `porter-client` has no descriptor in its API and builds on
+  macOS and Windows. `LauncherLink` is gone. `scripts/check-portable.sh` now cross-checks `porter-client`,
+  `porter-sheet` and `porter-wire` on every macOS and Windows target rustup has installed.
+- Errors are typed without prose: `LinkError` (`Unreachable`, `Closed`, `Denied`, `Invalid`, `Malformed(Malformed)`)
+  beside each domain's own: `AccountsError` (`Refused`, `AlreadyAdded`, `Busy`, `Link`), `GrantsError`.
+- Gone from `porter-client`: `Accounts<T>` (the god facade), `Transport`, `TransportError`, `ClientError`,
+  `DbusTransport`, `InProcess`, `HostedCore`, `Relayed`, `Removals`, `RemovedAccount`, `Accounts::watch_removals`
+  (nobody called it; `Identities::watch_removals` is the same signal) and the features `dbus`, `in-process`, `relays`.
+
+### `porter_service::Service`
+
+- `Service` is the facade seen as the two domain traits a host asks of it: `accounts_api()` (`AccountsApi`) and
+  `grants_api()` (`GrantsApi`). `AccountService<..>` implements it; the client's hosted carrier is generic over it.
+
+### Bus names, `LauncherFault` and `Destination` have one home each
+
+- `ACCOUNTS_BUS`, `ACCOUNTS_PATH`, `ACCOUNTS_SETTINGS_PATH`, `SPACES_PATH`, `IDENTITIES_PATH`, `TAILNET_PATH`,
+  `SHEET_BUS` and `SHEET_PATH` are `porter_wire::names::*` (they were `porter_dbus::accounts::*`), so an app
+  finds the daemon without naming the bus crate. `LauncherFault` is `porter_wire::LauncherFault`; its error
+  names are `porter_dbus::accounts::{launcher_fault_error_name, launcher_fault_error_name_in,
+  launcher_fault_from_error_name}` (the methods `error_name`, `error_name_in`, `from_error_name` are gone).
+- `Destination` (a call sent to a daemon's name or to the owner the caller checked) is `porter_dbus::Destination`,
+  the one definition `porter-client` and `inferd-client` both use.
+
+### The inference half of the client is `inferd-client`
+
+- `porter-client` is the account service's client. What it held of inference moved, with
+  history, to the new crate `inferd-client`, which sits in porter until the steward lane takes
+  it: `Inference<T>` (the old `Accounts<T>`'s inference methods, `guests`, `candidates`, ...), the
+  inference `Transport` (`open_with`, `prepare`, `places`, the computers and the guests),
+  `DbusTransport` (inferd; `inference_at`), `Brokered<B>` (what `InProcess::with_broker` was),
+  `TransportError`, `ClientError`, `ComputerReason`, `engines`, `TailnetLending`. Features
+  `infer`, `engines` and `lending` left `porter-client`.
+- `porter-client`'s `Transport` has `call`, `open_authenticated` and `open_linked` only;
+  `InProcess<C, H>` has no broker type parameter (`NoBroker` is `inferd-client`'s);
+  `DbusTransport::accounts_at` stays, `inference_at` is `inferd-client`'s. `ClientError` lost
+  `InferRefused`.
+
+### The sheet host seam is porter-sheet's
+
+- `{Sheets, SheetLink, SheetOpen, SheetFault}` are `porter_sheet::host::*` (they were
+  `porter_service_core::sheets::*`). `porter-sheet` depends on `porter-wire` for `ParentWindow`. A host
+  that draws a sheet no longer names a service crate.
+
 ### AI keys are accountd's
 
 - accountd keeps the AI keys, the agent logins and the local runtimes with the identities: one
@@ -50,6 +164,12 @@
   `Key` variants. accountd's keys (`Key`, `parse`, `path`, `schema`) and the edit of
   `clients.toml` moved there from accountd; the daemon hosts the module. The row paths and words
   are unchanged.
+- The rows that carry an id or an index (`used_by.<n>`, `service.<kind>`, `grant.<grant>` and its
+  four read-outs, `sign_out`, `expires`) are `AccountRow` impls too, found by the path under the
+  account's id, and a permit's five rows are `GrantRow` impls: `Key` is an account with its row
+  and path, or an issuer's client row, and the daemon does what an action row asks through
+  `Acts`. inferd's two spend rows are `SpendRow` impls. Adding a row is one impl and one line of
+  `ROWS`. Every key path, word and value is unchanged; a table test holds them.
 
 ### The service is a facade over domains
 

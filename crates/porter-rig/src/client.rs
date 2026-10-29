@@ -4,17 +4,14 @@
 //!
 //! The commands are the app side of the scenarios: list the identities and continue as one,
 //! ask for a permit to use the person's AI keys and add a key, run the agent launcher's calls,
-//! open an AI session, settle a sync conflict, watch for them. No credential crosses a bus, so
+//! settle a sync conflict, watch for them. No credential crosses a bus, so
 //! there is nothing to ask a grant for or to open a relay to. The app's identity is the
 //! daemons' to find (see `fixture`).
 
 use clap::Subcommand;
-use porter_capability::Tier;
-use porter_capability::{Access, AgentProgram, Delta, StorageScope};
-use porter_client::{
-    Accounts, AiKeys, AiKeysError, ClientError, DbusTransport, Identities, IdentitiesError,
-    InferSession, Launcher, LauncherError, OpenOptions,
-};
+use porter_capability::AgentProgram;
+use porter_client::{Accounts, AccountsError, AiKeysError, Identities, IdentitiesError, Porter};
+use porter_client_dbus::{Bus, Launcher, LauncherError};
 use porter_core::ProviderHint;
 use porter_core::SessionToken;
 use porter_core::consent::Usage;
@@ -22,13 +19,6 @@ use porter_core::{AccountId, GrantId, ProviderId};
 use porter_core::{DataClass, IdentityId};
 use porter_dbus::from_vardict;
 use porter_dbus::sync::SyncProxy;
-use porter_ids::Tokens;
-use porter_infer::{
-    ChatControl, ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRequest, MessagePart,
-    Role, ToolParallelism,
-};
-use porter_match::Need;
-use porter_match::{LlmNeed, MailNeed, NotesNeed, PimNeed, StorageNeed};
 use porter_wire::ParentWindow;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -50,34 +40,6 @@ pub fn word<T: DeserializeOwned>(text: &str) -> Result<T, String> {
         .map_err(|_| format!("`{text}` is not one of the words"))
 }
 
-/// The need a command line names: a preset (`mail`, `storage`, `calendar`, `contacts`,
-/// `notes`, `llm`), each asking for the least that is useful, or a JSON `Need` (porter-core's
-/// serde form, `{"kind":"storage","v":{...}}`).
-pub fn parse_need(text: &str) -> Result<Need, String> {
-    if text.trim_start().starts_with('{') {
-        return serde_json::from_str(text).map_err(|e| format!("not a Need: {e}"));
-    }
-    let pim = || PimNeed::new(Access::Read, Delta::None);
-    Ok(match text {
-        "mail" => Need::Mail(MailNeed::new(Access::Read, false, Delta::None)),
-        "storage" => Need::Storage(StorageNeed::new(
-            Access::ReadWrite,
-            Delta::Poll,
-            StorageScope::AppFolder,
-            false,
-        )),
-        "calendar" => Need::Calendar(pim()),
-        "contacts" => Need::Contacts(pim()),
-        "notes" => Need::Notes(NotesNeed::new(Access::Read, Delta::None)),
-        "llm" => Need::Llm(LlmNeed::new(Default::default(), Tokens(1_000))),
-        other => {
-            return Err(format!(
-                "`{other}` is not a need (mail, storage, calendar, contacts, notes, llm, or JSON)"
-            ));
-        }
-    })
-}
-
 fn failure(why: impl std::fmt::Display) -> Value {
     json!({ "result": "error", "error": why.to_string() })
 }
@@ -92,27 +54,9 @@ pub enum Command {
     /// The person's AI keys: ask for a permit to use them (adding one is `add-account`).
     #[command(subcommand)]
     AiKeys(AiKeysCommand),
-    /// The agent launcher's calls to inferd.
+    /// The agent launcher's calls to accountd.
     #[command(subcommand)]
     Launcher(LauncherCommand),
-    /// Opens an AI session and, with a prompt, runs one chat turn on it.
-    Open {
-        /// The need: `mail`, `storage`, `calendar`, `contacts`, `notes`, `llm` or a JSON `Need`.
-        #[arg(value_parser = parse_need)]
-        need: Need,
-        /// The data class.
-        #[arg(long, default_value = "public", value_parser = word::<DataClass>)]
-        class: DataClass,
-        /// The tier.
-        #[arg(long, default_value = "fast", value_parser = word::<Tier>)]
-        tier: Tier,
-        /// `interactive` or `background`.
-        #[arg(long, default_value = "interactive", value_parser = word::<Usage>)]
-        usage: Usage,
-        /// What to say, if anything.
-        #[arg(long)]
-        prompt: Option<String>,
-    },
     /// Settles a stored sync conflict.
     SyncResolve {
         /// `<account>/<dataset>`.
@@ -259,7 +203,7 @@ pub async fn run(
     command: Command,
     emit: &mut impl FnMut(Value),
 ) -> bool {
-    let accounts = Accounts::over(DbusTransport::over(connection.clone()));
+    let accounts = Porter::over(Bus::over(connection.clone())).accounts();
     match command {
         Command::Identities(IdentitiesCommand::List) => identities_list(connection, emit).await,
         Command::Identities(IdentitiesCommand::Offer { provider }) => {
@@ -278,16 +222,6 @@ pub async fn run(
         }) => launcher_request_key(connection, &program, class, session.as_ref(), emit).await,
         Command::Launcher(LauncherCommand::Issue { permit, program }) => {
             launcher_issue(connection, &permit, &program, emit).await
-        }
-        Command::Open {
-            need,
-            class,
-            tier,
-            usage,
-            prompt,
-        } => {
-            let ask = Ask { class, usage };
-            open(&accounts, &need, &ask, tier, prompt, emit).await
         }
         Command::SyncResolve {
             dataset,
@@ -329,8 +263,13 @@ fn refused(refusal: porter_wire::Refusal, emit: &mut impl FnMut(Value)) -> bool 
     false
 }
 
+/// The Identities of this app on `connection`.
+fn identities_of(connection: &zbus::Connection) -> Identities<Bus> {
+    Porter::over(Bus::over(connection.clone())).identities()
+}
+
 async fn identities_list(connection: &zbus::Connection, emit: &mut impl FnMut(Value)) -> bool {
-    let listed = async { Identities::connect(connection).await?.list().await }.await;
+    let listed = identities_of(connection).list().await;
     match listed {
         Ok(identities) => {
             let rows: Vec<Value> = identities
@@ -353,13 +292,9 @@ async fn identities_offer(
     emit: &mut impl FnMut(Value),
 ) -> bool {
     let hint = provider.map_or(ProviderHint::Any, ProviderHint::Provider);
-    let picked = async {
-        Identities::connect(connection)
-            .await?
-            .offer(&hint, &ParentWindow::Unparented)
-            .await
-    }
-    .await;
+    let picked = identities_of(connection)
+        .offer(&hint, &ParentWindow::Unparented)
+        .await;
     match picked {
         Ok(picked) => {
             emit(json!({
@@ -390,13 +325,7 @@ async fn identities_register_use(
     identity: &IdentityId,
     emit: &mut impl FnMut(Value),
 ) -> bool {
-    let said = async {
-        Identities::connect(connection)
-            .await?
-            .register_use(identity)
-            .await
-    }
-    .await;
+    let said = identities_of(connection).register_use(identity).await;
     match said {
         Ok(()) => {
             emit(json!({ "result": "registered", "identity": identity.as_str() }));
@@ -414,13 +343,10 @@ async fn ai_keys_request(
     ask: &Ask,
     emit: &mut impl FnMut(Value),
 ) -> bool {
-    let permit = async {
-        AiKeys::connect(connection)
-            .await?
-            .request_key(ask.class, ask.usage, &ParentWindow::Unparented)
-            .await
-    }
-    .await;
+    let permit = Porter::over(Bus::over(connection.clone()))
+        .ai_keys()
+        .request_key(ask.class, ask.usage, &ParentWindow::Unparented)
+        .await;
     match permit {
         Ok(permit) => {
             emit(json!({ "result": "granted", "permit": permit.as_str() }));
@@ -439,7 +365,7 @@ async fn launcher_for(
     connection: &zbus::Connection,
     program: &AgentProgram,
 ) -> Result<Launcher, LauncherError> {
-    let launcher = Launcher::connect(connection).await?;
+    let launcher = Bus::over(connection.clone()).launcher();
     launcher.register(std::slice::from_ref(program)).await?;
     Ok(launcher)
 }
@@ -506,9 +432,9 @@ async fn launcher_issue(
 
 /// What a sheet that did not finish tells: `refused` with accountd's word for it (`Cancelled`
 /// when the person closed the sheet, `Unavailable` when no sheet host answered, ...).
-fn sheet_failure(why: ClientError, emit: &mut impl FnMut(Value)) -> bool {
+fn sheet_failure(why: AccountsError, emit: &mut impl FnMut(Value)) -> bool {
     match why {
-        ClientError::Refused(refusal) => {
+        AccountsError::Refused(refusal) => {
             emit(json!({ "result": "refused", "refusal": format!("{refusal:?}") }));
         }
         other => emit(failure(other)),
@@ -517,18 +443,18 @@ fn sheet_failure(why: ClientError, emit: &mut impl FnMut(Value)) -> bool {
 }
 
 async fn add_account(
-    accounts: &Accounts<DbusTransport>,
+    accounts: &Accounts<Bus>,
     provider: Option<ProviderId>,
     emit: &mut impl FnMut(Value),
 ) -> bool {
     let hint = provider.map_or(ProviderHint::Any, ProviderHint::Provider);
-    match accounts.add_account(hint, &ParentWindow::Unparented).await {
+    match accounts.add(hint, &ParentWindow::Unparented).await {
         Ok(account) => {
             emit(json!({ "result": "added", "account": account.as_str() }));
             true
         }
         // The account was already here: nothing was added, and this is the one it is.
-        Err(ClientError::AlreadyAdded(account)) => {
+        Err(AccountsError::AlreadyAdded(account)) => {
             emit(json!({ "result": "already_added", "account": account.as_str() }));
             false
         }
@@ -537,7 +463,7 @@ async fn add_account(
 }
 
 async fn reauthenticate(
-    accounts: &Accounts<DbusTransport>,
+    accounts: &Accounts<Bus>,
     account: &AccountId,
     emit: &mut impl FnMut(Value),
 ) -> bool {
@@ -550,65 +476,6 @@ async fn reauthenticate(
             true
         }
         Err(why) => sheet_failure(why, emit),
-    }
-}
-
-fn chat(prompt: &str, ask: &Ask, tier: Tier) -> InferRequest {
-    InferRequest::Chat(
-        ChatRequest::new(
-            vec![ChatMessage {
-                role: Role::User,
-                parts: vec![MessagePart::Text(prompt.to_owned())],
-            }],
-            tier,
-            ask.class,
-            ask.usage,
-        )
-        .with_control(ChatControl::new().with_tool_calls(ToolParallelism::Many)),
-    )
-}
-
-async fn open(
-    accounts: &Accounts<DbusTransport>,
-    need: &Need,
-    ask: &Ask,
-    tier: Tier,
-    prompt: Option<String>,
-    emit: &mut impl FnMut(Value),
-) -> bool {
-    let options = OpenOptions::default().with_usage(ask.usage);
-    let mut session = match accounts.session_with(need, ask.class, tier, &options).await {
-        Ok(session) => session,
-        Err(why) => {
-            emit(failure(why));
-            return false;
-        }
-    };
-    emit(json!({ "result": "opened" }));
-    let Some(prompt) = prompt else {
-        return true;
-    };
-    if let Err(why) = session
-        .send(ClientFrame::Request(chat(&prompt, ask, tier)))
-        .await
-    {
-        emit(failure(format!("cannot send: {why}")));
-        return false;
-    }
-    loop {
-        match session.next().await {
-            Ok(event) => {
-                let finished = matches!(event, InferEvent::Finished(_));
-                emit(json!({ "event": serde_json::to_value(&event).unwrap_or(Value::Null) }));
-                if finished {
-                    return true;
-                }
-            }
-            Err(why) => {
-                emit(failure(format!("the session ended: {why}")));
-                return false;
-            }
-        }
     }
 }
 

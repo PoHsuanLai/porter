@@ -7,7 +7,7 @@
 //! A seam's failure is a small value with a plain sentence:
 //!
 //! ```
-//! use porter_service_core::sheets::SheetFault;
+//! use porter_sheet::host::SheetFault;
 //!
 //! assert_eq!(SheetFault::Closed.to_string(), "sheet closed");
 //! ```
@@ -23,6 +23,5 @@ pub mod gate;
 pub mod reach;
 pub mod refusal;
 pub mod registry;
-pub mod sheets;
 
 pub use ctx::{Ctx, Parts, Ports};

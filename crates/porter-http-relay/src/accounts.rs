@@ -2,7 +2,7 @@
 
 use crate::client::Dial;
 use crate::stream::RelayStream;
-use porter_client::{Accounts, ClientError, Transport};
+use porter_client::{Grants, GrantsError, GrantsLink};
 use porter_core::EndpointUrl;
 use porter_core::GrantId;
 use porter_http::HttpError;
@@ -13,9 +13,9 @@ use std::sync::Arc;
 /// Why a relay could not be had, as the client takes it: access the account has not given yet
 /// (`NeedsConsent`, a whole drive before the person turned it on) is its own error, so the
 /// dataset says so instead of retrying; anything else is a connection that did not open.
-pub fn dial_error(error: ClientError) -> HttpError {
+pub fn dial_error(error: GrantsError) -> HttpError {
     match error {
-        ClientError::Refused(Refusal::NeedsConsent) => HttpError::NotGranted,
+        GrantsError::Refused(Refusal::NeedsConsent) => HttpError::NotGranted,
         _ => HttpError::Unreachable,
     }
 }
@@ -48,7 +48,7 @@ enum Kind {
 /// Opens relays to one endpoint, or one linked origin, of one grant.
 #[derive(Debug)]
 pub struct RelayDial<T> {
-    accounts: Arc<Accounts<T>>,
+    accounts: Arc<Grants<T>>,
     grant: GrantId,
     kind: Kind,
 }
@@ -56,11 +56,7 @@ pub struct RelayDial<T> {
 impl<T> RelayDial<T> {
     /// Relays to `endpoint` under `grant`, authenticated by the daemon at the far end
     /// (`OpenAuthenticated`), opened through `accounts`.
-    pub fn authenticated(
-        accounts: Arc<Accounts<T>>,
-        grant: GrantId,
-        endpoint: EndpointUrl,
-    ) -> Self {
+    pub fn authenticated(accounts: Arc<Grants<T>>, grant: GrantId, endpoint: EndpointUrl) -> Self {
         Self {
             accounts,
             grant,
@@ -71,7 +67,7 @@ impl<T> RelayDial<T> {
     /// Relays to `origin` under `grant`, with no credential added (`OpenLinked`: a
     /// pre-authenticated link on another host). An origin `OpenLinked` cannot name (`None`) is
     /// one no connection opens to.
-    pub fn linked(accounts: Arc<Accounts<T>>, grant: GrantId, origin: Option<EndpointUrl>) -> Self {
+    pub fn linked(accounts: Arc<Grants<T>>, grant: GrantId, origin: Option<EndpointUrl>) -> Self {
         Self {
             accounts,
             grant,
@@ -80,7 +76,7 @@ impl<T> RelayDial<T> {
     }
 }
 
-impl<T: Transport> Dial for RelayDial<T> {
+impl<T: GrantsLink> Dial for RelayDial<T> {
     type Stream = RelayStream;
 
     async fn dial(&self) -> Result<RelayStream, HttpError> {
@@ -107,12 +103,12 @@ mod tests {
     #[test]
     fn access_not_given_reaches_the_client_as_its_own_error() {
         assert_eq!(
-            dial_error(ClientError::Refused(Refusal::NeedsConsent)),
+            dial_error(GrantsError::Refused(Refusal::NeedsConsent)),
             HttpError::NotGranted
         );
         for other in [Refusal::NeedsReauth, Refusal::Denied, Refusal::UnknownGrant] {
             assert_eq!(
-                dial_error(ClientError::Refused(other)),
+                dial_error(GrantsError::Refused(other)),
                 HttpError::Unreachable,
                 "{other:?}"
             );

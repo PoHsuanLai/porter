@@ -21,7 +21,7 @@ use crate::datasets::photos::google::{GooglePicker, PickerError, PickerState, Se
 use crate::paths::AccountDir;
 #[cfg(feature = "photos-picker")]
 use porter_callers::Callers;
-use porter_client::Transport;
+use porter_client::GrantsLink;
 #[cfg(feature = "photos-picker")]
 use porter_dbus::Call;
 #[cfg(feature = "photos-picker")]
@@ -40,27 +40,27 @@ use zbus::message::Header;
 
 /// The Pickers of the accounts syncd runs Google Photos for, shared between the supervisor
 /// that starts them and the bus object that serves them.
-pub struct Pickers<T: Transport>(Arc<Mutex<BTreeMap<AccountDir, Arc<GooglePicker<T>>>>>);
+pub struct Pickers<T: GrantsLink>(Arc<Mutex<BTreeMap<AccountDir, Arc<GooglePicker<T>>>>>);
 
-impl<T: Transport> Clone for Pickers<T> {
+impl<T: GrantsLink> Clone for Pickers<T> {
     fn clone(&self) -> Self {
         Self(Arc::clone(&self.0))
     }
 }
 
-impl<T: Transport> Default for Pickers<T> {
+impl<T: GrantsLink> Default for Pickers<T> {
     fn default() -> Self {
         Self(Arc::default())
     }
 }
 
-impl<T: Transport> std::fmt::Debug for Pickers<T> {
+impl<T: GrantsLink> std::fmt::Debug for Pickers<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_list().entries(self.accounts()).finish()
     }
 }
 
-impl<T: Transport> Pickers<T> {
+impl<T: GrantsLink> Pickers<T> {
     /// Replaces the set with `now`.
     pub fn set(&self, now: BTreeMap<AccountDir, Arc<GooglePicker<T>>>) {
         *self.0.lock().unwrap_or_else(PoisonError::into_inner) = now;
@@ -122,7 +122,7 @@ pub trait PickerDesk: Send + Sync + 'static {
     ) -> impl Future<Output = bool> + Send;
 }
 
-impl<T: Transport + 'static> PickerDesk for Pickers<T> {
+impl<T: GrantsLink + 'static> PickerDesk for Pickers<T> {
     async fn start(&self, account: &AccountDir) -> Option<Result<Started, PickerError>> {
         let picker = self.of(account)?;
         Some(picker.start().await.map(|s| Started {

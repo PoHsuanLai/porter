@@ -1,5 +1,7 @@
 //! The small builders of a [`KeySpec`] every row of a settings module uses.
 
+use crate::Boxed;
+use ds_settings::live::LiveError;
 use ds_settings::schema::{
     ActionLabel, ActionWeight, AgentSetting, Exposure, Help, KeyKind, KeyPath, KeySpec, Label,
     LiveAction, Page, Section, WordLabels,
@@ -81,5 +83,30 @@ pub fn readout(
             Exposure::Basic,
         ),
         labels,
+    )
+}
+
+/// A write that is turned away with `why`.
+pub fn refused<'a>(why: LiveError) -> Boxed<'a, Result<(), LiveError>> {
+    Box::pin(async move { Err(why) })
+}
+
+/// A row that is a button: `name` on the button, `label` beside it.
+pub fn button(
+    path: String,
+    section: &str,
+    label: &str,
+    help: &str,
+    name: &str,
+    weight: ActionWeight,
+) -> KeySpec {
+    spec(
+        path,
+        section,
+        label.to_owned(),
+        help,
+        action(name, weight),
+        off(),
+        Exposure::Basic,
     )
 }

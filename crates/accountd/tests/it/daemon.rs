@@ -8,7 +8,7 @@ use crate::common::bus::PrivateBus;
 use accountd::paths::Paths;
 use accountd::{Config, Daemon};
 use porter_dbus::BusTarget;
-use porter_dbus::accounts::ACCOUNTS_BUS;
+use porter_wire::names::ACCOUNTS_BUS;
 use std::path::Path;
 use std::time::Duration;
 use test_kit::{Deadline, GENEROUS};

@@ -13,7 +13,7 @@ use super::{Api, TaskCursor, id_in, list_all, read_error, segment_of};
 use crate::dataset::fingerprint;
 use crate::datasets::pim::PimKind;
 use crate::datasets::pim::discover::{DiscoverError, Found};
-use porter_client::{Accounts, Transport};
+use porter_client::{Grants, GrantsLink};
 use porter_core::EndpointUrl;
 use porter_core::GrantId;
 use porter_ids::{Bytes, WebUrl};
@@ -39,15 +39,15 @@ struct TasksPage {
 
 /// The task lists of one Google account.
 #[derive(Debug)]
-pub struct GoogleTasksSource<T: Transport> {
+pub struct GoogleTasksSource<T: GrantsLink> {
     api: Arc<Api<T>>,
     clock: Clock,
 }
 
-impl<T: Transport> GoogleTasksSource<T> {
+impl<T: GrantsLink> GoogleTasksSource<T> {
     /// The source at `endpoint` (`https://tasks.googleapis.com/tasks/v1`), as `grant` allows.
     pub fn new(
-        accounts: Arc<Accounts<T>>,
+        accounts: Arc<Grants<T>>,
         grant: GrantId,
         endpoint: EndpointUrl,
         clock: Clock,
@@ -61,13 +61,13 @@ impl<T: Transport> GoogleTasksSource<T> {
 
 /// One task list's feed.
 #[derive(Debug)]
-pub struct GoogleTasksFeed<T: Transport> {
+pub struct GoogleTasksFeed<T: GrantsLink> {
     api: Arc<Api<T>>,
     list: String,
     clock: Clock,
 }
 
-impl<T: Transport + 'static> PimSource for GoogleTasksSource<T> {
+impl<T: GrantsLink + 'static> PimSource for GoogleTasksSource<T> {
     type Feed = GoogleTasksFeed<T>;
 
     async fn collections(&self, kind: PimKind) -> Result<Vec<Found>, DiscoverError> {
@@ -102,7 +102,7 @@ fn file_of(task: &Task) -> ItemPath {
     ItemPath(format!("{}.ics", task.id))
 }
 
-impl<T: Transport> GoogleTasksFeed<T> {
+impl<T: GrantsLink> GoogleTasksFeed<T> {
     fn tasks_path(&self, tail: &str) -> String {
         format!("/lists/{}/tasks{tail}", encode(&self.list))
     }
@@ -129,7 +129,7 @@ impl<T: Transport> GoogleTasksFeed<T> {
     }
 }
 
-impl<T: Transport + 'static> Feed for GoogleTasksFeed<T> {
+impl<T: GrantsLink + 'static> Feed for GoogleTasksFeed<T> {
     type Cursor = TaskCursor;
 
     async fn changes(&self, from: Option<TaskCursor>) -> Result<Page<TaskCursor>, ReplicaError> {

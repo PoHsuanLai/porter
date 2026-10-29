@@ -5,7 +5,6 @@
 //! in-memory duplex.
 
 use porter_core::stream::DuplexEnd;
-use porter_wire::Refusal;
 #[cfg(unix)]
 use std::os::fd::OwnedFd;
 
@@ -17,13 +16,4 @@ pub enum AuthenticatedStream {
     Fd(OwnedFd),
     /// An in-memory duplex, for an app hosting porter in process (and for Windows).
     Memory(DuplexEnd),
-}
-
-/// What opening a relay came to: a stream, or the daemon's refusal.
-#[derive(Debug)]
-pub enum Relayed {
-    /// The relay is running.
-    Stream(AuthenticatedStream),
-    /// accountd refused (`UnknownGrant`, `EndpointNotGranted`, `NeedsReauth`, `Denied`, ...).
-    Refused(Refusal),
 }

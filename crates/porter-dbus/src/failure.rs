@@ -41,6 +41,18 @@ pub fn is_invalid_args(error: &zbus::Error) -> bool {
     }
 }
 
+/// Whether the object the call named is not there (`UnknownObject`): an account, a Space or
+/// identity the daemon does not serve at that path.
+pub fn is_unknown_object(error: &zbus::Error) -> bool {
+    match error {
+        zbus::Error::MethodError(name, _, _) => {
+            name.as_str() == "org.freedesktop.DBus.Error.UnknownObject"
+        }
+        zbus::Error::FDO(inner) => matches!(inner.as_ref(), fdo::Error::UnknownObject(_)),
+        _ => false,
+    }
+}
+
 /// Whether the daemon held the caller back for asking too often (`LimitsExceeded`).
 pub fn is_limits_exceeded(error: &zbus::Error) -> bool {
     match error {

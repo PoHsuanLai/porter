@@ -1,5 +1,5 @@
 //! porter's D-Bus API (design/31 §4.4): the buses of accountd (identities, Spaces, Tailnet, the AI
-//! keys and the agent launcher), inferd (inference and agents) and syncd, portal-shaped (a method
+//! keys and the agent launcher) and syncd, portal-shaped (a method
 //! that shows UI returns a Request object whose `Response` signal carries the answer). No bus
 //! carries a token or a grant: the app that wants an identity asks `Identities1`, the one that
 //! wants an AI key asks accountd's `Keys` for a permit, and the key itself goes only to inferd,
@@ -21,7 +21,6 @@
 //! names, keys and row codecs, named through it:
 //! - [`accounts`]: accountd's (`Manager`, `Account`, `Request`, `AccountsSheet`, `Identities`,
 //!   `Spaces`, `Tailnet`, `Keys`, `Launcher`, `Broker`);
-//! - [`inference`]: inferd's (`Inference`, `Agents`);
 //! - [`sync`]: syncd's (`Sync`, `Storage`, and the Photos Picker with its feature).
 //!
 //! What every group shares is at the root: [`Details`], the call a server method answers, the
@@ -29,6 +28,7 @@
 //! shape of a sheet's answer is [`accounts::sheet`]. Who is calling is `porter-callers`.
 
 mod args;
+mod destination;
 mod failure;
 mod json_value;
 mod ready;
@@ -36,11 +36,11 @@ mod serve;
 mod target;
 
 pub mod accounts;
-pub mod inference;
 pub mod sync;
 
 pub use args::Details;
-pub use failure::{BusFailure, classify, is_invalid_args, is_limits_exceeded};
+pub use destination::Destination;
+pub use failure::{BusFailure, classify, is_invalid_args, is_limits_exceeded, is_unknown_object};
 pub use json_value::{from_vardict, to_vardict};
 pub use ready::serve_ready;
 pub use serve::{Call, Document, Unserved};

@@ -14,20 +14,15 @@
 #               install with --no-build as root)
 #
 # What goes where (DESTDIR, when given, is in front of all of it):
-#   PREFIX/libexec/quire/{accountd,syncd,inferd}             the daemons
+#   PREFIX/libexec/quire/{accountd,syncd}             the daemons
 #   PREFIX/libexec/quire/porter-mountd                       the helper syncd asks to show a drive in
 #                                                            ~/Cloud (runs fusermount3, which syncd's
 #                                                            sandbox refuses)
 #   PREFIX/lib/systemd/user/porter-mountd.{service,socket}   its user units; the socket is enabled for
 #                                                            every user by the link
 #                                                            sockets.target.wants/porter-mountd.socket
-#   PREFIX/libexec/quire/porter-engine-helper                the helper `pkexec` runs as root to install
-#                                                            an AI engine for everyone (Settings starts it)
-#   PREFIX/share/polkit-1/actions/org.quire.porter.engines.policy
-#                                                            the polkit action that asks for the
-#                                                            administrator's password for it
-#   PREFIX/lib/systemd/user/{accountd,syncd,inferd}.service  the user units
-#   PREFIX/lib/systemd/user/{accountd,syncd,inferd}.service.d/sandbox.conf
+#   PREFIX/lib/systemd/user/{accountd,syncd}.service  the user units
+#   PREFIX/lib/systemd/user/{accountd,syncd}.service.d/sandbox.conf
 #                                                            the part of each unit's sandbox that needs a
 #                                                            mount namespace; left out (with one line saying
 #                                                            so) when a probe shows this system refuses a user
@@ -36,12 +31,7 @@
 #   PREFIX/share/dbus-1/services/org.quire.*.service         D-Bus activation
 #   PREFIX/share/porter/providers/*.toml                     the provider files
 #   PREFIX/share/porter/clients.toml                         only when dist/clients.toml exists
-#   PREFIX/share/porter/inferd-tailnet.conf                  the tailnet drop-in, as data: the Settings switch
-#                                                            installs it for the person; never installed live
-#   PREFIX/share/quire/settings/inferd.settings.toml         the AI settings page schema
-#   PREFIX/share/doc/porter/examples/                        inferd.toml and inferd-cloud.conf: samples
-#                                                            for the person to copy; never installed live
-#   SYSCONFDIR/porter/{callers,inferd-callers}.toml          the caller tables (kept if the owner changed them)
+#   SYSCONFDIR/porter/callers.toml                           the caller table (kept if the owner changed it)
 #
 # The script is standalone: it knows nothing of any desktop. Run again, it changes nothing that is
 # already as it should be (a file is replaced only when its content differs). It writes nothing under
@@ -146,7 +136,7 @@ mount_namespace_for_user_units() {
 }
 
 # --- The daemons ---------------------------------------------------------------------------------
-daemons="accountd syncd inferd"
+daemons="accountd syncd"
 if [ -n "$bin_dir" ]; then
     built=$bin_dir
 else
@@ -188,7 +178,7 @@ else
                     export RUSTUP_TOOLCHAIN
                 fi &&
                 cargo build --release --manifest-path "$root/Cargo.toml" \
-                    --config net.git-fetch-with-cli=true -p accountd -p syncd -p inferd -p porter-mountd -p porter-engines-install
+                    --config net.git-fetch-with-cli=true -p accountd -p syncd -p porter-mountd
         )
     fi
     built=$target_dir/release
@@ -200,10 +190,10 @@ for daemon in $daemons; do
     fi
 done
 
-# The helper that installs an engine for everyone, and the one that shows drives in ~/Cloud, built
-# beside the daemons. Neither is a daemon on the bus (`pkexec` starts the first, its socket the
-# second), so they are not in the list above.
-for helper in porter-engine-helper porter-mountd; do
+# The helper that shows drives in ~/Cloud, built beside the daemons. It is not a daemon on the bus
+# (its socket starts it), so it is not in the list above. The helper that installs an engine for
+# everyone is stoker's (its scripts/install.sh puts it and its polkit action in place).
+for helper in porter-mountd; do
     if [ ! -x "$built/$helper" ]; then
         echo "install.sh: $built/$helper is not there; build first or point --bin-dir at it" >&2
         exit 1
@@ -212,8 +202,6 @@ done
 
 # The files in dist/ name /usr/libexec/quire; a different prefix changes that one path.
 libexec=$prefix/libexec/quire
-put 755 "$built/porter-engine-helper" "$libexec/porter-engine-helper"
-put 644 "$dist/org.quire.porter.engines.policy" "$prefix/share/polkit-1/actions/org.quire.porter.engines.policy" /usr/libexec/quire "$libexec"
 for daemon in $daemons; do
     put 755 "$built/$daemon" "$libexec/$daemon"
     put 644 "$dist/$daemon.service" "$prefix/lib/systemd/user/$daemon.service" /usr/libexec/quire "$libexec"
@@ -247,18 +235,12 @@ done
 if [ -f "$dist/clients.toml" ]; then
     put 644 "$dist/clients.toml" "$prefix/share/porter/clients.toml"
 fi
-put 644 "$dist/inferd.settings.toml" "$prefix/share/quire/settings/inferd.settings.toml"
-# The tailnet drop-in is data, never live: the Settings switch "Let my other computers use this
-# computer's models" copies it into the person's own systemd user configuration, with their consent.
-put 644 "$dist/inferd-tailnet.conf" "$prefix/share/porter/inferd-tailnet.conf"
-put 644 "$dist/inferd.toml" "$prefix/share/doc/porter/examples/inferd.toml"
-put 644 "$dist/inferd-cloud.conf" "$prefix/share/doc/porter/examples/inferd-cloud.conf"
 
 # --- The caller tables ---------------------------------------------------------------------------
-# accountd's and syncd's (callers.toml) and inferd's (inferd-callers.toml). Each is the machine
-# owner's to edit once installed: a copy that differs is kept, and the shipped one is left beside
-# it as <name>.dist for them to compare.
-for table in callers.toml inferd-callers.toml; do
+# accountd's and syncd's (callers.toml); steward's install.sh installs the AI broker's own. It is the
+# machine owner's to edit once installed: a copy that differs is kept, and the shipped one is left
+# beside it as <name>.dist for them to compare.
+for table in callers.toml; do
     callers=$sysconfdir/porter/$table
     if [ -f "$destdir$callers" ] && ! cmp -s "$dist/$table" "$destdir$callers"; then
         echo "kept $callers (it differs from the shipped one; the shipped one is $callers.dist)"

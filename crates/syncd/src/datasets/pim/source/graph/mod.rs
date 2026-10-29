@@ -24,7 +24,7 @@ use crate::datasets::pim::PimKind;
 use crate::datasets::pim::discover::{DiscoverError, Found};
 use crate::datasets::pim::relay::pim_http;
 use json::{Calendar, CalendarPage, Event, EventPage};
-use porter_client::{Accounts, Transport};
+use porter_client::{Grants, GrantsLink};
 use porter_core::EndpointUrl;
 use porter_core::GrantId;
 use porter_http::http::{Method, Response};
@@ -58,16 +58,16 @@ impl FeedCursor for DeltaLink {
 
 /// The calendars of one Microsoft account.
 #[derive(Debug)]
-pub struct GraphCalendarSource<T: Transport> {
+pub struct GraphCalendarSource<T: GrantsLink> {
     http: Arc<RelayHttp<RelayDial<T>>>,
     base: WebUrl,
     clock: Clock,
 }
 
-impl<T: Transport> GraphCalendarSource<T> {
+impl<T: GrantsLink> GraphCalendarSource<T> {
     /// The source at `endpoint` (`https://graph.microsoft.com`), as `grant` allows.
     pub fn new(
-        accounts: Arc<Accounts<T>>,
+        accounts: Arc<Grants<T>>,
         grant: GrantId,
         endpoint: EndpointUrl,
         clock: Clock,
@@ -83,7 +83,7 @@ impl<T: Transport> GraphCalendarSource<T> {
 
 /// One calendar's feed.
 #[derive(Debug)]
-pub struct GraphCalendarFeed<T: Transport> {
+pub struct GraphCalendarFeed<T: GrantsLink> {
     http: Arc<RelayHttp<RelayDial<T>>>,
     base: String,
     calendar: String,
@@ -173,7 +173,7 @@ pub(super) async fn get<H: Http>(
     http.send(builder.body(Vec::new())?).await
 }
 
-impl<T: Transport + 'static> PimSource for GraphCalendarSource<T> {
+impl<T: GrantsLink + 'static> PimSource for GraphCalendarSource<T> {
     type Feed = GraphCalendarFeed<T>;
 
     async fn collections(&self, kind: PimKind) -> Result<Vec<Found>, DiscoverError> {
@@ -232,7 +232,7 @@ impl<T: Transport + 'static> PimSource for GraphCalendarSource<T> {
     }
 }
 
-impl<T: Transport> GraphCalendarFeed<T> {
+impl<T: GrantsLink> GraphCalendarFeed<T> {
     fn events_url(&self, tail: &str) -> String {
         format!(
             "{}/v1.0/me/calendars/{}/events{tail}",
@@ -271,7 +271,7 @@ impl<T: Transport> GraphCalendarFeed<T> {
     }
 }
 
-impl<T: Transport + 'static> Feed for GraphCalendarFeed<T> {
+impl<T: GrantsLink + 'static> Feed for GraphCalendarFeed<T> {
     type Cursor = DeltaLink;
 
     async fn changes(&self, from: Option<DeltaLink>) -> Result<Page<DeltaLink>, ReplicaError> {

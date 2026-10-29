@@ -232,3 +232,25 @@ impl Closer {
         }
     }
 }
+
+/// Armed with the sheet's [`Closer`] before the call that makes the sheet; disarmed (`.0 = None`,
+/// or [`Abandon::answered`]) once the answer is in. Dropped armed, it closes the sheet on the
+/// runtime if there is one, so an abandoned request leaves no sheet on the screen.
+#[derive(Debug)]
+pub struct Abandon(pub Option<Closer>);
+
+impl Abandon {
+    /// The answer is in: dropping it now closes nothing.
+    pub fn answered(&mut self) {
+        self.0 = None;
+    }
+}
+
+impl Drop for Abandon {
+    fn drop(&mut self) {
+        let Some(closer) = self.0.take() else { return };
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            runtime.spawn(closer.close());
+        }
+    }
+}

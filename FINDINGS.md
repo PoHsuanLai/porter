@@ -84,7 +84,7 @@ Each row names the lane of the accounts program (porter PLAN §6) that removes i
 | syncd storage: `FolderDataset` hashes every file on every scan, lists no empty folder, follows no symlink and watches nothing | a poll cycle reads the whole folder (the scan is the SHA-256 of each file, chunked, on a blocking thread); a local change is found at the next poll (`Settings::poll_base`), not at once; OneDrive is case-insensitive and the local folder is not, so two local names differing in case are one remote name. A change feed from inotify, and a size and mtime shortcut for the scan, close the first two | the Files app lane |
 | syncd storage: the grant that makes a mirror is class `Files` (app folder) or `Photos` (Photos) with `Usage::Background`, asked by `Accounts::find` as `org.quire.Sync` | accountd's settings module now makes and takes it back (`accounts.<id>.sync.files` and `.sync.photos`, lane reauth-grant, section below); detent's accounts pane does not draw those rows yet (its `classify` keeps only `.service.` toggles), and the PIM grants (Calendar, Contacts) still have no offer | detent: the ask in the reauth-grant section; PIM: W3e / the detent accounts pane |
 | porter-fake-servers: `FakeGraph::bind_issued` accepts exactly the access tokens its `IssuerHandle` has minted (or planted with `seed_access_as`) and not revoked; its links stay on its own origin | `bind_linked` keeps the fixed bearer and the second origin (the relay's `OpenLinked` path); a rig scenario that needs links on another origin has to declare it in a provider file; the mail fakes (`Accounts::bearer`) still take a fixed list, so an XOAUTH2 login with an issuer-minted token is refused | a scenario that needs it |
-| porter-rig (test tooling, `publish = false`, never in `dist/`, check-boundary lists it): `porter-rig-servers`, `porter-rig-client`, `porter-rig-secrets` | the control endpoint is plain HTTP on loopback with no authentication (the rig is for a jail); `rig.json` and the CLI are the scenarios lane's contract (see the lane report); `porter-rig-client open` is not tested against a real inferd here (the bus tests cover the other commands against the real accountd and syncd's `Sync1`); the client names itself only as a Flatpak app (its scope and `root/.flatpak-info`), and its role is the daemons' own caller table | the scenarios lane, when it needs a native app or another role |
+| porter-rig (test tooling, `publish = false`, never in `dist/`, check-boundary lists it): `porter-rig-servers`, `porter-rig-client`, `porter-rig-secrets` | the control endpoint is plain HTTP on loopback with no authentication (the rig is for a jail); `rig.json` and the CLI are the scenarios lane's contract (see the lane report); `porter-rig-client open` is gone with inferd (steward's own rig drives the model service); the bus tests cover the other commands against the real accountd and syncd's `Sync1`; the client names itself only as a Flatpak app (its scope and `root/.flatpak-info`), and its role is the daemons' own caller table | the scenarios lane, when it needs a native app or another role |
 | syncd: SQLite calls run on the async runtime's thread (current_thread in main) | each journal write is one short transaction; W6f's file work already runs on blocking threads, the journal's does not: a 1 000-photo cycle is one transaction per item, each synced to disk, so a cycle is slow under load (acceptance 5 takes about a minute on a busy machine); batch the journal ops of a page if it matters |
 | Photos (W6f): no app, no grant flow | the daemon wiring is done for Graph (`StorageSupervisor`, rig-syncd): a Storage grant of class Photos on a Microsoft account (the account's Photos row in Settings) runs both datasets over `Photos/Originals` and `Photos/Metadata` of the app folder (`graph_replica` makes the folders), the library at `$XDG_DATA_HOME/porter/photos/<account>/`, the supervisor's `photos_library(account)` being where the Photos app will import. Still open: no Photos app, nothing makes the grant (Settings, or W3e's sheet host), and a WebDAV account has no wiring (it needs the folders made on a fresh account) |
 | Photos: deleting is a mark, the original stays; no purge | `Mark::On` on `deleted` hides a photo; the original and its replica copy stay, so another device can still restore it. A purge (delete the original on every device after a retention time) needs a retention rule from the owner and the Photos app's trash |
@@ -746,6 +746,16 @@ Decisions, where the brief or the plan left a choice:
    (fields are kinds; the UI words them), `BrowserWait`, `ShowCode`, `Review` (with the
    add-and-allow `allow` app), `Working`, `Failed`, `Done`.
 6. **docket and cua `check-boundary.sh`** (PLAN §5): `Accounts::open_authenticated` joins the forbidden calls in agent crates.
+
+## The AI broker leaves porter (2026-10-29)
+
+inferd, inferd-client, porter-infer, porter-router, porter-turns, porter-bridge and porter-tailnet moved to the steward repo, cut from e9e7cdcd; porter keeps no copy and depends on nothing of steward's. The entries above that name them stand as written: they describe those crates as they were when porter held them.
+
+- `porter_dbus::inference` and `dbus/org.quire.Inference1*.xml` went with them; porter keeps the bus name and path as `porter_wire::names::{INFERENCE_BUS, INFERENCE_PATH}` for accountd's old-key import probe (`old_inferd_serves_keys`).
+- `porter_discover::probe_ports` (the local-runtime port probe) went to steward with its fixtures; `Source::Probe` stays in `Found`'s enum.
+- `porter-rig-client open` and the rig's `inferd-client` and `porter-infer` dependencies are gone.
+- `porter_callers::INFERD_CALLERS` stays: steward's inferd reads it, and it is the one table path both repos name. `dist/callers.toml` keeps the `org.quire.Inference` row (accountd's `Broker` peer).
+- `scripts/install.sh` installs accountd, syncd and porter-mountd; steward's install.sh installs inferd, its units and its caller table.
 
 ## Open
 
@@ -2951,3 +2961,35 @@ Nothing here was compiled or run (no-build lane); the coordinator gates the merg
   reply with a key and check where `usage.cost` sits.
 - A ledger file written before this (no `format`) is read for its token counts; its dollar amounts
   were worked out from prices and are dropped, with a note on stderr.
+
+## Engines through stoker's `Engine` trait (2026-10-29, lane `tr2`)
+
+Trait audit `~/rs-wt/trait-audit/stoker.md` step (e) and steward-split step 2. Nothing was built or
+run in this lane (no cargo build, check, test or clippy) and Cargo.lock is not relocked, so the first
+gate is the first compile and the relock.
+
+- Deleted: `porter-engines`, `porter-engines-install`, `porter_engines::EngineId`, inferd's
+  `settings::missing::Engine` (mirror enum with `of`, `slug`, `name`, `serves`, `state`) and
+  `settings::programs::Program`. The functions that were methods of the mirror are now
+  `missing::{engine_name, serves, state}` over `EngineKind`; the two program rows are the data
+  `programs::ROWS`.
+- Matches on `EngineKind` that picked behaviour are gone: `engine_word` (`running_word`),
+  `has_seats` and `seats_in` (`seat_flags`), `host_libs` (`env`), `kind_slug` (`slug`),
+  `EngineConfig::program` and `paths` (`named_path` plus `EnginePaths`, Strata through
+  `engine_probe::pointed`), catalog.rs `any LlamaServer` (`caches_prompts`), `Engine::of`/`slug`
+  (`bus_word`) and `installable`.
+- Left on purpose: `local::flavor_of` and `attached/model.rs` (engine to `Flavor`: `Flavor` lives in
+  `model-openai-compat`, which `engine-spec` cannot name), `missing::engine_name` (copy text a person
+  reads, which a pure crate should not hold), `kind == SpeechHost` in daemon.rs and stt.rs (asks whether
+  a model is the speech host), the debug assert in replay/model.rs, `AttachedEngine.engine` (Vllm for
+  LiteLLM: a steward follow-up).
+- Two tables that were one fact: the bus id of an engine (`llama_cpp`, `speech`, `kokoro`) and the
+  word of a running-models row (`llama-server`, `speech-host`, `kokoro`) differ, so the trait has
+  `bus_word` and `running_word`; both are what porter sent before.
+- `LocalEngines` now asks `Installed::standing` for all five kinds (it asked for the three that have
+  install rows). The speech engines have no rows, so they stand as not installed, as before.
+- `parse_entry_text` is stoker's parser followed by `check_entry` (stoker's `parse_entry` no longer
+  runs those two checks). The text of a skipped file's reason for them is `SpecError`'s.
+- Nothing in porter uses `engine-install`, so porter neither depends on it nor builds its helper:
+  stoker's `scripts/install.sh` builds `engine-helper` and installs it with its polkit action.
+

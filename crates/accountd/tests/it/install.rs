@@ -18,13 +18,7 @@ fn repo() -> PathBuf {
 fn stand_ins(root: &Path) -> PathBuf {
     let bins = root.join("bins");
     fs::create_dir_all(&bins).expect("bins");
-    for daemon in [
-        "accountd",
-        "syncd",
-        "inferd",
-        "porter-engine-helper",
-        "porter-mountd",
-    ] {
+    for daemon in ["accountd", "syncd", "engine-helper", "porter-mountd"] {
         let file = bins.join(daemon);
         fs::write(&file, format!("#!/bin/sh\necho {daemon}\n")).expect("write");
         fs::set_permissions(&file, fs::Permissions::from_mode(0o755)).expect("chmod");
@@ -118,7 +112,7 @@ fn every_file_a_unit_or_an_activation_file_names_is_installed_at_the_path_it_nam
         run.install(&["--prefix", prefix]);
         let units = run.at(&format!("{prefix}/lib/systemd/user"));
         let mut checked = 0;
-        for unit in ["accountd", "syncd", "inferd", "porter-mountd"] {
+        for unit in ["accountd", "syncd", "porter-mountd"] {
             let text = fs::read_to_string(units.join(format!("{unit}.service"))).expect("unit");
             let exec = value(&text, "ExecStart").expect("ExecStart");
             assert_eq!(program(&exec), format!("{prefix}/libexec/quire/{unit}"));
@@ -126,7 +120,7 @@ fn every_file_a_unit_or_an_activation_file_names_is_installed_at_the_path_it_nam
             checked += 1;
         }
         let activations = files_under(&run.at(&format!("{prefix}/share/dbus-1/services")));
-        assert_eq!(activations.len(), 3);
+        assert_eq!(activations.len(), 2);
         for path in activations {
             let text = fs::read_to_string(&path).expect("activation");
             let exec = value(&text, "Exec").expect("Exec");
@@ -137,7 +131,7 @@ fn every_file_a_unit_or_an_activation_file_names_is_installed_at_the_path_it_nam
             assert_eq!(value(&unit, "ExecStart"), Some(exec));
             checked += 1;
         }
-        assert_eq!(checked, 7);
+        assert_eq!(checked, 5);
     }
 }
 
@@ -145,8 +139,7 @@ fn every_file_a_unit_or_an_activation_file_names_is_installed_at_the_path_it_nam
 fn the_data_the_daemons_read_lands_where_they_look_for_it() {
     let run = Run::new("data");
     run.install(&[]);
-    // accountd reads /usr/share/porter/providers and /etc/porter/callers.toml (paths.rs); inferd
-    // reads /etc/porter/inferd-callers.toml (porter_callers::INFERD_CALLERS).
+    // accountd reads /usr/share/porter/providers and /etc/porter/callers.toml (paths.rs).
     let shipped: BTreeSet<String> = files_under(&repo().join("providers"))
         .iter()
         .map(|p| p.file_name().expect("name").to_string_lossy().into_owned())
@@ -157,15 +150,7 @@ fn the_data_the_daemons_read_lands_where_they_look_for_it() {
         .collect();
     assert!(!shipped.is_empty());
     assert_eq!(installed, shipped);
-    for path in [
-        "/etc/porter/callers.toml",
-        porter_callers::INFERD_CALLERS.path,
-        "/usr/share/quire/settings/inferd.settings.toml",
-        "/usr/share/doc/porter/examples/inferd.toml",
-        "/usr/share/doc/porter/examples/inferd-cloud.conf",
-    ] {
-        assert!(run.at(path).is_file(), "{path}");
-    }
+    assert!(run.at("/etc/porter/callers.toml").is_file());
     // No clients file is shipped until the owner has one to ship.
     assert_eq!(
         run.at("/usr/share/porter/clients.toml").exists(),
@@ -181,7 +166,6 @@ fn the_data_the_daemons_read_lands_where_they_look_for_it() {
     };
     assert_eq!(mode("/usr/libexec/quire/accountd"), 0o755);
     assert_eq!(mode("/etc/porter/callers.toml"), 0o644);
-    assert_eq!(mode(porter_callers::INFERD_CALLERS.path), 0o644);
 }
 
 #[test]
@@ -222,20 +206,10 @@ fn a_second_run_changes_nothing_and_a_home_directory_is_never_written() {
 }
 
 #[test]
-fn the_tailnet_drop_in_is_installed_as_data_and_never_as_a_live_drop_in() {
+fn no_unit_has_a_live_drop_in_but_the_sandbox_one() {
     let run = Run::new("tailnet");
     run.install(&["--prefix", "/opt/porter"]);
-    let installed = run.at("/opt/porter/share/porter/inferd-tailnet.conf");
-    assert_eq!(
-        fs::read(&installed).expect("the drop-in is installed as data"),
-        fs::read(repo().join("dist/inferd-tailnet.conf")).expect("shipped")
-    );
-    assert_eq!(
-        fs::metadata(&installed).expect("meta").permissions().mode() & 0o777,
-        0o644
-    );
-    // Nothing is written under the home folder, and no unit has a drop-in but the sandbox one:
-    // the Settings switch makes the others, with the person's consent.
+    // Nothing is written under the home folder, and no unit has a drop-in but the sandbox one.
     assert!(files_under(&run.home).is_empty());
     for path in files_under(&run.destdir) {
         let live = path
@@ -255,7 +229,7 @@ fn the_sandbox_drop_ins_land_next_to_their_units_without_a_probe_when_staging() 
     // With a destdir the script does not ask this computer whether it allows mount namespaces.
     let out = run.install(&["--prefix", "/opt/porter"]);
     assert!(!out.contains("without their extra sandbox"), "{out}");
-    for unit in ["accountd", "syncd", "inferd"] {
+    for unit in ["accountd", "syncd"] {
         let installed = run.at(&format!(
             "/opt/porter/lib/systemd/user/{unit}.service.d/sandbox.conf"
         ));

@@ -12,10 +12,11 @@ use accountd::launcher::LoginTiming;
 use porter_callers::CallerRole;
 use porter_core::GrantId;
 use porter_core::consent::{Decision, GrantScope};
-use porter_dbus::accounts::LauncherFault;
 use porter_dbus::accounts::ServiceRoot;
+use porter_dbus::accounts::launcher_fault_error_name_in;
 use porter_dbus::accounts::refusal_error_name_in;
 use porter_service_core::audit::{AuditEvent, CredentialEnd};
+use porter_wire::LauncherFault;
 use porter_wire::Refusal;
 use rustix::fs::{SealFlags, fcntl_get_seals};
 use std::io::Read;
@@ -34,7 +35,7 @@ fn permits() -> Vec<porter_core::consent::Grant> {
 }
 
 fn fault(fault: LauncherFault) -> String {
-    fault.error_name_in(ServiceRoot::Accounts)
+    launcher_fault_error_name_in(fault, ServiceRoot::Accounts)
 }
 
 fn refusal(refusal: Refusal) -> String {

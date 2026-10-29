@@ -43,6 +43,9 @@ toml = { workspace = true }
 zbus = { workspace = true }
 
 [dev-dependencies]
+# The client crates are tested against this daemon (tests/it/client), not the other way round.
+porter-client = { workspace = true }
+porter-client-dbus = { workspace = true }
 test-kit = { workspace = true }
 ds-settings = { workspace = true, features = ["testing"] }
 porter-fake = { workspace = true }

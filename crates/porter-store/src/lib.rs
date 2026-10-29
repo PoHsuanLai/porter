@@ -1,7 +1,7 @@
 //! The registry file store, as a library: `registry.json` in a directory the host chooses, saved
 //! atomically with the previous file kept as `registry.json.bak`, behind porter-core's
 //! [`RegistryStore`](porter_core::store::RegistryStore) seam. accountd keeps its registry here, and
-//! an app that hosts porter's core itself (porter-client's `InProcess`) keeps its own the same
+//! an app that hosts porter's core itself (porter-client-inproc's `Hosted`) keeps its own the same
 //! way, with its own directory.
 //!
 //! The directory is a path the host names; the library reads no environment and no

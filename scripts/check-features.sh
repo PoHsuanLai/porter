@@ -2,10 +2,9 @@
 # The feature sets the consumers of porter's crates build, each one clippy with -D warnings.
 #
 # The workspace gate builds `--workspace --all-features`, which unifies every feature into one
-# build and so never sees the build a consumer makes on its own. docket builds inferd that way
-# (`cargo install --git porter`, -D warnings): porter-client with `dbus` and `infer` and no
-# other feature once left two framed.rs methods unused, and the gate passed (porter 5bdda62;
-# fixed in b12886e). Each set below is checked here, alone, so the same break fails this script.
+# build and so never sees the build a consumer makes on its own. A consumer that builds with one
+# feature and no other once left two methods unused, and the gate passed (porter 5bdda62; fixed
+# in b12886e). Each set below is checked here, alone, so the same break fails this script.
 #
 # The sets come from the consumers' manifests at origin/master (porter-client and the other
 # porter crates each consumer takes with default-features = false). The comment above each set
@@ -22,24 +21,18 @@ cd "$(dirname "$0")/.."
 # purpose: a test target's helpers are dead code in a default build (accountd's tests/it/ fails
 # -D warnings with default features on master, and no consumer compiles it).
 BUILDS=(
-  # The three daemons, each alone with its default features: `-p` alone, so no other package's
-  # features are unified in. inferd is docket's sibling binary; accountd and syncd are the
-  # desktop's.
-  "inferd (default) :: -p inferd"
+  # The two daemons, each alone with its default features: `-p` alone, so no other package's
+  # features are unified in.
   "accountd (default) :: -p accountd"
   "syncd (default) :: -p syncd"
 
-  # porter-client, in the sets its consumers name. No feature is on by default, so each consumer
-  # names its own: mailo's pure client (no features), detent's Settings (dbus, infer, lending),
-  # inferd's tests (dbus, infer), syncd (dbus, in-process, relays), docket and almanac (dbus,
-  # infer). The dbus-plus-infer set is the one docket's inferd build broke (see the header).
-  "porter-client (no features: mailo) :: -p porter-client --no-default-features"
-  "porter-client (dbus only) :: -p porter-client --no-default-features --features dbus"
-  "porter-client (dbus,infer,lending: detent's Settings) :: -p porter-client --no-default-features --features dbus,infer,lending"
-  "porter-client (dbus,infer: inferd's build as docket makes it) :: -p porter-client --no-default-features --features dbus,infer"
-  "porter-client (dbus,in-process,relays: syncd) :: -p porter-client --features dbus,in-process,relays"
-  "porter-client (infer: docket, almanac) :: -p porter-client --features infer"
-  "porter-client (engines) :: -p porter-client --features engines"
+  # porter-client and its two transports, in the sets their consumers name. No feature is on by
+  # default: mailo takes the hosted transport alone, syncd the hosted transport with its relays,
+  # detent, sill, docket and almanac the bus transport.
+  "porter-client :: -p porter-client"
+  "porter-client-dbus :: -p porter-client-dbus"
+  "porter-client-inproc (no features: mailo) :: -p porter-client-inproc --no-default-features"
+  "porter-client-inproc (relays: syncd) :: -p porter-client-inproc --features relays"
 
   # The other porter crates a consumer takes with default-features = false (mailo's workspace
   # block, which mail-core, mail-app and mail-runtime name), in the features each one turns on.

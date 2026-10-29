@@ -17,27 +17,24 @@ What porter adds or decides differently, each with its reason:
    `-> impl Future<Output = ...> + Send` (return-position `impl Trait`) or a plain `async fn` in
    its implementations, so every future can cross a multi-threaded runtime and dispatch is
    static. Only a trait used as `dyn` (an `Arc<dyn Machines>`) returns a hand-boxed
-   `Pin<Box<dyn Future<Output = T> + Send + 'a>>` (inferd's `Boxed`).
-   Events of a model turn go to a `ChatSink` callback, not a `Stream`: a turn is one future that
-   pushes as it runs, dropping it cancels, and the sink ends it early with `Flow::Stop`. That is
-   deliberate.
+   `Pin<Box<dyn Future<Output = T> + Send + 'a>>`.
 3. **`todo!()` bodies exist only while an interface is frozen and its behaviour is not
    built.** Each one is listed in `FINDINGS.md` with the work that removes it. This departs
    from the shared rule "no `todo!()` stub on master"; the freeze decides when it lands.
 4. **Nothing ambient below the daemons.** The clock (`porter_service::Clock`), the secret store,
-   the consent prompter, providers and transports are passed in; only `accountd`, `syncd` and
-   `inferd` read the system clock, the environment or the bus.
+   the consent prompter, providers and transports are passed in; only `accountd` and `syncd`
+   read the system clock, the environment or the bus.
 5. **One integration-test executable per crate.** A crate's integration tests are modules of
    `crates/<crate>/tests/it/main.rs` (`mod <topic>;`, one `mod common;` there, helpers used as
    `crate::common`); fixtures stay in `tests/fixtures/`. A test that starts its own test
-   executable again as a fake child does so by module path (`shutdown::fake_inferd`), so it is a
+   executable again as a fake child does so by module path, so it is a
    module too. Every `tests/it/main.rs` carries the one-line guard test
    `test_kit::guard::every_module_is_declared(env!("CARGO_MANIFEST_DIR"), "tests/it",
    include_str!("main.rs"))`, which fails when a file or module directory there is not declared.
    A separate `tests/<name>.rs` with a `[[test]]` entry in the crate's `Cargo.toml` and a one-line
    reason is for a test that sets process-wide state or needs a `required-features` (or a
    feature-less build) the rest must not: porter-client `socket_accounts` builds without
-   porter-infer. Dependencies build without debug info (`[profile.dev.package."*"]`).
+   stoker. Dependencies build without debug info (`[profile.dev.package."*"]`).
 
 Type rules (the owner's, 2026-10-28; quote them in review):
 

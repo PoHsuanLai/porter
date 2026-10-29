@@ -3,7 +3,7 @@
 
 use super::classes::sync_app;
 use porter_capability::CapabilityKind;
-use porter_client::{Identities, IdentitiesError};
+use porter_client::{Identities, IdentitiesError, IdentitiesLink};
 use porter_core::ProviderHint;
 use porter_core::consent::{ConsentAnswer, ConsentAsk, Grant, GrantScope};
 use porter_core::store::RegistryStore;
@@ -16,7 +16,7 @@ use porter_service::AccountService;
 use porter_service_accounts::SignInAs;
 use porter_service_core::audit::AuditSink;
 use porter_service_core::registry::Registry;
-use porter_service_core::sheets::Sheets;
+use porter_sheet::host::Sheets;
 use porter_wire::{AccountsReply, AccountsRequest};
 use porter_wire::{ParentWindow, Refusal};
 use std::future::Future;
@@ -163,7 +163,7 @@ pub trait Directory: Send + Sync + 'static {
     ) -> impl Future<Output = Result<(), IdentitiesError>> + Send;
 }
 
-impl Directory for Identities {
+impl<T: IdentitiesLink> Directory for Identities<T> {
     async fn offer(&self, window: &ParentWindow) -> Result<Pick, IdentitiesError> {
         let picked = Identities::offer(self, &ProviderHint::Any, window).await?;
         Ok(Pick::new(picked.id, picked.address, picked.provider))
@@ -233,9 +233,8 @@ impl<S: Sheets> Sheets for SyncSheets<S> {
 
     fn conversation(
         &self,
-        open: porter_service_core::sheets::SheetOpen,
-    ) -> impl Future<Output = Result<Self::Link, porter_service_core::sheets::SheetFault>> + Send
-    {
+        open: porter_sheet::host::SheetOpen,
+    ) -> impl Future<Output = Result<Self::Link, porter_sheet::host::SheetFault>> + Send {
         self.inner.conversation(open)
     }
 }

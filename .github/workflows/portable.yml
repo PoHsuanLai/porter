@@ -15,8 +15,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      # stoker and quire are private git dependencies; the token is the repository secret
-      # DEPS_TOKEN (read access to those repositories). See ci.yml.
+      # quire is a private git dependency; the token is the repository secret
+      # DEPS_TOKEN (read access to that repository). See ci.yml.
       - name: private dependencies
         shell: bash
         env:

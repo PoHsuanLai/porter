@@ -20,9 +20,9 @@ use porter_service_accounts::{
 };
 use porter_service_core::audit::{AuditEvent, AuditSink, NoAudit};
 use porter_service_core::registry::Registry;
-use porter_service_core::sheets::Sheets;
 use porter_service_core::{Ctx, Parts};
 use porter_service_grants::{Grants, GrantsApi};
+use porter_sheet::host::Sheets;
 use porter_wire::{AccountsReply, AccountsRequest};
 use porter_wire::{ParentWindow, Refusal};
 
@@ -486,5 +486,52 @@ where
         self.grants_domain()
             .open_linked(caller, grant, origin)
             .await
+    }
+}
+
+/// A service as a host that hosts it asks it: the accounts domain and the grants domain, each as
+/// the trait the domain crate declares. An app names this, never the six seams of
+/// [`AccountService`], to be generic over the service it hosts.
+pub trait Service: Send + Sync {
+    /// The accounts domain, borrowed from the service.
+    type Accounts<'a>: AccountsApi + Send
+    where
+        Self: 'a;
+    /// The grants domain, borrowed from the service.
+    type Grants<'a>: GrantsApi + Send
+    where
+        Self: 'a;
+
+    /// The accounts domain.
+    fn accounts_api(&self) -> Self::Accounts<'_>;
+
+    /// The grants domain.
+    fn grants_api(&self) -> Self::Grants<'_>;
+}
+
+impl<P, S, U, K, R, A> Service for AccountService<P, S, U, K, R, A>
+where
+    P: Provider,
+    S: Secrets,
+    U: Sheets,
+    K: Clock,
+    R: RegistryStore,
+    A: AuditSink,
+{
+    type Accounts<'a>
+        = Accounts<'a, Parts<P, S, U, K, R, A>>
+    where
+        Self: 'a;
+    type Grants<'a>
+        = Grants<'a, Parts<P, S, U, K, R, A>>
+    where
+        Self: 'a;
+
+    fn accounts_api(&self) -> Self::Accounts<'_> {
+        self.accounts()
+    }
+
+    fn grants_api(&self) -> Self::Grants<'_> {
+        self.grants_domain()
     }
 }

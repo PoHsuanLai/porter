@@ -3,8 +3,8 @@
 //! the errors. The Request interface itself (`org.quire.Accounts1.Request`: `Close`, the signal
 //! `Response`) is one shape for all of them.
 
-use super::ACCOUNTS_BUS;
 use crate::sync::SYNC_BUS;
+use porter_wire::names::ACCOUNTS_BUS;
 
 /// A daemon that serves Request objects, and so a sheet a caller waits for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

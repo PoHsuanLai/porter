@@ -12,11 +12,12 @@ use porter_core::SessionToken;
 use porter_core::audit::CredentialEnd;
 use porter_core::consent::GrantScope;
 use porter_dbus::Details;
-use porter_dbus::accounts::LauncherFault;
+use porter_dbus::accounts::launcher_fault_error_name_in;
 use porter_dbus::accounts::sheet::{SheetKind, reply_of};
 use porter_dbus::accounts::{ServiceRoot, Sheet};
 use porter_fake::Scripted;
 use porter_wire::AccountsReply;
+use porter_wire::LauncherFault;
 use zbus::export::futures_core::Stream;
 
 fn session(id: &str) -> SessionToken {
@@ -24,7 +25,7 @@ fn session(id: &str) -> SessionToken {
 }
 
 fn fault(fault: LauncherFault) -> String {
-    fault.error_name_in(ServiceRoot::Accounts)
+    launcher_fault_error_name_in(fault, ServiceRoot::Accounts)
 }
 
 /// `RequestAgentKey` as the launcher does it, and the sheet's answer.

@@ -11,7 +11,7 @@ use super::{Api, SyncCursor, read_error};
 use crate::dataset::fingerprint;
 use crate::datasets::pim::PimKind;
 use crate::datasets::pim::discover::{DiscoverError, Found};
-use porter_client::{Accounts, Transport};
+use porter_client::{Grants, GrantsLink};
 use porter_core::EndpointUrl;
 use porter_core::GrantId;
 use porter_ids::{Bytes, WebUrl};
@@ -45,15 +45,15 @@ struct Connections {
 
 /// The contacts of one Google account.
 #[derive(Debug)]
-pub struct GooglePeopleSource<T: Transport> {
+pub struct GooglePeopleSource<T: GrantsLink> {
     api: Arc<Api<T>>,
     clock: Clock,
 }
 
-impl<T: Transport> GooglePeopleSource<T> {
+impl<T: GrantsLink> GooglePeopleSource<T> {
     /// The source at `endpoint` (`https://people.googleapis.com/v1`), as `grant` allows.
     pub fn new(
-        accounts: Arc<Accounts<T>>,
+        accounts: Arc<Grants<T>>,
         grant: GrantId,
         endpoint: EndpointUrl,
         clock: Clock,
@@ -67,12 +67,12 @@ impl<T: Transport> GooglePeopleSource<T> {
 
 /// The contacts' feed.
 #[derive(Debug)]
-pub struct GooglePeopleFeed<T: Transport> {
+pub struct GooglePeopleFeed<T: GrantsLink> {
     api: Arc<Api<T>>,
     clock: Clock,
 }
 
-impl<T: Transport + 'static> PimSource for GooglePeopleSource<T> {
+impl<T: GrantsLink + 'static> PimSource for GooglePeopleSource<T> {
     type Feed = GooglePeopleFeed<T>;
 
     async fn collections(&self, kind: PimKind) -> Result<Vec<Found>, DiscoverError> {
@@ -103,7 +103,7 @@ fn file_of(person: &Person) -> porter_sync::ItemPath {
     }
 }
 
-impl<T: Transport> GooglePeopleFeed<T> {
+impl<T: GrantsLink> GooglePeopleFeed<T> {
     fn upsert(person: &Person) -> FeedChange {
         let vcf = person::to_vcf(person).into_bytes();
         let version = person.etag.clone().unwrap_or_else(|| fingerprint(&vcf).0);
@@ -122,7 +122,7 @@ impl<T: Transport> GooglePeopleFeed<T> {
     }
 }
 
-impl<T: Transport + 'static> Feed for GooglePeopleFeed<T> {
+impl<T: GrantsLink + 'static> Feed for GooglePeopleFeed<T> {
     type Cursor = SyncCursor;
 
     async fn changes(&self, from: Option<SyncCursor>) -> Result<Page<SyncCursor>, ReplicaError> {

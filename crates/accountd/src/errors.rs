@@ -6,7 +6,8 @@
 //! Written by hand rather than with the `DBusError` derive: the derive names every non-refusal
 //! `org.freedesktop.zbus.Error`, which a client cannot tell from any other failure.
 
-use porter_dbus::accounts::{LauncherFault, ServiceRoot, refusal_error_name};
+use porter_dbus::accounts::{ServiceRoot, launcher_fault_error_name_in, refusal_error_name};
+use porter_wire::LauncherFault;
 use porter_wire::Refusal;
 use zbus::DBusError;
 use zbus::fdo;
@@ -49,9 +50,10 @@ impl RefusedError {
     /// A launcher's call accountd refuses, under the fault's own typed name.
     pub(crate) fn launcher(fault: LauncherFault, why: impl ToString) -> Self {
         Self {
-            name: ErrorName::try_from(fault.error_name_in(ServiceRoot::Accounts)).unwrap_or_else(
-                |_| ErrorName::from_static_str_unchecked("org.freedesktop.DBus.Error.Failed"),
-            ),
+            name: ErrorName::try_from(launcher_fault_error_name_in(fault, ServiceRoot::Accounts))
+                .unwrap_or_else(|_| {
+                    ErrorName::from_static_str_unchecked("org.freedesktop.DBus.Error.Failed")
+                }),
             text: why.to_string(),
         }
     }

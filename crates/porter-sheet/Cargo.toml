@@ -13,6 +13,7 @@ porter-core = { workspace = true }
 porter-tailscale = { workspace = true }
 porter-capability = { workspace = true }
 porter-ids = { workspace = true }
+porter-wire = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 

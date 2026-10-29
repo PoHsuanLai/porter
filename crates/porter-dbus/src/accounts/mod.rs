@@ -46,17 +46,21 @@ pub use launcher::{
     AgentLogoutRequestedStream, LauncherProxy, LauncherServed, LauncherServer,
     ProcessCredentialRevoked, ProcessCredentialRevokedStream,
 };
-pub use launcher_fault::{LauncherFault, launcher_fault_of};
+pub use launcher_fault::{
+    launcher_fault_error_name, launcher_fault_error_name_in, launcher_fault_from_error_name,
+    launcher_fault_of,
+};
 pub use machines::{
     MACHINE_KEY_ADDRESSES, MACHINE_KEY_DNS, MACHINE_KEY_LAST_SEEN, MACHINE_KEY_NAME,
     MACHINE_KEY_NODE, MACHINE_KEY_ONLINE, MACHINE_KEY_OS, MACHINE_KEY_OWNER, MACHINE_KEY_SSH,
     MACHINE_KEY_SSH_HOST_KEYS, machine_from_dbus, machine_to_dbus,
 };
 pub use manager::{
-    AccountRemoved, AccountRemovedStream, ManagerProxy, ManagerServed, ManagerServer,
+    AccountAdded, AccountAddedStream, AccountRemoved, AccountRemovedStream, ManagerProxy,
+    ManagerServed, ManagerServer, NeedsReauth, NeedsReauthStream,
 };
 pub use names::*;
-pub use pending::{Closer, Sheet, SheetError};
+pub use pending::{Abandon, Closer, Sheet, SheetError};
 pub use refusal::{
     REFUSAL_ERROR_PREFIX, refusal_error_name, refusal_error_name_in, refusal_from_error_name,
     refusal_of,

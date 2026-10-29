@@ -17,7 +17,7 @@
 //! `graph` endpoint under a Storage grant.
 
 use crate::webdav::BuildError;
-use porter_client::{Accounts, Transport};
+use porter_client::{Grants, GrantsLink};
 use porter_core::EndpointUrl;
 use porter_core::GrantId;
 use porter_http_relay::{RelayDial, RelayHttp, RelayLimits, Routed, bare_url};
@@ -36,8 +36,8 @@ pub type GraphHttp<T> = Routed<RelayHttp<RelayDial<T>>, RelayHttp<RelayDial<T>>,
 /// The replica of `folder` (a path in the app folder, `Photos/Originals`; empty for the app
 /// folder itself) of the account the grant covers, over relays the account service opens to
 /// `endpoint` and, for the links Graph hands out, to the origins of those links.
-pub fn graph_replica<T: Transport + 'static>(
-    accounts: Arc<Accounts<T>>,
+pub fn graph_replica<T: GrantsLink + 'static>(
+    accounts: Arc<Grants<T>>,
     grant: GrantId,
     endpoint: EndpointUrl,
     folder: &str,
