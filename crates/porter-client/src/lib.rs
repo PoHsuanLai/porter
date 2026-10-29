@@ -45,7 +45,9 @@ mod porter;
 mod spaces;
 mod tailnet;
 
-pub use accounts::{AccountChange, AccountRef, AccountView, Accounts, AccountsError, NeedsReauth};
+pub use accounts::{
+    AccountChange, AccountRef, AccountView, Accounts, AccountsError, EditError, NeedsReauth,
+};
 pub use ai_accounts::{AiAccounts, AiAccountsError};
 pub use ai_keys::{AiKeys, AiKeysError};
 pub use authenticated::AuthenticatedStream;
@@ -55,8 +57,8 @@ pub use found::{ConsentOffer, Found, NoAccount, found};
 pub use grants::{Grants, GrantsError};
 pub use identities::{Identities, IdentitiesError, Picked};
 pub use link::{
-    AccountWatch, AccountsLink, AiAccountsLink, AiKeysLink, GrantsLink, IdentitiesLink, SpacesLink,
-    TailnetLink,
+    AccountWatch, AccountsLink, AiAccountsLink, AiKeysLink, GrantsLink, IdentitiesLink, ServerEdits,
+    SpacesLink, TailnetLink,
 };
 pub use porter::Porter;
 pub use spaces::{Spaces, SpacesError};

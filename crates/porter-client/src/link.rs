@@ -2,7 +2,9 @@
 //! serve; a method a transport cannot serve is not on its type, because [`crate::Porter`] hands out
 //! a domain client only over a transport that implements the domain's trait.
 
-use crate::accounts::{AccountChange, AccountRef, AccountView, AccountsError, NeedsReauth};
+use crate::accounts::{
+    AccountChange, AccountRef, AccountView, AccountsError, EditError, NeedsReauth,
+};
 use crate::ai_accounts::AiAccountsError;
 use crate::ai_keys::AiKeysError;
 use crate::authenticated::AuthenticatedStream;
@@ -20,6 +22,7 @@ use porter_core::{
     ProviderHint, ProviderId, SecretText, SpaceChange, SpaceLook, SpaceName,
 };
 use porter_match::Need;
+use porter_sheet::{EditServers, EditedServers};
 use porter_tailscale::Machine;
 use porter_wire::ParentWindow;
 use std::future::Future;
@@ -39,6 +42,17 @@ pub trait AccountsLink: Send + Sync + 'static {
         account: &AccountId,
         window: &ParentWindow,
     ) -> impl Future<Output = Result<(), AccountsError>> + Send;
+}
+
+/// Hosted only: editing a password account's servers through the sheet. The service checks them
+/// before it hands them back; no bus carries it, so it is not on a bus transport's type.
+pub trait ServerEdits: AccountsLink {
+    /// Opens the server form of `edit`'s account, prefilled, and tries what the person types.
+    fn edit_servers(
+        &self,
+        edit: EditServers,
+        window: &ParentWindow,
+    ) -> impl Future<Output = Result<EditedServers, EditError>> + Send;
 }
 
 /// The grants domain: who may use which account, and the relays a grant opens. No bus carries it.

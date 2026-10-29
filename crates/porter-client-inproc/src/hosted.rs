@@ -2,7 +2,8 @@
 
 use crate::relays::{NoRelays, RelayHost};
 use porter_client::{
-    AccountsError, AccountsLink, AuthenticatedStream, ConsentOffer, GrantsError, GrantsLink, Porter,
+    AccountsError, AccountsLink, AuthenticatedStream, ConsentOffer, EditError, GrantsError,
+    GrantsLink, Porter, ServerEdits,
 };
 use porter_core::RelayPlan;
 use porter_core::consent::{Availability, Grant, Usage};
@@ -18,6 +19,7 @@ use porter_service_accounts::AccountsApi;
 use porter_service_core::registry::Registry;
 use porter_service_grants::GrantsApi;
 use porter_sheet::host::Sheets;
+use porter_sheet::{EditServers, EditedServers};
 use porter_wire::{AccountsReply, ParentWindow, Refusal};
 use std::sync::Arc;
 
@@ -91,6 +93,26 @@ impl<C: Service + 'static, H: RelayHost + 'static> AccountsLink for Hosted<C, H>
             AccountsReply::Refused(refusal) => Err(AccountsError::Refused(refusal)),
             _ => Err(AccountsError::Refused(Refusal::Unavailable)),
         }
+    }
+}
+
+impl<C: Service + 'static, H: RelayHost + 'static> ServerEdits for Hosted<C, H> {
+    async fn edit_servers(
+        &self,
+        edit: EditServers,
+        window: &ParentWindow,
+    ) -> Result<EditedServers, EditError> {
+        self.service
+            .accounts_api()
+            .edit_servers(&self.app, edit, window.clone())
+            .await
+            .map_err(|refused| match refused {
+                porter_service_accounts::EditError::Fixed(fixed) => EditError::Fixed(fixed),
+                porter_service_accounts::EditError::NotThatProvider => EditError::NotThatProvider,
+                porter_service_accounts::EditError::Refused(refusal) => EditError::Refused(refusal),
+                // a reason a newer porter adds
+                _ => EditError::Refused(Refusal::Unavailable),
+            })
     }
 }
 
@@ -192,9 +214,9 @@ impl<C, H: RelayHost> Hosted<C, H> {
 }
 
 /// Everything a hosted handle carries: what [`hosted`] promises of the type it hides.
-pub trait Hosting: AccountsLink + GrantsLink + std::fmt::Debug {}
+pub trait Hosting: AccountsLink + ServerEdits + GrantsLink + std::fmt::Debug {}
 
-impl<T: AccountsLink + GrantsLink + std::fmt::Debug> Hosting for T {}
+impl<T: AccountsLink + ServerEdits + GrantsLink + std::fmt::Debug> Hosting for T {}
 
 /// What an app that runs the service itself brings: who it is, its providers, its secret store
 /// and the host that draws its sheets; the clock, the store of its registry and the relay host

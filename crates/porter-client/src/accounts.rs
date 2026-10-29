@@ -2,9 +2,10 @@
 
 use crate::changes::Changes;
 use crate::error::LinkError;
-use crate::link::{AccountWatch, AccountsLink};
+use crate::link::{AccountWatch, AccountsLink, ServerEdits};
 use porter_core::{AccountId, AccountLabel, AccountState, ProviderHint, ProviderId, ReauthReason};
 use porter_ids::object_segment;
+use porter_sheet::{EditServers, EditedServers, ServersFixed};
 use porter_wire::names::ACCOUNTS_PATH;
 use porter_wire::{ParentWindow, Refusal};
 use std::sync::Arc;
@@ -23,6 +24,26 @@ pub enum AccountsError {
     /// This app has a sheet of this kind open already.
     #[error("a sheet is open")]
     Busy,
+    /// The call did not complete.
+    #[error(transparent)]
+    Link(#[from] LinkError),
+}
+
+/// Why editing an account's servers gave nothing back. More reasons may be added: match with a
+/// wildcard.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum EditError {
+    /// The provider's sign-in is not a typed password, so its servers are not the person's to
+    /// name: show them read-only.
+    #[error("fixed")]
+    Fixed(ServersFixed),
+    /// The service holds the account under another provider than the edit names.
+    #[error("not that provider")]
+    NotThatProvider,
+    /// The sheet ended without servers (the person closed it), or the service refused.
+    #[error("refused")]
+    Refused(Refusal),
     /// The call did not complete.
     #[error(transparent)]
     Link(#[from] LinkError),
@@ -62,6 +83,21 @@ impl<T: AccountsLink> Accounts<T> {
         window: &ParentWindow,
     ) -> Result<(), AccountsError> {
         self.link.reauthenticate(account, window).await
+    }
+}
+
+impl<T: ServerEdits> Accounts<T> {
+    /// Opens the server form of an existing password account, prefilled from `edit`, and tries
+    /// what the person types at the typed hosts: the incoming server, and the outgoing one when
+    /// it, the login name or the password changed. Nothing is stored: the app keeps the
+    /// servers, the name and the new password the [`EditedServers`] carries (`into_parts`). Ask
+    /// [`porter_sheet::servers_editable`] first to decide whether to offer the edit at all.
+    pub async fn edit_servers(
+        &self,
+        edit: EditServers,
+        window: &ParentWindow,
+    ) -> Result<EditedServers, EditError> {
+        self.link.edit_servers(edit, window).await
     }
 }
 
