@@ -6,9 +6,9 @@
 //! one registry, one secret namespace, one grant store. The agent logins and the local runtimes
 //! the AI broker reports are accounts of it too. syncd signs in for itself.
 //!
-//! - `Manager` (`AddAccount`, `NeedingReauth`, the signals `AccountAdded`, `AccountRemoved` and
-//!   `NeedsReauth`) at the accountd path; one `Account` object per account (`Reauthenticate`) at
-//!   its own path.
+//! - `Manager` (`AddAccount`, `NeedingReauth`, the signals `AccountAdded` and `AccountRemoved`) at
+//!   the accountd path; one `Account` object per account (`Reauthenticate`, and the `State`
+//!   property whose change tells the shell an account needs signing in) at its own path.
 //! - The caller is the connection's, never the request's: a [`Callers`] seam says which app a
 //!   bus sender is, and a sender it does not know is refused `AccessDenied` by the bus's own
 //!   error name (a client reports that as `TransportError::Denied`).

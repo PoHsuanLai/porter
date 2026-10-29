@@ -57,7 +57,7 @@ pub use machines::{
 };
 pub use manager::{
     AccountAdded, AccountAddedStream, AccountRemoved, AccountRemovedStream, ManagerProxy,
-    ManagerServed, ManagerServer, NeedsReauth, NeedsReauthStream,
+    ManagerServed, ManagerServer,
 };
 pub use names::*;
 pub use pending::{Abandon, Closer, Sheet, SheetError};

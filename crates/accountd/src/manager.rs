@@ -46,8 +46,7 @@ impl<H: Host, C: Callers> ManagerServer for Manager<H, C> {
     }
 
     /// The accounts that need signing in again now, for the shell alone (`SheetHost`). Asking
-    /// joins the caller to the roster, so it is then sent `NeedsReauth` and `State` changes for
-    /// every account.
+    /// joins the caller to the roster, so it is then sent `State` changes for every account.
     async fn needing_reauth(
         &self,
         Call { header, .. }: Call<'_>,

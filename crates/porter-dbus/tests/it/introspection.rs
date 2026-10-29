@@ -155,7 +155,6 @@ fn accountd_declares_identities_and_no_grant_keyed_member() {
         "<method name=\"Close\">",
         "<signal name=\"AccountAdded\">",
         "<signal name=\"AccountRemoved\">",
-        "<signal name=\"NeedsReauth\">",
         "<signal name=\"Response\">",
         "<property name=\"Capabilities\" type=\"a(sa{sv})\" access=\"read\"/>",
     ];

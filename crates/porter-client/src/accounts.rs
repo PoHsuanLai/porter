@@ -103,7 +103,7 @@ impl<T: ServerEdits> Accounts<T> {
 
 impl<T: AccountWatch> Accounts<T> {
     /// The accounts that need signing in again now, with their labels. Asking is also how
-    /// accountd learns this connection, which it then sends `NeedsReauth` to.
+    /// accountd learns this connection, which it then sends every account's `State` changes.
     pub async fn needing_reauth(&self) -> Result<Vec<NeedsReauth>, LinkError> {
         self.link.needing_reauth().await
     }

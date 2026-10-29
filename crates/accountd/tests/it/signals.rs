@@ -6,7 +6,6 @@ use crate::common;
 use common::*;
 use ds_settings::schema::KeyPath;
 use porter_callers::CallerRole;
-use porter_core::AccountState;
 use porter_dbus::accounts::AccountProxy;
 use porter_dbus::accounts::account_path;
 use std::time::Duration;
@@ -48,39 +47,6 @@ async fn removing_an_account_tells_the_shell_and_settings_and_no_app() {
     }
     // That no app hears is a short window by design (it proves an absence, so a slow machine can
     // only make it pass, never fail).
-    let apps = heard(&mut app_hears, Duration::from_millis(300)).await;
-    assert!(apps.is_empty(), "{apps:?}");
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn an_account_that_needs_signing_in_again_is_told_to_the_shell_alone_among_apps() {
-    let rig = Rig::start().await;
-    let shell = joined(&rig, caller("org.example.SheetHost", CallerRole::SheetHost)).await;
-    let app = joined(&rig, caller("org.quire.Mail", CallerRole::App)).await;
-    let mut shell_hears = listen(&shell).await;
-    let mut app_hears = listen(&app).await;
-
-    assert!(
-        rig.service
-            .set_state(&storage_account().id, AccountState::NeedsReauth)
-            .await
-    );
-    // The service changed under the objects; the next call publishes it.
-    let _ = settings(&rig).await.describe().await;
-    let _ = rig
-        .client_as(caller("org.quire.Settings", CallerRole::Settings))
-        .await;
-    settings(&rig)
-        .await
-        .set(
-            &KeyPath("accounts.fake-mail.reauth".into()),
-            &toml::Value::Boolean(true),
-        )
-        .await
-        .ok();
-
-    let told = heard_names(&mut shell_hears, &["NeedsReauth"]).await;
-    assert!(told.contains(&"NeedsReauth".to_owned()), "{told:?}");
     let apps = heard(&mut app_hears, Duration::from_millis(300)).await;
     assert!(apps.is_empty(), "{apps:?}");
 }

@@ -105,7 +105,7 @@ pub trait GrantsLink: Send + Sync + 'static {
 /// What the shell reads of accountd's accounts, beyond signing one in. The bus only.
 pub trait AccountWatch: AccountsLink {
     /// The accounts that need signing in again now, with their labels. Asking is also how accountd
-    /// learns this connection, which it then sends `NeedsReauth` to.
+    /// learns this connection, which it then sends every account's `State` changes.
     fn needing_reauth(&self) -> impl Future<Output = Result<Vec<NeedsReauth>, LinkError>> + Send;
 
     /// One account as accountd shows it to the shell.

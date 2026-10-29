@@ -127,9 +127,6 @@ impl<H: Host, C: Callers> Core<H, C> {
             Event::Removed(id) => {
                 ManagerServed::<Manager<H, C>>::account_removed(&emitter, path(id)?).await
             }
-            Event::NeedsReauth(id) => {
-                ManagerServed::<Manager<H, C>>::needs_reauth(&emitter, path(id)?).await
-            }
             Event::StateChanged(id) => {
                 // The new value is read by the receiver, which `State` lets only the shell and
                 // Settings do.

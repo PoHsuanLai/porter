@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### The `NeedsReauth` signal is gone (wire change)
+
+- `org.quire.Accounts1.Manager` no longer emits the `NeedsReauth(o)` signal. An account that needs
+  signing in again is told by its `State` property (`PropertiesChanged` on the account object), which
+  `porter_client::Accounts::watch` reads as `AccountChange::State`. `porter_dbus::accounts` loses the
+  signal's `NeedsReauth` and `NeedsReauthStream` types and the `ManagerServed::needs_reauth` emitter.
+  `needing_reauth()` and `Refusal::NeedsReauth` stay.
+
 ### Editing an account's servers (hosted apps)
 
 - `porter_client::Accounts::edit_servers(EditServers, &ParentWindow) -> Result<EditedServers, EditError>`,

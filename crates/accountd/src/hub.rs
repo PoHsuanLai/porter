@@ -19,8 +19,6 @@ pub(crate) enum Event {
     Added(AccountId),
     /// `AccountRemoved`.
     Removed(AccountId),
-    /// `NeedsReauth`.
-    NeedsReauth(AccountId),
     /// The account's `State` property changed: the reader is told to read it again.
     StateChanged(AccountId),
 }
@@ -44,10 +42,6 @@ pub(crate) fn events(before: &Registry, after: &Registry) -> Vec<Event> {
             Some(old) => {
                 if old.state != account.state {
                     out.push(Event::StateChanged(account.id.clone()));
-                }
-                let now_refused = account.state.needs_person();
-                if now_refused && !old.state.needs_person() {
-                    out.push(Event::NeedsReauth(account.id.clone()));
                 }
             }
         }
@@ -91,7 +85,6 @@ pub(crate) fn settings_news(
                     }
                 }
             }
-            Event::NeedsReauth(_) => {}
         }
     }
     for account in &after.accounts {
@@ -187,7 +180,6 @@ mod tests {
             list,
             vec![
                 Event::StateChanged(storage.id.clone()),
-                Event::NeedsReauth(storage.id.clone()),
                 Event::Added(mail.id.clone())
             ]
         );

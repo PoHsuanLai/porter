@@ -24,7 +24,7 @@ pub trait Manager {
     ) -> zbus::Result<OwnedObjectPath>;
     /// The accounts that need signing in again now, as object path and label: only the shell
     /// (`CallerRole::SheetHost`) may ask. Asking also joins the caller to the connections that
-    /// are sent `NeedsReauth` for every account, and `State` changes of every account.
+    /// are sent the `State` changes of every account.
     fn needing_reauth(&self) -> zbus::Result<Vec<(OwnedObjectPath, String)>>;
     /// An account was added.
     #[zbus(signal)]
@@ -32,7 +32,4 @@ pub trait Manager {
     /// An account was removed.
     #[zbus(signal)]
     fn account_removed(&self, account: ObjectPath<'_>) -> zbus::Result<()>;
-    /// An account must be signed in again.
-    #[zbus(signal)]
-    fn needs_reauth(&self, account: ObjectPath<'_>) -> zbus::Result<()>;
 }
