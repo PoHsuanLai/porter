@@ -132,7 +132,7 @@ fn the_test_proc_root_feature_is_not_a_default_feature() {
 }
 
 #[test]
-fn the_sample_caller_table_gives_settings_the_sheet_host_and_both_daemons_their_roles() {
+fn the_sample_caller_table_gives_settings_the_sheet_host_and_every_daemon_its_role() {
     use porter_callers::CallerRole;
     use porter_core::AppName;
     let table = porter_callers::table_from_toml(&dist("callers.toml")).expect("the sample reads");
@@ -144,6 +144,7 @@ fn the_sample_caller_table_gives_settings_the_sheet_host_and_both_daemons_their_
         ("sill.service", CallerRole::SheetHost),
         ("inferd.service", CallerRole::AiBroker),
         ("syncd.service", CallerRole::PorterDaemon),
+        ("calendard.service", CallerRole::PorterDaemon),
     ] {
         assert_eq!(
             table.resolve_unit(unit).map(|caller| caller.role),
@@ -157,6 +158,7 @@ fn the_sample_caller_table_gives_settings_the_sheet_host_and_both_daemons_their_
         ("org.quire.Shell", "Shell"),
         ("org.quire.Inference", "Intelligence"),
         ("org.quire.Sync", "Sync"),
+        ("org.quire.Calendar", "Calendar"),
         ("org.quire.Companion", "Assistant"),
     ] {
         assert_eq!(table.title_of(&app(id)).map(|t| t.0.as_str()), Some(title));

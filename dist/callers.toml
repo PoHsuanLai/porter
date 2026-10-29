@@ -1,4 +1,4 @@
-# The caller table accountd and syncd read (`[[caller]]` rows of `app`, optional `unit`, `role`).
+# The caller table accountd, syncd and calendard read (`[[caller]]` rows of `app`, optional `unit`, `role`).
 # Install to /etc/porter/callers.toml; a person's own rows go in
 # $XDG_CONFIG_HOME/porter/callers.toml and win over these. A caller is found by its process: a
 # Flatpak app by its sandbox's own metadata, a native app scope (`app-…-<app id>-N.scope`) by its
@@ -6,7 +6,7 @@
 # systemd manager says; a scope, which has none, as any process in it). A row with a unit gives
 # its role to that unit alone, never to an app scope of the same id. Roles:
 # `settings` (the Settings app), `sheet_host` (draws the accounts sheets), `ai_broker` (inferd: the
-# one daemon that asks for the key behind a permit), `porter_daemon` (syncd), `agent`, `cua`,
+# one daemon that asks for the key behind a permit), `porter_daemon` (ferry's syncd and callie's calendard), `agent`, `cua`,
 # `agent_launcher` (the launcher of external coding agents: see below), `terminal` (temor:
 # reads the person's computers from `org.quire.Tailnet1` and nothing else), `compositor` (casement:
 # lists the desktop-wide Spaces and registers the ids it mints for its workspaces through
@@ -62,6 +62,15 @@ app = "org.quire.Sync"
 unit = "syncd.service"
 role = "porter_daemon"
 name = "Sync"
+
+# calendard (callie's calendar and task service): lists grants and opens authenticated relays for
+# the calendars and task lists it keeps. Its grants are its own: a grant syncd holds is not
+# calendard's.
+[[caller]]
+app = "org.quire.Calendar"
+unit = "calendard.service"
+role = "porter_daemon"
+name = "Calendar"
 
 # temor, the terminal: reads the person's computers (`Tailnet1.Machines`) and nothing else.
 # temor's unit is `org.quire.Temor.service` (`Type=dbus`, as detent's `org.quire.Settings.service`).
