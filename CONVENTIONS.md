@@ -22,8 +22,8 @@ What porter adds or decides differently, each with its reason:
    built.** Each one is listed in `FINDINGS.md` with the work that removes it. This departs
    from the shared rule "no `todo!()` stub on master"; the freeze decides when it lands.
 4. **Nothing ambient below the daemons.** The clock (`porter_service::Clock`), the secret store,
-   the consent prompter, providers and transports are passed in; only `accountd` and `syncd`
-   read the system clock, the environment or the bus.
+   the consent prompter, providers and transports are passed in; only `accountd` (and ferry's
+   `syncd`) read the system clock, the environment or the bus.
 5. **One integration-test executable per crate.** A crate's integration tests are modules of
    `crates/<crate>/tests/it/main.rs` (`mod <topic>;`, one `mod common;` there, helpers used as
    `crate::common`); fixtures stay in `tests/fixtures/`. A test that starts its own test
