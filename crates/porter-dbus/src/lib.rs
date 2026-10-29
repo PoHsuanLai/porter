@@ -27,6 +27,8 @@
 //! failure of a bus call, [`BusTarget`] and [`serve_ready`]. The portal
 //! shape of a sheet's answer is [`accounts::sheet`]. Who is calling is `porter-callers`.
 
+extern crate self as porter_dbus;
+
 mod args;
 mod destination;
 mod failure;
