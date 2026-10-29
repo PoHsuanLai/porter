@@ -105,9 +105,38 @@ type Migration = fn(Value) -> Result<Value, StoreFault>;
 /// Every step, keyed by the version it starts from. A bump of `VocabVersion::CURRENT` that changes
 /// the stored document's shape adds its row here, with a fixture of the old document in the
 /// tests; a bump that only adds defaulted fields or new variants adds nothing, since a document
-/// written before it reads as it was. Versions 3 to 12 changed no stored shape, so the table
-/// starts empty; their frozen documents are in the tests.
-const MIGRATIONS: &[(VocabVersion, Migration)] = &[];
+/// written before it reads as it was. Versions 3 to 12 changed no stored shape; 13 changed none
+/// either, and 14 moved who holds the calendar and task grants (below). Their frozen documents
+/// are in the tests.
+const MIGRATIONS: &[(VocabVersion, Migration)] = &[(VocabVersion(13), calendars_to_calendard)];
+
+/// The app ferry's syncd is, and the one callie's calendard is.
+const SYNCD: &str = "org.quire.Sync";
+const CALENDARD: &str = "org.quire.Calendar";
+
+/// 14: calendars and task lists left syncd for callie's calendard, which is another app. A grant
+/// is one kind of one account for one app, so syncd's Calendar and Tasks grants are exactly the
+/// rows to give calendard: each is moved to `org.quire.Calendar` with its account, kind, class,
+/// use, scope, decision and time as they were, and syncd keeps every other row (Storage, Photos).
+/// Nobody is asked again. It runs once, on a document written at 13: the document's version is
+/// the marker, and the step finds nothing to move in a document that has been through it.
+fn calendars_to_calendard(mut document: Value) -> Result<Value, StoreFault> {
+    let moved: Vec<Value> = [CapabilityKind::Calendar, CapabilityKind::Tasks]
+        .iter()
+        .filter_map(|kind| serde_json::to_value(kind).ok())
+        .collect();
+    let grants = document.get_mut("grants").and_then(Value::as_array_mut);
+    for grant in grants.into_iter().flatten() {
+        let Some(key) = grant.get_mut("key") else {
+            continue;
+        };
+        let syncds = key["app"]["name"] == SYNCD;
+        if syncds && moved.contains(&key["kind"]) {
+            key["app"]["name"] = Value::from(CALENDARD);
+        }
+    }
+    Ok(document)
+}
 
 impl Persisted {
     /// A registry with nothing in it, at this build's vocabulary.

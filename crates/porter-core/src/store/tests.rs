@@ -153,12 +153,12 @@ fn a_file_that_cannot_be_read_is_refused_not_emptied() {
     }
 }
 
-/// A version that changed the stored shape has a row in the table with its frozen document in
-/// this file; none has yet, so a document from any stored version reads by moving its version
+/// A version with no row in the table only moves the document's number, and the one row (13, the
+/// calendar grants) finds nothing in a registry that holds no syncd calendar or task grant, so
+/// such a document from the first stored version reads as it was
 /// (`a_document_frozen_at_each_vocabulary_since_the_first_stored_one_reads` has one per version).
 #[test]
 fn a_version_without_a_migration_row_is_read_as_it_was() {
-    assert!(MIGRATIONS.is_empty());
     let stored = filled().to_json().expect("json").replacen(
         &format!("\"vocab\": {}", VocabVersion::CURRENT.0),
         &format!("\"vocab\": {}", FIRST_PERSISTED.0),
@@ -332,12 +332,26 @@ const AT_THIRTEEN: &str = r#"{
   "toggles": []
 }"#;
 
+/// 14 moved syncd's Calendar and Tasks grants to calendard: the document's shape is the same, and
+/// this is a registry as 14 writes it, calendard holding what syncd held.
+const AT_FOURTEEN: &str = r#"{
+  "vocab": 14,
+  "accounts": [
+    {"id": "claude-code", "provider": "claude-code", "label": "Claude Code", "state": "ok", "auth": "agent_login", "capabilities": [], "restriction": {"verification": {"kind": "not_needed"}, "token_lifetime": "standard", "consent": "user", "limits": []}, "endpoints": []},
+    {"id": "tailscale", "provider": "tailscale", "label": "ada@example.org on example.org", "state": "needs_login", "auth": "own_program", "capabilities": [], "restriction": {"verification": {"kind": "not_needed"}, "token_lifetime": "standard", "consent": "user", "limits": []}, "endpoints": []}
+  ],
+  "grants": [
+    {"id": "g-session", "key": {"app": {"name": "org.quire.Agent.claude-code", "isolation": "unsandboxed"}, "account": "claude-code", "kind": "llm", "class": "prompt", "usage": "background", "space": {"kind": "any"}}, "decision": "allow", "scope": {"session": "sess-1"}, "at": 1790000003}
+  ],
+  "toggles": []
+}"#;
+
 /// Every frozen document reads, whatever version wrote it, as the current vocabulary, with what
 /// that version could hold: the rows say what each is expected to come out as.
 #[test]
 fn a_document_frozen_at_each_vocabulary_since_the_first_stored_one_reads() {
     // (version, text, account ids, grant ids)
-    let table: [(u16, &str, &[&str], &[&str]); 11] = [
+    let table: [(u16, &str, &[&str], &[&str]); 12] = [
         (3, AT_THREE, &["cloud", "mail"], &["g-once"]),
         (4, AT_FOUR, &["cloud", "mail"], &["g-once"]),
         (5, AT_FIVE, &["cloud", "claude-code"], &["g-once"]),
@@ -351,6 +365,12 @@ fn a_document_frozen_at_each_vocabulary_since_the_first_stored_one_reads() {
         (
             13,
             AT_THIRTEEN,
+            &["claude-code", "tailscale"],
+            &["g-session"],
+        ),
+        (
+            14,
+            AT_FOURTEEN,
             &["claude-code", "tailscale"],
             &["g-session"],
         ),
@@ -475,4 +495,83 @@ fn an_agent_login_account_survives_its_document_and_keeps_its_slugs() {
     assert_eq!(document["accounts"][1]["state"], "needs_login");
     assert_eq!(document["accounts"][1]["auth"], "agent_login");
     assert_eq!(Persisted::from_json(&json), Ok(registry));
+}
+
+/// A registry as 13 wrote it, with syncd's grants for Files and Photos beside its Calendar and Tasks
+/// ones, one of them given once, and another app's own Calendar grant.
+const SYNCD_AT_THIRTEEN: &str = r#"{
+  "vocab": 13,
+  "accounts": [
+    {"id": "cloud", "provider": "nextcloud", "label": "ada@example.org", "state": "ok", "auth": "login_flow_v2", "capabilities": [], "restriction": {"verification": {"kind": "not_needed"}, "token_lifetime": "standard", "consent": "user", "limits": []}, "endpoints": [{"family": "webdav", "url": "https://cloud.example.org/remote.php/dav/", "tls": "implicit", "login": "ada"}]}
+  ],
+  "grants": [
+    {"id": "g-files", "key": {"app": {"name": "org.quire.Sync", "isolation": "unsandboxed"}, "account": "cloud", "kind": "storage", "class": "files", "usage": "background", "space": {"kind": "any"}}, "decision": "allow", "scope": "always", "at": 1790000001},
+    {"id": "g-cal", "key": {"app": {"name": "org.quire.Sync", "isolation": "unsandboxed"}, "account": "cloud", "kind": "calendar", "class": "calendar", "usage": "background", "space": {"kind": "any"}}, "decision": "allow", "scope": "always", "at": 1790000002},
+    {"id": "g-tasks", "key": {"app": {"name": "org.quire.Sync", "isolation": "unsandboxed"}, "account": "cloud", "kind": "tasks", "class": "tasks", "usage": "background", "space": {"kind": "any"}}, "decision": "allow", "scope": "once", "at": 1790000003},
+    {"id": "g-mail-cal", "key": {"app": {"name": "org.quire.Mail", "isolation": "flatpak"}, "account": "cloud", "kind": "calendar", "class": "calendar", "usage": "interactive", "space": {"kind": "any"}}, "decision": "allow", "scope": "always", "at": 1790000004}
+  ],
+  "toggles": []
+}"#;
+
+/// Who holds each grant of a registry, by grant id.
+fn holders(registry: &Persisted) -> Vec<(&str, &str)> {
+    registry
+        .grants
+        .iter()
+        .map(|g| (g.id.as_str(), g.key.app.name.as_str()))
+        .collect()
+}
+
+/// 14: syncd's Calendar and Tasks grants become calendard's, once, whole (the same account, kind,
+/// class, use, decision, scope and time, so nobody is asked again); syncd keeps its Files grant
+/// and another app's own Calendar grant is not touched. Reading what was written, or reading it
+/// again, moves nothing.
+#[test]
+fn syncds_calendar_and_task_grants_become_calendards_once() {
+    let before = Persisted::from_json(
+        SYNCD_AT_THIRTEEN
+            .replace("\"vocab\": 13", "\"vocab\": 14")
+            .as_str(),
+    )
+    .expect("a document already at 14 is read as it is");
+    assert_eq!(
+        holders(&before),
+        [
+            ("g-files", "org.quire.Sync"),
+            ("g-cal", "org.quire.Sync"),
+            ("g-tasks", "org.quire.Sync"),
+            ("g-mail-cal", "org.quire.Mail"),
+        ],
+        "a document that has reached 14 is not moved again"
+    );
+
+    let moved = Persisted::from_json(SYNCD_AT_THIRTEEN).expect("migrates");
+    assert_eq!(moved.vocab, VocabVersion::CURRENT);
+    assert_eq!(
+        holders(&moved),
+        [
+            ("g-files", "org.quire.Sync"),
+            ("g-cal", "org.quire.Calendar"),
+            ("g-tasks", "org.quire.Calendar"),
+            ("g-mail-cal", "org.quire.Mail"),
+        ]
+    );
+    // Only the holder changed: the rest of every grant is what it was.
+    for (old, new) in before.grants.iter().zip(&moved.grants) {
+        assert_eq!(
+            (&old.id, &old.decision, &old.scope, old.at),
+            (&new.id, &new.decision, &new.scope, new.at)
+        );
+        assert_eq!(
+            (&old.key.account, old.key.kind, old.key.class, old.key.usage),
+            (&new.key.account, new.key.kind, new.key.class, new.key.usage)
+        );
+    }
+    assert_eq!(moved.grants[2].scope, GrantScope::Once);
+    assert_eq!(moved.grants[1].key.app.isolation, Isolation::Unsandboxed);
+    assert_eq!(moved.accounts, before.accounts);
+
+    // The next start reads what this one wrote and finds nothing to move.
+    let again = Persisted::from_json(&moved.to_json().expect("json")).expect("reads");
+    assert_eq!(again, moved);
 }

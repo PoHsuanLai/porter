@@ -574,8 +574,8 @@ fn json<T: Serialize>(value: &T) -> String {
 }
 
 #[test]
-fn the_vocabulary_is_version_thirteen() {
-    assert_eq!(VocabVersion::CURRENT, VocabVersion(13));
+fn the_vocabulary_is_version_fourteen() {
+    assert_eq!(VocabVersion::CURRENT, VocabVersion(14));
 }
 
 #[test]

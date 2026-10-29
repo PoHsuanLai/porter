@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Calendars and tasks are callie's calendard
+
+- The vocabulary is 14. A registry written at 13 is migrated on its first read: ferry's syncd
+  (`org.quire.Sync`) held the Calendar and Tasks grants, and callie's calendard
+  (`org.quire.Calendar`) mirrors them now, so each of those grants moves to calendard with its
+  account, class, use, scope and time as they were, and nobody is asked again. syncd keeps its
+  other grants. `dist/callers.toml` has calendard's row.
+
 ### Grants are on the bus
 
 - `org.quire.Grants1` at `/org/quire/Grants1` on accountd's name (`dbus/org.quire.Grants1.xml`):
