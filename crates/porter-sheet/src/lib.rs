@@ -12,6 +12,7 @@
 //! secret text from the sheet into the daemon (a typed password); nothing on that interface
 //! flows outward.
 
+mod edit;
 mod fields;
 mod group;
 pub mod host;
@@ -23,12 +24,13 @@ mod stage;
 mod view;
 pub mod words;
 
+pub use edit::{EditServers, EditedServers, ServersFixed, servers_editable, servers_fixed};
 pub use fields::{Entry, FieldAnswer, FieldKind, FieldSpec, FieldValue, Presence, first_missing};
 pub use group::ProviderGroup;
 pub use input::SheetInput;
 pub use manual::{
-    Hop, JmapServer, MailServers, Manual, Protocol, Security, form_problem, form_problem_among,
-    manual_form, parse_manual, refit,
+    Hop, JmapServer, MailServers, Manual, Protocol, Security, edit_form, form_problem,
+    form_problem_among, manual_form, parse_manual, refit,
 };
 pub use mark::{MarkColour, MarkFace, MarkFaceError, MarkLetter};
 pub use progress::{

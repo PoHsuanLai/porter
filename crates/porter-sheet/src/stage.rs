@@ -5,13 +5,14 @@
 //! machine, which this one replaces.
 
 use super::input::SheetInput;
+use super::manual::{Manual, edit_form};
 use super::progress::{Progress, Review, SignInFault, SignInInput, UserCode};
 use super::view::{FieldProblem, ProviderRow, ReviewView, SheetView, SignInView};
 use porter_capability::KindToggle;
 use porter_core::AppId;
 use porter_core::EndpointUrl;
 use porter_core::ProviderHint;
-use porter_core::{AccountId, ProviderId};
+use porter_core::{AccountId, AuthKind, ProviderId};
 use porter_ids::WebUrl;
 use porter_tailscale::Machine;
 
@@ -41,6 +42,21 @@ pub enum Purpose {
         account: AccountId,
         /// Its provider.
         provider: ProviderId,
+    },
+    /// Edit an existing account's servers: the server form of its protocol, prefilled from
+    /// `current`, tried before the host is asked to keep anything. Only for an account whose
+    /// sign-in is a password (`servers_editable`); the host asks that before it opens the sheet.
+    EditServers {
+        /// The account.
+        account: AccountId,
+        /// Its provider.
+        provider: ProviderId,
+        /// How it signs in: whether the password is asked as an app password.
+        auth: AuthKind,
+        /// Its servers as they are.
+        current: Manual,
+        /// The name shown in From to prefill, when the form asks for one.
+        name: Option<String>,
     },
 }
 
@@ -92,7 +108,18 @@ pub enum Stage {
         /// What was found.
         review: Review,
     },
-    /// The account is stored.
+    /// The servers of an edit were sent and are being tried; the form is kept, to be asked again
+    /// with a field marked if they do not pass.
+    Checking {
+        /// The provider.
+        provider: ProviderId,
+        /// The form as sent, its answers the prefills.
+        fields: Vec<super::fields::FieldSpec>,
+        /// The field a refused credential is about: the token when one was typed, else the
+        /// password.
+        credential: super::fields::FieldKind,
+    },
+    /// The account is stored (or, for an edit, handed back).
     Added,
     /// It ended without an account; the person may retry or go back.
     Failed {
@@ -136,7 +163,7 @@ pub enum SheetEvent {
 /// How the sheet ended.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SheetEnd {
-    /// An account was added (or signed in again).
+    /// An account was added, signed in again, or had its servers edited.
     Added,
     /// The person closed it.
     Dismissed,
@@ -164,7 +191,8 @@ pub enum SheetEffect {
 
 impl Sheet {
     /// The sheet as first shown: the provider list, or, where the provider is already known (a
-    /// hint, a re-sign-in), working on it until the sign-in says what it needs.
+    /// hint, a re-sign-in), working on it until the sign-in says what it needs. An edit of an
+    /// account's servers opens on its form, prefilled (`edit_form`).
     pub fn new(purpose: Purpose, providers: Vec<ProviderRow>) -> Self {
         let stage = match &purpose {
             Purpose::Add {
@@ -177,6 +205,17 @@ impl Sheet {
                 hint: ProviderHint::Any,
                 ..
             } => Stage::Choosing(providers.clone()),
+            Purpose::EditServers {
+                provider,
+                auth,
+                current,
+                name,
+                ..
+            } => Stage::Asking {
+                provider: provider.clone(),
+                fields: edit_form(*auth, current, name.as_deref()),
+                problem: None,
+            },
         };
         Self {
             purpose,
@@ -204,7 +243,9 @@ impl Sheet {
         let row = |provider: &ProviderId| self.row_of(provider);
         let allow = match &self.purpose {
             Purpose::Add { allow, .. } => allow.clone(),
-            Purpose::Reauthenticate { .. } | Purpose::Extend { .. } => None,
+            Purpose::Reauthenticate { .. }
+            | Purpose::Extend { .. }
+            | Purpose::EditServers { .. } => None,
         };
         match &self.stage {
             Stage::Choosing(rows) => SheetView::Providers(rows.clone()),
@@ -218,7 +259,9 @@ impl Sheet {
                 fields: fields.clone(),
                 problem: *problem,
             }),
-            Stage::Working(provider) | Stage::Confirming { provider, .. } => SheetView::Working {
+            Stage::Working(provider)
+            | Stage::Confirming { provider, .. }
+            | Stage::Checking { provider, .. } => SheetView::Working {
                 provider: provider.clone(),
                 row: row(provider),
             },
@@ -259,6 +302,8 @@ pub fn step(sheet: Sheet, event: SheetEvent) -> (Sheet, Vec<SheetEffect>) {
     machine::step(sheet, event)
 }
 
+#[cfg(test)]
+mod edit_tests;
 mod machine;
 #[cfg(test)]
 mod machine_tests;

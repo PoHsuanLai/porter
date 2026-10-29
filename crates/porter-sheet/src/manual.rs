@@ -21,7 +21,7 @@ use super::fields::{
     Entry, FieldAnswer, FieldKind, FieldSpec, FieldValue, Presence, first_missing,
 };
 use super::view::{FieldProblem, ProblemKind};
-use porter_core::SecretText;
+use porter_core::{AuthKind, SecretText};
 use porter_core::{EndpointUrl, server_address, server_address_shape};
 use porter_ids::UrlScheme;
 use porter_ids::word::{from_word, word};
@@ -133,6 +133,15 @@ pub enum Manual {
 }
 
 impl Manual {
+    /// How the server speaks.
+    pub fn protocol(&self) -> Protocol {
+        match self {
+            Manual::Imap(_) => Protocol::Imap,
+            Manual::Pop3(_) => Protocol::Pop3,
+            Manual::Jmap(_) => Protocol::Jmap,
+        }
+    }
+
     /// The login name typed, when the person gave one.
     pub fn login(&self) -> Option<&str> {
         match self {
@@ -240,6 +249,81 @@ pub fn manual_form(protocol: Protocol, domain: Option<&str>) -> Vec<FieldSpec> {
     fields
 }
 
+/// The fields of the server form, of every protocol: what [`refit`] rebuilds. Any other field of
+/// a form (the name shown in From, a password) is carried as it is.
+const MANUAL_KINDS: [FieldKind; 10] = [
+    FieldKind::Protocol,
+    FieldKind::Server,
+    FieldKind::Security,
+    FieldKind::Port,
+    FieldKind::OutgoingServer,
+    FieldKind::OutgoingSecurity,
+    FieldKind::OutgoingPort,
+    FieldKind::SessionUrl,
+    FieldKind::Token,
+    FieldKind::Username,
+];
+
+/// The form that edits an account's servers, prefilled from `current`: the name shown in From
+/// first when `name` asks for one, then the server form of the account's protocol with its
+/// hosts, ports, security, login name and session URL, then an optional password (an app
+/// password for an account that signs in by one). Nothing secret is prefilled: an empty password
+/// or token keeps the one the account has. The protocol stays the account's own
+/// ([`parse_as`]).
+pub fn edit_form(auth: AuthKind, current: &Manual, name: Option<&str>) -> Vec<FieldSpec> {
+    let mut fields = Vec::new();
+    if let Some(name) = name {
+        fields.push(spec(
+            FieldKind::Name,
+            Presence::Optional,
+            Some(name.to_owned()).filter(|n| !n.is_empty()),
+        ));
+    }
+    let hop_of = |kind: FieldKind| match (current, kind) {
+        (
+            Manual::Imap(m) | Manual::Pop3(m),
+            FieldKind::Server | FieldKind::Security | FieldKind::Port,
+        ) => Some(&m.incoming),
+        (Manual::Imap(m) | Manual::Pop3(m), _) => Some(&m.outgoing),
+        (Manual::Jmap(_), _) => None,
+    };
+    fields.extend(
+        manual_form(current.protocol(), None)
+            .into_iter()
+            .map(|mut field| {
+                field.prefill = match field.kind {
+                    FieldKind::Protocol => Some(word(&current.protocol()).to_owned()),
+                    FieldKind::Server | FieldKind::OutgoingServer => {
+                        hop_of(field.kind).map(|h| h.host.clone())
+                    }
+                    FieldKind::Security | FieldKind::OutgoingSecurity => {
+                        hop_of(field.kind).map(|h| h.security.slug().to_owned())
+                    }
+                    FieldKind::Port | FieldKind::OutgoingPort => {
+                        hop_of(field.kind).map(|h| h.port.to_string())
+                    }
+                    FieldKind::SessionUrl => match current {
+                        Manual::Jmap(j) => Some(j.session.as_str().to_owned()),
+                        _ => None,
+                    },
+                    FieldKind::Username => current.login().map(str::to_owned),
+                    _ => None,
+                };
+                field
+            }),
+    );
+    fields.push(FieldSpec {
+        kind: match auth {
+            AuthKind::AppPassword => FieldKind::AppPassword,
+            _ => FieldKind::Password,
+        },
+        entry: Entry::Secret,
+        presence: Presence::Optional,
+        prefill: None,
+    });
+    fields
+}
+
 fn text(answers: &[FieldAnswer], kind: FieldKind) -> Option<String> {
     answers
         .iter()
@@ -331,7 +415,19 @@ fn refit_in(fields: &[FieldSpec], answers: &[FieldAnswer], choices: &[&str]) -> 
         text(answers, kind).or(base).filter(|t| !t.is_empty())
     };
     let domain = domain_hint(fields);
-    manual_form(protocol, domain.as_deref())
+    // The fields the server form does not make stay where they were, before or after it.
+    let at = fields
+        .iter()
+        .position(|f| f.kind == FieldKind::Protocol)
+        .unwrap_or(0);
+    let carried = |part: &[FieldSpec]| -> Vec<FieldSpec> {
+        part.iter()
+            .filter(|f| !MANUAL_KINDS.contains(&f.kind))
+            .map(|f| carry(f, answers))
+            .collect()
+    };
+    let (before, after) = (carried(&fields[..at]), carried(&fields[at..]));
+    let rebuilt = manual_form(protocol, domain.as_deref())
         .into_iter()
         .map(|mut field| {
             let original = fields.iter().find(|f| f.kind == field.kind);
@@ -365,8 +461,23 @@ fn refit_in(fields: &[FieldSpec], answers: &[FieldAnswer], choices: &[&str]) -> 
                 _ => kept(field.kind, base),
             };
             field
-        })
-        .collect()
+        });
+    before.into_iter().chain(rebuilt).chain(after).collect()
+}
+
+/// A field the server form does not make, as it is shown again: what was typed in it when it was
+/// answered (an emptied name stays empty), else as it was; a secret never.
+fn carry(field: &FieldSpec, answers: &[FieldAnswer]) -> FieldSpec {
+    let answered = answers.iter().any(|a| a.kind == field.kind);
+    let prefill = match (field.entry, answered) {
+        (Entry::Secret, _) => None,
+        (Entry::Plain, true) => text(answers, field.kind),
+        (Entry::Plain, false) => field.prefill.clone(),
+    };
+    FieldSpec {
+        prefill,
+        ..field.clone()
+    }
 }
 
 fn invalid(field: FieldKind) -> FieldProblem {
@@ -465,6 +576,28 @@ pub fn parse_manual(answers: &[FieldAnswer]) -> Result<Manual, FieldProblem> {
     parse_in(answers, PROTOCOL_CHOICES)
 }
 
+/// [`parse_manual`] that takes `protocol` and no other: an account's servers are edited in the
+/// protocol it speaks.
+pub(crate) fn parse_as(
+    answers: &[FieldAnswer],
+    protocol: Protocol,
+) -> Result<Manual, FieldProblem> {
+    let only = word(&protocol);
+    parse_in(answers, &[only])
+}
+
+/// The name shown in From, when one was typed: at most 256 characters, none of them a control
+/// character.
+pub(crate) fn display_name(answers: &[FieldAnswer]) -> Result<Option<String>, FieldProblem> {
+    match text(answers, FieldKind::Name) {
+        None => Ok(None),
+        Some(name) if name.chars().count() <= 256 && !name.chars().any(char::is_control) => {
+            Ok(Some(name))
+        }
+        Some(_) => Err(invalid(FieldKind::Name)),
+    }
+}
+
 fn parse_in(answers: &[FieldAnswer], choices: &[&str]) -> Result<Manual, FieldProblem> {
     let typed = text(answers, FieldKind::Protocol).ok_or(missing(FieldKind::Protocol))?;
     let protocol = Protocol::offered(&typed, choices).ok_or(invalid(FieldKind::Protocol))?;
@@ -525,6 +658,11 @@ fn problem_of(
 ) -> Option<FieldProblem> {
     if let Some(field) = first_missing(fields, answers) {
         return Some(missing(field));
+    }
+    if fields.iter().any(|f| f.kind == FieldKind::Name)
+        && let Err(problem) = display_name(answers)
+    {
+        return Some(problem);
     }
     if let Some(problem) = server_problem(fields, answers, own) {
         return Some(problem);
