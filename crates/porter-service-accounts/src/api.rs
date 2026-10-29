@@ -3,6 +3,7 @@
 use crate::Accounts;
 use crate::add_flow::SignInAs;
 use crate::add_store::AllowFor;
+use crate::edit::EditError;
 use crate::agent::AgentFault;
 use crate::launcher::Launchers;
 use crate::local::LocalFault;
@@ -13,6 +14,7 @@ use porter_core::{
 use porter_provider::RevokeOutcome;
 use porter_secrets::SecretsError;
 use porter_service_core::Ports;
+use porter_sheet::{EditServers, EditedServers};
 use porter_wire::{AccountsReply, ParentWindow, Refusal};
 use std::future::Future;
 
@@ -66,6 +68,26 @@ pub trait AccountsApi {
         account: &AccountId,
         window: ParentWindow,
     ) -> impl Future<Output = AccountsReply> + Send;
+
+    /// Opens the sheet on the server form of an existing password account, prefilled from
+    /// `edit`, and tries what the person types at the typed hosts: the incoming server, and the
+    /// outgoing one when it, the login name or the password changed. Nothing is stored; the
+    /// servers, the name and the new password come back in the [`EditedServers`] for the app that
+    /// asked to keep.
+    ///
+    /// The provider `edit` names must be one this service holds, and its sign-in must be a typed
+    /// password (`porter_sheet::servers_fixed`), whether or not the service holds the account.
+    /// No bearer token exists in the flow to send to a typed host.
+    ///
+    /// # Errors
+    /// `Fixed` for a provider whose servers are not typed, `NotThatProvider` for an account
+    /// held under another provider, `Refused` when the sheet ended without servers (`Dismissed`).
+    fn edit_servers(
+        &self,
+        caller: &AppId,
+        edit: EditServers,
+        window: ParentWindow,
+    ) -> impl Future<Output = Result<EditedServers, EditError>> + Send;
 
     /// Asks the person, in a sign-in of its own, for the access `account`'s provider asks only
     /// when it is first used (`ask = "on_use"`) for `kinds`: the whole of a drive, when the
@@ -239,6 +261,15 @@ impl<E: Ports> AccountsApi for Accounts<'_, E> {
         window: ParentWindow,
     ) -> impl Future<Output = Result<(), Refusal>> + Send {
         Accounts::extend_access(self, caller, account, kinds, window)
+    }
+
+    fn edit_servers(
+        &self,
+        caller: &AppId,
+        edit: EditServers,
+        window: ParentWindow,
+    ) -> impl Future<Output = Result<EditedServers, EditError>> + Send {
+        Accounts::edit_servers(self, caller, edit, window)
     }
 
     fn asks_on_use(&self, provider: &ProviderId, kind: CapabilityKind) -> bool {

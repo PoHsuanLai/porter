@@ -8,13 +8,14 @@
 
 use crate::Accounts;
 use crate::add_store::AllowFor;
+use crate::edit::EditError;
 use crate::launcher::{Roster, program_of_spec};
 use crate::race::{Raced, race};
 use porter_capability::CapabilityKind;
 use porter_capability::KindToggle;
 use porter_core::ProviderHint;
 use porter_core::{AccountId, ProviderId};
-use porter_core::{AppId, AuthKind, ServiceEndpoint};
+use porter_core::{AccountLabel, AppId, AuthKind, SecretText, ServiceEndpoint};
 use porter_provider::{
     ConsentHistory, LoginHint, Provider, ProviderError, ProviderSpec, Readiness, SignIn,
     SignInMode, SignInStart, SignInStep, Signed,
@@ -23,12 +24,13 @@ use porter_service_core::Ports;
 use porter_service_core::refusal::refusal_of;
 use porter_sheet::host::{SheetFault, SheetLink, SheetOpen, Sheets};
 use porter_sheet::{
-    Progress, ProviderRow, Purpose, RowKind, Sheet, SheetEffect, SheetEnd, SheetEvent, SignInFault,
-    SignInInput, Stage, step,
+    EditedServers, FieldAnswer, Manual, Progress, ProviderRow, Purpose, RowKind, Sheet,
+    SheetEffect, SheetEnd, SheetEvent, SignInFault, SignInInput, Stage, servers_fixed, step,
 };
 use porter_wire::AccountsReply;
 use porter_wire::{ParentWindow, Refusal};
 use std::collections::VecDeque;
+use std::future::Future;
 
 /// Who an add is for when the host already knows ("Continue as"): the provider the identity is
 /// with, the address its page opens on, and whether this client was signed in for that identity
@@ -56,38 +58,316 @@ impl SignInAs {
     }
 }
 
-/// What the sheet is for.
-pub(crate) enum Job {
-    /// A new account.
-    Add {
-        hint: ProviderHint,
-        allow: Option<AllowFor>,
-        identity: Option<SignInAs>,
-    },
-    /// The credential of an existing account again.
-    Reauthenticate {
-        account: AccountId,
-        provider: ProviderId,
-        /// The account's servers as stored, for the family to start from.
-        endpoints: Vec<ServiceEndpoint>,
-    },
-    /// The on-use access of `kinds` for an existing account, and a credential that holds it.
-    Extend {
-        account: AccountId,
-        provider: ProviderId,
-        /// The account's servers as stored: the family starts from them, and the answer must be
-        /// their login.
-        endpoints: Vec<ServiceEndpoint>,
-        kinds: Vec<CapabilityKind>,
-    },
+/// What the sheet is for: the part of a conversation that differs between a new account, a
+/// sign-in again, one more access and an edit of servers. The conversation around it
+/// ([`Accounts::drive`]) is the same for all; what each job stores, and what it ends with
+/// (`Done`), is its own, so an entry point holds exactly the result of its own job.
+///
+/// A default method says "this job cannot": it adds no account, names no identity, keeps no
+/// answers.
+pub(crate) trait Job: Sync {
+    /// What the conversation ends with when it ends well.
+    type Done: Send;
+
+    /// What the sheet is opened for, or why it cannot be. `listed` is the provider list as the
+    /// sheet would show it.
+    fn purpose<E: Ports>(
+        &self,
+        at: &Accounts<'_, E>,
+        caller: &AppId,
+        listed: &[ProviderRow],
+    ) -> Result<Purpose, Refusal>;
+
+    /// How the provider's sign-in is begun.
+    fn mode(&self) -> SignInMode;
+
+    /// Whether the sheet lists the providers to pick from.
+    fn lists_providers(&self) -> bool {
+        false
+    }
+
+    /// Whether this job makes a new account.
+    fn adds(&self) -> bool {
+        false
+    }
+
+    /// Who the sign-in is for and with which consent, when the host already knows.
+    fn identity(&self) -> Option<&SignInAs> {
+        None
+    }
+
+    /// The address to open the provider's page on, when the account says it.
+    fn hint(&self) -> Option<LoginHint> {
+        None
+    }
+
+    /// Whether the store step needs the answers the person typed.
+    fn wants_answers(&self) -> bool {
+        false
+    }
+
+    /// What the conversation ends with when the sign-in showed `held`, an account that was here
+    /// already; `None` for a job that makes no account.
+    fn there(held: AccountId) -> Option<Self::Done> {
+        let _ = held;
+        None
+    }
+
+    /// Stores what the sign-in produced, as this job says. `provider` is the one the sheet is
+    /// working on; `answers` are the last the person sent, when `wants_answers`.
+    fn store<E: Ports>(
+        &self,
+        at: &Accounts<'_, E>,
+        caller: &AppId,
+        provider: Option<&ProviderId>,
+        signed: &Signed,
+        answers: Option<&[FieldAnswer]>,
+        choices: &[KindToggle],
+    ) -> impl Future<Output = Result<Self::Done, ()>> + Send;
 }
 
-/// How a conversation ended well.
-enum Stored {
+/// A new account.
+pub(crate) struct Add {
+    pub(crate) hint: ProviderHint,
+    pub(crate) allow: Option<AllowFor>,
+    pub(crate) identity: Option<SignInAs>,
+}
+
+/// How an add ended well.
+pub(crate) enum AddDone {
     Added(AccountId),
-    Reauthenticated,
     /// Nothing stored: the sign-in showed this account, which was already here.
     AlreadyThere(AccountId),
+}
+
+impl Job for Add {
+    type Done = AddDone;
+
+    fn purpose<E: Ports>(
+        &self,
+        at: &Accounts<'_, E>,
+        caller: &AppId,
+        listed: &[ProviderRow],
+    ) -> Result<Purpose, Refusal> {
+        if let ProviderHint::Provider(id) = &self.hint
+            && !listed.iter().any(|row| row.id == *id)
+        {
+            // An agent asked for by name that has no launcher is told so.
+            let agent = at.ctx.provider_of(id).map(Provider::spec);
+            return Err(match agent {
+                Some(spec) if launcherless(spec, at.state.roster.get()) => Refusal::NoLauncher,
+                _ => Refusal::Unavailable,
+            });
+        }
+        Ok(Purpose::Add {
+            hint: self.hint.clone(),
+            allow: self.allow.as_ref().map(|_| caller.clone()),
+        })
+    }
+
+    fn mode(&self) -> SignInMode {
+        SignInMode::Add
+    }
+
+    fn lists_providers(&self) -> bool {
+        true
+    }
+
+    fn adds(&self) -> bool {
+        true
+    }
+
+    fn identity(&self) -> Option<&SignInAs> {
+        self.identity.as_ref()
+    }
+
+    fn there(held: AccountId) -> Option<AddDone> {
+        Some(AddDone::AlreadyThere(held))
+    }
+
+    async fn store<E: Ports>(
+        &self,
+        at: &Accounts<'_, E>,
+        caller: &AppId,
+        provider: Option<&ProviderId>,
+        signed: &Signed,
+        _answers: Option<&[FieldAnswer]>,
+        choices: &[KindToggle],
+    ) -> Result<AddDone, ()> {
+        let spec = provider
+            .and_then(|id| at.ctx.provider_of(id))
+            .map(|provider| provider.spec().clone())
+            .ok_or(())?;
+        at.store_new(caller, &spec, signed, choices, self.allow.as_ref())
+            .await
+            .map(AddDone::Added)
+    }
+}
+
+/// The credential of an existing account again.
+pub(crate) struct Reauthenticate {
+    pub(crate) account: AccountId,
+    pub(crate) provider: ProviderId,
+    /// The account's servers as stored, for the family to start from.
+    pub(crate) endpoints: Vec<ServiceEndpoint>,
+}
+
+impl Job for Reauthenticate {
+    type Done = ();
+
+    fn purpose<E: Ports>(
+        &self,
+        _at: &Accounts<'_, E>,
+        _caller: &AppId,
+        _listed: &[ProviderRow],
+    ) -> Result<Purpose, Refusal> {
+        Ok(Purpose::Reauthenticate {
+            account: self.account.clone(),
+            provider: self.provider.clone(),
+        })
+    }
+
+    fn mode(&self) -> SignInMode {
+        SignInMode::Reauthenticate {
+            account: self.account.clone(),
+            endpoints: self.endpoints.clone(),
+        }
+    }
+
+    async fn store<E: Ports>(
+        &self,
+        at: &Accounts<'_, E>,
+        caller: &AppId,
+        _provider: Option<&ProviderId>,
+        signed: &Signed,
+        _answers: Option<&[FieldAnswer]>,
+        _choices: &[KindToggle],
+    ) -> Result<(), ()> {
+        at.store_renewed(caller, &self.account, signed).await
+    }
+}
+
+/// The on-use access of `kinds` for an existing account, and a credential that holds it.
+pub(crate) struct Extend {
+    pub(crate) account: AccountId,
+    pub(crate) provider: ProviderId,
+    /// The account's servers as stored: the family starts from them, and the answer must be
+    /// their login.
+    pub(crate) endpoints: Vec<ServiceEndpoint>,
+    pub(crate) kinds: Vec<CapabilityKind>,
+}
+
+impl Job for Extend {
+    type Done = ();
+
+    fn purpose<E: Ports>(
+        &self,
+        _at: &Accounts<'_, E>,
+        _caller: &AppId,
+        _listed: &[ProviderRow],
+    ) -> Result<Purpose, Refusal> {
+        Ok(Purpose::Extend {
+            account: self.account.clone(),
+            provider: self.provider.clone(),
+        })
+    }
+
+    fn mode(&self) -> SignInMode {
+        SignInMode::Extend {
+            account: self.account.clone(),
+            endpoints: self.endpoints.clone(),
+            kinds: self.kinds.clone(),
+        }
+    }
+
+    /// The page opens on the account's own address: the answer must be that person.
+    fn hint(&self) -> Option<LoginHint> {
+        login_hint_of(&self.endpoints)
+    }
+
+    async fn store<E: Ports>(
+        &self,
+        at: &Accounts<'_, E>,
+        caller: &AppId,
+        _provider: Option<&ProviderId>,
+        signed: &Signed,
+        _answers: Option<&[FieldAnswer]>,
+        _choices: &[KindToggle],
+    ) -> Result<(), ()> {
+        let given: Vec<porter_capability::Capability> = at
+            .ctx
+            .catalog()
+            .get(&self.provider)
+            .map(|spec| {
+                self.kinds
+                    .iter()
+                    .flat_map(|kind| spec.on_use_rows(*kind))
+                    .map(|row| row.capability.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+        at.store_extended(caller, &self.account, signed, &given)
+            .await
+    }
+}
+
+/// An existing password account's servers, tried at the typed hosts and handed back: nothing is
+/// stored here, the step that stores is the one that returns what was checked.
+pub(crate) struct EditServers {
+    pub(crate) account: AccountId,
+    pub(crate) provider: ProviderId,
+    pub(crate) auth: AuthKind,
+    pub(crate) label: AccountLabel,
+    pub(crate) current: Manual,
+    pub(crate) name: Option<String>,
+    pub(crate) keep: Option<SecretText>,
+}
+
+impl Job for EditServers {
+    type Done = EditedServers;
+
+    fn purpose<E: Ports>(
+        &self,
+        _at: &Accounts<'_, E>,
+        _caller: &AppId,
+        _listed: &[ProviderRow],
+    ) -> Result<Purpose, Refusal> {
+        Ok(Purpose::EditServers {
+            account: self.account.clone(),
+            provider: self.provider.clone(),
+            auth: self.auth,
+            current: self.current.clone(),
+            name: self.name.clone(),
+        })
+    }
+
+    fn mode(&self) -> SignInMode {
+        SignInMode::EditServers {
+            account: self.account.clone(),
+            auth: self.auth,
+            label: self.label.clone(),
+            current: self.current.clone(),
+            name: self.name.clone(),
+            keep: self.keep.clone(),
+        }
+    }
+
+    fn wants_answers(&self) -> bool {
+        true
+    }
+
+    async fn store<E: Ports>(
+        &self,
+        _at: &Accounts<'_, E>,
+        _caller: &AppId,
+        _provider: Option<&ProviderId>,
+        signed: &Signed,
+        answers: Option<&[FieldAnswer]>,
+        _choices: &[KindToggle],
+    ) -> Result<EditedServers, ()> {
+        let answers = answers.ok_or(())?;
+        EditedServers::from_answers(answers, signed.endpoints.clone()).map_err(|_| ())
+    }
 }
 
 /// A sign-in that fails before it starts or answers.
@@ -152,17 +432,22 @@ fn unlisted(spec: &ProviderSpec) -> bool {
 }
 
 /// The conversation's own state: the sign-in in flight and what it produced.
-struct Run<S> {
+struct Run<S, D> {
     signin: Option<S>,
     signed: Option<Signed>,
     /// Whether the sign-in is to be polled while the sheet is idle.
     polling: bool,
     /// Who the sign-in is for and with which consent history: what a retry changes.
     identity: Option<SignInAs>,
-    stored: Option<Stored>,
+    stored: Option<D>,
+    /// The last answers the person sent, for a job that stores from them.
+    answers: Option<Vec<FieldAnswer>>,
     /// The account the sign-in showed again, when it ended `AlreadyAdded`.
     already: Option<AccountId>,
 }
+
+/// The run of a job `J` over provider `E::Provider`.
+type RunOf<E, J> = Run<<<E as Ports>::Provider as Provider>::SignIn, <J as Job>::Done>;
 
 impl<E: Ports> Accounts<'_, E> {
     /// Opens the add-account sheet, drives the sign-in through it, and answers `Added` with the
@@ -175,16 +460,15 @@ impl<E: Ports> Accounts<'_, E> {
         allow: Option<AllowFor>,
         identity: Option<SignInAs>,
     ) -> AccountsReply {
-        let job = Job::Add {
+        let job = Add {
             hint,
             allow,
             identity,
         };
-        match self.drive(caller, window, &job).await {
-            Ok(Stored::Added(id)) => AccountsReply::Added(id),
+        match Box::pin(self.drive(caller, window, &job)).await {
+            Ok(AddDone::Added(id)) => AccountsReply::Added(id),
             // The app is told which account it is, and may ask for a grant of it.
-            Ok(Stored::AlreadyThere(id)) => AccountsReply::AlreadyAdded(id),
-            Ok(Stored::Reauthenticated) => AccountsReply::Refused(Refusal::Unavailable),
+            Ok(AddDone::AlreadyThere(id)) => AccountsReply::AlreadyAdded(id),
             Err(refusal) => AccountsReply::Refused(refusal),
         }
     }
@@ -211,17 +495,13 @@ impl<E: Ports> Accounts<'_, E> {
         if kinds.is_empty() || !asks {
             return Err(Refusal::Unavailable);
         }
-        let job = Job::Extend {
+        let job = Extend {
             account: account.clone(),
             provider,
             endpoints,
             kinds,
         };
-        match self.drive(caller, window, &job).await {
-            Ok(Stored::Reauthenticated) => Ok(()),
-            Ok(Stored::Added(_) | Stored::AlreadyThere(_)) => Err(Refusal::Unavailable),
-            Err(refusal) => Err(refusal),
-        }
+        Box::pin(self.drive(caller, window, &job)).await
     }
 
     /// Runs the sign-in again for `account` and replaces its credential. Without `any_account`
@@ -243,26 +523,24 @@ impl<E: Ports> Accounts<'_, E> {
                 _ => return AccountsReply::Refused(Refusal::UnknownGrant),
             }
         };
-        let job = Job::Reauthenticate {
+        let job = Reauthenticate {
             account: account.clone(),
             provider,
             endpoints,
         };
-        match self.drive(caller, window, &job).await {
-            Ok(Stored::Reauthenticated) => AccountsReply::Reauthenticated,
-            Ok(Stored::Added(_) | Stored::AlreadyThere(_)) => {
-                AccountsReply::Refused(Refusal::Unavailable)
-            }
+        match Box::pin(self.drive(caller, window, &job)).await {
+            Ok(()) => AccountsReply::Reauthenticated,
             Err(refusal) => AccountsReply::Refused(refusal),
         }
     }
 
-    async fn drive(
+    /// Opens the sheet `job` is for and drives its sign-in through it, to what the job stores.
+    pub(crate) async fn drive<J: Job>(
         &self,
         caller: &AppId,
         window: ParentWindow,
-        job: &Job,
-    ) -> Result<Stored, Refusal> {
+        job: &J,
+    ) -> Result<J::Done, Refusal> {
         let rows = ordered(
             self.ctx
                 .providers()
@@ -271,41 +549,10 @@ impl<E: Ports> Accounts<'_, E> {
                 .map(|provider| provider.spec().sheet_row())
                 .collect(),
         );
-        let purpose = match job {
-            Job::Add { hint, allow, .. } => {
-                if let ProviderHint::Provider(id) = hint
-                    && !rows.iter().any(|row| row.id == *id)
-                {
-                    // An agent asked for by name that has no launcher is told so.
-                    let agent = self.ctx.provider_of(id).map(Provider::spec);
-                    return Err(match agent {
-                        Some(spec) if launcherless(spec, self.state.roster.get()) => {
-                            Refusal::NoLauncher
-                        }
-                        _ => Refusal::Unavailable,
-                    });
-                }
-                Purpose::Add {
-                    hint: hint.clone(),
-                    allow: allow.as_ref().map(|_| caller.clone()),
-                }
-            }
-            Job::Reauthenticate {
-                account, provider, ..
-            } => Purpose::Reauthenticate {
-                account: account.clone(),
-                provider: provider.clone(),
-            },
-            Job::Extend {
-                account, provider, ..
-            } => Purpose::Extend {
-                account: account.clone(),
-                provider: provider.clone(),
-            },
-        };
-        let rows = match job {
-            Job::Add { .. } => rows,
-            Job::Reauthenticate { .. } | Job::Extend { .. } => Vec::new(),
+        let purpose = job.purpose(self, caller, &rows)?;
+        let rows = match job.lists_providers() {
+            true => rows,
+            false => Vec::new(),
         };
         let own = match self.state.own_machines.get() {
             Some(machines) => machines.read().await,
@@ -321,19 +568,20 @@ impl<E: Ports> Accounts<'_, E> {
             })
             .await
             .map_err(left)?;
-        let mut run = Run {
+        let mut run: RunOf<E, J> = Run {
             signin: None,
             signed: None,
             polling: false,
-            identity: match job {
-                Job::Add { identity, .. } => identity.clone(),
-                Job::Reauthenticate { .. } | Job::Extend { .. } => None,
-            },
+            identity: job.identity().cloned(),
             stored: None,
+            answers: None,
             already: None,
         };
         let mut queue = VecDeque::new();
-        if matches!(sheet.stage, Stage::Working(_)) {
+        // An edit opens on its form, and its sign-in is begun behind it.
+        if matches!(sheet.stage, Stage::Working(_))
+            || matches!(sheet.purpose, Purpose::EditServers { .. })
+        {
             queue.push_back(SheetEffect::Feed(SignInInput::Start));
         }
         loop {
@@ -354,7 +602,7 @@ impl<E: Ports> Accounts<'_, E> {
                         None
                     }
                     SheetEffect::Close(end) => {
-                        return finish(end, run.stored.take(), run.already.take());
+                        return finish::<J>(end, run.stored.take(), run.already.take());
                     }
                 };
                 if let Some(event) = event {
@@ -372,12 +620,12 @@ impl<E: Ports> Accounts<'_, E> {
 
     /// The next thing to tell the machine: what the person did or, while the sign-in is being
     /// polled, what the poll found, whichever comes first.
-    async fn wait<L: SheetLink>(
+    async fn wait<J: Job, L: SheetLink>(
         &self,
         link: &mut L,
         sheet: &Sheet,
-        job: &Job,
-        run: &mut Run<<E::Provider as Provider>::SignIn>,
+        job: &J,
+        run: &mut RunOf<E, J>,
     ) -> SheetEvent {
         let polled = match (run.polling, run.signin.as_mut()) {
             (true, Some(signin)) => {
@@ -395,17 +643,17 @@ impl<E: Ports> Accounts<'_, E> {
     /// What a sign-in's step is to the machine, after the one retry an identity's add owes: a
     /// sign-in that skipped the consent screen (`SignedInBefore`) and ended `Unreadable` (the
     /// provider handed back nothing to keep) starts again once as `FirstSignIn`.
-    async fn settled(
+    async fn settled<J: Job>(
         &self,
         sheet: &Sheet,
-        job: &Job,
-        run: &mut Run<<E::Provider as Provider>::SignIn>,
+        job: &J,
+        run: &mut RunOf<E, J>,
         step: SignInStep,
     ) -> SheetEvent {
-        let retried = match (&step, job, run.identity.take()) {
+        let retried = match (&step, job.adds(), run.identity.take()) {
             (
                 SignInStep::Failed(SignInFault::Unreadable),
-                Job::Add { .. },
+                true,
                 Some(SignInAs {
                     provider,
                     hint,
@@ -433,52 +681,30 @@ impl<E: Ports> Accounts<'_, E> {
     }
 
     /// Starts `provider`'s sign-in for `job`, as `identity` when the job is an add for one.
-    fn begin(
+    fn begin<J: Job>(
         &self,
         provider: &ProviderId,
-        job: &Job,
+        job: &J,
         identity: Option<&SignInAs>,
     ) -> Option<Result<<E::Provider as Provider>::SignIn, ProviderError>> {
         self.ctx.provider_of(provider).map(|provider| {
-            let start = SignInStart::new(match job {
-                Job::Add { .. } => SignInMode::Add,
-                Job::Reauthenticate {
-                    account, endpoints, ..
-                } => SignInMode::Reauthenticate {
-                    account: account.clone(),
-                    endpoints: endpoints.clone(),
-                },
-                Job::Extend {
-                    account,
-                    endpoints,
-                    kinds,
-                    ..
-                } => SignInMode::Extend {
-                    account: account.clone(),
-                    endpoints: endpoints.clone(),
-                    kinds: kinds.clone(),
-                },
-            });
-            provider.sign_in(match (identity, job) {
+            let start = SignInStart::new(job.mode());
+            provider.sign_in(match (identity, job.hint()) {
                 (Some(SignInAs { hint, history, .. }), _) => {
                     start.with_login_hint(hint.clone()).with_consent(*history)
                 }
-                // The page opens on the account's own address: the answer must be that person.
-                (None, Job::Extend { endpoints, .. }) => match login_hint_of(endpoints) {
-                    Some(hint) => start.with_login_hint(hint),
-                    None => start,
-                },
-                (None, _) => start,
+                (None, Some(hint)) => start.with_login_hint(hint),
+                (None, None) => start,
             })
         })
     }
 
     /// Hands the sign-in what the machine asked it to be told.
-    async fn feed(
+    async fn feed<J: Job>(
         &self,
         sheet: &Sheet,
-        job: &Job,
-        run: &mut Run<<E::Provider as Provider>::SignIn>,
+        job: &J,
+        run: &mut RunOf<E, J>,
         input: SignInInput,
     ) -> Option<SheetEvent> {
         match input {
@@ -496,13 +722,11 @@ impl<E: Ports> Accounts<'_, E> {
             }
             SignInInput::Start => {
                 run.polling = false;
-                let Stage::Working(id) = &sheet.stage else {
-                    return None;
-                };
+                let id = stage_provider(&sheet.stage)?;
                 // An agent signs itself in through its launcher: with none for its program there
                 // is nobody to do it, and no account is made to wait for one. The list leaves
                 // such an agent out; this is for a launcher that left after the list was drawn.
-                if matches!(job, Job::Add { .. })
+                if job.adds()
                     && let Some(spec) = self.ctx.provider_of(id).map(Provider::spec)
                     && launcherless(spec, self.state.roster.get())
                 {
@@ -528,13 +752,17 @@ impl<E: Ports> Accounts<'_, E> {
             }
             other => {
                 let signin = run.signin.as_mut()?;
+                if job.wants_answers()
+                    && let SignInInput::Fields(answers) = &other
+                {
+                    run.answers = Some(answers.clone());
+                }
                 let step = signin.next(other).await;
                 // The same login twice is not a second account: the sign-in ends here, at the
                 // review, and what is stored stays as it is.
-                if let (
-                    Job::Add { .. },
-                    Stage::Working(provider) | Stage::Confirming { provider, .. },
-                ) = (job, &sheet.stage)
+                if job.adds()
+                    && let Stage::Working(provider) | Stage::Confirming { provider, .. } =
+                        &sheet.stage
                     && let Some(held) = self.already_added(provider, &step)
                 {
                     run.already = Some(held);
@@ -551,60 +779,33 @@ impl<E: Ports> Accounts<'_, E> {
     }
 
     /// Stores what the sign-in produced, as the job says.
-    async fn store(
+    async fn store<J: Job>(
         &self,
         caller: &AppId,
-        job: &Job,
+        job: &J,
         sheet: &Sheet,
-        run: &mut Run<<E::Provider as Provider>::SignIn>,
+        run: &mut RunOf<E, J>,
         choices: &[KindToggle],
     ) -> SheetEvent {
         let Some(signed) = run.signed.take() else {
             return SheetEvent::StoreFailed;
         };
-        let stored = match job {
-            Job::Add { allow, .. } => {
-                let spec = stage_provider(&sheet.stage)
-                    .and_then(|id| self.ctx.provider_of(id))
-                    .map(|provider| provider.spec().clone());
-                match spec {
-                    Some(spec) => self
-                        .store_new(caller, &spec, &signed, choices, allow.as_ref())
-                        .await
-                        .map(Stored::Added),
-                    None => Err(()),
-                }
-            }
-            Job::Reauthenticate { account, .. } => self
-                .store_renewed(caller, account, &signed)
-                .await
-                .map(|()| Stored::Reauthenticated),
-            Job::Extend {
-                account,
-                provider,
-                kinds,
-                ..
-            } => {
-                let given: Vec<porter_capability::Capability> = self
-                    .ctx
-                    .catalog()
-                    .get(provider)
-                    .map(|spec| {
-                        kinds
-                            .iter()
-                            .flat_map(|kind| spec.on_use_rows(*kind))
-                            .map(|row| row.capability.clone())
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                self.store_extended(caller, account, &signed, &given)
-                    .await
-                    .map(|()| Stored::Reauthenticated)
-            }
-        };
+        let answers = run.answers.take();
+        // Boxed, like each entry point's call of `drive`: the futures of the four jobs, each
+        // generic over the service, are not laid out inside one another.
+        let provider = stage_provider(&sheet.stage);
+        let stored = Box::pin(job.store(
+            self,
+            caller,
+            provider,
+            &signed,
+            answers.as_deref(),
+            choices,
+        ))
+        .await;
         match stored {
-            Ok(stored) => {
-                run.stored = Some(stored);
+            Ok(done) => {
+                run.stored = Some(done);
                 SheetEvent::Stored
             }
             Err(()) => SheetEvent::StoreFailed,
@@ -613,18 +814,18 @@ impl<E: Ports> Accounts<'_, E> {
 }
 
 /// What a finished sheet answers.
-fn finish(
+fn finish<J: Job>(
     end: SheetEnd,
-    stored: Option<Stored>,
+    stored: Option<J::Done>,
     already: Option<AccountId>,
-) -> Result<Stored, Refusal> {
+) -> Result<J::Done, Refusal> {
     match (end, stored, already) {
         (SheetEnd::Added, Some(stored), _) => Ok(stored),
         (SheetEnd::Added, None, _) => Err(Refusal::Unavailable),
         (SheetEnd::Dismissed, _, _) => Err(Refusal::Dismissed),
         // The account is here already: the app is told which, not that it failed.
         (SheetEnd::Failed(SignInFault::AlreadyAdded), _, Some(held)) => {
-            Ok(Stored::AlreadyThere(held))
+            J::there(held).ok_or(Refusal::Unavailable)
         }
         (SheetEnd::Failed(fault), _, _) => Err(refusal_of(fault)),
     }
@@ -658,14 +859,17 @@ fn login_hint_of(endpoints: &[ServiceEndpoint]) -> Option<LoginHint> {
 /// The provider a sign-in under way is for.
 fn stage_provider(stage: &Stage) -> Option<&ProviderId> {
     match stage {
-        Stage::Working(provider) | Stage::Confirming { provider, .. } => Some(provider),
+        Stage::Working(provider)
+        | Stage::Confirming { provider, .. }
+        | Stage::Checking { provider, .. }
+        | Stage::Asking { provider, .. } => Some(provider),
         _ => None,
     }
 }
 
 /// What a sign-in's step is to the machine, keeping the credential here: `Done` leaves the
 /// signed account with the run and tells the machine only that it is done.
-fn said<S>(run: &mut Run<S>, step: SignInStep) -> SheetEvent {
+fn said<S, D>(run: &mut Run<S, D>, step: SignInStep) -> SheetEvent {
     match &step {
         SignInStep::Done(signed) => run.signed = Some(signed.clone()),
         SignInStep::OpenBrowser { .. } | SignInStep::ShowCode { .. } => run.polling = true,
@@ -681,6 +885,50 @@ impl<E: Ports> Accounts<'_, E> {
             .catalog()
             .get(provider)
             .is_some_and(|spec| spec.on_use_rows(kind).next().is_some())
+    }
+
+    /// See [`AccountsApi::edit_servers`](crate::AccountsApi::edit_servers).
+    pub(crate) async fn edit_servers(
+        &self,
+        caller: &AppId,
+        edit: porter_sheet::EditServers,
+        window: ParentWindow,
+    ) -> Result<EditedServers, EditError> {
+        let (account, provider, label, current, name, keep) = edit.into_parts();
+        // The provider the edit names decides, whether or not this service holds the account: its
+        // sign-in must be a typed password, whose servers the person may name.
+        let auth = self
+            .ctx
+            .catalog()
+            .get(&provider)
+            .map(|spec| spec.auth.kind)
+            .ok_or(EditError::Refused(Refusal::Unavailable))?;
+        if let Some(fixed) = servers_fixed(auth) {
+            return Err(EditError::Fixed(fixed));
+        }
+        // Where this service does hold the account, the provider named is its own.
+        let held = self
+            .ctx
+            .lock()
+            .accounts
+            .iter()
+            .find(|a| a.id == account)
+            .map(|a| a.provider.clone());
+        if held.is_some_and(|held| held != provider) {
+            return Err(EditError::NotThatProvider);
+        }
+        let job = EditServers {
+            account,
+            provider,
+            auth,
+            label,
+            current,
+            name,
+            keep,
+        };
+        Box::pin(self.drive(caller, window, &job))
+            .await
+            .map_err(EditError::Refused)
     }
 
     /// See [`AccountsApi::add_and_allow`](crate::AccountsApi::add_and_allow).

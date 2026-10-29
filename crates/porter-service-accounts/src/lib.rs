@@ -12,6 +12,7 @@
 mod add;
 mod add_flow;
 mod add_store;
+mod edit;
 mod agent;
 mod agent_login;
 mod api;
@@ -26,6 +27,7 @@ pub use add_flow::SignInAs;
 pub use add_store::AllowFor;
 pub use agent::AgentFault;
 pub use api::AccountsApi;
+pub use edit::EditError;
 pub use launcher::{Launchers, LoginEnd, NoLauncher, Roster, Waiting, program_of};
 pub use local::{LocalFault, MAX_LOCAL_CLAIMS};
 pub use own_machines::OwnMachines;
