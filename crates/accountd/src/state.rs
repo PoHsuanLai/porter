@@ -10,7 +10,7 @@ use porter_callers::{Caller, CallerRole};
 use porter_core::ProviderHint;
 use porter_core::ProviderId;
 use porter_families::set::ProviderNames;
-use porter_ids::clock::Clock;
+use porter_ids::clock::{Clock, Monotonic};
 use porter_sheets::{AppNames, RequestObjects};
 use porter_wire::{ParentWindow, Refusal};
 use std::collections::BTreeMap;
@@ -116,6 +116,8 @@ pub(crate) struct Core<H, C> {
     pub(crate) credentials: crate::launcher::Credentials,
     /// The time a property that says when a sign-in ends is read on.
     pub(crate) clock: Arc<dyn Clock>,
+    /// The monotonic clock the Spaces rate limit counts on.
+    pub(crate) monotonic: Arc<dyn Monotonic>,
     /// The served settings module, which announces an account's new state as `Changed`; set
     /// once the module is served.
     pub(crate) settings: OnceLock<ds_settings::live::Served>,

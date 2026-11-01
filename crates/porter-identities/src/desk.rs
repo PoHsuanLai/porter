@@ -38,12 +38,25 @@ pub trait IdentityDesk: std::fmt::Debug + Send + Sync + 'static {
 }
 
 /// The desk over the sheet host, the secret store, an audit sink and a clock.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SheetsDesk<U, S, A, K> {
     sheets: U,
     secrets: S,
     audit: A,
     clock: K,
+}
+
+// By hand, so a desk over a shared `Arc<dyn Clock>` (which says nothing of itself) still prints.
+impl<U: std::fmt::Debug, S: std::fmt::Debug, A: std::fmt::Debug, K> std::fmt::Debug
+    for SheetsDesk<U, S, A, K>
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SheetsDesk")
+            .field("sheets", &self.sheets)
+            .field("secrets", &self.secrets)
+            .field("audit", &self.audit)
+            .finish_non_exhaustive()
+    }
 }
 
 impl<U, S, A, K> SheetsDesk<U, S, A, K> {
@@ -64,7 +77,7 @@ where
     U: Sheets + std::fmt::Debug + 'static,
     S: Secrets + std::fmt::Debug + 'static,
     A: AuditSink + std::fmt::Debug + 'static,
-    K: Clock + std::fmt::Debug + 'static,
+    K: Clock + 'static,
 {
     fn pick<'a>(&'a self, ask: ConsentAsk, window: &'a ParentWindow) -> Boxed<'a, ConsentAnswer> {
         Box::pin(async move { self.sheets.consent(ask, window).await })

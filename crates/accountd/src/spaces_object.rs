@@ -27,7 +27,6 @@ use porter_service_core::audit::AuditEvent;
 use porter_spaces::{CREATES_PER_WINDOW, SpaceFault, SpacesApi};
 use porter_wire::names::SPACES_PATH;
 use std::sync::Arc;
-use std::time::Instant;
 use zbus::message::Header;
 use zbus::names::BusName;
 use zbus::object_server::SignalEmitter;
@@ -177,7 +176,7 @@ impl<H: Host, C: Callers> SpacesServer for SpacesObject<H, C> {
                 &caller.app.name,
                 name,
                 look,
-                (Instant::now(), self.0.clock.now()),
+                (self.0.monotonic.now(), self.0.clock.now()),
             )
             .await
             .map_err(fault)?;
@@ -216,7 +215,7 @@ impl<H: Host, C: Callers> SpacesServer for SpacesObject<H, C> {
                 id.clone(),
                 name,
                 look,
-                (Instant::now(), self.0.clock.now()),
+                (self.0.monotonic.now(), self.0.clock.now()),
             )
             .await
             .map_err(fault)?;

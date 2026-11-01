@@ -25,7 +25,7 @@ use porter_dbus::BusTarget;
 use porter_families::DynProvider;
 use porter_families::set::{FamilyIo, ProviderNames, load_specs, local_runtimes, served};
 use porter_identities::SheetsDesk;
-use porter_ids::clock::SystemClock;
+use porter_ids::clock::{Clock, SystemClock};
 use porter_provider::{Provider, ProviderSpec};
 use porter_secrets::Namespace;
 use porter_secrets::keysel::{AnyKeys, Chosen, KeysRefusal, Selection, select};
@@ -160,7 +160,7 @@ impl Families {
 /// Loads the provider files of `paths` and builds the family of each: the internet providers
 /// (identities and Tailscale), the AI services and the assistants. The local runtimes have no
 /// family and are reported by the probe.
-pub(crate) fn families_of(paths: &Paths) -> Families {
+pub(crate) fn families_of(paths: &Paths, clock: Arc<dyn Clock>) -> Families {
     let loaded = load_specs(&paths.provider_layers());
     for (file, why) in &loaded.skipped {
         eprintln!("accountd: skipped provider file {}: {why}", file.display());
@@ -169,7 +169,7 @@ pub(crate) fn families_of(paths: &Paths) -> Families {
     let io = FamilyIo::system(
         porter_provider::ProviderSet::layered(loaded.specs.clone(), Vec::new()),
         paths.client_files(),
-        Arc::new(porter_ids::clock::SystemClock),
+        clock,
     )
     .with_tailscale(tailscale(paths));
     let (families, unserved) = served(loaded.specs, &io);
@@ -264,13 +264,16 @@ impl Daemon {
         let secrets = chosen.keys;
         let old_secrets = Chosen::open(keys, old_namespace(), "accountd")?.keys;
         let table = load_callers(&paths.callers_system, &paths.callers_user)?;
+        // The one clock this daemon reads: the families, the service, the desk and the objects
+        // all date by it.
+        let clock: Arc<dyn Clock> = Arc::new(SystemClock);
 
         let Families {
             families,
             local,
             names: provider_names,
             ..
-        } = families_of(&paths);
+        } = families_of(&paths, Arc::clone(&clock));
         // The families read the clients files themselves (porter-oauth's registry); this names a
         // row of the person's own that tried to send a sign-in elsewhere (sec-4), whose endpoints
         // the registry sets aside.
@@ -297,6 +300,16 @@ impl Daemon {
             Err(why) => return Err(StartError::RegistryRefused(store.refusal(&why))),
         };
 
+        // Secrets no row names (an add that crashed between filing them and adding the row) go
+        // before anything is served. Real stores are only ever swept here, in the daemon.
+        porter_service_accounts::sweep_orphan_secrets(
+            &secrets,
+            &registry,
+            &FileAudit::new(paths.audit.clone()),
+            clock.as_ref(),
+        )
+        .await;
+
         let callers = Arc::new(match proc_root {
             #[cfg(feature = "test-proc-root")]
             Some(root) => {
@@ -311,10 +324,16 @@ impl Daemon {
         let sheets =
             BusSheets::new(connection.clone(), Arc::clone(&callers)).with_names(app_names.clone());
         let service = Arc::new(
-            AccountService::new(families, registry, secrets.clone(), sheets, SystemClock)
-                .with_local_runtimes(local)
-                .with_store(store)
-                .with_audit(FileAudit::new(paths.audit.clone())),
+            AccountService::new(
+                families,
+                registry,
+                secrets.clone(),
+                sheets,
+                Arc::clone(&clock),
+            )
+            .with_local_runtimes(local)
+            .with_store(store)
+            .with_audit(FileAudit::new(paths.audit.clone())),
         );
         // The picker of `Identities1.Offer` is the sheet host, and the password of
         // `TakePassword` is read from the same store.
@@ -322,13 +341,14 @@ impl Daemon {
             BusSheets::new(connection.clone(), Arc::clone(&callers)).with_names(app_names.clone()),
             secrets,
             FileAudit::new(paths.audit.clone()),
-            SystemClock,
+            Arc::clone(&clock),
         );
         let options = Options {
             clients: Some(paths.clients_user.clone()),
             app_names,
             provider_names,
-            clock: None,
+            clock: Some(Arc::clone(&clock)),
+            monotonic: None,
             // `spaces.json` beside `registry.json`.
             spaces: Some(paths.registry_dir.clone()),
             // Tailscale's own socket, `/var/run/tailscale/tailscaled.sock` unless `paths` names
@@ -340,6 +360,7 @@ impl Daemon {
             launchers: Some(crate::launcher::Launchers::new(
                 connection.clone(),
                 crate::launcher::LoginTiming::new()
+                    .with_clock(clock)
                     .with_audit(Arc::new(FileAudit::new(paths.audit.clone()))),
             )),
             // The platform's trusted roots.

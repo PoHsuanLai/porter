@@ -4,7 +4,7 @@
 
 use crate::UnixSeconds;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 /// The time now. Grants, audit entries, tombstones, sessions and anchors are dated through it;
 /// tests pass a fixed one.
@@ -50,6 +50,63 @@ impl Clock for FixedClock {
 
 impl<T: Clock + ?Sized> Clock for Arc<T> {
     fn now(&self) -> UnixSeconds {
+        (**self).now()
+    }
+}
+
+/// A monotonic reading, for what is paced rather than dated (a rate limit's window). It is a seam
+/// beside [`Clock`] so that a test moves it by hand.
+pub trait Monotonic: Send + Sync {
+    /// Now, on a clock that never goes back.
+    fn now(&self) -> Instant;
+}
+
+/// The system's monotonic clock.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SystemMonotonic;
+
+impl Monotonic for SystemMonotonic {
+    fn now(&self) -> Instant {
+        Instant::now()
+    }
+}
+
+/// A monotonic clock that stands still until a test moves it with [`ManualMonotonic::advance`].
+#[derive(Debug)]
+pub struct ManualMonotonic {
+    start: Instant,
+    moved: std::sync::Mutex<std::time::Duration>,
+}
+
+impl ManualMonotonic {
+    /// A clock standing at the moment it was made.
+    pub fn new() -> Self {
+        Self {
+            start: Instant::now(),
+            moved: std::sync::Mutex::default(),
+        }
+    }
+
+    /// Moves it on by `by`.
+    pub fn advance(&self, by: std::time::Duration) {
+        *self.moved.lock().unwrap_or_else(|p| p.into_inner()) += by;
+    }
+}
+
+impl Default for ManualMonotonic {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Monotonic for ManualMonotonic {
+    fn now(&self) -> Instant {
+        self.start + *self.moved.lock().unwrap_or_else(|p| p.into_inner())
+    }
+}
+
+impl<T: Monotonic + ?Sized> Monotonic for Arc<T> {
+    fn now(&self) -> Instant {
         (**self).now()
     }
 }

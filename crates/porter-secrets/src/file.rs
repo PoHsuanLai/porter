@@ -307,4 +307,21 @@ impl Secrets for FileSecrets {
             ((), items.len() != before)
         })?)
     }
+
+    async fn accounts_filed(&self) -> Result<Vec<AccountId>, SecretsError> {
+        let service = self.namespace.as_str();
+        let mut accounts: Vec<AccountId> = self.update(|items| {
+            (
+                items
+                    .iter()
+                    .filter(|item| item.service == service)
+                    .filter_map(|item| AccountId::parse(&item.account).ok())
+                    .collect(),
+                false,
+            )
+        })?;
+        accounts.sort();
+        accounts.dedup();
+        Ok(accounts)
+    }
 }

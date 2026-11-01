@@ -12,7 +12,7 @@ use porter_dbus::accounts::{
 };
 use porter_dbus::accounts::{ManagerServed, SpacesServed, TailnetServed};
 use porter_families::set::ProviderNames;
-use porter_ids::{clock::Clock, clock::SystemClock};
+use porter_ids::clock::{Clock, Monotonic, SystemClock, SystemMonotonic};
 use porter_sheets::{AppNames, RequestObjects};
 use porter_wire::names::{ACCOUNTS_BUS, ACCOUNTS_PATH};
 use std::collections::BTreeMap;
@@ -33,6 +33,8 @@ pub struct Options {
     pub provider_names: ProviderNames,
     /// The clock the `ReauthReason` property reads; none is the system's.
     pub clock: Option<Arc<dyn Clock>>,
+    /// The monotonic clock the Spaces rate limit counts its window on; none is the system's.
+    pub monotonic: Option<Arc<dyn Monotonic>>,
     /// The directory the desktop-wide Spaces are kept in (`spaces.json` in the registry's
     /// directory); none, the default, keeps them in memory only.
     pub spaces: Option<std::path::PathBuf>,
@@ -62,6 +64,7 @@ impl std::fmt::Debug for Options {
             .field("app_names", &self.app_names)
             .field("provider_names", &self.provider_names)
             .field("clock", &self.clock.as_ref().map(|_| "<injected>"))
+            .field("monotonic", &self.monotonic.as_ref().map(|_| "<injected>"))
             .field("spaces", &self.spaces)
             .field("tailnet", &self.tailnet)
             .field("uses", &self.uses)
@@ -117,6 +120,9 @@ pub async fn serve_with<H: Host, C: Callers>(
         app_names: options.app_names,
         provider_names: options.provider_names,
         clock,
+        monotonic: options
+            .monotonic
+            .unwrap_or_else(|| Arc::new(SystemMonotonic)),
         settings: OnceLock::new(),
         open_sheets: crate::open_sheets::OpenSheets::default(),
         requests: RequestObjects::new(

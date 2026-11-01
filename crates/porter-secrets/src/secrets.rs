@@ -54,4 +54,11 @@ pub trait Secrets: Send + Sync {
         &self,
         account: &AccountId,
     ) -> impl Future<Output = Result<(), SecretsError>> + Send;
+
+    /// The accounts this store holds at least one credential for, each once. A store that cannot
+    /// list its items answers none, so nothing is taken for an orphan; a caller that sweeps
+    /// treats an empty answer as "nothing to do".
+    fn accounts_filed(&self) -> impl Future<Output = Result<Vec<AccountId>, SecretsError>> + Send {
+        async { Ok(Vec::new()) }
+    }
 }

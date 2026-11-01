@@ -294,6 +294,25 @@ async fn an_app_making_too_many_spaces_at_once_is_held_back() {
     assert_eq!(made, CREATES_PER_WINDOW + 1);
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn the_creation_window_runs_on_the_injected_monotonic_clock() {
+    let clock = std::sync::Arc::new(porter_ids::clock::ManualMonotonic::new());
+    let rig = start(Options {
+        monotonic: Some(clock.clone()),
+        ..Options::default()
+    })
+    .await;
+    let app = spaces(&rig.client("org.example.Flood").await).await;
+    for n in 0..CREATES_PER_WINDOW {
+        app.create(&format!("Space {n}"), "").await.expect("create");
+    }
+    app.create("One more", "").await.expect_err("held back");
+    clock.advance(porter_spaces::CREATE_WINDOW);
+    app.create("After the window", "")
+        .await
+        .expect("allowed again");
+}
+
 /// D8: the compositor registers the id it minted for a workspace; registering it again (each
 /// start) answers success, tells no one and keeps the person's name. Only the compositor,
 /// Settings and the shell may register, and the compositor may do nothing else but list.

@@ -29,8 +29,7 @@ use porter_core::consent::Usage;
 use porter_core::store::RegistryStore;
 use porter_core::{AccountId, GrantId, ProviderId};
 use porter_core::{AppId, AppName, DataClass, Isolation};
-use porter_ids::clock::Clock;
-use porter_ids::clock::SystemClock;
+use porter_ids::clock::{Clock, SystemClock};
 use porter_provider::Provider;
 use porter_secrets::Namespace;
 use porter_secrets::Secrets;
@@ -41,6 +40,7 @@ use porter_wire::names::ACCOUNTS_BUS;
 use porter_wire::{AccountsReply, AccountsRequest};
 use porter_wire::{ParentWindow, Refusal};
 use std::collections::BTreeSet;
+use std::sync::Arc;
 use zbus::fdo::RequestNameReply;
 
 /// Every data class, for `--allow` without `--class`.
@@ -311,7 +311,8 @@ pub async fn add_account(
     let chosen = Chosen::open(keys, namespace, "accountd").map_err(StartError::from)?;
     eprintln!("{}", chosen.said);
     let args = AddArgs::parse(provider, allow, classes)?;
-    let families = families_of(&paths);
+    let clock: Arc<dyn Clock> = Arc::new(SystemClock);
+    let families = families_of(&paths, Arc::clone(&clock));
     let served = families.served_ids();
     // The lock. With no session bus no daemon can be reached either, so go on and say so.
     let session = bus.connect().await.ok();
@@ -330,7 +331,7 @@ pub async fn add_account(
         registry,
         chosen.keys,
         sheets.clone(),
-        SystemClock,
+        clock,
     )
     .with_store(store)
     .with_audit(FileAudit::new(paths.audit.clone()));

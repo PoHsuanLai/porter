@@ -60,4 +60,15 @@ impl Secrets for MemorySecrets {
         self.entries().retain(|key, _| key.account != *account);
         Ok(())
     }
+
+    async fn accounts_filed(&self) -> Result<Vec<AccountId>, SecretsError> {
+        let mut accounts: Vec<AccountId> = self
+            .entries()
+            .keys()
+            .map(|key| key.account.clone())
+            .collect();
+        accounts.sort();
+        accounts.dedup();
+        Ok(accounts)
+    }
 }

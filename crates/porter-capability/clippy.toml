@@ -1,0 +1,23 @@
+# CONVENTIONS.md section 4: nothing ambient below the daemons. The clock, the filesystem and the
+# monotonic clock are passed in (`porter_ids::clock::{Clock, Monotonic}`, `porter-fs`); only
+# accountd, porter-daemon and porter-fs read them. A crate with this file reads none of them.
+disallowed-methods = [
+    { path = "std::time::SystemTime::now", reason = "pass a `porter_ids::clock::Clock`" },
+    { path = "std::time::Instant::now", reason = "pass a `porter_ids::clock::Monotonic`" },
+    { path = "std::fs::read", reason = "file access belongs to porter-fs and the daemons" },
+    { path = "std::fs::read_to_string", reason = "file access belongs to porter-fs and the daemons" },
+    { path = "std::fs::read_dir", reason = "file access belongs to porter-fs and the daemons" },
+    { path = "std::fs::write", reason = "file access belongs to porter-fs and the daemons" },
+    { path = "std::fs::create_dir", reason = "file access belongs to porter-fs and the daemons" },
+    { path = "std::fs::create_dir_all", reason = "file access belongs to porter-fs and the daemons" },
+    { path = "std::fs::remove_file", reason = "file access belongs to porter-fs and the daemons" },
+    { path = "std::fs::remove_dir", reason = "file access belongs to porter-fs and the daemons" },
+    { path = "std::fs::remove_dir_all", reason = "file access belongs to porter-fs and the daemons" },
+    { path = "std::fs::rename", reason = "file access belongs to porter-fs and the daemons" },
+    { path = "std::fs::copy", reason = "file access belongs to porter-fs and the daemons" },
+    { path = "std::fs::metadata", reason = "file access belongs to porter-fs and the daemons" },
+    { path = "std::fs::canonicalize", reason = "file access belongs to porter-fs and the daemons" },
+    { path = "std::fs::hard_link", reason = "file access belongs to porter-fs and the daemons" },
+    { path = "std::fs::set_permissions", reason = "file access belongs to porter-fs and the daemons" },
+    { path = "std::fs::symlink_metadata", reason = "file access belongs to porter-fs and the daemons" },
+]

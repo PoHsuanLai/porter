@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Nothing ambient below the daemons
+
+- The Spaces rate limit counts its window on an injected `porter_ids::clock::Monotonic`
+  (`Options.monotonic`; none is the system's). accountd's daemon builds one `Clock` and hands it to
+  the families, the service, the identity desk, the launcher timing and `Options.clock`.
+- At start accountd removes the secrets filed for an account the registry does not name (what a
+  crash between filing an add's secrets and adding its row leaves), and records one
+  `AuditEvent::SecretsSwept` line for each. It sweeps nothing when the registry names no account.
+  `Secrets::accounts_filed` lists a store's accounts; a store that cannot answers none.
+- Eleven domain crates carry a `clippy.toml` that disallows `SystemTime::now`, `Instant::now` and
+  `std::fs::*`.
+
 ### One mapping per direction, one place for the toggles
 
 - A failed provider call becomes a sign-in fault in one place, `SignInFault::from(ProviderError)`
