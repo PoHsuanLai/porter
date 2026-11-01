@@ -6,7 +6,7 @@ use crate::Grants;
 use porter_core::consent::{
     Availability, ConsentAnswer, Grant, GrantScope, Usage, Verdict, availability,
 };
-use porter_core::{AccountId, GrantId};
+use porter_core::{AccountId, EndpointUrl, GrantId};
 use porter_core::{AppId, Candidate, DataClass, ProviderHint, SessionToken};
 use porter_ids::clock::Clock;
 use porter_match::Need;
@@ -218,15 +218,44 @@ impl<E: Ports> Grants<'_, E> {
 
     /// See [`GrantsApi::spend_once`](crate::GrantsApi::spend_once).
     pub(crate) async fn spend_once(&self, caller: &AppId, grant: &GrantId) -> Result<(), Refusal> {
+        self.spend(caller, grant, None).await
+    }
+
+    /// The use of `caller`'s `grant`, decided on the registry as it is now: `UnknownGrant` when
+    /// it is no longer held (revoked, or a `Once` one a faster use spent), otherwise a `Once`
+    /// grant is dropped. `opened` is the account and server of a relay this use opens: its
+    /// `ProxyOpened` line is written in the same transaction, so it is there exactly when the
+    /// use was granted.
+    pub(crate) async fn spend(
+        &self,
+        caller: &AppId,
+        grant: &GrantId,
+        opened: Option<(AccountId, EndpointUrl)>,
+    ) -> Result<(), Refusal> {
         self.ctx
             .transact(|registry| {
                 let once = registry
                     .grant_of(caller, grant)
-                    .is_some_and(|g| g.scope == GrantScope::Once);
+                    .ok_or(Refusal::UnknownGrant)?
+                    .scope
+                    == GrantScope::Once;
                 if once {
                     registry.grants.retain(|g| g.id != *grant);
                 }
-                Ok((Vec::new(), ()))
+                let lines = opened
+                    .map(|(account, endpoint)| {
+                        Audited::new(
+                            Some(caller.clone()),
+                            Some(account),
+                            AuditEvent::ProxyOpened {
+                                grant: grant.clone(),
+                                endpoint,
+                            },
+                        )
+                    })
+                    .into_iter()
+                    .collect();
+                Ok((lines, ()))
             })
             .await
             .map(|_| ())

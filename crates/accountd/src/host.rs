@@ -68,6 +68,19 @@ pub trait Host: Send + Sync + 'static {
         let _ = (app, event);
     }
 
+    /// Records the end of a relay (`AuditEvent::ProxyClosed`). A host with no audit records
+    /// nothing.
+    fn audit_relay_end(
+        &self,
+        app: &AppId,
+        account: Option<AccountId>,
+        grant: &porter_core::GrantId,
+        endpoint: &porter_core::EndpointUrl,
+        outcome: porter_service_core::audit::ProxyOutcome,
+    ) {
+        let _ = (app, account, grant, endpoint, outcome);
+    }
+
     /// Sets an account's state; whether it changed.
     fn set_state(&self, id: &AccountId, state: AccountState) -> impl Future<Output = bool> + Send {
         let _ = (id, state);
@@ -276,6 +289,24 @@ where
 
     fn audit_app(&self, app: &AppId, event: porter_service_core::audit::AuditEvent) {
         AccountService::audit_app(self, app.clone(), event);
+    }
+
+    fn audit_relay_end(
+        &self,
+        app: &AppId,
+        account: Option<AccountId>,
+        grant: &porter_core::GrantId,
+        endpoint: &porter_core::EndpointUrl,
+        outcome: porter_service_core::audit::ProxyOutcome,
+    ) {
+        AccountService::audit_relay_end(
+            self,
+            app.clone(),
+            account,
+            grant.clone(),
+            endpoint.clone(),
+            outcome,
+        );
     }
 
     async fn set_state(&self, id: &AccountId, state: AccountState) -> bool {
