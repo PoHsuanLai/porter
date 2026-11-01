@@ -85,7 +85,7 @@ where
     U: Sheets + std::fmt::Debug + 'static,
     S: Secrets + std::fmt::Debug + 'static,
     A: AuditSink + std::fmt::Debug + 'static,
-    K: Clock + std::fmt::Debug + 'static,
+    K: Clock + 'static,
 {
     fn pick<'a>(&'a self, ask: ConsentAsk, window: &'a ParentWindow) -> Boxed<'a, ConsentAnswer> {
         Box::pin(async move { self.sheets.consent(ask, window).await })
