@@ -10,19 +10,13 @@
 use crate::fault::RelayFault;
 use porter_core::{ReachMethods, RelayPlan};
 
-/// `%XX` escapes decoded to bytes; `None` for a malformed one (a `%` without two hex digits),
-/// which a server may read as it likes.
-fn decoded(text: &str) -> Option<Vec<u8>> {
-    porter_ids::percent::is_well_formed(text).then(|| porter_ids::percent::decode_bytes(text))
-}
-
 /// `path` decoded, when the server cannot read it as another path than the relay does.
 fn plain_path(path: &str) -> Option<Vec<u8>> {
     let lower = path.to_ascii_lowercase();
     if path.contains('\\') || ["%2f", "%5c", "%00"].iter().any(|e| lower.contains(e)) {
         return None;
     }
-    let bytes = decoded(path)?;
+    let bytes = porter_ids::percent::decode_checked(path)?;
     let dotted = bytes
         .split(|b| *b == b'/')
         .any(|segment| segment == b"." || segment == b"..");

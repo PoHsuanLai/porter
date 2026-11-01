@@ -43,6 +43,13 @@ pub fn decode_bytes(text: &str) -> Vec<u8> {
     percent_decode_str(text).collect()
 }
 
+/// [`decode_bytes`], or `None` for a malformed escape (a `%` without two hex digits), which a
+/// server may read as it likes. What a path rule decodes with before it compares.
+#[must_use]
+pub fn decode_checked(text: &str) -> Option<Vec<u8>> {
+    is_well_formed(text).then(|| decode_bytes(text))
+}
+
 /// [`decode_bytes`] as text; a byte sequence that is not UTF-8 becomes U+FFFD.
 #[must_use]
 pub fn decode(text: &str) -> String {
