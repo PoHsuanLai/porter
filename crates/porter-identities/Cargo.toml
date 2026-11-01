@@ -13,7 +13,7 @@ porter-service-core = { workspace = true }
 porter-sheet = { workspace = true }
 porter-core = { workspace = true }
 porter-ids = { workspace = true }
-porter-fs = { workspace = true }
+porter-fs = { workspace = true, features = ["book"] }
 porter-secrets = { workspace = true }
 porter-wire = { workspace = true }
 serde = { workspace = true }

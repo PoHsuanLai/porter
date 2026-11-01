@@ -17,6 +17,27 @@
   renewed and when a minted one is no longer reused; `porter_oauth` re-exports it. One
   `porter_ids::percent::decode_checked` serves both path-reach rules.
 
+### The clients are told once per change
+
+- accountd's news task takes each `Committed { before, after }` the service sends, in commit order
+  (`Host::follow_committed`, `Ctx::follow`), and tells the clients from it: it no longer holds a
+  copy of the registry to diff against, and `Options::saved`, `follow_saves` and `Core::publish`
+  are gone. The explicit calls after a change are gone with them; a reply that must follow its
+  own news waits on `Core::told`, which is no trigger. Signals and their counts are unchanged.
+- `Ctx::on_committed` and `AccountService::on_committed` still work and may be mixed with
+  `follow_committed`; every listener is told, in the order named.
+
+### `clients.toml` is kept like the other files
+
+- Settings writes `clients.toml` through `porter_fs::atomic::AtomicFile`, on the blocking pool: the
+  file it replaces is kept as `clients.toml.bak`, and two edits at once no longer lose one. A
+  `clients.toml` that does not parse is now refused (`RowRefused::Damaged`) and left as it is;
+  before, the edit replaced it with one row. The file is created owner-only (0600).
+- `SpaceBook` and `UseBook` save through one `porter_fs::book::commit` (feature `book`): the
+  document is written on the blocking pool and held only once it is on disk, and the
+  `Committed { before, after }` it returns is for the caller to pass on after the swap.
+- `AtomicFile::new` takes any name, and `AtomicFile::at(path)` makes one from a path.
+
 ### The registry is changed one way
 
 - `porter_service_core::Ctx::transact(decide)` is the only way the registry changes. It takes the

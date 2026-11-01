@@ -13,6 +13,7 @@ use porter_provider::{Provider, RevokeOutcome};
 use porter_secrets::{Secrets, SecretsError};
 use porter_service::AccountService;
 use porter_service_accounts::{AgentFault, Launchers, LocalFault, Roster};
+use porter_service_core::Committed;
 use porter_service_core::audit::AuditSink;
 use porter_service_core::registry::Registry;
 use porter_sheet::host::Sheets;
@@ -244,6 +245,10 @@ pub trait Host: Send + Sync + 'static {
     /// Tells the host which agent programs have a launcher, so that adding an agent account
     /// with none ends in `NoLauncher`.
     fn use_launcher_roster(&self, roster: Roster);
+
+    /// Has `told` called with each change of the registry once it is saved and swapped in, in
+    /// the order the changes were made: how accountd hears of them. It must not wait.
+    fn follow_committed(&self, told: Box<dyn Fn(Committed) + Send + Sync>);
 }
 
 impl<P, S, U, K, R, A> Host for AccountService<P, S, U, K, R, A>
@@ -488,5 +493,9 @@ where
 
     fn use_launcher_roster(&self, roster: Roster) {
         AccountService::set_launcher_roster(self, roster);
+    }
+
+    fn follow_committed(&self, told: Box<dyn Fn(Committed) + Send + Sync>) {
+        AccountService::follow_committed(self, told);
     }
 }

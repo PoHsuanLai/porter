@@ -21,11 +21,14 @@ pub enum RowEdit<'a> {
 pub enum RowRefused {
     /// A secret for an issuer with no row: a row needs its client id first.
     NoKey,
+    /// The file as it is does not parse, so it is left as it is for the person to mend; an edit
+    /// would drop what they wrote.
+    Damaged(String),
     /// The result would not be a valid clients file.
     Unwritable(String),
 }
 
-/// `text` (the file as it is; empty or damaged reads as no rows) with `edit` made to the row of
+/// `text` (the file as it is; empty reads as no rows, a damaged one is refused) with `edit` made to the row of
 /// `issuer` on `channel`. A new row for Google says `testing = true`: a person's own Google
 /// client is in testing until Google verifies it, which is what makes porter say why Google
 /// signs the account out after seven days.
@@ -35,7 +38,7 @@ pub fn edited(
     channel: ClientChannel,
     edit: RowEdit<'_>,
 ) -> Result<String, RowRefused> {
-    let mut doc: Table = toml::from_str(text).unwrap_or_default();
+    let mut doc: Table = toml::from_str(text).map_err(|e| RowRefused::Damaged(e.to_string()))?;
     let (issuer_slug, channel_slug) = (word(&issuer), word(&channel));
     let mut rows: Vec<Value> = match doc.remove("client") {
         Some(Value::Array(rows)) => rows,
@@ -206,9 +209,23 @@ client_id = "ms-mine"
     }
 
     #[test]
-    fn a_damaged_file_is_replaced_by_the_one_row() {
-        let out = edited(
+    fn a_damaged_file_is_refused_not_replaced() {
+        let refused = edited(
             "[[client",
+            Issuer::Microsoft,
+            ClientChannel::Stable,
+            RowEdit::Id("ms"),
+        );
+        assert!(
+            matches!(refused, Err(RowRefused::Damaged(_))),
+            "{refused:?}"
+        );
+    }
+
+    #[test]
+    fn an_empty_file_is_no_rows() {
+        let out = edited(
+            "",
             Issuer::Microsoft,
             ClientChannel::Stable,
             RowEdit::Id("ms"),

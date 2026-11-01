@@ -50,10 +50,6 @@ pub struct Options {
     /// system clock, ten minutes, one second, and nothing recorded. A host that keeps a handle
     /// on the roster (a clone) can ask a launcher to sign an agent in itself.
     pub launchers: Option<crate::launcher::Launchers>,
-    /// Woken after each committed change of the registry (`AccountService::on_committed`, which runs
-    /// after the change is swapped in, so the registry a watcher reads is the new one); each wake tells the
-    /// clients what moved. None leaves the objects to tell them after their own changes.
-    pub saved: Option<Arc<tokio::sync::Notify>>,
     /// Runs the relays of `Grants1.OpenAuthenticated` and `OpenLinked`; the default dials with the
     /// platform's trusted roots, and a test hands one that trusts its scratch CA.
     pub relays: Option<crate::relay::Relays>,
@@ -71,7 +67,6 @@ impl std::fmt::Debug for Options {
             .field("uses", &self.uses)
             .field("identities", &self.identities)
             .field("launchers", &self.launchers)
-            .field("saved", &self.saved.as_ref().map(|_| "<set>"))
             .field("relays", &self.relays.as_ref().map(|_| "<injected>"))
             .finish()
     }
@@ -95,7 +90,6 @@ pub async fn serve_with<H: Host, C: Callers>(
     callers: C,
     options: Options,
 ) -> zbus::Result<()> {
-    let published = host.registry();
     let (spaces, said) = porter_spaces::SpaceBook::open(options.spaces.as_deref()).await;
     if let Some(said) = said {
         eprintln!("accountd: {said}");
@@ -112,13 +106,14 @@ pub async fn serve_with<H: Host, C: Callers>(
         crate::launcher::Launchers::new(connection.clone(), crate::launcher::LoginTiming::new())
     });
     host.use_launcher_roster(launchers.roster());
+    let (news, heard) = tokio::sync::mpsc::unbounded_channel();
     let core = Arc::new(Core {
         host,
         callers,
         connection: connection.clone(),
         roster: Mutex::new(BTreeMap::new()),
-        published: Mutex::new(published),
         clients: options.clients,
+        clients_write: Arc::default(),
         app_names: options.app_names,
         provider_names: options.provider_names,
         clock,
@@ -133,15 +128,12 @@ pub async fn serve_with<H: Host, C: Callers>(
         identity_desk: options.identities,
         uses: tokio::sync::Mutex::new(uses),
         picks: porter_identities::Picks::default(),
-        publisher: OnceLock::new(),
+        news,
         launchers,
         relays: options.relays.unwrap_or_default(),
         credentials: crate::launcher::Credentials::default(),
     });
-    crate::publish::start(&core);
-    if let Some(saved) = options.saved {
-        crate::publish::follow_saves(&core, saved);
-    }
+    crate::publish::start(&core, heard);
     let server: &ObjectServer = connection.object_server();
     server
         .at(

@@ -67,9 +67,9 @@ async fn look<H: Host, C: Callers>(
     let answer = watch.api.status().await;
     if let (Some((account, now)), Some(state)) = (account_of(&*core.host), state_of(&answer))
         && state != now
-        && core.host.set_state(&account, state).await
     {
-        core.publish().await;
+        // The change is told by its commit.
+        core.host.set_state(&account, state).await;
     }
     let current = listed(&*core.host, &answer);
     if *first {

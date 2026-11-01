@@ -25,6 +25,7 @@ use porter_core::{
     Account, AccountId, AgentState, AppId, AppName, AuthKind, GrantId, IdentityId, Isolation,
 };
 use porter_families::set::ProviderNames;
+use porter_fs::atomic::AtomicFile;
 use porter_identities::IdentitiesApi;
 use porter_provider::{ClientChannel, ClientsFile, Issuer, parse_clients};
 use porter_service_accounts::{Launchers as _, program_of};
@@ -251,7 +252,7 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
                     toml::Value::String(text) => text.trim().to_owned(),
                     _ => return Err(LiveError::BadValue("a sign-in key is text".into())),
                 };
-                self.write_client(issuer, RowEdit::Id(&text))?;
+                self.write_client(issuer, RowEdit::Id(&text)).await?;
                 let slug = serde_json::to_value(issuer)
                     .ok()
                     .and_then(|v| v.as_str().map(str::to_owned))
@@ -269,7 +270,7 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
                     toml::Value::String(text) => text.trim().to_owned(),
                     _ => return Err(LiveError::BadValue("a sign-in secret is text".into())),
                 };
-                self.write_client(issuer, RowEdit::Secret(&text))?;
+                self.write_client(issuer, RowEdit::Secret(&text)).await?;
             }
             Key::Account(id, row, tail) => {
                 let account = registry
@@ -282,7 +283,7 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
                 row.0.write(&tail, value, &at, self).await?;
             }
         }
-        self.0.publish().await;
+        self.0.told().await;
         Ok(())
     }
 }
@@ -331,7 +332,6 @@ impl<H: Host, C: Callers> Acts for AccountsSettings<H, C> {
                     porter_ids::word::word(&ReauthNews::of(&reply)),
                 )
                 .await;
-                core.publish().await;
             });
             Ok(())
         })
@@ -382,7 +382,7 @@ impl<H: Host, C: Callers> AccountsSettings<H, C> {
                     failed("That could not be done.")
                 })?;
             announce_row(core, &key, SignOutNews::LoginUntouched.slug()).await;
-            core.publish().await;
+            core.told().await;
             return Ok(());
         };
         announce_row(core, &key, SignOutNews::Asked.slug()).await;
@@ -390,7 +390,6 @@ impl<H: Host, C: Callers> AccountsSettings<H, C> {
         tokio::spawn(async move {
             let news = SignOutNews::of(waiting.await);
             announce_row(&core, &key, news.slug()).await;
-            core.publish().await;
         });
         Ok(())
     }
@@ -398,34 +397,67 @@ impl<H: Host, C: Callers> AccountsSettings<H, C> {
 
 impl<H, C> AccountsSettings<H, C> {
     /// Writes `issuer`'s bring-your-own client id (empty removes the row) or its secret to the
-    /// user's clients file, atomically; Settings is the only writer (PLAN §2.6). The row's other
-    /// lines (Google's `testing`, `byo`) and every other row are kept as they were.
-    fn write_client(&self, issuer: Issuer, edit: RowEdit<'_>) -> Result<(), LiveError> {
-        let path = self
+    /// user's clients file, atomically and on the blocking pool, keeping the file it replaces as
+    /// `clients.toml.bak`; Settings is the only writer (PLAN §2.6). The row's other lines
+    /// (Google's `testing`, `byo`) and every other row are kept as they were. A file that does
+    /// not parse is refused and left as it is.
+    async fn write_client(&self, issuer: Issuer, edit: RowEdit<'_>) -> Result<(), LiveError> {
+        let file = self
             .0
             .clients
             .as_deref()
+            .and_then(AtomicFile::at)
             .ok_or_else(|| failed("no clients file is configured"))?;
-        let before = std::fs::read_to_string(path).unwrap_or_default();
-        let text = edited(&before, issuer, channel(), edit).map_err(|refused| match refused {
-            RowRefused::NoKey => {
-                LiveError::BadValue("Set the sign-in key first, then its secret.".into())
-            }
-            RowRefused::Unwritable(why) => failed(why),
-        })?;
-        if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir).map_err(failed)?;
+        let (gate, owned) = (Arc::clone(&self.0.clients_write), OwnedEdit::of(edit));
+        tokio::task::spawn_blocking(move || {
+            // One edit reads and writes at a time, or two would lose one of the changes.
+            let _one_at_a_time = gate
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let before = match file.read() {
+                Ok(bytes) => bytes
+                    .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+                    .unwrap_or_default(),
+                Err(e) => return Err(failed(e)),
+            };
+            let text =
+                edited(&before, issuer, channel(), owned.edit()).map_err(
+                    |refused| match refused {
+                        RowRefused::NoKey => LiveError::BadValue(
+                            "Set the sign-in key first, then its secret.".into(),
+                        ),
+                        RowRefused::Damaged(why) => failed(format!(
+                            "the clients file cannot be read ({why}); it was left as it is"
+                        )),
+                        RowRefused::Unwritable(why) => failed(why),
+                    },
+                )?;
+            file.write(&text).map_err(failed)
+        })
+        .await
+        .map_err(failed)?
+    }
+}
+
+/// A [`RowEdit`] that owns its text, to move to the blocking pool.
+enum OwnedEdit {
+    Id(String),
+    Secret(String),
+}
+
+impl OwnedEdit {
+    fn of(edit: RowEdit<'_>) -> Self {
+        match edit {
+            RowEdit::Id(text) => Self::Id(text.to_owned()),
+            RowEdit::Secret(text) => Self::Secret(text.to_owned()),
         }
-        let temp = path.with_extension("toml.new");
-        // On disk before the rename publishes it, or a power cut leaves an empty clients file.
-        std::fs::File::create(&temp)
-            .and_then(|mut out| {
-                use std::io::Write;
-                out.write_all(text.as_bytes())?;
-                out.sync_all()
-            })
-            .map_err(failed)?;
-        std::fs::rename(&temp, path).map_err(failed)
+    }
+
+    fn edit(&self) -> RowEdit<'_> {
+        match self {
+            Self::Id(text) => RowEdit::Id(text),
+            Self::Secret(text) => RowEdit::Secret(text),
+        }
     }
 }
 

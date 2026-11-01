@@ -310,15 +310,10 @@ impl Daemon {
         });
         let sheets =
             BusSheets::new(connection.clone(), Arc::clone(&callers)).with_names(app_names.clone());
-        let saved = Arc::new(tokio::sync::Notify::new());
         let service = Arc::new(
             AccountService::new(families, registry, secrets.clone(), sheets, SystemClock)
                 .with_local_runtimes(local)
                 .with_store(store)
-                .on_committed({
-                    let saved = Arc::clone(&saved);
-                    move |_| saved.notify_one()
-                })
                 .with_audit(FileAudit::new(paths.audit.clone())),
         );
         // The picker of `Identities1.Offer` is the sheet host, and the password of
@@ -347,7 +342,6 @@ impl Daemon {
                 crate::launcher::LoginTiming::new()
                     .with_audit(Arc::new(FileAudit::new(paths.audit.clone()))),
             )),
-            saved: Some(saved),
             // The platform's trusted roots.
             relays: None,
         };

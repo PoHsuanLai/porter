@@ -2250,7 +2250,10 @@ dependencies = [
 name = "porter-fs"
 version = "0.1.0"
 dependencies = [
+ "serde",
+ "serde_json",
  "test-kit",
+ "tokio",
 ]
 
 [[package]]

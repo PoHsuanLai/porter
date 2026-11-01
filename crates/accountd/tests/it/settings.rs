@@ -414,6 +414,48 @@ async fn a_client_id_is_written_to_the_users_file_only_by_settings() {
     );
 }
 
+/// The clients file is kept with the copy from before its last change, like the registry, and a
+/// file that does not parse is refused and left as it is (the person's own lines are not dropped).
+#[tokio::test(flavor = "multi_thread")]
+async fn the_clients_file_keeps_its_backup_and_a_damaged_one_is_refused_not_overwritten() {
+    let dir = Scratch::new("accountd-clients-backup");
+    let file = dir.join("porter/clients.toml");
+    let backup = dir.join("porter/clients.toml.bak");
+    let options = accountd::Options {
+        clients: Some(file.clone()),
+        ..Default::default()
+    };
+    let rig = Rig::start_with(options, SheetHost::quiet()).await;
+    let settings = settings(&rig).await;
+    let row = KeyPath("accounts.clients.microsoft".into());
+    settings
+        .set(&row, &toml::Value::String("first".into()))
+        .await
+        .expect("first");
+    assert!(!backup.exists(), "nothing to keep on the first write");
+    let first = std::fs::read_to_string(&file).expect("file");
+    settings
+        .set(&row, &toml::Value::String("second".into()))
+        .await
+        .expect("second");
+    assert_eq!(std::fs::read_to_string(&backup).expect("bak"), first);
+    assert!(
+        std::fs::read_to_string(&file)
+            .expect("file")
+            .contains("second")
+    );
+
+    let damaged = "[[client\nclient_id = \"mine\"\n";
+    std::fs::write(&file, damaged).expect("damage");
+    assert!(
+        settings
+            .set(&row, &toml::Value::String("third".into()))
+            .await
+            .is_err()
+    );
+    assert_eq!(std::fs::read_to_string(&file).expect("file"), damaged);
+}
+
 /// ux-3: Settings sets a Google sign-in key and its secret; the families, which read the same
 /// file at every sign-in (ux-2), then have a Google client with both.
 #[tokio::test(flavor = "multi_thread")]

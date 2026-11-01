@@ -92,6 +92,12 @@ where
         }
     }
 
+    /// Tells `told` of each change from now on, as [`AccountService::on_committed`] does, for
+    /// the host that serves a service it was handed.
+    pub fn follow_committed(&self, told: impl Fn(Committed) + Send + Sync + 'static) {
+        self.ctx.follow(told);
+    }
+
     /// The same service recording its decisions to `audit`.
     pub fn with_audit<N: AuditSink>(self, audit: N) -> AccountService<P, S, U, K, R, N> {
         AccountService {

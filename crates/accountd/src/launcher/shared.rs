@@ -74,7 +74,7 @@ impl<H: Host, C: Callers> Core<H, C> {
     /// are told what moved in the registry.
     pub(crate) async fn settled(self: &Arc<Self>) {
         self.sweep().await;
-        self.publish().await;
+        self.told().await;
     }
 
     /// Ends the credentials the registry no longer backs.

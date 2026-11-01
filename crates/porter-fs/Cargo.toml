@@ -1,6 +1,6 @@
 [package]
 name = "porter-fs"
-description = "porter's file writer: atomic saves (a staging file, synced, renamed over the target, the directory synced) and the one-file backup. Std only; the one place porter's blocking file writes live."
+description = "porter's file writer: atomic saves (a staging file, synced, renamed over the target, the directory synced) the one-file backup and (feature `book`) a kept document saved on the blocking pool. Std only by default; the one place porter's blocking file writes live."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,8 +8,19 @@ rust-version.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[dependencies]
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+
+[features]
+# `book::commit`: a document saved off the async runtime's threads. A host that keeps a document
+# (the Spaces, the identity uses) names it; the default stays std only.
+book = ["dep:serde", "dep:serde_json", "dep:tokio"]
+
 [dev-dependencies]
 test-kit = { workspace = true }
+tokio = { workspace = true }
 
 [lints]
 workspace = true
