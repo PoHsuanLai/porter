@@ -2,7 +2,7 @@
 //! file that names no server (`openai-compatible`) also asks for the server's address, and its
 //! key may be left empty.
 
-use crate::key::{asks_server, check, check_server, fault_of, own_server, signed, signed_server};
+use crate::key::{asks_server, check, check_server, own_server, signed, signed_server};
 use porter_core::{Family, LoginName, SecretText, ServiceEndpoint, Tls, server_address_shape};
 use porter_family_kit::{Flow, Move};
 use porter_http::Http;
@@ -122,7 +122,7 @@ async fn company_signed<H: Http>(
     answers: &[FieldAnswer],
 ) -> Result<Signed, SignInFault> {
     let key = typed_key(answers).ok_or(SignInFault::Unreadable)?;
-    check(http, spec, &key).await.map_err(fault_of)?;
+    check(http, spec, &key).await.map_err(SignInFault::from)?;
     Ok(signed(spec, key))
 }
 
@@ -140,7 +140,7 @@ async fn server_signed<H: Http>(
     let key = typed_key(answers).unwrap_or_else(|| SecretText::new(String::new()));
     check_server(http, &server.url, &key)
         .await
-        .map_err(fault_of)?;
+        .map_err(SignInFault::from)?;
     Ok(signed_server(spec, server, key))
 }
 

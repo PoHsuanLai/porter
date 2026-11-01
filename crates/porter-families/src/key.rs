@@ -22,7 +22,6 @@ use porter_http::http::header::{ACCEPT, AUTHORIZATION, HeaderName};
 use porter_http::http::request::Builder;
 use porter_http::{Http, SensitiveHeader, request_to};
 use porter_provider::{Presented, ProviderError, ProviderSession, ProviderSpec, Signed};
-use porter_sheet::SignInFault;
 
 /// The key a presented credential holds, or `Unauthorized` when the account has none.
 pub(crate) fn key_of(presented: &Presented) -> Result<&SecretText, ProviderError> {
@@ -226,18 +225,6 @@ pub(crate) fn signed_server(
     )
 }
 
-/// What a failed call says to the person.
-pub(crate) fn fault_of(error: ProviderError) -> SignInFault {
-    match error {
-        ProviderError::Unauthorized => SignInFault::Refused,
-        ProviderError::Forbidden => SignInFault::Forbidden,
-        ProviderError::Unreachable => SignInFault::Unreachable,
-        ProviderError::Unreadable => SignInFault::Unreadable,
-        // a variant a newer porter adds: the sign-in ends as unreadable
-        _ => SignInFault::Unreadable,
-    }
-}
-
 /// An open account of either family. An API key is never handed to an app, whatever the
 /// audience: only `Peer.ResolveKey` reads it, and only for a porter daemon.
 #[derive(Debug)]
@@ -317,18 +304,5 @@ mod tests {
             headers(Family::ChatCompletions),
             [pair("authorization", "Bearer KEY")]
         );
-    }
-
-    #[test]
-    fn a_status_is_a_fault_the_person_can_read() {
-        const CASES: &[(ProviderError, SignInFault)] = &[
-            (ProviderError::Unauthorized, SignInFault::Refused),
-            (ProviderError::Forbidden, SignInFault::Forbidden),
-            (ProviderError::Unreachable, SignInFault::Unreachable),
-            (ProviderError::Unreadable, SignInFault::Unreadable),
-        ];
-        for (error, want) in CASES {
-            assert_eq!(fault_of(*error), *want);
-        }
     }
 }

@@ -11,7 +11,7 @@
 mod graph;
 
 use crate::extend::{answered_as, asked_claims};
-use crate::oauth::{BrowserIssuer, Cx, Grant, OAuthSession, exchange_fault, provider_fault};
+use crate::oauth::{BrowserIssuer, Cx, Grant, OAuthSession, exchange_fault};
 use graph::{Found, probe, whoami};
 use porter_capability::{Ask, Capability, CapabilityKind, Claim, Offer, StorageScope};
 use porter_core::{
@@ -108,7 +108,7 @@ impl BrowserIssuer for Microsoft {
         let base = graph_origin(cx.spec);
         let found = probe(&*cx.env.http, cx.spec, &base, graph.access_token.expose())
             .await
-            .map_err(provider_fault)?;
+            .map_err(SignInFault::from)?;
         // Microsoft's consent is all that was asked or nothing, so what was asked is what the
         // refresh token holds.
         Ok(signed_from(
@@ -142,7 +142,7 @@ impl BrowserIssuer for Microsoft {
             tokens.access_token.expose(),
         )
         .await
-        .map_err(provider_fault)?;
+        .map_err(SignInFault::from)?;
         let mut granted = Issuer::Microsoft
             .data()
             .sign_in_scopes(&cx.spec.sign_in_kinds(), false);
