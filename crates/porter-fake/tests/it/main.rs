@@ -7,6 +7,7 @@ mod llm_keys;
 mod local;
 mod persist;
 mod refresh;
+mod relay;
 mod service;
 mod session_scope;
 mod space_owner;

@@ -18,7 +18,7 @@ use porter_service_accounts::{
     Accounts, AccountsApi, AccountsState, AgentFault, AllowFor, Launchers, LocalFault, OwnMachines,
     Roster, SignInAs,
 };
-use porter_service_core::audit::{AuditEvent, AuditSink, NoAudit};
+use porter_service_core::audit::{AuditEvent, AuditSink, NoAudit, ProxyOutcome};
 use porter_service_core::registry::Registry;
 use porter_service_core::{Committed, Ctx, Parts};
 use porter_service_grants::{Grants, GrantsApi};
@@ -450,6 +450,28 @@ where
         self.ctx.note(Some(app), None, event);
     }
 
+    /// Records the end of a relay opened under `grant` for `app` on `account`: the host that ran
+    /// the relay calls this once, with how it ended. A revoke does not close an open relay, so
+    /// the line may come after the grant is gone.
+    pub fn audit_relay_end(
+        &self,
+        app: AppId,
+        account: Option<AccountId>,
+        grant: GrantId,
+        endpoint: EndpointUrl,
+        outcome: ProxyOutcome,
+    ) {
+        self.ctx.note(
+            Some(app),
+            account,
+            AuditEvent::ProxyClosed {
+                grant,
+                endpoint,
+                outcome,
+            },
+        );
+    }
+
     /// Withdraws any grant, whoever holds it (Settings' "Revoke"). `UnknownGrant` when none has
     /// that id.
     pub async fn revoke_grant(&self, grant: &GrantId) -> Result<(), Refusal> {
@@ -475,7 +497,8 @@ where
     /// Spends `caller`'s grant when it is a `Once` one: the first use of any kind (a relay
     /// opened, a key read by the host that holds the secret) drops it, so a second use asks
     /// again. A host that reads a key itself, as inferd does, calls this once the read has
-    /// succeeded.
+    /// succeeded. `UnknownGrant` when the grant is no longer held: the answer is decided on the
+    /// registry as it is now, so of two uses of a `Once` grant racing, one is refused.
     pub async fn spend_once(&self, caller: &AppId, grant: &GrantId) -> Result<(), Refusal> {
         self.grants_domain().spend_once(caller, grant).await
     }

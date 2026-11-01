@@ -78,6 +78,34 @@ impl<H: Host, C: Callers> GrantsObject<H, C> {
         }
     }
 
+    /// The account `app`'s `grant` is for, if it holds it.
+    fn account_of(&self, app: &porter_core::AppId, grant: &GrantId) -> Option<AccountId> {
+        let registry = self.0.host.registry();
+        registry.grant_of(app, grant).map(|g| g.key.account.clone())
+    }
+
+    /// Starts the relay for `plan` and returns the app's end of it; the relay's end is audited
+    /// when it comes.
+    fn run_relay(
+        &self,
+        app: &porter_core::AppId,
+        account: Option<AccountId>,
+        grant: GrantId,
+        plan: porter_core::RelayPlan,
+    ) -> Result<OwnedFd, RefusedError> {
+        let host = std::sync::Arc::clone(&self.0.host);
+        let app = app.clone();
+        let endpoint = plan.endpoint.url.clone();
+        let fd = self
+            .0
+            .relays
+            .open(plan, move |outcome| {
+                host.audit_relay_end(&app, account, &grant, &endpoint, outcome);
+            })
+            .map_err(RefusedError::failed)?;
+        Ok(OwnedFd::from(fd))
+    }
+
     /// The caller, which must be a porter daemon, Settings or the shell.
     async fn reader(&self, header: &Header<'_>) -> Result<Caller, RefusedError> {
         let caller = self.0.identify(header, Standing::Any).await?;
@@ -180,14 +208,16 @@ impl<H: Host, C: Callers> GrantsServer for GrantsObject<H, C> {
         endpoint: String,
     ) -> Result<OwnedFd, RefusedError> {
         let caller = self.user(&header).await?;
+        let grant = grant_of(&grant)?;
+        // Read before the open: a `Once` grant is gone once it is spent.
+        let account = self.account_of(&caller.app, &grant);
         let plan = self
             .0
             .host
-            .open_authenticated(&caller.app, &grant_of(&grant)?, &endpoint_of(&endpoint)?)
+            .open_authenticated(&caller.app, &grant, &endpoint_of(&endpoint)?)
             .await
             .map_err(RefusedError::of)?;
-        let fd = self.0.relays.open(plan).map_err(RefusedError::failed)?;
-        Ok(OwnedFd::from(fd))
+        self.run_relay(&caller.app, account, grant, plan)
     }
 
     async fn open_linked(
@@ -197,14 +227,15 @@ impl<H: Host, C: Callers> GrantsServer for GrantsObject<H, C> {
         origin: String,
     ) -> Result<OwnedFd, RefusedError> {
         let caller = self.user(&header).await?;
+        let grant = grant_of(&grant)?;
+        let account = self.account_of(&caller.app, &grant);
         let plan = self
             .0
             .host
-            .open_linked(&caller.app, &grant_of(&grant)?, &endpoint_of(&origin)?)
+            .open_linked(&caller.app, &grant, &endpoint_of(&origin)?)
             .await
             .map_err(RefusedError::of)?;
-        let fd = self.0.relays.open(plan).map_err(RefusedError::failed)?;
-        Ok(OwnedFd::from(fd))
+        self.run_relay(&caller.app, account, grant, plan)
     }
 
     async fn accounts(&self, Call { header, .. }: Call<'_>) -> Result<String, RefusedError> {

@@ -9,14 +9,7 @@ use porter_http::Http;
 use porter_ids::UnixSeconds;
 use porter_provider::{ClientEntry, IssuerEndpoints};
 
-/// How long before expiry a token counts as due.
-pub const RENEW_MARGIN_SECONDS: i64 = 60;
-
-/// Whether a token that expires at `expires` needs renewing at `now`: it is expired or about to
-/// be, within [`RENEW_MARGIN_SECONDS`].
-pub fn is_due(expires: UnixSeconds, now: UnixSeconds) -> bool {
-    expires.0 - now.0 <= RENEW_MARGIN_SECONDS
-}
+pub use porter_core::token::{RENEW_MARGIN_SECONDS, is_due};
 
 /// What renewing a credential came to.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -83,12 +83,6 @@ fn confined(family: Family) -> bool {
     )
 }
 
-/// `%XX` escapes decoded to bytes; `None` for a malformed one (a `%` without two hex digits),
-/// which a server may read as it likes.
-fn decoded(text: &str) -> Option<Vec<u8>> {
-    porter_ids::percent::is_well_formed(text).then(|| porter_ids::percent::decode_bytes(text))
-}
-
 fn trimmed(mut path: Vec<u8>) -> Vec<u8> {
     while path.last() == Some(&b'/') {
         path.pop();
@@ -108,7 +102,7 @@ fn principals(prefix: &[u8], tree: &[u8]) -> Option<Vec<u8>> {
 /// Where a relay to `endpoint` may go.
 pub fn reach_for(endpoint: &ServiceEndpoint) -> Reach {
     let family = endpoint.family;
-    let prefix = decoded(endpoint.url.path())
+    let prefix = porter_ids::percent::decode_checked(endpoint.url.path())
         .map(trimmed)
         .unwrap_or_default();
     if !confined(family) || prefix.is_empty() {
