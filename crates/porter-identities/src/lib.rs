@@ -107,15 +107,10 @@ impl UseBook {
 
     /// Saves `doc` and, once it is on disk, holds it. In memory it is held at once.
     async fn commit(&mut self, doc: Document) -> Result<(), Unsaved> {
-        if let Some(file) = self.file.clone() {
-            let text = serde_json::to_string_pretty(&doc).map_err(|_| Unsaved)?;
-            tokio::task::spawn_blocking(move || file.write(&text))
-                .await
-                .map_err(|_| Unsaved)?
-                .map_err(|_| Unsaved)?;
-        }
-        self.doc = doc;
-        Ok(())
+        porter_fs::book::commit(self.file.as_ref(), &mut self.doc, doc)
+            .await
+            .map(drop)
+            .map_err(|_| Unsaved)
     }
 }
 

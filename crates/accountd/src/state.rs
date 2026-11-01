@@ -54,6 +54,8 @@ pub(crate) struct Core<H, C> {
     pub(crate) published: Mutex<Registry>,
     /// The user's `clients.toml`, which Settings writes.
     pub(crate) clients: Option<std::path::PathBuf>,
+    /// Held while Settings reads, edits and writes the clients file, so two edits cannot lose one.
+    pub(crate) clients_write: Arc<std::sync::Mutex<()>>,
     /// What the settings module calls an app (the "apps using this identity" rows).
     pub(crate) app_names: AppNames,
     /// What the settings module calls a provider and which part of the page it is listed under.

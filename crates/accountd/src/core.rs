@@ -119,6 +119,7 @@ pub async fn serve_with<H: Host, C: Callers>(
         roster: Mutex::new(BTreeMap::new()),
         published: Mutex::new(published),
         clients: options.clients,
+        clients_write: Arc::default(),
         app_names: options.app_names,
         provider_names: options.provider_names,
         clock,

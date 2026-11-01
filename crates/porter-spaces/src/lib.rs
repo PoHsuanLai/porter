@@ -316,15 +316,10 @@ impl SpaceBook {
         if !self.writable {
             return Err(SpaceFault::Unsaved);
         }
-        if let Some(file) = self.file.clone() {
-            let text = serde_json::to_string_pretty(&doc).map_err(|_| SpaceFault::Unsaved)?;
-            tokio::task::spawn_blocking(move || file.write(&text))
-                .await
-                .map_err(|_| SpaceFault::Unsaved)?
-                .map_err(|_| SpaceFault::Unsaved)?;
-        }
-        self.doc = doc;
-        Ok(())
+        porter_fs::book::commit(self.file.as_ref(), &mut self.doc, doc)
+            .await
+            .map(drop)
+            .map_err(|_| SpaceFault::Unsaved)
     }
 }
 
