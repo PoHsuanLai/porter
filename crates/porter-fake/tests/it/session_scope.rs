@@ -2,15 +2,18 @@
 //! the request was made in, a session scope is recorded only for that session, and ending a
 //! session removes exactly its grants.
 
-use porter_capability::LlmFeature;
+use porter_capability::{CapabilityKind, LlmFeature, StorageScope};
 use porter_core::SessionToken;
+use porter_core::consent::Grant;
 use porter_core::consent::{Decision, GrantScope, Usage};
 use porter_core::{AppId, AppName, DataClass, Isolation};
+use porter_core::{GrantId, GrantKey, SpaceScope};
 use porter_fake::{
     AskLog, MemoryStore, RecordingAudit, Scripted, ScriptedSheets, cloud_provider, llm_account,
     llm_provider,
 };
 use porter_ids::Tokens;
+use porter_ids::UnixSeconds;
 use porter_ids::clock::FixedClock;
 use porter_match::LlmNeed;
 use porter_match::Need;
@@ -238,4 +241,43 @@ async fn add_account_in_a_session_ask_is_dismissed_not_granted_for_good() {
         AccountsReply::Refused(Refusal::Dismissed)
     );
     assert!(scopes(&service).is_empty());
+}
+
+#[test]
+fn a_session_owns_exactly_the_grants_scoped_to_it() {
+    let (one, two) = (session("sess-1"), session("sess-2"));
+    let grant = |id: &str, scope| Grant {
+        id: GrantId::parse(id).expect("id"),
+        key: GrantKey {
+            app: agent(),
+            account: llm_account().id,
+            kind: CapabilityKind::Llm,
+            class: DataClass::Prompt,
+            usage: Usage::Interactive,
+            space: SpaceScope::Any,
+            reach: StorageScope::AppFolder,
+        },
+        decision: Decision::Allow,
+        scope,
+        at: UnixSeconds(1),
+    };
+    let registry = Registry {
+        grants: vec![
+            grant("g1", GrantScope::Session(one.clone())),
+            grant("g2", GrantScope::Session(two.clone())),
+            grant("g3", GrantScope::Always),
+            grant("g4", GrantScope::Once),
+        ],
+        ..Registry::default()
+    };
+    let ids = |of: Option<&SessionToken>| -> Vec<String> {
+        registry
+            .session_grants(of)
+            .map(|g| g.id.as_str().to_owned())
+            .collect()
+    };
+    assert_eq!(ids(Some(&one)), ["g1"]);
+    assert_eq!(ids(Some(&two)), ["g2"]);
+    assert_eq!(ids(None), ["g1", "g2"]);
+    assert!(ids(Some(&session("sess-3"))).is_empty());
 }
