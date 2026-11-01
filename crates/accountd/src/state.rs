@@ -41,6 +41,57 @@ pub(crate) enum Standing {
     Broker,
 }
 
+/// Why a role is turned away from a standing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Turned {
+    /// Refused as `Denied`: the role may not act for the person.
+    Denied,
+    /// Refused as `AccessDenied`, with the words it is told.
+    AccessDenied(&'static str),
+}
+
+impl Standing {
+    /// The standings a role confined to a few has, with what it is told otherwise. Every role not
+    /// listed has them all.
+    fn confinement(role: CallerRole) -> Option<(&'static [Standing], &'static str)> {
+        match role {
+            // The agent launcher is nothing else to accountd than the launcher of its programs.
+            CallerRole::AgentLauncher => Some((
+                &[Standing::Launcher],
+                "the agent launcher may only call the launcher's interface",
+            )),
+            // The AI broker asks for keys and reads the person's computers, and is nothing else.
+            CallerRole::AiBroker => Some((
+                &[Standing::Broker, Standing::Machines],
+                "the AI broker may only ask for keys and read the person's computers",
+            )),
+            // The terminal is narrower still: it reads the person's computers and is nothing else.
+            CallerRole::Terminal => Some((
+                &[Standing::Machines],
+                "the terminal may only read the person's computers",
+            )),
+            // The compositor registers the Spaces it mints and is nothing else to accountd.
+            CallerRole::Compositor => Some((
+                &[Standing::Spaces],
+                "the compositor may only list and register Spaces",
+            )),
+            _ => None,
+        }
+    }
+
+    /// Whether a caller of `role` may make a call that needs this standing. The one table of the
+    /// role rules every method is held to; a method's own check of the role comes after it.
+    pub(crate) fn admits(self, role: CallerRole) -> Result<(), Turned> {
+        if self == Standing::Acting && role == CallerRole::Agent {
+            return Err(Turned::Denied);
+        }
+        match Self::confinement(role) {
+            Some((allowed, why)) if !allowed.contains(&self) => Err(Turned::AccessDenied(why)),
+            _ => Ok(()),
+        }
+    }
+}
+
 /// The shared state of every object accountd serves.
 pub(crate) struct Core<H, C> {
     pub(crate) host: Arc<H>,
@@ -111,35 +162,12 @@ impl<H: Host, C: Callers> Core<H, C> {
             .caller_of(sender.as_str())
             .await
             .ok_or_else(|| RefusedError::access_denied("accountd does not know this caller"))?;
-        if standing == Standing::Acting && caller.role == CallerRole::Agent {
-            return Err(RefusedError::of(Refusal::Denied));
-        }
-        // The agent launcher is nothing else to accountd than the launcher of its programs.
-        if standing != Standing::Launcher && caller.role == CallerRole::AgentLauncher {
-            return Err(RefusedError::access_denied(
-                "the agent launcher may only call the launcher's interface",
-            ));
-        }
-        // The AI broker asks for keys and reads the person's computers, and is nothing else.
-        if !matches!(standing, Standing::Broker | Standing::Machines)
-            && caller.role == CallerRole::AiBroker
-        {
-            return Err(RefusedError::access_denied(
-                "the AI broker may only ask for keys and read the person's computers",
-            ));
-        }
-        // The terminal is narrower still: it reads the person's computers and is nothing else.
-        if standing != Standing::Machines && caller.role == CallerRole::Terminal {
-            return Err(RefusedError::access_denied(
-                "the terminal may only read the person's computers",
-            ));
-        }
-        // The compositor registers the Spaces it mints and is nothing else to accountd.
-        if standing != Standing::Spaces && caller.role == CallerRole::Compositor {
-            return Err(RefusedError::access_denied(
-                "the compositor may only list and register Spaces",
-            ));
-        }
+        standing
+            .admits(caller.role)
+            .map_err(|turned| match turned {
+                Turned::Denied => RefusedError::of(Refusal::Denied),
+                Turned::AccessDenied(why) => RefusedError::access_denied(why),
+            })?;
         held(&self.roster).insert(sender.to_string(), caller.clone());
         Ok(caller)
     }
@@ -194,5 +222,62 @@ pub(crate) fn hint(text: &str) -> Result<ProviderHint, RefusedError> {
 impl<H, C> std::fmt::Debug for Core<H, C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Core").finish_non_exhaustive()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Standing, Turned};
+    use porter_callers::CallerRole;
+
+    const ALL: [Standing; 6] = [
+        Standing::Any,
+        Standing::Acting,
+        Standing::Machines,
+        Standing::Spaces,
+        Standing::Launcher,
+        Standing::Broker,
+    ];
+
+    /// The standings each role is admitted to: the whole table, so a rule cannot change unseen.
+    fn admitted(role: CallerRole) -> Vec<Standing> {
+        ALL.into_iter()
+            .filter(|standing| standing.admits(role).is_ok())
+            .collect()
+    }
+
+    #[test]
+    fn each_role_has_exactly_its_standings() {
+        use Standing::*;
+        let everywhere = ALL.to_vec();
+        for role in [
+            CallerRole::App,
+            CallerRole::Settings,
+            CallerRole::SheetHost,
+            CallerRole::PorterDaemon,
+            CallerRole::Cua,
+        ] {
+            assert_eq!(admitted(role), everywhere, "{role:?}");
+        }
+        assert_eq!(
+            admitted(CallerRole::Agent),
+            [Any, Machines, Spaces, Launcher, Broker]
+        );
+        assert_eq!(admitted(CallerRole::AgentLauncher), [Launcher]);
+        assert_eq!(admitted(CallerRole::AiBroker), [Machines, Broker]);
+        assert_eq!(admitted(CallerRole::Terminal), [Machines]);
+        assert_eq!(admitted(CallerRole::Compositor), [Spaces]);
+    }
+
+    #[test]
+    fn an_agent_is_denied_and_a_confined_role_is_told_why() {
+        assert_eq!(
+            Standing::Acting.admits(CallerRole::Agent),
+            Err(Turned::Denied)
+        );
+        assert!(matches!(
+            Standing::Any.admits(CallerRole::Terminal),
+            Err(Turned::AccessDenied(_))
+        ));
     }
 }

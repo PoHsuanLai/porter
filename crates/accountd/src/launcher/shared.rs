@@ -236,9 +236,7 @@ impl<H: Host, C: Callers> Core<H, C> {
         let grants: Vec<GrantId> = self
             .host
             .registry()
-            .grants
-            .iter()
-            .filter(|g| g.scope.session() == Some(session))
+            .session_grants(Some(session))
             .map(|g| g.id.clone())
             .collect();
         let ended = self.credentials.end_where(
