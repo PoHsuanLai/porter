@@ -97,7 +97,7 @@ impl Rig {
 
     /// From here on nothing can be saved, and what the registry, the audit log and the store
     /// hold now is what a refused change is measured against.
-    fn from_here_unsaveable(&self) -> Before {
+    fn stop_saving(&self) -> Before {
         self.store.refusing(true);
         Before {
             registry: self.service.registry(),
@@ -135,7 +135,7 @@ impl Before {
 #[tokio::test]
 async fn a_grant_that_cannot_be_saved() {
     let rig = rig([Scripted::AllowFirst(GrantScope::Always)]).await;
-    let before = rig.from_here_unsaveable();
+    let before = rig.stop_saving();
     let asked = rig
         .service
         .choose(
@@ -159,7 +159,7 @@ async fn a_grant_that_cannot_be_saved() {
 async fn a_revoke_that_cannot_be_saved() {
     let rig = rig([Scripted::AllowFirst(GrantScope::Always)]).await;
     let grant = rig.grant(GrantScope::Always, None).await;
-    let before = rig.from_here_unsaveable();
+    let before = rig.stop_saving();
     assert_eq!(
         rig.service.revoke(&app(), &grant).await,
         Err(Refusal::Unavailable)
@@ -174,7 +174,7 @@ async fn a_revoke_that_cannot_be_saved() {
 async fn a_revoke_from_settings_that_cannot_be_saved() {
     let rig = rig([Scripted::AllowFirst(GrantScope::Always)]).await;
     let grant = rig.grant(GrantScope::Always, None).await;
-    let before = rig.from_here_unsaveable();
+    let before = rig.stop_saving();
     assert_eq!(
         rig.service.revoke_grant(&grant).await,
         Err(Refusal::Unavailable)
@@ -189,7 +189,7 @@ async fn a_revoke_from_settings_that_cannot_be_saved() {
 async fn the_spending_of_a_once_grant_that_cannot_be_saved() {
     let rig = rig([Scripted::AllowFirst(GrantScope::Once)]).await;
     let grant = rig.grant(GrantScope::Once, None).await;
-    let before = rig.from_here_unsaveable();
+    let before = rig.stop_saving();
     assert_eq!(
         rig.service.spend_once(&app(), &grant).await,
         Err(Refusal::Unavailable)
@@ -207,7 +207,7 @@ async fn the_end_of_a_session_that_cannot_be_saved() {
     let grant = rig
         .grant(GrantScope::Session(sess.clone()), Some(&sess))
         .await;
-    let before = rig.from_here_unsaveable();
+    let before = rig.stop_saving();
     let ended = rig.service.end_session_grants(Some(&sess)).await;
     before.store_untouched(&rig);
     // OLD: the error is dropped; the grant is gone in memory, "SessionGrantEnded" is logged and
@@ -221,7 +221,7 @@ async fn the_end_of_a_session_that_cannot_be_saved() {
 #[tokio::test]
 async fn a_toggle_that_cannot_be_saved() {
     let rig = rig([]).await;
-    let before = rig.from_here_unsaveable();
+    let before = rig.stop_saving();
     assert_eq!(
         rig.service
             .set_toggle(&storage_account().id, CapabilityKind::Calendar, Toggle::Off)
@@ -250,7 +250,7 @@ async fn a_toggle_that_changes_nothing_still_saves() {
 #[tokio::test]
 async fn a_removal_that_cannot_be_saved() {
     let rig = rig([]).await;
-    let before = rig.from_here_unsaveable();
+    let before = rig.stop_saving();
     let removed = rig.service.remove_account(&storage_account().id).await;
     before.store_untouched(&rig);
     // OLD: the error is dropped: Ok, the account gone from memory, "Removed" logged.
@@ -263,7 +263,7 @@ async fn a_removal_that_cannot_be_saved() {
 #[tokio::test]
 async fn a_look_at_an_account_again_that_cannot_be_saved() {
     let rig = rig([]).await;
-    let before = rig.from_here_unsaveable();
+    let before = rig.stop_saving();
     let looked = rig.service.rediscover(&storage_account().id).await;
     assert_eq!(looked.err(), Some(Refusal::Unavailable));
     before.store_untouched(&rig);
@@ -274,7 +274,7 @@ async fn a_look_at_an_account_again_that_cannot_be_saved() {
 #[tokio::test]
 async fn a_state_that_cannot_be_saved() {
     let rig = rig([]).await;
-    let before = rig.from_here_unsaveable();
+    let before = rig.stop_saving();
     let changed = rig
         .service
         .set_state(&mail_account().id, AccountState::NeedsReauth)
