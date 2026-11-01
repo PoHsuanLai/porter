@@ -22,7 +22,6 @@ use porter_http::http::header::{ACCEPT, AUTHORIZATION, HeaderName};
 use porter_http::http::request::Builder;
 use porter_http::{Http, SensitiveHeader, request_to};
 use porter_provider::{Presented, ProviderError, ProviderSession, ProviderSpec, Signed};
-use porter_sheet::SignInFault;
 
 /// The key a presented credential holds, or `Unauthorized` when the account has none.
 pub(crate) fn key_of(presented: &Presented) -> Result<&SecretText, ProviderError> {
