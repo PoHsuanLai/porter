@@ -267,18 +267,14 @@ impl<E: Ports> Grants<'_, E> {
             .ctx
             .transact(|registry| {
                 let ended = registry
-                    .grants
-                    .iter()
-                    .filter_map(|g| match &g.scope {
-                        GrantScope::Session(own) if session.is_none_or(|only| only == own) => {
-                            Some((
-                                g.id.clone(),
-                                g.key.app.clone(),
-                                g.key.account.clone(),
-                                own.clone(),
-                            ))
-                        }
-                        _ => None,
+                    .session_grants(session)
+                    .filter_map(|g| {
+                        Some((
+                            g.id.clone(),
+                            g.key.app.clone(),
+                            g.key.account.clone(),
+                            g.scope.session()?.clone(),
+                        ))
                     })
                     .collect::<Vec<_>>();
                 registry

@@ -3,10 +3,10 @@
 
 use porter_capability::{Capability, CapabilityKind, Claim, Offer};
 use porter_capability::{StorageScope, VocabVersion};
-use porter_core::GrantId;
 use porter_core::SpaceScope;
 use porter_core::store::{AccountToggle, Persisted};
 use porter_core::{Account, AccountId, AppId, Candidate, DataClass, EndpointUrl, ServiceEndpoint};
+use porter_core::{GrantId, SessionToken};
 use porter_core::{
     GrantKey,
     consent::{Decision, Grant, Usage, Verdict},
@@ -84,6 +84,19 @@ impl Registry {
     pub fn holds(&self, app: &AppId, account: &AccountId) -> bool {
         self.grants.iter().any(|g| {
             g.key.app == *app && g.key.account == *account && g.decision == Decision::Allow
+        })
+    }
+
+    /// The grants a session's end takes: those scoped to `session`, or every session grant when
+    /// none is named. The one place that says which grants a session owns.
+    pub fn session_grants<'a>(
+        &'a self,
+        session: Option<&'a SessionToken>,
+    ) -> impl Iterator<Item = &'a Grant> {
+        self.grants.iter().filter(move |g| {
+            g.scope
+                .session()
+                .is_some_and(|own| session.is_none_or(|only| only == own))
         })
     }
 
