@@ -286,6 +286,24 @@ impl Secrets for Oo7KeyringSecrets {
         ]);
         self.keyring.delete(&account).await.map_err(refused)
     }
+
+    async fn accounts_filed(&self) -> Result<Vec<AccountId>, SecretsError> {
+        let ours = HashMap::from([("service", self.namespace.as_str().to_owned())]);
+        let items = self.keyring.search_items(&ours).await.map_err(refused)?;
+        let mut accounts = Vec::new();
+        for item in items {
+            let attributes = item.attributes().await.map_err(refused)?;
+            if let Some(id) = attributes
+                .get("account")
+                .and_then(|a| AccountId::parse(a).ok())
+            {
+                accounts.push(id);
+            }
+        }
+        accounts.sort();
+        accounts.dedup();
+        Ok(accounts)
+    }
 }
 
 impl Secrets for Oo7Secrets {
@@ -322,6 +340,14 @@ impl Secrets for Oo7Secrets {
         })
         .await
     }
+
+    async fn accounts_filed(&self) -> Result<Vec<AccountId>, SecretsError> {
+        ambient(
+            &Namespace::PORTER,
+            |s| async move { s.accounts_filed().await },
+        )
+        .await
+    }
 }
 
 impl Secrets for Oo7NamedSecrets {
@@ -353,6 +379,10 @@ impl Secrets for Oo7NamedSecrets {
             s.delete_account(account).await
         })
         .await
+    }
+
+    async fn accounts_filed(&self) -> Result<Vec<AccountId>, SecretsError> {
+        ambient(&self.namespace, |s| async move { s.accounts_filed().await }).await
     }
 }
 

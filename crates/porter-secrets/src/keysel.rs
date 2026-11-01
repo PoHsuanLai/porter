@@ -185,6 +185,14 @@ impl Secrets for AnyKeys {
             Self::File(keys) => keys.delete_account(account).await,
         }
     }
+
+    async fn accounts_filed(&self) -> Result<Vec<AccountId>, SecretsError> {
+        match self {
+            Self::Oo7(keys) => keys.accounts_filed().await,
+            #[cfg(all(feature = "test-keys", unix))]
+            Self::File(keys) => keys.accounts_filed().await,
+        }
+    }
 }
 
 #[cfg(test)]

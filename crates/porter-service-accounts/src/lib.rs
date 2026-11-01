@@ -19,6 +19,7 @@ mod edit;
 mod launcher;
 mod local;
 mod manage;
+mod orphan_secrets;
 mod own_machines;
 mod race;
 mod state;
@@ -30,6 +31,7 @@ pub use api::AccountsApi;
 pub use edit::EditError;
 pub use launcher::{Launchers, LoginEnd, NoLauncher, Roster, Waiting, program_of};
 pub use local::{LocalFault, MAX_LOCAL_CLAIMS};
+pub use orphan_secrets::{orphans, sweep_orphan_secrets};
 pub use own_machines::OwnMachines;
 pub use state::AccountsState;
 

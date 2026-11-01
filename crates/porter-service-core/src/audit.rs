@@ -241,6 +241,10 @@ pub enum AuditEvent {
     /// picked was handed to the app that offered "Continue as", on a sealed descriptor. The
     /// entry's `app` is that app and `account` the identity's account. Never the password.
     PasswordHandedOver,
+    /// At start, accountd removed the secrets filed for an account the registry does not name (a
+    /// crash between filing them and adding the row left them). The entry's `account` is that
+    /// id; `app` is absent. Never a value.
+    SecretsSwept,
 }
 
 /// What became of a client id.
@@ -368,6 +372,7 @@ mod tests {
                 change: ClientIdChange::Cleared,
             },
             AuditEvent::PasswordHandedOver,
+            AuditEvent::SecretsSwept,
         ];
         for event in events {
             let entry = AuditEntry {
@@ -460,6 +465,10 @@ mod tests {
         assert_eq!(
             at(AuditEvent::PasswordHandedOver),
             r#"{"at":1,"app":null,"account":null,"event":{"kind":"password_handed_over"}}"#
+        );
+        assert_eq!(
+            at(AuditEvent::SecretsSwept),
+            r#"{"at":1,"app":null,"account":null,"event":{"kind":"secrets_swept"}}"#
         );
         let space = || DesktopSpace::parse("space-1").expect("space");
         for (event, kind) in [
