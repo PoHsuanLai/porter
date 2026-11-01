@@ -105,14 +105,20 @@ fn same_login(held: &[porter_core::ServiceEndpoint], new: &[porter_core::Service
     !new_logins.is_empty() && held_logins == new_logins && servers(held) == servers(new)
 }
 
-/// Whether `held` is the account that adding `new` through `provider` would make again. An agent
-/// program signs itself in to the one plan its own login holds, so a second account of the same
-/// agent provider is the same account, and so is a second Tailscale (one program serves this
-/// computer); any other is the same login at the same servers.
-fn duplicate(held: &Account, provider: &ProviderId, new: &[porter_core::ServiceEndpoint]) -> bool {
-    held.provider == *provider
-        && (matches!(held.auth, AuthKind::AgentLogin | AuthKind::OwnProgram)
-            || same_login(&held.endpoints, new))
+/// The account in `registry` that adding `new` through `provider` would make again, if any. An
+/// agent program signs itself in to the one plan its own login holds, so a second account of the
+/// same agent provider is the same account, and so is a second Tailscale (one program serves
+/// this computer); any other is the same login at the same servers.
+pub(crate) fn duplicate<'r>(
+    registry: &'r Registry,
+    provider: &ProviderId,
+    new: &[porter_core::ServiceEndpoint],
+) -> Option<&'r Account> {
+    registry.accounts.iter().find(|held| {
+        held.provider == *provider
+            && (matches!(held.auth, AuthKind::AgentLogin | AuthKind::OwnProgram)
+                || same_login(&held.endpoints, new))
+    })
 }
 
 /// An account id an add has chosen and is filing secrets under. Dropping it (the add finished,
@@ -153,12 +159,7 @@ impl<E: Ports> Accounts<'_, E> {
             SignInStep::Done(signed) => &signed.endpoints,
             _ => return None,
         };
-        self.ctx
-            .lock()
-            .accounts
-            .iter()
-            .find(|a| duplicate(a, provider, endpoints))
-            .map(|a| a.id.clone())
+        duplicate(&self.ctx.lock(), provider, endpoints).map(|a| a.id.clone())
     }
 
     /// Stores the account `signed` describes, with the person's service `choices`, and the
@@ -186,15 +187,6 @@ impl<E: Ports> Accounts<'_, E> {
         // does the row appear: a drop at an await leaves no row without its secrets.
         let reservation = {
             let registry = self.ctx.lock();
-            // The sheet stops a second add of one login at the review; a second sheet that got
-            // here first is the same thing, caught where the registry is written.
-            if registry
-                .accounts
-                .iter()
-                .any(|a| duplicate(a, &spec.id, &signed.endpoints))
-            {
-                return Err(());
-            }
             let mut reserved = self.reserved_ids();
             let id = fresh_id(&registry, &reserved, &spec.id, &signed.label.0);
             reserved.insert(id.clone());
@@ -214,18 +206,15 @@ impl<E: Ports> Accounts<'_, E> {
                 return Err(());
             }
         }
-        // The row, its toggles and its first grant are one transaction. It checks again for a
-        // duplicate: another add of the same login may have finished while the secrets were being
-        // filed. A transaction that refuses, or that cannot be saved, leaves the registry as it
+        // The row, its toggles and its first grant are one transaction, and the only place a
+        // duplicate is refused for good: the sheet stops a second add of one login at the review,
+        // but a second sheet may finish first, even while these secrets are being filed. A
+        // transaction that refuses, or that cannot be saved, leaves the registry as it
         // was, and the secrets go.
         let stored = self
             .ctx
             .transact(|registry| {
-                if registry
-                    .accounts
-                    .iter()
-                    .any(|a| duplicate(a, &spec.id, &signed.endpoints))
-                {
+                if duplicate(registry, &spec.id, &signed.endpoints).is_some() {
                     return Err(Refusal::Unavailable);
                 }
                 let account = Account {
