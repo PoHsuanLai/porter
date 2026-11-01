@@ -98,6 +98,13 @@ const NAMESPACES: &str = "xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xm
     xmlns:nc=\"http://nextcloud.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" \
     xmlns:card=\"urn:ietf:params:xml:ns:carddav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:ic=\"http://apple.com/ns/ical/\"";
 
+fn unescape(text: &str) -> String {
+    text.replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&amp;", "&")
+}
+
 fn parent_of(path: &str) -> &str {
     path.rsplit_once('/').map_or("", |(p, _)| p)
 }
@@ -502,6 +509,47 @@ impl Tree {
         Response::new(207).typed("application/xml; charset=utf-8", body)
     }
 
+    /// The `calendar-query` REPORT (RFC 4791 section 7.8), as far as finding an event by its
+    /// `UID`: the members of the calendar at `path` whose text has a `UID` line containing the
+    /// query's `text-match` (a substring match, as RFC 4791 section 9.7.5 has it), with their
+    /// etag and text. A query with no `text-match` lists every member.
+    fn calendar_query(&self, path: &str, body: &str) -> Response {
+        if !self
+            .nodes
+            .get(path)
+            .is_some_and(|n| matches!(n.kind, Kind::Calendar(_)))
+        {
+            return Response::new(404);
+        }
+        // The element carries a collation attribute, so it is found by its opening tag.
+        let uid = body.find("text-match").and_then(|at| {
+            let open = &body[at..];
+            let start = open.find('>')? + 1;
+            let end = open[start..].find('<')?;
+            Some(unescape(&open[start..start + end]))
+        });
+        let mut out = String::new();
+        for (child_path, child) in self.children(path).filter(|(_, n)| n.kind == Kind::Item) {
+            let text = String::from_utf8_lossy(&child.body);
+            let matches = uid.as_deref().is_none_or(|uid| {
+                text.lines().any(|line| {
+                    line.trim_end_matches('\r')
+                        .strip_prefix("UID:")
+                        .is_some_and(|value| value.contains(uid))
+                })
+            });
+            if matches {
+                out.push_str(&format!(
+                    "<d:response><d:href>{}</d:href><d:propstat><d:prop><d:getetag>&quot;{:x}&quot;</d:getetag><cal:calendar-data>{}</cal:calendar-data></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>",
+                    dav_proto::escape(child_path),
+                    child.changed,
+                    dav_proto::escape(&text)
+                ));
+            }
+        }
+        Self::multistatus(&out, "")
+    }
+
     /// PROPFIND at `path` with `Depth` `depth` (`0`, `1`; anything else reads as `1`).
     pub fn propfind(&self, path: &str, depth: &str, requested: &str) -> Response {
         let Some(node) = self.nodes.get(path) else {
@@ -519,6 +567,9 @@ impl Tree {
     /// The `sync-collection` REPORT: what changed under `path` since the token in `body`, among
     /// its members (`sync-level` 1) or everything below it (`infinite`).
     pub fn report(&self, path: &str, body: &str) -> Response {
+        if body.contains("calendar-query") {
+            return self.calendar_query(path, body);
+        }
         if !self.behaviour.serves_sync_collection {
             return Response::new(501);
         }
