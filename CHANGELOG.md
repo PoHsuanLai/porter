@@ -4,6 +4,12 @@
 
 ### Sign-in decisions are the sheet machine's
 
+- The OAuth browser flow's decisions are free functions: `plan` (client, scopes and PKCE from the
+  registry, the rules and the random bytes: `NeedsClientId` first, then `Unreadable`) and
+  `AuthorizePlan::authorize` (the page), and Google's `signed_from` (the account from what the
+  sign-in read). `Flow` and `Move` are unchanged. Generic's `untried` and OAuth's `rotations`
+  stay where they are: neither can move without changing `Flow::confirm` or `Provider::discover`.
+
 - The sheet host no longer decides a retry, a duplicate or a missing launcher on its own. It tells
   the machine what it found (`SheetEvent::SignedInBefore`, `Duplicate`, `NoLauncher`), and one
   `decide` in `machine.rs` answers: the refusals are the same `Failed { fault }` as before (the
