@@ -11,6 +11,9 @@ pub const SPACES_PATH: &str = "/org/quire/Spaces1";
 /// The identities signed in on this machine (`org.quire.Identities1`), served on accountd's bus
 /// name.
 pub const IDENTITIES_PATH: &str = "/org/quire/Identities1";
+/// Who may use which account, and the relays a grant opens (`org.quire.Grants1`), served on
+/// accountd's bus name.
+pub const GRANTS_PATH: &str = "/org/quire/Grants1";
 /// The person's computers on their Tailscale network (`org.quire.Tailnet1`), served on
 /// accountd's bus name.
 pub const TAILNET_PATH: &str = "/org/quire/Tailnet1";

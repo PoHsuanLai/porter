@@ -1,5 +1,5 @@
 //! `porter-rig-servers --dir <scratch> [--imap] [--smtp] [--pop3] [--dav] [--nextcloud]
-//! [--oauth] [--graph] [--google] [--token-lifetime-s N] [--ollama] [--llm-api]
+//! [--oauth] [--google] [--token-lifetime-s N] [--ollama] [--llm-api]
 //! [--tls implicit|starttls|plain]`
 //!
 //! Starts the fakes on 127.0.0.1, writes `<scratch>/rig.json` and `<scratch>/ca.pem`, serves
@@ -49,11 +49,8 @@ struct Args {
     /// The OAuth issuer.
     #[arg(long)]
     oauth: bool,
-    /// The Graph drive (starts the issuer too: the drive accepts its tokens).
-    #[arg(long)]
-    graph: bool,
     /// A fake Google: its own issuer (Google's style, wanting the planted application secret)
-    /// and the account APIs that accept its tokens. Independent of `--oauth` and `--graph`.
+    /// and the account APIs that accept its tokens. Independent of `--oauth`.
     #[arg(long)]
     google: bool,
     /// The `expires_in` of the issuer's access tokens, in seconds (the issuer's own: 3600). A
@@ -87,7 +84,6 @@ async fn main() -> ExitCode {
         dav: args.dav,
         nextcloud: args.nextcloud,
         oauth: args.oauth,
-        graph: args.graph,
         google: args.google,
         token_lifetime_s: args.token_lifetime_s,
         ollama: args.ollama,
@@ -108,7 +104,6 @@ async fn main() -> ExitCode {
     let stop = Arc::new(Notify::new());
     let levers = Levers {
         issuer: rig.issuer(),
-        graph: rig.graph(),
         google: rig.google().map(|google| (*google.api).clone()),
         imap: rig.imap(),
         smtp: rig.smtp(),

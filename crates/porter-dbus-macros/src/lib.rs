@@ -32,7 +32,8 @@
 //! introspection (a member without it has none there), and `#[bus(out_args("a", "b"))]` names
 //! the parts of a tuple answer.
 //!
-//! The expansion names `crate::Call` and `crate::Unserved`, so only porter-dbus uses it.
+//! The expansion names `::porter_dbus::Call` and `::porter_dbus::Unserved`, so a crate that uses it
+//! depends on porter-dbus, which declares its own interfaces under `extern crate self as porter_dbus`.
 
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
@@ -102,7 +103,7 @@ fn expand(args: &TokenStream2, mut item: ItemTrait) -> syn::Result<TokenStream2>
     let unserved_methods = members.iter().filter_map(Member::unserved_method);
     let server_doc = format!(
         "The daemon's side of `{interface}`: what the object that answers implements, and \
-         registers as [`{served}`]. Each method is given the [`Call`](crate::Call) of the message \
+         registers as [`{served}`]. Each method is given the [`Call`](::porter_dbus::Call) of the message \
          first."
     );
     let served_doc = format!(
@@ -130,19 +131,19 @@ fn expand(args: &TokenStream2, mut item: ItemTrait) -> syn::Result<TokenStream2>
             #(#served_members)*
         }
 
-        impl #served<crate::Unserved> {
+        impl #served<::porter_dbus::Unserved> {
             /// Writes this interface's introspection into `xml`, as an `<interface>` element one
             /// level in: a document collects its interfaces' own.
             #vis fn introspect(xml: &mut ::std::string::String) {
                 ::zbus::object_server::Interface::introspect_to_writer(
-                    &Self(crate::Unserved),
+                    &Self(::porter_dbus::Unserved),
                     xml,
                     1,
                 );
             }
         }
 
-        impl #server for crate::Unserved {
+        impl #server for ::porter_dbus::Unserved {
             type Error = ::zbus::fdo::Error;
             #(#unserved_methods)*
         }
@@ -268,7 +269,7 @@ impl Member {
         Some(match self.kind {
             Kind::Method => quote! {
                 #(#docs)*
-                fn #name(&self, call: crate::Call<'_> #(, #names: #types)*)
+                fn #name(&self, call: ::porter_dbus::Call<'_> #(, #names: #types)*)
                     -> impl ::core::future::Future<
                         Output = ::core::result::Result<#ok, Self::Error>
                     > + ::core::marker::Send;
@@ -315,7 +316,7 @@ impl Member {
                         #(#names: #types,)*
                     ) -> ::core::result::Result<#ok, <S as #server>::Error> {
                         self.0
-                            .#name(crate::Call { header, emitter, connection } #(, #names)*)
+                            .#name(::porter_dbus::Call { header, emitter, connection } #(, #names)*)
                             .await
                     }
                 }
@@ -351,7 +352,7 @@ impl Member {
         let (_, types) = self.owned_args();
         Some(match self.kind {
             Kind::Method => quote! {
-                fn #name(&self, _: crate::Call<'_> #(, _: #types)*)
+                fn #name(&self, _: ::porter_dbus::Call<'_> #(, _: #types)*)
                     -> impl ::core::future::Future<
                         Output = ::core::result::Result<#ok, Self::Error>
                     > + ::core::marker::Send

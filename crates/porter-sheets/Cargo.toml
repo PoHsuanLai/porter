@@ -1,6 +1,6 @@
 [package]
 name = "porter-sheets"
-description = "The bus side of porter's sheets, shared by the daemons that show one: BusSheets draws a sheet in the sheet host over org.quire.AccountsSheet1, AppNames says what a person calls an app, and RequestObjects serves the portal-shaped Request object of a sheet method for accountd, inferd and syncd."
+description = "The bus side of porter's sheets, for the daemon that shows one: BusSheets draws a sheet in the sheet host over org.quire.AccountsSheet1, AppNames says what a person calls an app, and RequestObjects serves the portal-shaped Request object of a sheet method for accountd."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

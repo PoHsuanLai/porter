@@ -60,6 +60,8 @@ pub(crate) struct Core<H, C> {
     pub(crate) provider_names: ProviderNames,
     /// The agent launchers registered and their pending requests (`Launcher`).
     pub(crate) launchers: crate::launcher::Launchers,
+    /// The relays run for `Grants1.OpenAuthenticated` and `OpenLinked`.
+    pub(crate) relays: crate::relay::Relays,
     /// The credentials handed to the processes the launcher spawns.
     pub(crate) credentials: crate::launcher::Credentials,
     /// The time a property that says when a sign-in ends is read on.

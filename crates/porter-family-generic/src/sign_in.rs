@@ -6,6 +6,8 @@
 //! the password is tried at its mail server, then it is reviewed (a new account) or finished (a
 //! sign-in again).
 
+mod edit;
+
 use super::login::SharedLogin;
 use crate::dns::SharedDns;
 use porter_capability::Claim;
@@ -13,7 +15,7 @@ use porter_core::{AccountLabel, Credential, Restriction, SecretPurpose, ServiceE
 use porter_family_kit::Io;
 use porter_family_kit::{Flow, Move};
 use porter_provider::{ProviderSet, ProviderSpec, SignInMode, SignInStep, Signed};
-use porter_sheet::{FieldAnswer, FieldSpec, SignInFault, SignInInput};
+use porter_sheet::{FieldAnswer, FieldSpec, SignInFault, SignInInput, edit_form};
 use std::fmt::Debug;
 use std::future::Future;
 use std::marker::PhantomData;
@@ -67,6 +69,11 @@ pub enum Outcome<M> {
 
 /// How the servers of a generic account are found.
 pub trait Lookup: Clone + Debug + Default + Send + Sync + 'static {
+    /// Whether the accounts this lookup finds have servers a person types, which a sign-in
+    /// begun as an edit of them (`SignInMode::EditServers`) may try. A DAV account's, and a
+    /// provider's own fixed ones, are not: those edits end unreadable.
+    const EDITS_SERVERS: bool = false;
+
     /// What the lookup keeps when it asks a further question; `()` when it asks none.
     type Mid: Debug + Send;
 
@@ -100,6 +107,8 @@ pub enum Mid<M> {
     Asked,
     /// The lookup asked a further question.
     Lookup(M),
+    /// The edit form of an account's servers is on screen.
+    Editing,
 }
 
 /// The sign-in flow of a generic account whose servers `L` finds.
@@ -183,6 +192,21 @@ impl<L: Lookup> Flow for GenericFlow<L> {
 
     async fn start(&mut self) -> Move<Self::Mid> {
         self.untried = false;
+        if let SignInMode::EditServers {
+            auth,
+            current,
+            name,
+            ..
+        } = &self.mode
+        {
+            return match L::EDITS_SERVERS {
+                true => Move::Next(
+                    SignInStep::AskFields(edit_form(*auth, current, name.as_deref())),
+                    Mid::Editing,
+                ),
+                false => Move::Fail(SignInFault::Unreadable),
+            };
+        }
         Move::Next(SignInStep::AskFields(L::form(&self.spec)), Mid::Asked)
     }
 
@@ -192,6 +216,7 @@ impl<L: Lookup> Flow for GenericFlow<L> {
         };
         let lookup = L::default();
         let outcome = match mid {
+            Mid::Editing => return self.edit(answers).await,
             Mid::Asked => lookup.submitted(&self.seams(), answers).await,
             Mid::Lookup(mid) => lookup.resumed(&self.seams(), mid, answers).await,
         };

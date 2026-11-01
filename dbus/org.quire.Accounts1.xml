@@ -17,9 +17,6 @@
    <signal name="AccountRemoved">
      <arg name="account" type="o"/>
    </signal>
-   <signal name="NeedsReauth">
-     <arg name="account" type="o"/>
-   </signal>
  </interface>
  <interface name="org.quire.Accounts1.Account">
    <method name="Reauthenticate">

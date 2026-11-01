@@ -4,8 +4,7 @@
 use super::ServiceRoot;
 use porter_wire::Refusal;
 
-/// The prefix of every accountd refusal's error name (inferd's and syncd's are
-/// [`ServiceRoot::error_prefix`] and a dot).
+/// The prefix of every accountd refusal's error name ([`ServiceRoot::error_prefix`] and a dot).
 pub const REFUSAL_ERROR_PREFIX: &str = "org.quire.Accounts1.Error.";
 
 /// Every refusal, so the name table is total by construction.
@@ -34,8 +33,8 @@ pub fn refusal_error_name_in(service: ServiceRoot, refusal: &Refusal) -> String 
     format!("{}.{}", service.error_prefix(), pascal(&slug_of(*refusal)))
 }
 
-/// The refusal an error name stands for, if it is one of ours, from any of the three services
-/// (accountd, inferd, syncd).
+/// The refusal an error name stands for, if it is one of ours, from any service that shows a
+/// sheet.
 pub fn refusal_from_error_name(name: &str) -> Option<Refusal> {
     ALL.into_iter().find(|refusal| {
         ServiceRoot::ALL

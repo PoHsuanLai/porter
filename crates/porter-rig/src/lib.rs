@@ -11,8 +11,9 @@
 //! - `porter-rig-secrets`: a fake `org.freedesktop.secrets` (the `fake-secret-service` crate), in
 //!   memory, plain algorithm, so the real accountd's `Oo7Secrets` works in a jail with no keyring.
 //!
-//! `porter-rig-storage`, the fake `org.quire.Storage1` for building Files, lives with syncd's
-//! fakes in the `syncd-fakes` crate, under the same name and flags.
+//! The rig for the sync daemon (the Graph fake behind porter's issuer, the client for
+//! `org.quire.Sync1`) and `porter-rig-storage`, the fake `org.quire.Storage1` for building Files,
+//! are ferry's: `ferry-rig` and `syncd-fakes`.
 
 pub mod client;
 pub mod control;

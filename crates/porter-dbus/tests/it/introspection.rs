@@ -1,7 +1,7 @@
 //! The checked-in introspection files are the interfaces as they are declared once. A change to a
 //! signature changes the file in the same commit.
 
-use porter_dbus::{accounts, sync};
+use porter_dbus::accounts;
 use std::path::PathBuf;
 
 #[test]
@@ -10,36 +10,23 @@ fn checked_in_introspection_matches_the_interfaces() {
     for document in [
         accounts::ACCOUNTS,
         accounts::ACCOUNTS_SHEET,
-        sync::SYNC,
         accounts::KEYS,
+        accounts::GRANTS,
         accounts::LAUNCHER,
         accounts::BROKER,
         accounts::SPACES,
         accounts::IDENTITIES,
         accounts::TAILNET,
-        sync::STORAGE,
     ] {
         let path = dir.join(document.file_name);
         let expected =
             std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-        let actual = match document.file_name {
-            "org.quire.Sync1.xml" => without_picker(&document.introspection()),
-            _ => document.introspection(),
-        };
+        let actual = document.introspection();
         assert!(
             actual == expected,
             "{} differs from the interfaces; it should read:\n{actual}",
             path.display()
         );
-    }
-}
-
-/// The Sync1 document without the Photos Picker, which is outside the default surface (the
-/// `photos-picker` feature adds it, and the test below it checks it then).
-fn without_picker(xml: &str) -> String {
-    match xml.split_once("<interface name=\"org.quire.Photos1.Picker\">") {
-        Some((sync1, _)) => format!("{}</node>\n", sync1.trim_end_matches(' ')),
-        None => xml.to_owned(),
     }
 }
 
@@ -155,7 +142,6 @@ fn accountd_declares_identities_and_no_grant_keyed_member() {
         "<method name=\"Close\">",
         "<signal name=\"AccountAdded\">",
         "<signal name=\"AccountRemoved\">",
-        "<signal name=\"NeedsReauth\">",
         "<signal name=\"Response\">",
         "<property name=\"Capabilities\" type=\"a(sa{sv})\" access=\"read\"/>",
     ];
@@ -196,62 +182,6 @@ fn the_sheet_backend_takes_views_in_and_sends_inputs_out() {
     let declared = xml.matches("<method ").count() + xml.matches("<signal ").count();
     assert_eq!(declared, 4);
     assert_eq!(porter_wire::names::SHEET_BUS, "org.quire.AccountsSheet1");
-}
-
-#[test]
-fn syncd_declares_what_it_did() {
-    let sync = porter_dbus::sync::SYNC.introspection();
-    let sync1 = without_picker(&sync);
-    assert_eq!(sync1.matches("<method ").count(), 8);
-    assert_eq!(sync1.matches("<signal ").count(), 3);
-    assert!(sync1.contains("<method name=\"ConfirmDiscard\">"));
-    assert!(sync1.contains("<method name=\"SyncNow\">"));
-    assert_eq!(
-        porter_dbus::sync::SYNC_ERROR_PAUSED,
-        format!("{}Paused", porter_dbus::sync::SYNC_ERROR_PREFIX)
-    );
-    assert!(sync1.contains("<method name=\"Watch\">"));
-    assert!(sync1.contains("<signal name=\"NeedsConfirmation\">"));
-    assert_eq!(
-        porter_dbus::sync::SYNC_ERROR_NOTHING_HELD,
-        format!("{}NothingHeld", porter_dbus::sync::SYNC_ERROR_PREFIX)
-    );
-    #[cfg(feature = "photos-picker")]
-    {
-        let (_, picker) = sync
-            .split_once("<interface name=\"org.quire.Photos1.Picker\">")
-            .expect("the Picker interface is declared beside Sync1");
-        for member in ["Start", "Poll", "Import", "Cancel"] {
-            assert!(
-                picker.contains(&format!("<method name=\"{member}\">")),
-                "{member}"
-            );
-        }
-        assert_eq!(picker.matches("<method ").count(), 4);
-        assert_eq!(picker.matches("<signal ").count(), 0);
-        assert!(
-            picker.contains("<arg type=\"as\" direction=\"out\"/>"),
-            "Import answers the files' paths"
-        );
-        assert_eq!(
-            porter_dbus::sync::PICKER_ERROR_NOT_YET,
-            format!("{}NotYet", porter_dbus::sync::PICKER_ERROR_PREFIX)
-        );
-    }
-    #[cfg(not(feature = "photos-picker"))]
-    assert!(
-        !sync.contains("org.quire.Photos1"),
-        "the Picker is not declared by default"
-    );
-    assert!(sync.contains("<method name=\"Resolve\">"));
-    assert!(sync.contains("<arg name=\"conflict\" type=\"x\" direction=\"in\"/>"));
-    assert_eq!(porter_dbus::sync::RESOLVE_KEEP_LOCAL, "keep_local");
-    assert_eq!(porter_dbus::sync::RESOLVE_KEEP_REMOTE, "keep_remote");
-    assert_eq!(
-        porter_dbus::sync::SYNC_ERROR_NO_SUCH_CONFLICT,
-        format!("{}NoSuchConflict", porter_dbus::sync::SYNC_ERROR_PREFIX)
-    );
-    assert_eq!(porter_dbus::sync::STATUS_KEY_QUOTA, "quota");
 }
 
 #[test]
@@ -332,4 +262,32 @@ fn the_broker_declares_six_methods_and_one_signal_and_hands_keys_only_on_descrip
             .introspection()
             .contains("Broker")
     );
+}
+
+#[test]
+fn grants1_declares_the_grant_calls_and_hands_streams_only_on_descriptors() {
+    let xml = porter_dbus::accounts::GRANTS.introspection();
+    assert!(xml.contains("<interface name=\"org.quire.Grants1\">"));
+    for member in [
+        "Candidates",
+        "Availability",
+        "Grants",
+        "RequestGrant",
+        "Revoke",
+        "OpenAuthenticated",
+        "OpenLinked",
+        "Accounts",
+        "ExtendAccess",
+        "AsksOnUse",
+    ] {
+        assert!(
+            xml.contains(&format!("<method name=\"{member}\">")),
+            "{member}"
+        );
+    }
+    assert_eq!(xml.matches("<method ").count(), 10);
+    assert_eq!(xml.matches("<signal ").count(), 0);
+    // A relayed stream is a descriptor, and no member answers a token or a password.
+    assert_eq!(xml.matches("type=\"h\" direction=\"out\"").count(), 2);
+    assert_eq!(porter_wire::names::GRANTS_PATH, "/org/quire/Grants1");
 }

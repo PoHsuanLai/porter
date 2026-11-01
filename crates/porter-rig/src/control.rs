@@ -8,12 +8,6 @@
 //! | `GET /rig` | the text of `rig.json` |
 //! | `POST /issuer/refuse-refreshes?n=N` | the next N refresh requests get `invalid_grant` |
 //! | `POST /issuer/revoke[?token=T]` | revokes T at the issuer (default: the planted refresh token) |
-//! | `POST /graph/put?path=P` (body) | a remote edit: creates or replaces file P in the app folder |
-//! | `POST /graph/delete?path=P` | a remote delete of P |
-//! | `GET /graph/file?path=P` | the bytes of P (`404` when there is none) |
-//! | `GET /graph/files` | `{"files":[{"path":..,"size":..}]}` |
-//! | `POST /graph/expire-delta` | every delta token handed out is stale (`410`) |
-//! | `GET /graph/hits` | `{"hits":[{"method","target","status","bearer"}]}` (never the token) |
 //! | `POST /google/seed[?what=calendars\|people\|tasks\|all]` | fills the fake Google's Calendar, People and/or Tasks with a small set |
 //! | `POST /google/calendar?id=I&name=N[&color=C]`, `POST /google/calendar-remove?id=I` | adds, renames or removes a calendar |
 //! | `POST /google/event?calendar=C&id=I` (body: Google event JSON), `POST /google/event-remove?calendar=C&id=I` | a remote edit or delete of an event |
@@ -31,9 +25,7 @@ use crate::planted::OAUTH_REFRESH_TOKEN;
 use crate::servers::Ollama;
 use porter_fake_servers::http::{Request, Response, Scheme, post_form, send, serve};
 use porter_fake_servers::net::{Bind, Listener};
-use porter_fake_servers::{
-    GoogleHandle, GraphHandle, IssuerHandle, MailHandle, browser::split_loopback,
-};
+use porter_fake_servers::{GoogleHandle, IssuerHandle, MailHandle, browser::split_loopback};
 use serde_json::{Value, json};
 use std::io;
 use std::sync::Arc;
@@ -46,8 +38,6 @@ mod google;
 pub struct Levers {
     /// The issuer, when it runs.
     pub issuer: Option<IssuerHandle>,
-    /// The Graph drive, when it runs.
-    pub graph: Option<GraphHandle>,
     /// The fake Google's APIs, when they run.
     pub google: Option<GoogleHandle>,
     /// The IMAP server, when it runs.
@@ -144,105 +134,6 @@ impl Levers {
                     _ => refused(502, "the issuer did not take the revoke"),
                 }
             }
-            ("POST", "/graph/put") => match (self.graph.as_ref(), query("path")) {
-                (None, _) => absent("the Graph drive"),
-                (_, None) => refused(400, "path is required"),
-                (Some(graph), Some(path)) => {
-                    graph.put_file(&path, &request.body);
-                    ok(json!({ "path": path, "size": request.body.len() }))
-                }
-            },
-            ("POST", "/graph/delete") => match (self.graph.as_ref(), query("path")) {
-                (None, _) => absent("the Graph drive"),
-                (_, None) => refused(400, "path is required"),
-                (Some(graph), Some(path)) => {
-                    graph.delete(&path);
-                    ok(json!({ "path": path }))
-                }
-            },
-            ("POST", "/graph/calendars-seed") => match self.graph.as_ref() {
-                None => absent("the Graph drive"),
-                Some(graph) => {
-                    graph.seed_calendars();
-                    ok(json!({}))
-                }
-            },
-            ("POST", "/graph/calendar") => match (self.graph.as_ref(), query("id")) {
-                (None, _) => absent("the Graph drive"),
-                (_, None) => refused(400, "id is required"),
-                (Some(graph), Some(id)) => {
-                    let name = query("name").unwrap_or_else(|| id.clone());
-                    graph.set_calendar(&id, &name, &query("color").unwrap_or_default());
-                    ok(json!({ "id": id }))
-                }
-            },
-            ("POST", "/graph/event") => {
-                match (self.graph.as_ref(), query("calendar"), query("id")) {
-                    (None, ..) => absent("the Graph drive"),
-                    (_, None, _) | (_, _, None) => refused(400, "calendar and id are required"),
-                    (Some(graph), Some(calendar), Some(id)) => {
-                        match serde_json::from_slice::<Value>(&request.body) {
-                            Ok(event) => {
-                                graph.put_event(&calendar, &id, event);
-                                ok(json!({ "calendar": calendar, "id": id }))
-                            }
-                            Err(_) => refused(400, "the body is not JSON"),
-                        }
-                    }
-                }
-            }
-            ("POST", "/graph/event-remove") => {
-                match (self.graph.as_ref(), query("calendar"), query("id")) {
-                    (None, ..) => absent("the Graph drive"),
-                    (_, None, _) | (_, _, None) => refused(400, "calendar and id are required"),
-                    (Some(graph), Some(calendar), Some(id)) => {
-                        graph.remove_event(&calendar, &id);
-                        ok(json!({ "calendar": calendar, "id": id }))
-                    }
-                }
-            }
-            ("GET", "/graph/file") => match (self.graph.as_ref(), query("path")) {
-                (None, _) => absent("the Graph drive"),
-                (_, None) => refused(400, "path is required"),
-                (Some(graph), Some(path)) => match graph.file(&path) {
-                    Some(bytes) => Response::new(200).typed("application/octet-stream", bytes),
-                    None => refused(404, "no such file"),
-                },
-            },
-            ("GET", "/graph/files") => match self.graph.as_ref() {
-                None => absent("the Graph drive"),
-                Some(graph) => {
-                    let files: Vec<Value> = graph
-                        .files()
-                        .into_iter()
-                        .map(|(path, size)| json!({ "path": path, "size": size }))
-                        .collect();
-                    ok(json!({ "files": files }))
-                }
-            },
-            ("POST", "/graph/expire-delta") => match self.graph.as_ref() {
-                None => absent("the Graph drive"),
-                Some(graph) => {
-                    graph.expire_delta_tokens();
-                    ok(json!({}))
-                }
-            },
-            ("GET", "/graph/hits") => match self.graph.as_ref() {
-                None => absent("the Graph drive"),
-                Some(graph) => {
-                    let hits: Vec<Value> = graph
-                        .hits()
-                        .iter()
-                        .map(|h| {
-                            json!({
-                                "method": h.method, "target": h.target, "status": h.status,
-                                "bearer": h.authorization.is_some(),
-                            })
-                        })
-                        .collect();
-                    ok(json!({ "hits": hits }))
-                }
-            },
             ("GET", "/imap/attempts") => attempts(self.imap.as_ref(), "the IMAP server"),
             ("GET", "/smtp/attempts") => attempts(self.smtp.as_ref(), "the SMTP server"),
             ("GET", "/pop3/attempts") => attempts(self.pop3.as_ref(), "the POP3 server"),

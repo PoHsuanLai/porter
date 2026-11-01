@@ -11,6 +11,7 @@ mod daemon;
 mod dist;
 mod file_keys;
 mod google;
+mod grants;
 mod identities;
 mod install;
 mod keys;

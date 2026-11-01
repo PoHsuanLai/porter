@@ -30,7 +30,6 @@ porter-ids = { workspace = true }
 porter-client = { workspace = true }
 porter-client-dbus = { workspace = true }
 porter-callers = { workspace = true, features = ["test-proc-root"] }
-porter-dbus = { workspace = true }
 porter-fake = { workspace = true }
 porter-fake-servers = { workspace = true }
 clap = { workspace = true }
@@ -46,9 +45,7 @@ porter-provider = { workspace = true }
 porter-secrets = { workspace = true, features = ["oo7"] }
 porter-service = { workspace = true }
 porter-service-core = { workspace = true }
-porter-sync = { workspace = true }
 rustix = { workspace = true }
-syncd = { path = "../syncd", features = ["testing"] }
 tokio = { workspace = true }
 
 [lints]

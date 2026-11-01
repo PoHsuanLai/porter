@@ -4,8 +4,9 @@ use crate::authenticated::AuthenticatedStream;
 use crate::error::LinkError;
 use crate::found::{ConsentOffer, Found, found};
 use crate::link::GrantsLink;
+use porter_capability::CapabilityKind;
 use porter_core::consent::{Grant, Usage};
-use porter_core::{Candidate, DataClass, EndpointUrl, GrantId};
+use porter_core::{Account, AccountId, Candidate, DataClass, EndpointUrl, GrantId, ProviderId};
 use porter_match::Need;
 use porter_wire::{ParentWindow, Refusal};
 use std::sync::Arc;
@@ -17,9 +18,32 @@ pub enum GrantsError {
     /// accountd refused, or the person closed the sheet (`Refusal::Dismissed`).
     #[error("refused")]
     Refused(Refusal),
+    /// This app already has a sheet of this kind open: the person answers it first.
+    #[error("busy")]
+    Busy,
     /// The call did not complete.
     #[error(transparent)]
     Link(#[from] LinkError),
+}
+
+/// An account as a porter daemon that keeps a switch per account reads it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct ListedAccount {
+    /// The account: its id, provider, label, state, what it claims and where its servers are.
+    pub account: Account,
+    /// What accountd calls the account's provider ("OneDrive"), when it knows.
+    pub provider_label: Option<String>,
+}
+
+impl ListedAccount {
+    /// `account`, its provider called `provider_label`.
+    pub fn new(account: Account, provider_label: Option<String>) -> Self {
+        Self {
+            account,
+            provider_label,
+        }
+    }
 }
 
 /// The grants domain over a transport.
@@ -49,6 +73,7 @@ impl<T: GrantsLink> Grants<T> {
             need: need.clone(),
             class,
             usage,
+            account: None,
         };
         if !candidates.is_empty() {
             return Ok(found(
@@ -61,7 +86,8 @@ impl<T: GrantsLink> Grants<T> {
         Ok(found(candidates, availability, offer))
     }
 
-    /// Shows the chooser and consent sheet for `offer`; the account the user picked, granted.
+    /// Shows the chooser and consent sheet for `offer` (for the one account it names, when it
+    /// names one, without a chooser); the account the user picked, granted.
     pub async fn request_grant(
         &self,
         offer: &ConsentOffer,
@@ -73,6 +99,36 @@ impl<T: GrantsLink> Grants<T> {
     /// The grants this app holds.
     pub async fn grants(&self) -> Result<Vec<Grant>, GrantsError> {
         self.link.grants().await
+    }
+
+    /// The accounts the person has, for a porter daemon that keeps a switch per account (the sync
+    /// daemon's Settings rows). accountd answers a porter daemon, Settings and the shell only: an
+    /// app learns of accounts through its grants.
+    pub async fn accounts(&self) -> Result<Vec<ListedAccount>, GrantsError> {
+        self.link.accounts().await
+    }
+
+    /// Asks the person, in a sign-in of its own, for the access `account`'s provider asks only
+    /// when it is first used, for `kinds` (the whole of a drive, for "Show in Files"). The call
+    /// waits for the person; on Allow the account claims the access, so a need of it fits the
+    /// account from then on.
+    pub async fn extend_access(
+        &self,
+        account: &AccountId,
+        kinds: &[CapabilityKind],
+        window: &ParentWindow,
+    ) -> Result<(), GrantsError> {
+        self.link.extend_access(account, kinds, window).await
+    }
+
+    /// Whether `provider` asks some access of `kind` only on use, which [`Grants::extend_access`]
+    /// can ask for.
+    pub async fn asks_on_use(
+        &self,
+        provider: &ProviderId,
+        kind: CapabilityKind,
+    ) -> Result<bool, GrantsError> {
+        self.link.asks_on_use(provider, kind).await
     }
 
     /// Withdraws one of this app's own grants.

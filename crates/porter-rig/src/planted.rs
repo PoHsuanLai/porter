@@ -10,7 +10,7 @@ pub const DAV_PASSWORD: &str = "RIG-SECRET-DAV-PASSWORD-2b8e05";
 pub const NEXTCLOUD_APP_PASSWORD: &str = "RIG-SECRET-NEXTCLOUD-APP-PASSWORD-61f0aa";
 /// A refresh token the OAuth issuer holds as live.
 pub const OAUTH_REFRESH_TOKEN: &str = "RIG-SECRET-REFRESH-TOKEN-c3d9e1";
-/// An access token the OAuth issuer (and the Graph fake, which asks it) accepts.
+/// An access token the OAuth issuer accepts (and the Graph fake of ferry-rig, which asks it).
 pub const OAUTH_ACCESS_TOKEN: &str = "RIG-SECRET-ACCESS-TOKEN-4a7b22";
 /// The application secret the fake Google's token endpoint wants (a Google desktop client's
 /// `client_secret`, which Google does not treat as a secret but requires).

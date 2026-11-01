@@ -6,11 +6,13 @@
 use porter_capability::{CapabilityKind, Claim, Offer, Toggle};
 use porter_core::AccountId;
 use porter_core::{
-    AccountLabel, Credential, EndpointUrl, Restriction, SecretPurpose, ServiceEndpoint,
+    AccountLabel, AuthKind, Credential, EndpointUrl, Restriction, SecretPurpose, SecretText,
+    ServiceEndpoint,
 };
 use porter_ids::WebUrl;
 use porter_sheet::{
-    FieldSpec, Progress, Review, ServiceRow, ServiceState, SignInFault, SignInInput, UserCode,
+    FieldSpec, Manual, Progress, Review, ServiceRow, ServiceState, SignInFault, SignInInput,
+    UserCode,
 };
 use std::future::Future;
 
@@ -39,6 +41,26 @@ pub enum SignInMode {
         endpoints: Vec<ServiceEndpoint>,
         /// The kinds whose on-use access is asked.
         kinds: Vec<CapabilityKind>,
+    },
+    /// An existing password account's servers, edited: the servers the person types are tried
+    /// (the incoming server, and the outgoing one when it, the login name or the password
+    /// changed) and the sign-in ends with them only when they let it in. Nothing is stored by
+    /// the sign-in, and no bearer token exists in it: a password goes to the typed hosts, and
+    /// an account whose sign-in is not a password is refused before this mode is begun
+    /// (`porter_sheet::servers_fixed`).
+    EditServers {
+        /// The account.
+        account: AccountId,
+        /// How it signs in: whether its password is asked as an app password.
+        auth: AuthKind,
+        /// Its name, the login name when the form leaves it empty.
+        label: AccountLabel,
+        /// Its servers as they are: the form's prefill, and what "changed" is measured from.
+        current: Manual,
+        /// The name shown in From to prefill, when the form asks for one.
+        name: Option<String>,
+        /// The password the host holds, tried when the person types none.
+        keep: Option<SecretText>,
     },
 }
 

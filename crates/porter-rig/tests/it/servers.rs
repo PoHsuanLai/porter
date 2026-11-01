@@ -18,16 +18,6 @@ fn json(text: &str) -> Value {
     serde_json::from_str(text).expect("JSON")
 }
 
-async fn graph_status(url: &str, bearer: &str) -> u16 {
-    let (address, _) = split_loopback(url).expect("address");
-    let request = Request::new("GET", "/v1.0/me/drive")
-        .with_header("Authorization", &format!("Bearer {bearer}"));
-    send(&address, Scheme::Http, &request)
-        .await
-        .expect("request")
-        .status
-}
-
 #[tokio::test(flavor = "multi_thread")]
 async fn the_rig_starts_lists_what_it_planted_serves_its_levers_and_ends_on_sigterm() {
     let dir = Scratch::new("rig-servers");
@@ -36,7 +26,7 @@ async fn the_rig_starts_lists_what_it_planted_serves_its_levers_and_ends_on_sigt
         &[
             "--dir",
             dir.to_str().expect("utf-8"),
-            "--graph",
+            "--oauth",
             "--imap",
             "--smtp",
             "--pop3",
@@ -56,10 +46,9 @@ async fn the_rig_starts_lists_what_it_planted_serves_its_levers_and_ends_on_sigt
     for secret in planted::ALL {
         assert!(file.secrets.iter().any(|s| s == secret), "{secret}");
     }
-    let oauth = file.oauth.clone().expect("--graph starts the issuer");
-    let graph = file.graph.clone().expect("graph");
+    let oauth = file.oauth.clone().expect("--oauth starts the issuer");
     let ollama = file.ollama.clone().expect("ollama");
-    let mut ports = vec![oauth.port, graph.port, ollama.port];
+    let mut ports = vec![oauth.port, ollama.port];
     for mail in [&file.imap, &file.smtp, &file.pop3] {
         let mail = mail.as_ref().expect("mail fake");
         assert_eq!(
@@ -85,40 +74,8 @@ async fn the_rig_starts_lists_what_it_planted_serves_its_levers_and_ends_on_sigt
         planted::API_KEY
     );
 
-    // One fake: the Graph drive takes the planted access token (it asks the issuer) and no other.
-    assert_eq!(
-        graph_status(&graph.url, planted::OAUTH_ACCESS_TOKEN).await,
-        200
-    );
-    assert_eq!(graph_status(&graph.url, "not-a-token").await, 401);
-
-    // Levers: a remote edit shows on the drive, a stopped Ollama refuses and comes back at
-    // its port, a refused refresh and a revoked refresh token are what the issuer answers.
-    let put = call(
-        &file.control,
-        "POST",
-        "/graph/put?path=notes/a.txt",
-        b"remote",
-    )
-    .await;
-    assert_eq!(put.expect("put").status, 200);
-    let got = call(&file.control, "GET", "/graph/file?path=notes/a.txt", b"")
-        .await
-        .expect("get");
-    assert_eq!(got.body, b"remote");
-    let files = call(&file.control, "GET", "/graph/files", b"")
-        .await
-        .expect("files");
-    assert_eq!(json(&files.text())["files"][0]["path"], "notes/a.txt");
-    let gone = call(&file.control, "POST", "/graph/delete?path=notes/a.txt", b"")
-        .await
-        .expect("delete");
-    assert_eq!(gone.status, 200);
-    let missing = call(&file.control, "GET", "/graph/file?path=notes/a.txt", b"")
-        .await
-        .expect("get");
-    assert_eq!(missing.status, 404);
-
+    // Levers: a stopped Ollama refuses and comes back at its port, a refused refresh and a
+    // revoked refresh token are what the issuer answers.
     let stopped = call(&file.control, "POST", "/ollama/stop", b"")
         .await
         .expect("stop");
@@ -201,7 +158,7 @@ async fn a_rig_asked_for_nothing_starts_only_its_control_endpoint_and_a_lever_on
         &[],
     );
     let file = eventually("rig.json is written", || RigFile::read(&dir).ok()).await;
-    assert!(file.imap.is_none() && file.graph.is_none() && file.oauth.is_none());
+    assert!(file.imap.is_none() && file.oauth.is_none());
     let lever = call(&file.control, "POST", "/ollama/stop", b"")
         .await
         .expect("lever");
@@ -241,10 +198,7 @@ async fn the_rig_starts_a_fake_google_that_wants_the_planted_application_secret(
     );
     let file = eventually("rig.json is written", || RigFile::read(&dir).ok()).await;
     let google = file.google.clone().expect("--google");
-    assert!(
-        file.oauth.is_none() && file.graph.is_none(),
-        "its own issuer"
-    );
+    assert!(file.oauth.is_none(), "its own issuer");
     assert_eq!(google.client_secret, planted::GOOGLE_CLIENT_SECRET);
     assert!(
         file.secrets
@@ -279,14 +233,14 @@ async fn the_rig_starts_a_fake_google_that_wants_the_planted_application_secret(
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn the_rig_serves_me_lists_login_attempts_without_secrets_and_issues_short_tokens() {
+async fn the_rig_lists_login_attempts_without_secrets_and_issues_short_tokens() {
     let dir = Scratch::new("rig-servers-levers");
     let mut rig = Proc::spawn(
         env!("CARGO_BIN_EXE_porter-rig-servers"),
         &[
             "--dir",
             dir.to_str().expect("utf-8"),
-            "--graph",
+            "--oauth",
             "--imap",
             "--smtp",
             "--pop3",
@@ -298,22 +252,6 @@ async fn the_rig_serves_me_lists_login_attempts_without_secrets_and_issues_short
         &[],
     );
     let file = eventually("rig.json is written", || RigFile::read(&dir).ok()).await;
-
-    // `GET /v1.0/me` names the rig's one user to the planted token, and only to it.
-    let graph = file.graph.clone().expect("graph");
-    let (address, _) = split_loopback(&graph.url).expect("address");
-    let me = |bearer: &'static str| {
-        let request = Request::new("GET", "/v1.0/me")
-            .with_header("Authorization", &format!("Bearer {bearer}"));
-        let address = address.clone();
-        async move { send(&address, Scheme::Http, &request).await.expect("me") }
-    };
-    let answer = me(planted::OAUTH_ACCESS_TOKEN).await;
-    assert_eq!(answer.status, 200);
-    let who = json(&answer.text());
-    assert_eq!(who["mail"], planted::MAIL_USER);
-    assert_eq!(who["userPrincipalName"], planted::MAIL_USER);
-    assert_eq!(me("not-a-token").await.status, 401);
 
     // The issuer's `expires_in` is the one asked for.
     let oauth = file.oauth.clone().expect("oauth");

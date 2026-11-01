@@ -261,20 +261,16 @@ fn sender_names_become_path_segments_as_portals_write_them() {
         request_namespace(":1.42"),
         "/org/quire/Accounts1/request/1_42"
     );
-    // The same caller's namespace under each service's own root.
-    for (service, root) in [
-        (ServiceRoot::Accounts, "/org/quire/Accounts1/request"),
-        (ServiceRoot::Sync, "/org/quire/Sync1/request"),
-    ] {
-        assert_eq!(
-            request_namespace_in(service, ":1.42"),
-            format!("{root}/1_42")
-        );
-        assert_eq!(
-            request_path_in(service, ":1.42", "tok").as_deref(),
-            Some(format!("{root}/1_42/tok").as_str())
-        );
-    }
+    // The same caller's namespace under the service's own root.
+    let (service, root) = (ServiceRoot::Accounts, "/org/quire/Accounts1/request");
+    assert_eq!(
+        request_namespace_in(service, ":1.42"),
+        format!("{root}/1_42")
+    );
+    assert_eq!(
+        request_path_in(service, ":1.42", "tok").as_deref(),
+        Some(format!("{root}/1_42/tok").as_str())
+    );
 }
 
 #[test]

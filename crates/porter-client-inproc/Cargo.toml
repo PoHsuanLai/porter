@@ -9,6 +9,7 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+porter-capability = { workspace = true }
 porter-client = { workspace = true }
 porter-core = { workspace = true }
 porter-ids = { workspace = true }
@@ -27,7 +28,6 @@ tokio = { workspace = true, optional = true }
 
 [dev-dependencies]
 test-kit = { workspace = true }
-porter-capability = { workspace = true }
 porter-fake = { workspace = true }
 porter-fake-servers = { workspace = true }
 porter-families = { workspace = true }

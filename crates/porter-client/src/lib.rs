@@ -1,9 +1,9 @@
 //! The app-facing API of the account service (design/31 §5.1). An app asks for a capability,
 //! never a brand. [`Porter`] is the handle, over a transport: [`Porter::accounts`] signs an account
-//! in; where the app hosts the service itself, [`Porter::grants`] finds an account by capability,
-//! asks for consent and opens the relays a grant allows. The transports are `porter-client-dbus`
-//! (accountd on the session bus) and `porter-client-inproc` (the service hosted in the app); this
-//! crate names neither a bus nor a service.
+//! in; [`Porter::grants`] finds an account by capability, asks for consent and opens the relays a
+//! grant allows. The transports are `porter-client-dbus` (accountd on the session bus) and
+//! `porter-client-inproc` (the service hosted in the app); this crate names neither a bus nor a
+//! service.
 //!
 //! ```no_run
 //! use porter_client::{ConsentOffer, Found, GrantsError, GrantsLink, Grants};
@@ -26,10 +26,11 @@
 //! }
 //! ```
 //!
-//! No feature is on by default, and the crate reaches no zbus and no service crate. Whoever uses
-//! a credential holds it, so no credential crosses a bus. Over D-Bus an app asks accountd's
-//! `Identities1` for "Continue as" ([`Identities`]) and for a permit to use the person's AI keys
-//! ([`AiKeys`]). Inference is `inferd-client`'s.
+//! No feature is on by default, and the crate reaches no zbus and no service crate. No
+//! credential crosses a bus: over D-Bus an app asks accountd's `Grants1` for a grant and for a
+//! stream to the account's server that accountd has signed in ([`Grants`]), `Identities1` for
+//! "Continue as" ([`Identities`]) and for a permit to use the person's AI keys ([`AiKeys`]).
+//! Inference is `inferd-client`'s.
 
 mod accounts;
 mod ai_accounts;
@@ -45,18 +46,20 @@ mod porter;
 mod spaces;
 mod tailnet;
 
-pub use accounts::{AccountChange, AccountRef, AccountView, Accounts, AccountsError, NeedsReauth};
+pub use accounts::{
+    AccountChange, AccountRef, AccountView, Accounts, AccountsError, EditError, NeedsReauth,
+};
 pub use ai_accounts::{AiAccounts, AiAccountsError};
 pub use ai_keys::{AiKeys, AiKeysError};
 pub use authenticated::AuthenticatedStream;
 pub use changes::Changes;
 pub use error::{LinkError, Malformed};
 pub use found::{ConsentOffer, Found, NoAccount, found};
-pub use grants::{Grants, GrantsError};
+pub use grants::{Grants, GrantsError, ListedAccount};
 pub use identities::{Identities, IdentitiesError, Picked};
 pub use link::{
-    AccountWatch, AccountsLink, AiAccountsLink, AiKeysLink, GrantsLink, IdentitiesLink, SpacesLink,
-    TailnetLink,
+    AccountWatch, AccountsLink, AiAccountsLink, AiKeysLink, GrantsLink, IdentitiesLink,
+    ServerEdits, SpacesLink, TailnetLink,
 };
 pub use porter::Porter;
 pub use spaces::{Spaces, SpacesError};

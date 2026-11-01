@@ -60,7 +60,20 @@ impl SharedLogin {
         credential: &Credential,
         endpoints: &[ServiceEndpoint],
     ) -> Result<(), SignInFault> {
-        let Some(plan) = generic_proto::check::plan(credential, endpoints) else {
+        match generic_proto::check::incoming(endpoints) {
+            Some(endpoint) => self.check_at(credential, endpoint).await,
+            None => Ok(()),
+        }
+    }
+
+    /// Tries `credential` at `endpoint`, a mail server (IMAP, POP3 or SMTP). Nothing to try (a
+    /// token) passes.
+    pub(super) async fn check_at(
+        &self,
+        credential: &Credential,
+        endpoint: &ServiceEndpoint,
+    ) -> Result<(), SignInFault> {
+        let Some(plan) = generic_proto::check::plan_at(credential, endpoint) else {
             return Ok(());
         };
         self.0.check_boxed(plan).await

@@ -71,6 +71,7 @@ async fn ask_for_agent(service: &Svc, open: Option<&SessionToken>) -> AccountsRe
             &agent(),
             llm(),
             (DataClass::Prompt, Usage::Interactive),
+            None,
             &ParentWindow::Unparented,
             open,
         )
@@ -101,6 +102,7 @@ async fn the_ask_carries_the_session_only_when_the_request_was_made_in_one() {
                 class: DataClass::Prompt,
                 usage: Usage::Interactive,
                 window: ParentWindow::Unparented,
+                account: None,
             },
         )
         .await;
@@ -163,6 +165,7 @@ async fn a_session_scope_the_ask_did_not_offer_makes_no_grant() {
                     class: DataClass::Prompt,
                     usage: Usage::Interactive,
                     window: ParentWindow::Unparented,
+                    account: None,
                 },
             )
             .await,

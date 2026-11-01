@@ -5,7 +5,6 @@ mod dav;
 mod discovery;
 mod google;
 mod google_pim;
-mod graph_issued;
 mod mail;
 mod nextcloud;
 mod oauth;

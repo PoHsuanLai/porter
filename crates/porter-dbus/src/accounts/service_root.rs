@@ -1,9 +1,9 @@
-//! The two services that show a sheet to the person and answer with a Request object, and what
+//! The services that show a sheet to the person and answer with a Request object, and what
 //! differs between them: the bus name, the root of the Request objects' paths and the prefix of
 //! the errors. The Request interface itself (`org.quire.Accounts1.Request`: `Close`, the signal
-//! `Response`) is one shape for all of them.
+//! `Response`) is one shape for all of them. accountd is the one now: a daemon that wants a sheet
+//! asks accountd for it, and the sync daemon (ferry's) is such a daemon.
 
-use crate::sync::SYNC_BUS;
 use porter_wire::names::ACCOUNTS_BUS;
 
 /// A daemon that serves Request objects, and so a sheet a caller waits for.
@@ -13,19 +13,16 @@ pub enum ServiceRoot {
     /// accountd (`org.quire.Accounts1`): the sheets for identities, for AI keys and for an
     /// agent's key.
     Accounts,
-    /// syncd (`org.quire.Sync1`): its own "Continue as" sheets.
-    Sync,
 }
 
 impl ServiceRoot {
     /// Every service, so a table over them is total.
-    pub const ALL: [ServiceRoot; 2] = [ServiceRoot::Accounts, ServiceRoot::Sync];
+    pub const ALL: [ServiceRoot; 1] = [ServiceRoot::Accounts];
 
     /// The service's well-known bus name.
     pub fn bus_name(self) -> &'static str {
         match self {
             ServiceRoot::Accounts => ACCOUNTS_BUS,
-            ServiceRoot::Sync => SYNC_BUS,
         }
     }
 
@@ -33,7 +30,6 @@ impl ServiceRoot {
     pub fn request_root(self) -> &'static str {
         match self {
             ServiceRoot::Accounts => "/org/quire/Accounts1/request",
-            ServiceRoot::Sync => "/org/quire/Sync1/request",
         }
     }
 
@@ -42,7 +38,6 @@ impl ServiceRoot {
     pub fn error_prefix(self) -> &'static str {
         match self {
             ServiceRoot::Accounts => "org.quire.Accounts1.Error",
-            ServiceRoot::Sync => "org.quire.Sync1.Error",
         }
     }
 }

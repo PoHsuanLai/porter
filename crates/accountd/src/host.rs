@@ -2,10 +2,11 @@
 //! identified. [`AccountService`] is the implementation.
 
 use porter_capability::{CapabilityKind, Claim, Toggle};
-use porter_core::consent::Usage;
+use porter_core::consent::{Availability, Grant, Usage};
 use porter_core::store::RegistryStore;
-use porter_core::{AccountId, GrantId, LlmVerdict, OwnServerRow, ProviderId, SecretText};
+use porter_core::{AccountId, EndpointUrl, GrantId, LlmVerdict, OwnServerRow, ProviderId};
 use porter_core::{AccountState, AgentState, AppId, Candidate, DataClass, SessionToken};
+use porter_core::{RelayPlan, SecretText};
 use porter_ids::clock::Clock;
 use porter_match::Need;
 use porter_provider::{Provider, RevokeOutcome};
@@ -92,9 +93,68 @@ pub trait Host: Send + Sync + 'static {
         caller: &AppId,
         need: Need,
         class_usage: (DataClass, Usage),
+        only: Option<&AccountId>,
         window: &ParentWindow,
         session: Option<&SessionToken>,
     ) -> impl Future<Output = AccountsReply> + Send;
+
+    /// The accounts that fit `need` for `app` and that `app` holds a grant for, best first.
+    fn candidates(
+        &self,
+        app: &AppId,
+        need: &Need,
+        class: DataClass,
+        usage: Usage,
+    ) -> Vec<Candidate>;
+
+    /// Whether `need` can be met for `app`, revealing no identity.
+    fn availability(
+        &self,
+        app: &AppId,
+        need: &Need,
+        class: DataClass,
+        usage: Usage,
+    ) -> Availability;
+
+    /// The grants `app` holds.
+    fn grants_of(&self, app: &AppId) -> Vec<Grant>;
+
+    /// Withdraws one of `app`'s own grants; `UnknownGrant` when `app` holds none of that id.
+    fn revoke_own(
+        &self,
+        app: &AppId,
+        grant: &GrantId,
+    ) -> impl Future<Output = Result<(), Refusal>> + Send;
+
+    /// What the relay for `OpenAuthenticated` is told: the plan for `endpoint` of the account
+    /// `grant` is for. The credential in it never leaves the process that runs the relay.
+    fn open_authenticated(
+        &self,
+        app: &AppId,
+        grant: &GrantId,
+        endpoint: &EndpointUrl,
+    ) -> impl Future<Output = Result<RelayPlan, Refusal>> + Send;
+
+    /// What the relay for `OpenLinked` is told: the plan for `origin`, which adds no credential.
+    fn open_linked(
+        &self,
+        app: &AppId,
+        grant: &GrantId,
+        origin: &EndpointUrl,
+    ) -> impl Future<Output = Result<RelayPlan, Refusal>> + Send;
+
+    /// Asks the person, in a sign-in of its own, for the access `account`'s provider asks only on
+    /// use, for `kinds`.
+    fn extend_access(
+        &self,
+        app: &AppId,
+        account: &AccountId,
+        kinds: Vec<CapabilityKind>,
+        window: ParentWindow,
+    ) -> impl Future<Output = Result<(), Refusal>> + Send;
+
+    /// Whether `provider` asks some access of `kind` only on use.
+    fn asks_on_use(&self, provider: &ProviderId, kind: CapabilityKind) -> bool;
 
     /// The permit `app` already holds for `need`, the newest, so a repeat request is answered
     /// with no sheet.
@@ -240,10 +300,75 @@ where
         caller: &AppId,
         need: Need,
         class_usage: (DataClass, Usage),
+        only: Option<&AccountId>,
         window: &ParentWindow,
         session: Option<&SessionToken>,
     ) -> impl Future<Output = AccountsReply> + Send {
-        AccountService::choose(self, caller, need, class_usage, window, session)
+        AccountService::choose(self, caller, need, class_usage, only, window, session)
+    }
+
+    fn candidates(
+        &self,
+        app: &AppId,
+        need: &Need,
+        class: DataClass,
+        usage: Usage,
+    ) -> Vec<Candidate> {
+        AccountService::candidates(self, app, need, class, usage)
+    }
+
+    fn availability(
+        &self,
+        app: &AppId,
+        need: &Need,
+        class: DataClass,
+        usage: Usage,
+    ) -> Availability {
+        AccountService::availability(self, app, need, class, usage)
+    }
+
+    fn grants_of(&self, app: &AppId) -> Vec<Grant> {
+        AccountService::grants(self, app)
+    }
+
+    fn revoke_own(
+        &self,
+        app: &AppId,
+        grant: &GrantId,
+    ) -> impl Future<Output = Result<(), Refusal>> + Send {
+        AccountService::revoke(self, app, grant)
+    }
+
+    fn open_authenticated(
+        &self,
+        app: &AppId,
+        grant: &GrantId,
+        endpoint: &EndpointUrl,
+    ) -> impl Future<Output = Result<RelayPlan, Refusal>> + Send {
+        AccountService::open_authenticated(self, app, grant, endpoint)
+    }
+
+    fn open_linked(
+        &self,
+        app: &AppId,
+        grant: &GrantId,
+        origin: &EndpointUrl,
+    ) -> impl Future<Output = Result<RelayPlan, Refusal>> + Send {
+        AccountService::open_linked(self, app, grant, origin)
+    }
+
+    fn extend_access(
+        &self,
+        app: &AppId,
+        account: &AccountId,
+        kinds: Vec<CapabilityKind>,
+        window: ParentWindow,
+    ) -> impl Future<Output = Result<(), Refusal>> + Send {
+        AccountService::extend_access(self, app, account, kinds, window)
+    }
+
+    fn asks_on_use(&self, provider: &ProviderId, kind: CapabilityKind) -> bool {
+        AccountService::asks_on_use(self, provider, kind)
     }
 
     fn existing_permit(

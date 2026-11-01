@@ -4,15 +4,18 @@
 //! connection; `porter-client`'s own API names none.
 //!
 //! What accountd serves over the bus is the sheets that add an account and sign one in again, the
-//! shell's view of the accounts, the identities, the Spaces, the person's computers and the AI keys
-//! (`Keys`, `Launcher`, `Broker`). Grants, tokens and relays are not on the bus: they are the library's, for an app that hosts the service itself
-//! (`porter-client-inproc`), so [`Bus`] does not implement `GrantsLink`.
+//! shell's view of the accounts, the identities, the Spaces, the person's computers, the AI keys
+//! (`Keys`, `Launcher`, `Broker`) and the grants (`Grants1`: finding, asking for and revoking a
+//! grant, and a stream to one of the account's servers that accountd has signed in, arriving as a
+//! descriptor). No token and no password crosses the bus: [`Bus`] implements `GrantsLink`, and the
+//! relay is accountd's.
 
 mod accounts;
 mod ai_accounts;
 mod ai_keys;
 mod credential;
 mod failure;
+mod grants;
 mod identities;
 mod launcher;
 mod spaces;

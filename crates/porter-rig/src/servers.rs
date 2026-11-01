@@ -13,9 +13,9 @@ use porter_fake_servers::imap::mailbox;
 use porter_fake_servers::mail::Accounts;
 use porter_fake_servers::net::Bind;
 use porter_fake_servers::{
-    DavHandle, FakeDav, FakeGraph, FakeImap, FakeIssuer, FakeLlmApi, FakeModels, FakeNextcloud,
-    FakePop3, FakeSmtp, Google, GraphHandle, IssuerHandle, LlmApiHandle, MailHandle, ModelDef,
-    ModelsHandle, NextcloudHandle, Running, Wire, llm_api::Auth, tls,
+    DavHandle, FakeDav, FakeImap, FakeIssuer, FakeLlmApi, FakeModels, FakeNextcloud, FakePop3,
+    FakeSmtp, Google, IssuerHandle, LlmApiHandle, MailHandle, ModelDef, ModelsHandle,
+    NextcloudHandle, Running, Wire, llm_api::Auth, tls,
 };
 use std::io;
 use std::path::{Path, PathBuf};
@@ -38,8 +38,6 @@ pub struct Options {
     pub nextcloud: bool,
     /// The OAuth issuer.
     pub oauth: bool,
-    /// The Graph drive, which accepts the issuer's tokens (so it starts the issuer too).
-    pub graph: bool,
     /// A fake Google: its own issuer (Google's style, wanting the planted application secret)
     /// and the account APIs that accept its tokens.
     pub google: bool,
@@ -189,7 +187,6 @@ pub struct Rig {
     dav: Option<Running<DavHandle>>,
     nextcloud: Option<Running<NextcloudHandle>>,
     issuer: Option<Running<IssuerHandle>>,
-    graph: Option<Running<GraphHandle>>,
     google: Option<Google>,
     llm_api: Option<Running<LlmApiHandle>>,
     ollama: Option<Arc<Ollama>>,
@@ -225,7 +222,7 @@ impl Rig {
             nextcloud.seed_app_password(NEXTCLOUD_APP_PASSWORD);
             rig.nextcloud = Some(nextcloud);
         }
-        if options.oauth || options.graph {
+        if options.oauth {
             let issuer = FakeIssuer::start().await?;
             issuer.seed_refresh_as(OAUTH_REFRESH_TOKEN, OAUTH_CLIENT, OAUTH_SCOPE);
             issuer.seed_access_as(OAUTH_ACCESS_TOKEN, OAUTH_CLIENT);
@@ -233,12 +230,6 @@ impl Rig {
                 issuer.set_token_lifetime(seconds);
             }
             rig.issuer = Some(issuer);
-        }
-        if let (true, Some(issuer)) = (options.graph, &rig.issuer) {
-            let graph = FakeGraph::start_issued(issuer).await?;
-            // The account the Microsoft sign-in reads from `GET /v1.0/me` is the rig's one user.
-            graph.set_mail(MAIL_USER);
-            rig.graph = Some(graph);
         }
         if options.google {
             let google = Google::start(GOOGLE_CLIENT_SECRET).await?;
@@ -281,11 +272,6 @@ impl Rig {
     /// The fake Google's issuer and APIs, when they run.
     pub fn google(&self) -> Option<&Google> {
         self.google.as_ref()
-    }
-
-    /// The Graph drive's handle, when it runs.
-    pub fn graph(&self) -> Option<GraphHandle> {
-        self.graph.as_ref().map(|running| (**running).clone())
     }
 
     /// The fake Ollama, when it runs.
@@ -332,10 +318,6 @@ impl Rig {
                     access_token: OAUTH_ACCESS_TOKEN.to_owned(),
                 }
             }),
-            graph: self
-                .graph
-                .as_ref()
-                .map(|r| http_at(r.base_url(), None, None)),
             google: self.google.as_ref().map(|g| {
                 let url = g.issuer.base_url().to_owned();
                 GoogleAt {

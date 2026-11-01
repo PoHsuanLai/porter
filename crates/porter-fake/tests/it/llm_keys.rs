@@ -137,6 +137,7 @@ async fn permit(rig: &Rig, who: &AppId) -> GrantId {
                 class: DataClass::Prompt,
                 usage: Usage::Interactive,
                 window: ParentWindow::Unparented,
+                account: None,
             },
         )
         .await;

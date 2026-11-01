@@ -65,10 +65,18 @@ fn every_request_and_reply_round_trips() {
     let window = ParentWindow::Handle("wayland:abc".into());
     let requests = [
         AccountsRequest::Choose {
-            need,
+            need: need.clone(),
             class: DataClass::Photos,
             usage: Usage::Interactive,
             window: window.clone(),
+            account: None,
+        },
+        AccountsRequest::Choose {
+            need,
+            class: DataClass::Photos,
+            usage: Usage::Interactive,
+            window: ParentWindow::Unparented,
+            account: Some(AccountId::parse("b").expect("id")),
         },
         AccountsRequest::AddAccount {
             hint: ProviderHint::Provider(ProviderId::parse("nextcloud").expect("id")),

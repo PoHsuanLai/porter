@@ -89,6 +89,7 @@ async fn the_file_a_service_writes_holds_none_of_the_fake_secrets() {
                 class: DataClass::Files,
                 usage: Usage::Interactive,
                 window: ParentWindow::Unparented,
+                account: None,
             },
         )
         .await;

@@ -1,7 +1,7 @@
 //! What `find` answers: a closed set the app renders arm by arm.
 
 use porter_core::consent::{Availability, Usage};
-use porter_core::{Candidate, DataClass};
+use porter_core::{AccountId, Candidate, DataClass};
 use porter_match::Need;
 
 /// The answer to "is there an account that can do this for me?".
@@ -26,6 +26,9 @@ pub struct ConsentOffer {
     pub class: DataClass,
     /// Interactive or background.
     pub usage: Usage,
+    /// Ask about this one account: the sheet has no chooser and the answer is a grant for it or
+    /// a refusal. `None` lets the person pick among the accounts that fit (what `find` offers).
+    pub account: Option<AccountId>,
 }
 
 /// Why there is no account to use.
@@ -78,6 +81,7 @@ mod tests {
             need,
             class: DataClass::Files,
             usage: Usage::Interactive,
+            account: None,
         }
     }
 

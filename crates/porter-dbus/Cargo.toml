@@ -1,6 +1,6 @@
 [package]
 name = "porter-dbus"
-description = "porter's D-Bus API: org.quire.Accounts1 and org.quire.Sync1 each written once, as the zbus proxy its callers use, the trait a daemon implements and the object that serves it."
+description = "porter's D-Bus API: accountd's interfaces (org.quire.Accounts1, Identities1, Spaces1, Tailnet1 and the AI keys'), each written once, as the zbus proxy its callers use, the trait a daemon implements and the object that serves it."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -20,12 +20,6 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 # `serve_ready`'s deadline; zbus already runs on tokio here.
 tokio = { workspace = true }
-
-[features]
-# The Photos Picker's proxy and interface (`org.quire.Photos1.Picker`). Off by default: no Photos
-# app ships in v1, so the default bus surface does not declare it. syncd's feature of the same
-# name turns it on for the object it serves.
-photos-picker = []
 
 [lints]
 workspace = true

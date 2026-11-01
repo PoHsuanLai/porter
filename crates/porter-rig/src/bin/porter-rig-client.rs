@@ -15,13 +15,10 @@
 //! - `open <need> [--class C] [--tier T] [--usage U] [--prompt TEXT]`: opens an AI session
 //!   (`{"result":"opened"}`) and, with a prompt, runs one chat turn, one `{"event":..}` line
 //!   per event.
-//! - `sync-resolve <dataset> <number> <keep_local|keep_remote>`.
-//! - `watch-conflicts [--count N] [--timeout-s S]`: `{"event":"conflict",..}` lines.
 //! - `add-account [<provider>]`: opens accountd's add-account sheet (the provider's form when
 //!   named) and waits for the answer: `{"result":"added","account":..}`, or
 //!   `{"result":"refused","refusal":"Cancelled"|"Unavailable"|..}` and exit 1.
 //! - `reauthenticate <account>`: the same for signing an account in again.
-//! - `datasets`, `status <dataset>`.
 //! - `write-identity --pid N`: only writes the identity fixture for process N (it is kept).
 //!
 //! `<need>` is `mail`, `storage`, `calendar`, `contacts`, `notes`, `llm` or a JSON `Need`;

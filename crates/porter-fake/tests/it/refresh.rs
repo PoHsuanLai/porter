@@ -191,6 +191,7 @@ async fn service() -> (Svc, Seen, Candidate) {
                 class: DataClass::Mail,
                 usage: Usage::Interactive,
                 window: ParentWindow::Unparented,
+                account: None,
             },
         )
         .await;

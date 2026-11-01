@@ -15,7 +15,6 @@ pub mod browser;
 pub mod dav;
 pub mod dav_server;
 pub mod google;
-pub mod graph;
 pub mod held;
 pub mod http;
 pub mod imap;
@@ -37,7 +36,6 @@ pub use autoconfig::{AutoconfigHandle, FakeAutoconfig, FakeDns, Route, autoconfi
 pub use browser::{Visit, follow};
 pub use dav_server::{DavHandle, FakeDav};
 pub use google::{FakeGoogle, Google, GoogleHandle};
-pub use graph::{FakeGraph, GraphHandle};
 pub use held::HeldRuntime;
 pub use http::{Hit, Request, Response};
 pub use imap::{FakeImap, Message, mailbox};

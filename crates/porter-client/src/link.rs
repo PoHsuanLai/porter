@@ -2,17 +2,19 @@
 //! serve; a method a transport cannot serve is not on its type, because [`crate::Porter`] hands out
 //! a domain client only over a transport that implements the domain's trait.
 
-use crate::accounts::{AccountChange, AccountRef, AccountView, AccountsError, NeedsReauth};
+use crate::accounts::{
+    AccountChange, AccountRef, AccountView, AccountsError, EditError, NeedsReauth,
+};
 use crate::ai_accounts::AiAccountsError;
 use crate::ai_keys::AiKeysError;
 use crate::authenticated::AuthenticatedStream;
 use crate::changes::Changes;
 use crate::error::LinkError;
 use crate::found::ConsentOffer;
-use crate::grants::GrantsError;
+use crate::grants::{GrantsError, ListedAccount};
 use crate::identities::{IdentitiesError, Picked};
 use crate::spaces::SpacesError;
-use porter_capability::Claim;
+use porter_capability::{CapabilityKind, Claim};
 use porter_core::consent::{Availability, Grant, Usage};
 use porter_core::{
     AccountId, AccountState, AiAccountRow, AppId, AppName, Candidate, DataClass, DesktopSpace,
@@ -20,6 +22,7 @@ use porter_core::{
     ProviderHint, ProviderId, SecretText, SpaceChange, SpaceLook, SpaceName,
 };
 use porter_match::Need;
+use porter_sheet::{EditServers, EditedServers};
 use porter_tailscale::Machine;
 use porter_wire::ParentWindow;
 use std::future::Future;
@@ -41,7 +44,18 @@ pub trait AccountsLink: Send + Sync + 'static {
     ) -> impl Future<Output = Result<(), AccountsError>> + Send;
 }
 
-/// The grants domain: who may use which account, and the relays a grant opens. No bus carries it.
+/// Hosted only: editing a password account's servers through the sheet. The service checks them
+/// before it hands them back; no bus carries it, so it is not on a bus transport's type.
+pub trait ServerEdits: AccountsLink {
+    /// Opens the server form of `edit`'s account, prefilled, and tries what the person types.
+    fn edit_servers(
+        &self,
+        edit: EditServers,
+        window: &ParentWindow,
+    ) -> impl Future<Output = Result<EditedServers, EditError>> + Send;
+}
+
+/// The grants domain: who may use which account, and the relays a grant opens.
 pub trait GrantsLink: Send + Sync + 'static {
     /// The accounts that fit `need` for this app and that it holds a grant for.
     fn candidates(
@@ -62,7 +76,9 @@ pub trait GrantsLink: Send + Sync + 'static {
     /// The grants this app holds.
     fn grants(&self) -> impl Future<Output = Result<Vec<Grant>, GrantsError>> + Send;
 
-    /// Shows the chooser and consent sheet for `offer`; the account the person picked, granted.
+    /// Shows the chooser and consent sheet for `offer` (for the one account it names, when it
+    /// names one, without a chooser); the account the person picked, granted. An offer that
+    /// names an account is answered with a grant for it or a refusal, never another account.
     fn request_grant(
         &self,
         offer: &ConsentOffer,
@@ -71,6 +87,24 @@ pub trait GrantsLink: Send + Sync + 'static {
 
     /// Withdraws one of this app's own grants.
     fn revoke(&self, grant: &GrantId) -> impl Future<Output = Result<(), GrantsError>> + Send;
+
+    /// The accounts the person has, for a porter daemon that keeps a switch per account.
+    fn accounts(&self) -> impl Future<Output = Result<Vec<ListedAccount>, GrantsError>> + Send;
+
+    /// Asks the person for the access the account's provider asks only on use, for `kinds`.
+    fn extend_access(
+        &self,
+        account: &AccountId,
+        kinds: &[CapabilityKind],
+        window: &ParentWindow,
+    ) -> impl Future<Output = Result<(), GrantsError>> + Send;
+
+    /// Whether `provider` asks some access of `kind` only on use.
+    fn asks_on_use(
+        &self,
+        provider: &ProviderId,
+        kind: CapabilityKind,
+    ) -> impl Future<Output = Result<bool, GrantsError>> + Send;
 
     /// A byte stream to `endpoint`, one of the account's servers, authenticated by a relay.
     fn open_authenticated(
@@ -91,7 +125,7 @@ pub trait GrantsLink: Send + Sync + 'static {
 /// What the shell reads of accountd's accounts, beyond signing one in. The bus only.
 pub trait AccountWatch: AccountsLink {
     /// The accounts that need signing in again now, with their labels. Asking is also how accountd
-    /// learns this connection, which it then sends `NeedsReauth` to.
+    /// learns this connection, which it then sends every account's `State` changes.
     fn needing_reauth(&self) -> impl Future<Output = Result<Vec<NeedsReauth>, LinkError>> + Send;
 
     /// One account as accountd shows it to the shell.
@@ -107,7 +141,7 @@ pub trait AccountWatch: AccountsLink {
         window: &ParentWindow,
     ) -> impl Future<Output = Result<(), AccountsError>> + Send;
 
-    /// The accounts added, removed and needing a sign-in again, from now on.
+    /// The accounts added and removed, and every change of an account's state, from now on.
     fn watch(&self) -> impl Future<Output = Result<Changes<AccountChange>, LinkError>> + Send;
 }
 

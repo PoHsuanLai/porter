@@ -22,6 +22,9 @@ pub enum AccountsRequest {
         usage: Usage,
         /// The window the sheet attaches to.
         window: ParentWindow,
+        /// Ask about this one account only: the sheet has no chooser and the answer is a grant
+        /// for it or a refusal. `None` lets the person pick among the fitting accounts.
+        account: Option<AccountId>,
     },
     /// Open the add-account sheet (`Manager.AddAccount`).
     AddAccount {

@@ -1,14 +1,18 @@
 //! [`Hosted`]: `porter-client`'s accounts and grants answered by a service this process runs.
 
 use crate::relays::{NoRelays, RelayHost};
+use porter_capability::CapabilityKind;
 use porter_client::{
-    AccountsError, AccountsLink, AuthenticatedStream, ConsentOffer, GrantsError, GrantsLink, Porter,
+    AccountsError, AccountsLink, AuthenticatedStream, ConsentOffer, EditError, GrantsError,
+    GrantsLink, ListedAccount, Porter, ServerEdits,
 };
 use porter_core::RelayPlan;
 use porter_core::consent::{Availability, Grant, Usage};
 use porter_core::store::{NoStore, Persisted, RegistryStore};
 use porter_core::stream::duplex;
-use porter_core::{AccountId, AppId, Candidate, DataClass, EndpointUrl, GrantId, ProviderHint};
+use porter_core::{
+    AccountId, AppId, Candidate, DataClass, EndpointUrl, GrantId, ProviderHint, ProviderId,
+};
 use porter_ids::clock::{Clock, SystemClock};
 use porter_match::Need;
 use porter_provider::Provider;
@@ -18,6 +22,7 @@ use porter_service_accounts::AccountsApi;
 use porter_service_core::registry::Registry;
 use porter_service_grants::GrantsApi;
 use porter_sheet::host::Sheets;
+use porter_sheet::{EditServers, EditedServers};
 use porter_wire::{AccountsReply, ParentWindow, Refusal};
 use std::sync::Arc;
 
@@ -94,6 +99,26 @@ impl<C: Service + 'static, H: RelayHost + 'static> AccountsLink for Hosted<C, H>
     }
 }
 
+impl<C: Service + 'static, H: RelayHost + 'static> ServerEdits for Hosted<C, H> {
+    async fn edit_servers(
+        &self,
+        edit: EditServers,
+        window: &ParentWindow,
+    ) -> Result<EditedServers, EditError> {
+        self.service
+            .accounts_api()
+            .edit_servers(&self.app, edit, window.clone())
+            .await
+            .map_err(|refused| match refused {
+                porter_service_accounts::EditError::Fixed(fixed) => EditError::Fixed(fixed),
+                porter_service_accounts::EditError::NotThatProvider => EditError::NotThatProvider,
+                porter_service_accounts::EditError::Refused(refusal) => EditError::Refused(refusal),
+                // a reason a newer porter adds
+                _ => EditError::Refused(Refusal::Unavailable),
+            })
+    }
+}
+
 impl<C: Service + 'static, H: RelayHost + 'static> GrantsLink for Hosted<C, H> {
     async fn candidates(
         &self,
@@ -134,6 +159,7 @@ impl<C: Service + 'static, H: RelayHost + 'static> GrantsLink for Hosted<C, H> {
                 &self.app,
                 offer.need.clone(),
                 (offer.class, offer.usage),
+                offer.account.as_ref(),
                 window,
                 None,
             )
@@ -151,6 +177,38 @@ impl<C: Service + 'static, H: RelayHost + 'static> GrantsLink for Hosted<C, H> {
             .revoke(&self.app, grant)
             .await
             .map_err(GrantsError::Refused)
+    }
+
+    async fn accounts(&self) -> Result<Vec<ListedAccount>, GrantsError> {
+        // No provider names are kept here: the labels are accountd's (`provider_names`).
+        Ok(self
+            .service
+            .grants_api()
+            .accounts()
+            .into_iter()
+            .map(|account| ListedAccount::new(account, None))
+            .collect())
+    }
+
+    async fn extend_access(
+        &self,
+        account: &AccountId,
+        kinds: &[CapabilityKind],
+        window: &ParentWindow,
+    ) -> Result<(), GrantsError> {
+        self.service
+            .accounts_api()
+            .extend_access(&self.app, account, kinds.to_vec(), window.clone())
+            .await
+            .map_err(GrantsError::Refused)
+    }
+
+    async fn asks_on_use(
+        &self,
+        provider: &ProviderId,
+        kind: CapabilityKind,
+    ) -> Result<bool, GrantsError> {
+        Ok(self.service.accounts_api().asks_on_use(provider, kind))
     }
 
     async fn open_authenticated(
@@ -192,9 +250,9 @@ impl<C, H: RelayHost> Hosted<C, H> {
 }
 
 /// Everything a hosted handle carries: what [`hosted`] promises of the type it hides.
-pub trait Hosting: AccountsLink + GrantsLink + std::fmt::Debug {}
+pub trait Hosting: AccountsLink + ServerEdits + GrantsLink + std::fmt::Debug {}
 
-impl<T: AccountsLink + GrantsLink + std::fmt::Debug> Hosting for T {}
+impl<T: AccountsLink + ServerEdits + GrantsLink + std::fmt::Debug> Hosting for T {}
 
 /// What an app that runs the service itself brings: who it is, its providers, its secret store
 /// and the host that draws its sheets; the clock, the store of its registry and the relay host

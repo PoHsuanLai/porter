@@ -51,7 +51,6 @@ async fn the_shell_is_told_of_a_refusal_and_a_recovery_and_reads_the_account() {
         .list()
         .await
         .expect("list");
-    let mut shell_hears = listen(&shell).await;
     let mut other_hears = listen(&other).await;
     let mut shell_changes = property_changes(&shell).await;
 
@@ -62,11 +61,6 @@ async fn the_shell_is_told_of_a_refusal_and_a_recovery_and_reads_the_account() {
     );
     // A publish tells whoever is to be told.
     publish(&rig).await;
-    let heard_by_shell = heard_names(&mut shell_hears, &["NeedsReauth"]).await;
-    assert!(
-        heard_by_shell.contains(&"NeedsReauth".to_owned()),
-        "{heard_by_shell:?}"
-    );
     // An absence, proved in a short window by design: a slow machine can only make it pass.
     assert!(
         heard(&mut other_hears, Duration::from_millis(300))

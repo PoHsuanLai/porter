@@ -2,7 +2,8 @@
 
 use crate::launcher::LauncherError;
 use porter_client::{
-    AccountsError, AiAccountsError, AiKeysError, IdentitiesError, LinkError, Malformed, SpacesError,
+    AccountsError, AiAccountsError, AiKeysError, GrantsError, IdentitiesError, LinkError,
+    Malformed, SpacesError,
 };
 use porter_dbus::accounts::{launcher_fault_of, refusal_of};
 use porter_dbus::{
@@ -36,6 +37,18 @@ pub(crate) fn accounts_error(error: &BusError) -> AccountsError {
         return AccountsError::Busy;
     }
     AccountsError::Link(link_error(error))
+}
+
+/// A failed call to accountd's Grants: the refusals that mean something to the app, a sheet of
+/// this kind open already, or a failure of the bus.
+pub(crate) fn grants_error(error: &BusError) -> GrantsError {
+    if let Some(refusal) = refusal_of(error) {
+        return GrantsError::Refused(refusal);
+    }
+    if is_limits_exceeded(error) {
+        return GrantsError::Busy;
+    }
+    GrantsError::Link(link_error(error))
 }
 
 /// A failed Identities call: the refusals that mean something to the app, a picker open already,

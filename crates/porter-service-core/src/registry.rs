@@ -114,10 +114,28 @@ impl Registry {
 
     /// The consent store's verdict on each fitting account for `asker`.
     pub fn verdicts(&self, need: &Need, asker: Asker<'_>) -> Vec<Verdict> {
-        self.fitting(need)
+        self.verdicts_of(need, asker, None)
+    }
+
+    /// The consent store's verdict on each fitting account for `asker`; with `only` set, on that
+    /// account alone (none when it does not fit).
+    pub fn verdicts_of(
+        &self,
+        need: &Need,
+        asker: Asker<'_>,
+        only: Option<&AccountId>,
+    ) -> Vec<Verdict> {
+        self.fitting_only(need, only)
             .iter()
             .map(|fit| decide_key(&self.grants, &asker.key(fit)))
             .collect()
+    }
+
+    /// [`Registry::fitting`], narrowed to the account `only` names when it is set.
+    pub fn fitting_only(&self, need: &Need, only: Option<&AccountId>) -> Vec<Fit<'_>> {
+        let mut fits = self.fitting(need);
+        fits.retain(|fit| only.is_none_or(|account| fit.account.id == *account));
+        fits
     }
 
     /// The fitting accounts `asker` holds a grant for, as candidates.

@@ -2,9 +2,10 @@
 
 use crate::changes::Changes;
 use crate::error::LinkError;
-use crate::link::{AccountWatch, AccountsLink};
+use crate::link::{AccountWatch, AccountsLink, ServerEdits};
 use porter_core::{AccountId, AccountLabel, AccountState, ProviderHint, ProviderId, ReauthReason};
 use porter_ids::object_segment;
+use porter_sheet::{EditServers, EditedServers, ServersFixed};
 use porter_wire::names::ACCOUNTS_PATH;
 use porter_wire::{ParentWindow, Refusal};
 use std::sync::Arc;
@@ -23,6 +24,26 @@ pub enum AccountsError {
     /// This app has a sheet of this kind open already.
     #[error("a sheet is open")]
     Busy,
+    /// The call did not complete.
+    #[error(transparent)]
+    Link(#[from] LinkError),
+}
+
+/// Why editing an account's servers gave nothing back. More reasons may be added: match with a
+/// wildcard.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum EditError {
+    /// The provider's sign-in is not a typed password, so its servers are not the person's to
+    /// name: show them read-only.
+    #[error("fixed")]
+    Fixed(ServersFixed),
+    /// The service holds the account under another provider than the edit names.
+    #[error("not that provider")]
+    NotThatProvider,
+    /// The sheet ended without servers (the person closed it), or the service refused.
+    #[error("refused")]
+    Refused(Refusal),
     /// The call did not complete.
     #[error(transparent)]
     Link(#[from] LinkError),
@@ -65,9 +86,24 @@ impl<T: AccountsLink> Accounts<T> {
     }
 }
 
+impl<T: ServerEdits> Accounts<T> {
+    /// Opens the server form of an existing password account, prefilled from `edit`, and tries
+    /// what the person types at the typed hosts: the incoming server, and the outgoing one when
+    /// it, the login name or the password changed. Nothing is stored: the app keeps the
+    /// servers, the name and the new password the [`EditedServers`] carries (`into_parts`). Ask
+    /// [`porter_sheet::servers_editable`] first to decide whether to offer the edit at all.
+    pub async fn edit_servers(
+        &self,
+        edit: EditServers,
+        window: &ParentWindow,
+    ) -> Result<EditedServers, EditError> {
+        self.link.edit_servers(edit, window).await
+    }
+}
+
 impl<T: AccountWatch> Accounts<T> {
     /// The accounts that need signing in again now, with their labels. Asking is also how
-    /// accountd learns this connection, which it then sends `NeedsReauth` to.
+    /// accountd learns this connection, which it then sends every account's `State` changes.
     pub async fn needing_reauth(&self) -> Result<Vec<NeedsReauth>, LinkError> {
         self.link.needing_reauth().await
     }
@@ -87,8 +123,9 @@ impl<T: AccountWatch> Accounts<T> {
         self.link.reauthenticate_shown(account, window).await
     }
 
-    /// The accounts added, removed and needing a sign-in again, from now on. Subscribe before
-    /// reading [`Accounts::needing_reauth`], so no change falls between the two.
+    /// The accounts added and removed, and every change of an account's state (an account that
+    /// needs signing in again is one such change, and so is its recovery), from now on. Subscribe
+    /// before reading [`Accounts::needing_reauth`], so no change falls between the two.
     pub async fn watch(&self) -> Result<Changes<AccountChange>, LinkError> {
         self.link.watch().await
     }
@@ -187,8 +224,10 @@ pub enum AccountChange {
     Added(AccountRef),
     /// An account was removed.
     Removed(AccountRef),
-    /// An account needs signing in again.
-    NeedsReauth(AccountRef),
+    /// An account is in this state now, whichever it came from: signing in again is the state
+    /// `AccountState::NeedsReauth`, and an account that recovers is `AccountState::Ok`, so a
+    /// shell follows one path for both.
+    State(AccountRef, AccountState),
 }
 
 #[cfg(test)]
