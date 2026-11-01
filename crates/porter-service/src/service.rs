@@ -441,8 +441,18 @@ where
     }
 
     /// Sets an account's state (`NeedsReauth` when its credential was refused, `Ok` again once
-    /// it is signed in). Whether it changed.
+    /// it is signed in). Whether it changed; a state that could not be saved is not changed.
     pub async fn set_state(&self, id: &AccountId, state: AccountState) -> bool {
+        self.try_set_state(id, state).await.unwrap_or(false)
+    }
+
+    /// [`AccountService::set_state`] saying why when the state could not be saved
+    /// (`Unavailable`), for a host that logs it.
+    pub async fn try_set_state(
+        &self,
+        id: &AccountId,
+        state: AccountState,
+    ) -> Result<bool, Refusal> {
         self.ctx.set_state(id, state).await
     }
 

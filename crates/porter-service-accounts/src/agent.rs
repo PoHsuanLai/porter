@@ -6,8 +6,8 @@
 use crate::Accounts;
 use porter_core::AccountId;
 use porter_core::{AgentState, AuthKind};
-use porter_service_core::Ports;
 use porter_service_core::audit::AuditEvent;
+use porter_service_core::{Audited, Ports};
 
 /// Why a report of an agent's state was not taken.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,7 +17,7 @@ pub enum AgentFault {
     UnknownAccount,
     /// The account is not an agent that signs itself in; its state is porter's to set.
     NotAnAgent,
-    /// The registry could not be saved; the change stays in memory.
+    /// The registry could not be saved; nothing changed.
     Unavailable,
 }
 
@@ -28,29 +28,29 @@ impl<E: Ports> Accounts<'_, E> {
         account: &AccountId,
         state: AgentState,
     ) -> Result<bool, AgentFault> {
-        let changed = {
-            let mut registry = self.ctx.lock();
-            let row = registry
-                .accounts
-                .iter_mut()
-                .find(|a| a.id == *account)
-                .ok_or(AgentFault::UnknownAccount)?;
-            if row.auth != AuthKind::AgentLogin {
-                return Err(AgentFault::NotAnAgent);
-            }
-            std::mem::replace(&mut row.state, state.account_state()) != state.account_state()
-        };
-        if changed {
-            self.ctx
-                .persist()
-                .await
-                .map_err(|_| AgentFault::Unavailable)?;
-            self.ctx.note(
-                None,
-                Some(account.clone()),
-                AuditEvent::AgentStateSet { state },
-            );
-        }
-        Ok(changed)
+        let written = self
+            .ctx
+            .transact(|registry| {
+                let Some(row) = registry.accounts.iter_mut().find(|a| a.id == *account) else {
+                    return Ok((Vec::new(), Err(AgentFault::UnknownAccount)));
+                };
+                if row.auth != AuthKind::AgentLogin {
+                    return Ok((Vec::new(), Err(AgentFault::NotAnAgent)));
+                }
+                let changed = std::mem::replace(&mut row.state, state.account_state())
+                    != state.account_state();
+                let lines = match changed {
+                    true => vec![Audited::new(
+                        None,
+                        Some(account.clone()),
+                        AuditEvent::AgentStateSet { state },
+                    )],
+                    false => Vec::new(),
+                };
+                Ok((lines, Ok(changed)))
+            })
+            .await
+            .map_err(|_| AgentFault::Unavailable)?;
+        written.value
     }
 }

@@ -1,9 +1,9 @@
 //! Changing the registry when it cannot be saved: what is left in memory, in the audit log and in
 //! the store.
 //!
-//! Written against the code before `transact` and kept as the pin of what changes. Each test
-//! marks the assertions that describe the old behaviour with `OLD:` and says what they become
-//! with `NEW:`; the commit that moves the mutations onto `transact` flips exactly those.
+//! Every change goes through `Ctx::transact`: a registry that cannot be saved is left as it was,
+//! with no audit line, and the person is told `Unavailable`. (These began as pins of the code
+//! before it, whose behaviour is in the history of this file.)
 
 use porter_capability::{CapabilityKind, Toggle};
 use porter_core::consent::{ConsentAnswer, ConsentAsk, GrantScope, Usage};
@@ -15,7 +15,7 @@ use porter_fake::{
 };
 use porter_ids::clock::FixedClock;
 use porter_match::{Need, StorageNeed};
-use porter_secrets::MemorySecrets;
+use porter_secrets::{MemorySecrets, SecretsError};
 use porter_service::AccountService;
 use porter_service_accounts::AgentFault;
 use porter_service_core::audit::AuditEvent;
@@ -149,10 +149,8 @@ async fn a_grant_that_cannot_be_saved() {
         .await;
     assert_eq!(asked, AccountsReply::Refused(Refusal::Unavailable));
     before.store_untouched(&rig);
-    // OLD: the grant stays in memory and "Granted" is already in the log.
-    // NEW: neither (the registry is as it was, the log has no line).
-    assert!(before.registry_changed(&rig));
-    assert_eq!(before.audit_lines(&rig).len(), 1);
+    assert!(!before.registry_changed(&rig));
+    assert_eq!(before.audit_lines(&rig), vec![]);
 }
 
 #[tokio::test]
@@ -165,9 +163,8 @@ async fn a_revoke_that_cannot_be_saved() {
         Err(Refusal::Unavailable)
     );
     before.store_untouched(&rig);
-    // OLD: the grant is gone from memory and "Revoked" is logged. NEW: neither.
-    assert!(before.registry_changed(&rig));
-    assert_eq!(before.audit_lines(&rig).len(), 1);
+    assert!(!before.registry_changed(&rig));
+    assert_eq!(before.audit_lines(&rig), vec![]);
 }
 
 #[tokio::test]
@@ -180,9 +177,8 @@ async fn a_revoke_from_settings_that_cannot_be_saved() {
         Err(Refusal::Unavailable)
     );
     before.store_untouched(&rig);
-    // OLD: gone from memory, "Revoked" logged. NEW: neither.
-    assert!(before.registry_changed(&rig));
-    assert_eq!(before.audit_lines(&rig).len(), 1);
+    assert!(!before.registry_changed(&rig));
+    assert_eq!(before.audit_lines(&rig), vec![]);
 }
 
 #[tokio::test]
@@ -195,8 +191,7 @@ async fn the_spending_of_a_once_grant_that_cannot_be_saved() {
         Err(Refusal::Unavailable)
     );
     before.store_untouched(&rig);
-    // OLD: spent in memory although the answer is Unavailable. NEW: still held.
-    assert!(before.registry_changed(&rig));
+    assert!(!before.registry_changed(&rig), "still held");
     assert_eq!(before.audit_lines(&rig), vec![]);
 }
 
@@ -210,12 +205,11 @@ async fn the_end_of_a_session_that_cannot_be_saved() {
     let before = rig.stop_saving();
     let ended = rig.service.end_session_grants(Some(&sess)).await;
     before.store_untouched(&rig);
-    // OLD: the error is dropped; the grant is gone in memory, "SessionGrantEnded" is logged and
-    // the grant is reported ended.
-    // NEW: nothing ended, so none is reported and nothing is logged.
-    assert_eq!(ended, vec![grant]);
-    assert!(before.registry_changed(&rig));
-    assert_eq!(before.audit_lines(&rig).len(), 1);
+    // Nothing ended: none is reported, and nothing is logged.
+    assert_eq!(ended, vec![]);
+    assert!(!before.registry_changed(&rig));
+    assert_eq!(before.audit_lines(&rig), vec![]);
+    assert!(rig.service.registry().grants.iter().any(|g| g.id == grant));
 }
 
 #[tokio::test]
@@ -229,9 +223,8 @@ async fn a_toggle_that_cannot_be_saved() {
         Err(Refusal::Unavailable)
     );
     before.store_untouched(&rig);
-    // OLD: switched off in memory and "ServiceToggled" logged. NEW: neither.
-    assert!(before.registry_changed(&rig));
-    assert_eq!(before.audit_lines(&rig).len(), 1);
+    assert!(!before.registry_changed(&rig));
+    assert_eq!(before.audit_lines(&rig), vec![]);
 }
 
 #[tokio::test]
@@ -242,8 +235,7 @@ async fn a_toggle_that_changes_nothing_still_saves() {
         .set_toggle(&id, CapabilityKind::Calendar, Toggle::On)
         .await
         .expect("toggled");
-    // OLD: saved although the kind was already on. NEW: 0 saves, and no audit line (as now).
-    assert_eq!(rig.store.saves(), 1);
+    assert_eq!(rig.store.saves(), 0, "the kind was already on");
     assert_eq!(rig.audit.entries(), vec![]);
 }
 
@@ -253,11 +245,9 @@ async fn a_removal_that_cannot_be_saved() {
     let before = rig.stop_saving();
     let removed = rig.service.remove_account(&storage_account().id).await;
     before.store_untouched(&rig);
-    // OLD: the error is dropped: Ok, the account gone from memory, "Removed" logged.
-    // NEW: Err(Unavailable), the account is still there, nothing is logged.
-    assert_eq!(removed, Ok(()));
-    assert!(before.registry_changed(&rig));
-    assert_eq!(before.audit_lines(&rig), vec![AuditEvent::Removed]);
+    assert_eq!(removed, Err(SecretsError::Unavailable));
+    assert!(!before.registry_changed(&rig));
+    assert_eq!(before.audit_lines(&rig), vec![]);
 }
 
 #[tokio::test]
@@ -267,8 +257,7 @@ async fn a_look_at_an_account_again_that_cannot_be_saved() {
     let looked = rig.service.rediscover(&storage_account().id).await;
     assert_eq!(looked.err(), Some(Refusal::Unavailable));
     before.store_untouched(&rig);
-    // OLD: what was found stays in memory. NEW: the registry is as it was.
-    assert!(before.registry_changed(&rig));
+    assert!(!before.registry_changed(&rig));
 }
 
 #[tokio::test]
@@ -280,9 +269,8 @@ async fn a_state_that_cannot_be_saved() {
         .set_state(&mail_account().id, AccountState::NeedsReauth)
         .await;
     before.store_untouched(&rig);
-    // OLD: reported changed, kept in memory, the error dropped. NEW: not changed (false).
-    assert!(changed);
-    assert!(before.registry_changed(&rig));
+    assert!(!changed);
+    assert!(!before.registry_changed(&rig));
     assert_eq!(before.audit_lines(&rig), vec![]);
 }
 
@@ -315,8 +303,7 @@ async fn an_agent_state_that_cannot_be_saved() {
         service.set_agent_state(&id, AgentState::NeedsLogin).await,
         Err(AgentFault::Unavailable)
     );
-    // OLD: the state stays in memory. NEW: the registry is as it was.
-    assert_ne!(service.registry(), before);
+    assert_eq!(service.registry(), before);
     assert_eq!(audit.entries(), vec![]);
     assert_eq!(store.saves(), 0);
 }
@@ -390,4 +377,143 @@ async fn an_account_removed_while_its_consent_sheet_is_open_gets_no_grant() {
     let granted =
         |e: &porter_service_core::audit::AuditEntry| matches!(e.event, AuditEvent::Granted { .. });
     assert!(!audit.entries().iter().any(granted));
+}
+
+// ---- `Ctx::transact` itself ----
+
+fn toggle_row(kind: CapabilityKind) -> porter_core::store::AccountToggle {
+    porter_core::store::AccountToggle {
+        account: storage_account().id,
+        kind,
+        toggle: Toggle::Off,
+    }
+}
+
+fn ctx(
+    store: &MemoryStore,
+    audit: &RecordingAudit,
+) -> porter_service_core::Ctx<
+    porter_service_core::Parts<
+        FakeProvider,
+        MemorySecrets,
+        ScriptedSheets,
+        FixedClock,
+        MemoryStore,
+        RecordingAudit,
+    >,
+> {
+    porter_service_core::Ctx::new(
+        vec![cloud_provider()],
+        Registry::default(),
+        MemorySecrets::default(),
+        ScriptedSheets::default(),
+        FixedClock(porter_fake::NOW),
+    )
+    .with_store(store.clone())
+    .with_audit(audit.clone())
+}
+
+fn line(event: AuditEvent) -> porter_service_core::Audited {
+    porter_service_core::Audited::new(None, None, event)
+}
+
+#[tokio::test]
+async fn a_change_is_saved_swapped_in_audited_and_announced_in_that_order() {
+    let (store, audit) = (MemoryStore::default(), RecordingAudit::default());
+    let told = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let ctx = {
+        let (told, store, audit) = (told.clone(), store.clone(), audit.clone());
+        ctx(&store, &audit).on_committed(move |committed| {
+            // By the time it is told, the change is saved and audited.
+            let saved = store.stored().expect("saved");
+            told.lock()
+                .expect("told")
+                .push((committed, saved, audit.entries().len()));
+        })
+    };
+    let written = ctx
+        .transact(|registry| {
+            registry.toggles.push(toggle_row(CapabilityKind::Calendar));
+            Ok((vec![line(AuditEvent::Removed)], 7))
+        })
+        .await
+        .expect("written");
+    assert_eq!((written.value, written.changed), (7, true));
+    let told = told.lock().expect("told");
+    assert_eq!(told.len(), 1);
+    let (committed, saved, audited) = &told[0];
+    assert_eq!(committed.before, Registry::default());
+    assert_eq!(committed.after, *ctx.lock());
+    assert_eq!(*saved, committed.after.persisted());
+    assert_eq!(*audited, 1);
+}
+
+#[tokio::test]
+async fn a_decision_that_refuses_or_changes_nothing_saves_and_announces_nothing() {
+    let (store, audit) = (MemoryStore::default(), RecordingAudit::default());
+    let told = Arc::new(std::sync::Mutex::new(0));
+    let ctx = {
+        let told = told.clone();
+        ctx(&store, &audit).on_committed(move |_| *told.lock().expect("told") += 1)
+    };
+    let refused = ctx
+        .transact(|registry| {
+            registry.toggles.push(toggle_row(CapabilityKind::Calendar));
+            Err::<(Vec<_>, ()), _>(Refusal::UnknownGrant)
+        })
+        .await;
+    assert_eq!(refused, Err(Refusal::UnknownGrant));
+    assert_eq!(
+        *ctx.lock(),
+        Registry::default(),
+        "a refusal changes nothing"
+    );
+
+    let unchanged = ctx
+        .transact(|_| Ok((vec![line(AuditEvent::Removed)], ())))
+        .await
+        .expect("written");
+    assert!(!unchanged.changed);
+    assert_eq!(store.saves(), 0);
+    assert_eq!(*told.lock().expect("told"), 0);
+    assert_eq!(audit.entries().len(), 1, "its line is still written");
+}
+
+#[tokio::test]
+async fn a_change_that_cannot_be_saved_is_neither_kept_audited_nor_announced() {
+    let (store, audit) = (MemoryStore::default(), RecordingAudit::default());
+    let told = Arc::new(std::sync::Mutex::new(0));
+    let ctx = {
+        let told = told.clone();
+        ctx(&store, &audit).on_committed(move |_| *told.lock().expect("told") += 1)
+    };
+    store.refusing(true);
+    let written = ctx
+        .transact(|registry| {
+            registry.toggles.push(toggle_row(CapabilityKind::Calendar));
+            Ok((vec![line(AuditEvent::Removed)], ()))
+        })
+        .await;
+    assert_eq!(written, Err(Refusal::Unavailable));
+    assert_eq!(*ctx.lock(), Registry::default());
+    assert_eq!(audit.entries(), vec![]);
+    assert_eq!(*told.lock().expect("told"), 0);
+}
+
+/// Two transactions at once each decide on the registry the other left: no change is lost.
+#[tokio::test]
+async fn transactions_that_overlap_run_one_after_the_other() {
+    let (store, audit) = (MemoryStore::default(), RecordingAudit::default());
+    let ctx = ctx(&store, &audit);
+    let add = |kind| {
+        ctx.transact(move |registry| {
+            registry.toggles.push(toggle_row(kind));
+            Ok((Vec::new(), ()))
+        })
+    };
+    let (first, second) = tokio::join!(add(CapabilityKind::Calendar), add(CapabilityKind::Storage));
+    first.expect("first");
+    second.expect("second");
+    assert_eq!(ctx.lock().toggles.len(), 2);
+    assert_eq!(store.stored().expect("saved").toggles.len(), 2);
 }

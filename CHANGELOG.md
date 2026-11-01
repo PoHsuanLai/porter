@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### The registry is changed one way
+
+- `porter_service_core::Ctx::transact(decide)` is the only way the registry changes. It takes the
+  gate, runs the sync `decide` on a copy, and, when the copy differs, saves it, swaps it in, writes
+  the audit lines `decide` returned (`Audited`) and tells `Ctx::on_committed` a `Committed { before,
+  after }`. A registry that cannot be saved is left as it was, with no audit line: the answer is
+  `Unavailable`. `Ctx::lock()` is now a read-only `Read`; `Ctx::persist` is gone.
+- Every change moves onto it: `choose`, `revoke`, `revoke_grant`, `spend_once`,
+  `end_session_grants`, `set_toggle`, `remove_account`, `rediscover`, `set_agent_state`,
+  `report_local`, a sign-in's store, `Ctx::set_state`. Behaviour that changes: a change that could
+  not be saved is no longer kept in memory (and no longer audited) while the caller is told
+  `Unavailable`; a removal and a state change that could not be saved say so instead of
+  succeeding (`remove_account` is `SecretsError::Unavailable`; `set_state` is `false`, and
+  `AccountService::try_set_state` says why, which accountd logs); `set_toggle` to the state a kind
+  already has saves nothing; a sign-in again and one more access take the account's turn at its
+  issuer (as `rediscover` does), so a look at the account no longer writes an older credential
+  over the one just filed; one more access is one transaction.
+
 ### Grants are on the bus
 
 - `org.quire.Grants1` at `/org/quire/Grants1` on accountd's name (`dbus/org.quire.Grants1.xml`):

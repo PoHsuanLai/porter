@@ -1946,11 +1946,7 @@ async fn a_sign_in_again_during_a_look_at_the_account_is_not_written_over() {
     let (looked, signed_in, ()) = tokio::join!(looking, signing_in, letting_go);
     assert!(looked.is_ok(), "{looked:?}");
     assert_eq!(signed_in, AccountsReply::Reauthenticated);
-    // OLD: the sign-in stored "new" without waiting for the look's turn, and the look then
-    // stored "stale" over it. NEW: the sign-in waits for the turn, so "new" is the last write.
-    assert_eq!(
-        kept.secrets.get(&the_password()).await,
-        Ok(password("stale"))
-    );
+    // The sign-in waits for the look's turn, so "new" is the last write.
+    assert_eq!(kept.secrets.get(&the_password()).await, Ok(password("new")));
     assert_eq!(service.registry().accounts[0].state, AccountState::Ok);
 }
