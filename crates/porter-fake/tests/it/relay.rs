@@ -118,10 +118,11 @@ async fn holding_a_once_grant() -> (Svc, GrantId, EndpointUrl, Arc<AtomicBool>) 
 #[tokio::test]
 async fn two_openers_of_a_once_grant_make_one_relay() {
     let (service, grant, endpoint, _) = holding_a_once_grant().await;
+    let me = app();
     let (a, b) = tokio::time::timeout(std::time::Duration::from_secs(10), async {
         tokio::join!(
-            service.open_authenticated(&app(), &grant, &endpoint),
-            service.open_authenticated(&app(), &grant, &endpoint),
+            service.open_authenticated(&me, &grant, &endpoint),
+            service.open_authenticated(&me, &grant, &endpoint),
         )
     })
     .await
