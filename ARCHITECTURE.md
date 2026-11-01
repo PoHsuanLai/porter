@@ -98,7 +98,7 @@ Allowed direct edges (checked by `scripts/check-boundary.sh`; dev-dependencies a
 | `porter-family-nextcloud` | `porter-family-kit`, `nextcloud-proto`, `dav-proto` (feature `discover`), `porter-core`, `porter-capability`, `porter-sheet`, `porter-provider`, `porter-http` |
 | `porter-family-generic` | `porter-family-kit`, `generic-proto`, `porter-core`, `porter-capability`, `porter-sheet`, `porter-provider`, `porter-http`, `porter-discover`, `porter-proxy` (its `tls` feature, which implies `io`: the relay's own login tries a typed mail password before the account is added), and `tokio` |
 | `porter-family-oauth` | `porter-family-kit`, `oauth-probe-proto`, `porter-core`, `porter-capability`, `porter-sheet`, `porter-ids`, `porter-provider`, `porter-http`, `porter-http-reqwest`, `porter-oauth` (its `io`), `tokio` |
-| `porter-calendar` | `dav-proto` (feature `discover`), `porter-http`, `porter-ids`; `zbus` with `eds` |
+| `porter-calendar` | `dav-proto` (feature `discover`), `porter-http`, `porter-ids` (and `chrono`, `serde_json`, `thiserror`); `zbus` with `eds` |
 | `porter-service-core` | `porter-core`, `porter-match`, `porter-capability`, `porter-sheet`, `porter-wire`, `porter-ids`, `porter-provider`, `porter-secrets` |
 | `porter-service-accounts` | `porter-service-core`, `porter-core`, `porter-tailscale`, `porter-match`, `porter-capability`, `porter-sheet`, `porter-wire`, `porter-ids`, `porter-provider`, `porter-secrets` |
 | `porter-service-grants` | `porter-service-core`, `porter-service-accounts`, `porter-sheet`, `porter-core`, `porter-match`, `porter-capability`, `porter-wire`, `porter-ids`, `porter-provider`, `porter-secrets` |

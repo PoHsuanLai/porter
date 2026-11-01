@@ -9,6 +9,7 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+chrono = { workspace = true }
 dav-proto = { workspace = true, features = ["discover"] }
 porter-http = { workspace = true }
 porter-ids = { workspace = true }

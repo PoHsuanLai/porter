@@ -1,6 +1,7 @@
-//! Dates and instants as the stores write them, without a calendar library: a proleptic
-//! Gregorian date, and a moment in seconds since the Unix epoch, always in UTC.
+//! Dates and instants as the stores write them: a proleptic Gregorian date, and a moment in
+//! seconds since the Unix epoch, always in UTC. chrono does the calendar arithmetic.
 
+use chrono::{DateTime, Datelike, Days, NaiveDate, NaiveTime, Timelike, Utc};
 use std::fmt;
 
 /// A calendar date.
@@ -17,29 +18,26 @@ pub struct Date {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Instant(pub i64);
 
-/// Days since 1970-01-01 of a civil date (Howard Hinnant's `days_from_civil`).
-fn days_from_civil(year: i32, month: u8, day: u8) -> i64 {
-    let y = i64::from(year) - i64::from(month <= 2);
-    let era = y.div_euclid(400);
-    let yoe = y - era * 400;
-    let m = i64::from(month);
-    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + i64::from(day) - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    era * 146_097 + doe - 719_468
-}
+impl Date {
+    /// The date as chrono's. A `Date` built by hand with a day past its month's end counts on
+    /// from the first of the month, as the arithmetic it replaces did; a month outside 1 to 12
+    /// is the first day chrono can name.
+    fn naive(self) -> NaiveDate {
+        NaiveDate::from_ymd_opt(self.year, u32::from(self.month), u32::from(self.day))
+            .or_else(|| {
+                NaiveDate::from_ymd_opt(self.year, u32::from(self.month), 1)?
+                    .checked_add_days(Days::new(u64::from(self.day.saturating_sub(1))))
+            })
+            .unwrap_or(NaiveDate::MIN)
+    }
 
-/// The civil date `days` after 1970-01-01 (Howard Hinnant's `civil_from_days`).
-fn civil_from_days(days: i64) -> Date {
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = (doy - (153 * mp + 2) / 5 + 1) as u8;
-    let month = (if mp < 10 { mp + 3 } else { mp - 9 }) as u8;
-    let year = (yoe + era * 400 + i64::from(month <= 2)) as i32;
-    Date { year, month, day }
+    fn of(date: NaiveDate) -> Self {
+        Date {
+            year: date.year(),
+            month: date.month() as u8,
+            day: date.day() as u8,
+        }
+    }
 }
 
 impl Date {
@@ -49,28 +47,22 @@ impl Date {
         let year = parts.next()?.parse().ok()?;
         let month: u8 = parts.next()?.parse().ok()?;
         let day: u8 = parts.next()?.parse().ok()?;
-        let date = Date { year, month, day };
-        ((1..=12).contains(&month) && day >= 1 && civil_from_days(date.days()) == date)
-            .then_some(date)
-    }
-
-    fn days(self) -> i64 {
-        days_from_civil(self.year, self.month, self.day)
+        NaiveDate::from_ymd_opt(year, u32::from(month), u32::from(day)).map(Date::of)
     }
 
     /// The day after.
     pub fn next(self) -> Self {
-        civil_from_days(self.days() + 1)
+        Date::of(self.naive().succ_opt().unwrap_or(NaiveDate::MAX))
     }
 
     /// How many days from `self` to `other`: 1 for the next day.
     pub fn days_until(self, other: Date) -> i64 {
-        other.days() - self.days()
+        (other.naive() - self.naive()).num_days()
     }
 
     /// Midnight UTC at the start of the day.
     pub fn midnight(self) -> Instant {
-        Instant(self.days() * 86_400)
+        Instant(self.naive().and_time(NaiveTime::MIN).and_utc().timestamp())
     }
 }
 
@@ -84,13 +76,13 @@ impl Instant {
     /// The date and time of day in UTC, written `YYYY-MM-DDTHH:MM:SS` with no zone: what Graph
     /// takes beside `"timeZone": "UTC"` and JMAP beside `Etc/UTC`.
     pub fn local_utc(self) -> String {
-        let date = civil_from_days(self.0.div_euclid(86_400));
-        let second = self.0.rem_euclid(86_400);
+        let at = DateTime::from_timestamp(self.0, 0).unwrap_or(DateTime::<Utc>::MIN_UTC);
         format!(
-            "{date}T{:02}:{:02}:{:02}",
-            second / 3600,
-            second / 60 % 60,
-            second % 60
+            "{}T{:02}:{:02}:{:02}",
+            Date::of(at.date_naive()),
+            at.hour(),
+            at.minute(),
+            at.second()
         )
     }
 

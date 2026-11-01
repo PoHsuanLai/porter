@@ -1927,6 +1927,7 @@ name = "porter-calendar"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "chrono",
  "dav-proto",
  "porter-fake-servers",
  "porter-http",
