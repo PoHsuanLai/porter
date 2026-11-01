@@ -13,7 +13,7 @@
 mod hosted;
 mod relays;
 
-pub use hosted::{HostConfig, Hosted, Hosting, hosted};
+pub use hosted::{HostConfig, Hosted, Hosting, hosted, hosted_with_store};
 #[cfg(feature = "relays")]
 pub use relays::PorterRelays;
 pub use relays::{NoRelays, RelayHost};

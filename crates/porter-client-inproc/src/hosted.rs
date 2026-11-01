@@ -8,7 +8,7 @@ use porter_client::{
 };
 use porter_core::RelayPlan;
 use porter_core::consent::{Availability, Grant, Usage};
-use porter_core::store::{NoStore, Persisted, RegistryStore};
+use porter_core::store::{NoStore, Persisted, RegistryStore, StoreError};
 use porter_core::stream::duplex;
 use porter_core::{
     AccountId, AppId, Candidate, DataClass, EndpointUrl, GrantId, ProviderHint, ProviderId,
@@ -270,7 +270,8 @@ pub struct HostConfig<P, S, U, K = SystemClock, R = NoStore, H = NoRelays> {
 
 impl<P: Provider, S: Secrets, U: Sheets> HostConfig<P, S, U> {
     /// `app`'s service over `providers`, filing credentials in `secrets` and drawing sheets through
-    /// `sheets`, starting from an empty registry that lives for the process.
+    /// `sheets`, starting from an empty registry that lives for the process (give it a store with
+    /// [`with_store`](Self::with_store) and build it with [`hosted_with_store`]).
     pub fn new(app: AppId, providers: Vec<P>, secrets: S, sheets: U) -> Self {
         Self {
             app,
@@ -328,8 +329,45 @@ impl<P, S, U, K, R, H> HostConfig<P, S, U, K, R, H> {
     }
 }
 
-/// The handle over the service `config` describes, answering for the app it names.
-pub fn hosted<P, S, U, K, R, H>(config: HostConfig<P, S, U, K, R, H>) -> Porter<impl Hosting>
+/// The handle over the service `config` describes, answering for the app it names, with an empty
+/// registry that lives for the process. A config with a store is not accepted here (it would start
+/// from nothing and overwrite what the store holds): [`hosted_with_store`] loads it first.
+pub fn hosted<P, S, U, K, H>(config: HostConfig<P, S, U, K, NoStore, H>) -> Porter<impl Hosting>
+where
+    P: Provider + 'static,
+    S: Secrets + 'static,
+    U: Sheets + 'static,
+    K: Clock + 'static,
+    H: RelayHost + std::fmt::Debug + 'static,
+{
+    build(config, Persisted::empty())
+}
+
+/// The handle over the service `config` describes, starting from the registry its store holds (an
+/// empty one where nothing was stored yet) and saving to the store after every change. A store
+/// that cannot be read is an error, never an empty registry.
+///
+/// # Errors
+/// The store's [`StoreError`] when it cannot load.
+pub async fn hosted_with_store<P, S, U, K, R, H>(
+    config: HostConfig<P, S, U, K, R, H>,
+) -> Result<Porter<impl Hosting>, StoreError>
+where
+    P: Provider + 'static,
+    S: Secrets + 'static,
+    U: Sheets + 'static,
+    K: Clock + 'static,
+    R: RegistryStore + 'static,
+    H: RelayHost + std::fmt::Debug + 'static,
+{
+    let stored = config.store.load().await?;
+    Ok(build(config, stored))
+}
+
+fn build<P, S, U, K, R, H>(
+    config: HostConfig<P, S, U, K, R, H>,
+    stored: Persisted,
+) -> Porter<impl Hosting>
 where
     P: Provider + 'static,
     S: Secrets + 'static,
@@ -340,7 +378,7 @@ where
 {
     let service = AccountService::new(
         config.providers,
-        Registry::from_persisted(Persisted::empty()),
+        Registry::from_persisted(stored),
         config.secrets,
         config.sheets,
         config.clock,
