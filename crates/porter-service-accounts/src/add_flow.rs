@@ -24,8 +24,8 @@ use porter_service_core::Ports;
 use porter_service_core::refusal::refusal_of;
 use porter_sheet::host::{SheetFault, SheetLink, SheetOpen, Sheets};
 use porter_sheet::{
-    EditedServers, FieldAnswer, Manual, Progress, ProviderRow, Purpose, RowKind, Sheet,
-    SheetEffect, SheetEnd, SheetEvent, SignInFault, SignInInput, Stage, servers_fixed, step,
+    EditedServers, FieldAnswer, Manual, Progress, ProviderRow, Purpose, Restart, RowKind, Sheet,
+    SheetEffect, SheetEnd, SheetEvent, SignInFault, SignInInput, servers_fixed, step,
 };
 use porter_wire::AccountsReply;
 use porter_wire::{ParentWindow, Refusal};
@@ -558,7 +558,8 @@ impl<E: Ports> Accounts<'_, E> {
             Some(machines) => machines.read().await,
             None => Vec::new(),
         };
-        let mut sheet = Sheet::new(purpose, rows).with_own_machines(own);
+        let (sheet, begun) = Sheet::start(purpose, rows);
+        let mut sheet = sheet.with_own_machines(own);
         let mut link = self
             .ctx
             .sheets()
@@ -577,13 +578,7 @@ impl<E: Ports> Accounts<'_, E> {
             answers: None,
             already: None,
         };
-        let mut queue = VecDeque::new();
-        // An edit opens on its form, and its sign-in is begun behind it.
-        if matches!(sheet.stage, Stage::Working(_))
-            || matches!(sheet.purpose, Purpose::EditServers { .. })
-        {
-            queue.push_back(SheetEffect::Feed(SignInInput::Start));
-        }
+        let mut queue = VecDeque::from(begun);
         loop {
             while let Some(effect) = queue.pop_front() {
                 let event = match effect {
@@ -597,9 +592,12 @@ impl<E: Ports> Accounts<'_, E> {
                     }
                     // The host opens a page it is shown; showing the same page again opens it
                     // again, through the host's own portal path.
-                    SheetEffect::OpenBrowser(_) => {
+                    SheetEffect::OpenBrowser => {
                         link.update(sheet.view()).await.map_err(left)?;
                         None
+                    }
+                    SheetEffect::Restart(how) => {
+                        Some(self.restart(&sheet, job, &mut run, how).await)
                     }
                     SheetEffect::Close(end) => {
                         return finish::<J>(end, run.stored.take(), run.already.take());
@@ -611,7 +609,7 @@ impl<E: Ports> Accounts<'_, E> {
                     queue.extend(effects);
                 }
             }
-            let event = self.wait(&mut link, &sheet, job, &mut run).await;
+            let event = self.wait(&mut link, job, &mut run).await;
             let (next, effects) = step(sheet, event);
             sheet = next;
             queue.extend(effects);
@@ -623,7 +621,6 @@ impl<E: Ports> Accounts<'_, E> {
     async fn wait<J: Job, L: SheetLink>(
         &self,
         link: &mut L,
-        sheet: &Sheet,
         job: &J,
         run: &mut RunOf<E, J>,
     ) -> SheetEvent {
@@ -637,47 +634,60 @@ impl<E: Ports> Accounts<'_, E> {
             _ => return person(link.input().await),
         };
         run.polling = false;
-        self.settled(sheet, job, run, polled).await
+        self.settled(job, run, polled).await
     }
 
-    /// What a sign-in's step is to the machine, after the one retry an identity's add owes: a
-    /// sign-in that skipped the consent screen (`SignedInBefore`) and ended `Unreadable` (the
-    /// provider handed back nothing to keep) starts again once as `FirstSignIn`.
+    /// What a sign-in's step is to the machine. A sign-in that skipped the consent screen
+    /// (`SignedInBefore`) and ended `Unreadable` (the provider handed back nothing to keep) is a
+    /// fact of its own, told once: whether it is tried again is the machine's to say.
     async fn settled<J: Job>(
         &self,
-        sheet: &Sheet,
         job: &J,
         run: &mut RunOf<E, J>,
         step: SignInStep,
     ) -> SheetEvent {
-        let retried = match (&step, job.adds(), run.identity.take()) {
+        let before = matches!(
+            (&step, job.adds(), &run.identity),
             (
                 SignInStep::Failed(SignInFault::Unreadable),
                 true,
                 Some(SignInAs {
-                    provider,
-                    hint,
                     history: ConsentHistory::SignedInBefore,
-                }),
-            ) => {
-                let again = SignInAs::new(provider, hint, ConsentHistory::FirstSignIn);
-                run.identity = Some(again.clone());
-                match stage_provider(&sheet.stage).and_then(|id| self.begin(id, job, Some(&again)))
-                {
-                    Some(Ok(mut signin)) => {
-                        let first = signin.next(SignInInput::Start).await;
-                        run.signin = Some(signin);
-                        Some(first)
-                    }
-                    Some(Err(_)) | None => None,
-                }
+                    ..
+                })
+            )
+        );
+        if before && let Some(identity) = run.identity.as_mut() {
+            identity.history = ConsentHistory::FirstSignIn;
+            return SheetEvent::SignedInBefore;
+        }
+        said(run, step)
+    }
+
+    /// Starts the sign-in of the sheet's provider again, as `how` says, in place of the one that
+    /// ended. One that cannot be started ends the sheet as unreadable, as the answer it replaces.
+    async fn restart<J: Job>(
+        &self,
+        sheet: &Sheet,
+        job: &J,
+        run: &mut RunOf<E, J>,
+        how: Restart,
+    ) -> SheetEvent {
+        let Restart::FirstSignIn = how;
+        if let Some(identity) = run.identity.as_mut() {
+            identity.history = ConsentHistory::FirstSignIn;
+        }
+        let started = sheet
+            .provider()
+            .and_then(|id| self.begin(id, job, run.identity.as_ref()));
+        match started {
+            Some(Ok(mut signin)) => {
+                let first = signin.next(SignInInput::Start).await;
+                run.signin = Some(signin);
+                self.settled(job, run, first).await
             }
-            (_, _, identity) => {
-                run.identity = identity;
-                None
-            }
-        };
-        said(run, retried.unwrap_or(step))
+            Some(Err(_)) | None => SheetEvent::SignIn(Progress::Failed(SignInFault::Unreadable)),
+        }
     }
 
     /// Starts `provider`'s sign-in for `job`, as `identity` when the job is an add for one.
@@ -722,7 +732,7 @@ impl<E: Ports> Accounts<'_, E> {
             }
             SignInInput::Start => {
                 run.polling = false;
-                let id = stage_provider(&sheet.stage)?;
+                let id = sheet.provider()?;
                 // An agent signs itself in through its launcher: with none for its program there
                 // is nobody to do it, and no account is made to wait for one. The list leaves
                 // such an agent out; this is for a launcher that left after the list was drawn.
@@ -730,9 +740,7 @@ impl<E: Ports> Accounts<'_, E> {
                     && let Some(spec) = self.ctx.provider_of(id).map(Provider::spec)
                     && launcherless(spec, self.state.roster.get())
                 {
-                    return Some(SheetEvent::SignIn(Progress::Failed(
-                        SignInFault::NoLauncher,
-                    )));
+                    return Some(SheetEvent::NoLauncher);
                 }
                 let started = self.begin(id, job, run.identity.as_ref());
                 let mut signin = match started {
@@ -748,7 +756,7 @@ impl<E: Ports> Accounts<'_, E> {
                 };
                 let first = signin.next(SignInInput::Start).await;
                 run.signin = Some(signin);
-                Some(self.settled(sheet, job, run, first).await)
+                Some(self.settled(job, run, first).await)
             }
             other => {
                 let signin = run.signin.as_mut()?;
@@ -761,19 +769,16 @@ impl<E: Ports> Accounts<'_, E> {
                 // The same login twice is not a second account: the sign-in ends here, at the
                 // review, and what is stored stays as it is.
                 if job.adds()
-                    && let Stage::Working(provider) | Stage::Confirming { provider, .. } =
-                        &sheet.stage
+                    && let Some(provider) = sheet.provider()
                     && let Some(held) = self.already_added(provider, &step)
                 {
                     run.already = Some(held);
                     if let Some(mut signin) = run.signin.take() {
                         let _ = signin.next(SignInInput::Cancel).await;
                     }
-                    return Some(SheetEvent::SignIn(Progress::Failed(
-                        SignInFault::AlreadyAdded,
-                    )));
+                    return Some(SheetEvent::Duplicate);
                 }
-                Some(self.settled(sheet, job, run, step).await)
+                Some(self.settled(job, run, step).await)
             }
         }
     }
@@ -793,7 +798,7 @@ impl<E: Ports> Accounts<'_, E> {
         let answers = run.answers.take();
         // Boxed, like each entry point's call of `drive`: the futures of the four jobs, each
         // generic over the service, are not laid out inside one another.
-        let provider = stage_provider(&sheet.stage);
+        let provider = sheet.provider();
         let stored =
             Box::pin(job.store(self, caller, provider, &signed, answers.as_deref(), choices)).await;
         match stored {
@@ -847,17 +852,6 @@ fn login_hint_of(endpoints: &[ServiceEndpoint]) -> Option<LoginHint> {
     endpoints
         .iter()
         .find_map(|e| LoginHint::parse(&e.login.0).ok())
-}
-
-/// The provider a sign-in under way is for.
-fn stage_provider(stage: &Stage) -> Option<&ProviderId> {
-    match stage {
-        Stage::Working(provider)
-        | Stage::Confirming { provider, .. }
-        | Stage::Checking { provider, .. }
-        | Stage::Asking { provider, .. } => Some(provider),
-        _ => None,
-    }
 }
 
 /// What a sign-in's step is to the machine, keeping the credential here: `Done` leaves the

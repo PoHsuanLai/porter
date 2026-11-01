@@ -152,6 +152,17 @@ pub enum SheetEvent {
     Input(SheetInput),
     /// The sign-in said something.
     SignIn(Progress),
+    /// The sign-in showed an account that is already stored (the same login at the same
+    /// servers, or the same agent): the host has stopped the sign-in. The sheet ends with
+    /// `SignInFault::AlreadyAdded`.
+    Duplicate,
+    /// An agent's program has no launcher now, so nobody can run its sign-in. The sheet ends
+    /// with `SignInFault::NoLauncher`.
+    NoLauncher,
+    /// A sign-in that skipped the consent screen (the person agreed to this client for this
+    /// identity before) ended unreadable: the provider handed back nothing to keep. The host
+    /// tells this once; the machine decides whether it is tried again as a first sign-in.
+    SignedInBefore,
     /// The host stored the account.
     Stored,
     /// The host could not store it.
@@ -171,6 +182,13 @@ pub enum SheetEnd {
     Failed(SignInFault),
 }
 
+/// How a sign-in is started again (`SheetEffect::Restart`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Restart {
+    /// As a first sign-in, with the consent screen the provider shows then.
+    FirstSignIn,
+}
+
 /// What the host must do next.
 #[derive(Debug, Clone, PartialEq, Eq)]
 // `Show` grew past clippy's threshold with `ProviderRow::mark_face`; boxing it would change a
@@ -183,8 +201,11 @@ pub enum SheetEffect {
     Feed(SignInInput),
     /// Store the account the sign-in produced, with these service choices.
     Store(Vec<KindToggle>),
-    /// Open the browser page again (`OpenAgain`), through the portal path.
-    OpenBrowser(WebUrl),
+    /// Open the browser page again (`OpenAgain`), through the portal path: the page is the one
+    /// the view being shown names.
+    OpenBrowser,
+    /// Start the sign-in again, in this mode, with the one that ran dropped.
+    Restart(Restart),
     /// Close the sheet.
     Close(SheetEnd),
 }
@@ -222,6 +243,30 @@ impl Sheet {
             stage,
             providers,
             own: Vec::new(),
+        }
+    }
+
+    /// The sheet as first shown, and what the host does to begin: an edit opens on its form and a
+    /// sheet that is already working on a provider starts its sign-in, behind the first view.
+    pub fn start(purpose: Purpose, providers: Vec<ProviderRow>) -> (Self, Vec<SheetEffect>) {
+        let sheet = Self::new(purpose, providers);
+        let begun = matches!(sheet.stage, Stage::Working(_))
+            || matches!(sheet.purpose, Purpose::EditServers { .. });
+        let effects = match begun {
+            true => vec![SheetEffect::Feed(SignInInput::Start)],
+            false => Vec::new(),
+        };
+        (sheet, effects)
+    }
+
+    /// The provider a sign-in under way is for, while there is one.
+    pub fn provider(&self) -> Option<&ProviderId> {
+        match &self.stage {
+            Stage::Working(provider)
+            | Stage::Confirming { provider, .. }
+            | Stage::Checking { provider, .. }
+            | Stage::Asking { provider, .. } => Some(provider),
+            _ => None,
         }
     }
 

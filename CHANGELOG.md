@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Sign-in decisions are the sheet machine's
+
+- The sheet host no longer decides a retry, a duplicate or a missing launcher on its own. It tells
+  the machine what it found (`SheetEvent::SignedInBefore`, `Duplicate`, `NoLauncher`), and one
+  `decide` in `machine.rs` answers: the refusals are the same `Failed { fault }` as before (the
+  `SheetView` wire form is unchanged), and the consent retry is a `SheetEffect::Restart`.
+  `SheetEffect::OpenBrowser` no longer carries a page (the host showed the view's). `Sheet::start`
+  returns the sheet and the effects that begin it; `Sheet::new` stays.
+- A duplicate account is refused in one place when it is stored: the check in `store_new`'s
+  transaction (`add_store::duplicate`). The earlier second look before the secrets were filed is
+  gone; a refused add still leaves no row and no secret.
+
 ### A relay is opened once, and its end is recorded
 
 - `spend_once` is decided on the registry as it is when the plan is ready: it answers
