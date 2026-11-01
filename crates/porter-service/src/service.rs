@@ -20,7 +20,7 @@ use porter_service_accounts::{
 };
 use porter_service_core::audit::{AuditEvent, AuditSink, NoAudit};
 use porter_service_core::registry::Registry;
-use porter_service_core::{Ctx, Parts};
+use porter_service_core::{Committed, Ctx, Parts};
 use porter_service_grants::{Grants, GrantsApi};
 use porter_sheet::host::Sheets;
 use porter_wire::{AccountsReply, AccountsRequest};
@@ -78,6 +78,16 @@ where
     pub fn with_store<N: RegistryStore>(self, store: N) -> AccountService<P, S, U, K, N, A> {
         AccountService {
             ctx: self.ctx.with_store(store),
+            accounts: self.accounts,
+        }
+    }
+
+    /// The same service telling `told` of each change once it is saved, swapped in and audited
+    /// (a [`Committed`]); it runs while the next change waits, so it must not wait.
+    #[must_use]
+    pub fn on_committed(self, told: impl Fn(Committed) + Send + Sync + 'static) -> Self {
+        Self {
+            ctx: self.ctx.on_committed(told),
             accounts: self.accounts,
         }
     }

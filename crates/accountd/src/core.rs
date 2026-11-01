@@ -50,7 +50,8 @@ pub struct Options {
     /// system clock, ten minutes, one second, and nothing recorded. A host that keeps a handle
     /// on the roster (a clone) can ask a launcher to sign an agent in itself.
     pub launchers: Option<crate::launcher::Launchers>,
-    /// Woken after each save of the registry (a [`crate::NewsStore`]); each wake tells the
+    /// Woken after each committed change of the registry (`AccountService::on_committed`, which runs
+    /// after the change is swapped in, so the registry a watcher reads is the new one); each wake tells the
     /// clients what moved. None leaves the objects to tell them after their own changes.
     pub saved: Option<Arc<tokio::sync::Notify>>,
     /// Runs the relays of `Grants1.OpenAuthenticated` and `OpenLinked`; the default dials with the

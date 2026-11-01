@@ -5,7 +5,7 @@
 
 use super::common;
 
-use accountd::{NewsStore, Options, TableCallers, serve_with};
+use accountd::{Options, TableCallers, serve_with};
 use common::bus::PrivateBus;
 use porter_callers::{Caller, CallerRole};
 use porter_capability::{CapabilityKind, StorageScope};
@@ -56,7 +56,7 @@ type Service = AccountService<
     MemorySecrets,
     ScriptedSheets,
     FixedClock,
-    NewsStore<MemoryStore>,
+    MemoryStore,
 >;
 
 struct World {
@@ -98,7 +98,11 @@ impl World {
                 ScriptedSheets::answering([]),
                 FixedClock(NOW),
             )
-            .with_store(NewsStore::new(MemoryStore::default(), Arc::clone(&saved))),
+            .with_store(MemoryStore::default())
+            .on_committed({
+                let saved = Arc::clone(&saved);
+                move |_| saved.notify_one()
+            }),
         );
         serve_with(
             &connection,

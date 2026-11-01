@@ -517,3 +517,33 @@ async fn transactions_that_overlap_run_one_after_the_other() {
     assert_eq!(ctx.lock().toggles.len(), 2);
     assert_eq!(store.stored().expect("saved").toggles.len(), 2);
 }
+
+/// What accountd's publisher relies on: the service tells of a change after the registry holds
+/// it (a watcher that reads then sees the change), and tells of nothing that was not saved.
+#[tokio::test]
+async fn the_service_tells_of_a_change_only_once_it_is_in_the_registry() {
+    let told = Arc::new(Notify::new());
+    let store = MemoryStore::default();
+    let service = fake_service(ScriptedSheets::default())
+        .await
+        .with_store(store.clone())
+        .on_committed({
+            let told = Arc::clone(&told);
+            move |_| told.notify_one()
+        });
+    let wake = std::time::Duration::from_millis(50);
+
+    store.refusing(true);
+    let id = storage_account().id;
+    let off = || service.set_toggle(&id, CapabilityKind::Calendar, Toggle::Off);
+    assert_eq!(off().await, Err(Refusal::Unavailable));
+    assert!(tokio::time::timeout(wake, told.notified()).await.is_err());
+
+    store.refusing(false);
+    let (changed, seen) = tokio::join!(off(), async {
+        told.notified().await;
+        service.registry().toggles.len()
+    });
+    changed.expect("toggled");
+    assert_eq!(seen, 1, "the registry already holds the change");
+}

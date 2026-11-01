@@ -14,7 +14,7 @@
 
 use crate::import::{Import, ImportError, OldStore, Outcome};
 use crate::paths::{HONOURS_PROC_ROOT, Paths};
-use crate::{FileAudit, NewsStore, Options, serve_with};
+use crate::{FileAudit, Options, serve_with};
 use porter_callers::choose_proc_root;
 use porter_callers::load_callers;
 use porter_callers::{CallerFileError, ProcCallers};
@@ -314,7 +314,11 @@ impl Daemon {
         let service = Arc::new(
             AccountService::new(families, registry, secrets.clone(), sheets, SystemClock)
                 .with_local_runtimes(local)
-                .with_store(NewsStore::new(store, Arc::clone(&saved)))
+                .with_store(store)
+                .on_committed({
+                    let saved = Arc::clone(&saved);
+                    move |_| saved.notify_one()
+                })
                 .with_audit(FileAudit::new(paths.audit.clone())),
         );
         // The picker of `Identities1.Offer` is the sheet host, and the password of
