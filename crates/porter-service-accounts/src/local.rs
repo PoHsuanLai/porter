@@ -5,7 +5,7 @@
 //! for that (removing it is the person's, in Settings).
 
 use crate::Accounts;
-use porter_capability::{Claim, KindToggle, Offer, Provenance, Subject, effective};
+use porter_capability::{Claim, Offer, Provenance, Subject};
 use porter_core::{Account, AccountLabel, AccountState, AuthKind, Restriction};
 use porter_core::{AccountId, ProviderId};
 use porter_service_core::Ports;
@@ -62,21 +62,13 @@ impl<E: Ports> Accounts<'_, E> {
         let id = AccountId::parse(provider.as_str()).map_err(|_| LocalFault::UnknownProvider)?;
         self.ctx
             .transact(|registry| {
-                let off: Vec<KindToggle> = registry
-                    .toggles
-                    .iter()
-                    .filter(|t| t.account == id)
-                    .map(|t| KindToggle {
-                        kind: t.kind,
-                        toggle: t.toggle,
-                    })
-                    .collect();
+                let capabilities = registry.effective_for(&id, &models);
                 let held = registry.accounts.iter_mut().find(|a| a.id == id);
                 match held {
                     Some(account) => {
                         account.state = state;
                         if !(models.is_empty() && state == AccountState::Offline) {
-                            account.capabilities = effective(&models, &off);
+                            account.capabilities = capabilities;
                         }
                     }
                     None => registry.accounts.push(Account {
@@ -85,7 +77,7 @@ impl<E: Ports> Accounts<'_, E> {
                         label: AccountLabel(spec.label.clone()),
                         state,
                         auth: spec.auth.kind,
-                        capabilities: effective(&models, &off),
+                        capabilities,
                         restriction: Restriction::none(),
                         endpoints: Vec::new(),
                     }),

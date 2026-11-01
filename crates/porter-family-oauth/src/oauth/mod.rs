@@ -22,7 +22,7 @@ pub use issuer::BrowserIssuer;
 pub use session::OAuthSession;
 pub use standard::Standard;
 
-pub(crate) use flow::{exchange_fault, provider_fault};
+pub(crate) use flow::exchange_fault;
 pub(crate) use identity::{failure, get, userinfo_address};
 
 use porter_capability::Claim;

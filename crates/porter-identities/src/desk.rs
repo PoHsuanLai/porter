@@ -11,9 +11,10 @@ use porter_core::AccountId;
 use porter_core::consent::{ConsentAnswer, ConsentAsk};
 use porter_core::{AppId, Credential, SecretKey, SecretPurpose, SecretText};
 use porter_ids::clock::Clock;
-use porter_secrets::{Secrets, SecretsError};
+use porter_secrets::Secrets;
 use porter_service_core::audit::AuditSink;
 use porter_service_core::audit::{AuditEntry, AuditEvent};
+use porter_service_core::refusal::secrets_refusal;
 use porter_sheet::host::Sheets;
 use porter_wire::{ParentWindow, Refusal};
 use std::future::Future;
@@ -58,15 +59,6 @@ impl<U, S, A, K> SheetsDesk<U, S, A, K> {
     }
 }
 
-/// What the store's failure is to the app that asked.
-fn refusal_of(error: SecretsError) -> Refusal {
-    match error {
-        SecretsError::Missing | SecretsError::Unreadable => Refusal::NeedsReauth,
-        // locked, unreachable, and a failure a later porter-secrets adds
-        _ => Refusal::Unavailable,
-    }
-}
-
 impl<U, S, A, K> IdentityDesk for SheetsDesk<U, S, A, K>
 where
     U: Sheets + std::fmt::Debug + 'static,
@@ -84,7 +76,7 @@ where
                 account: account.clone(),
                 purpose: SecretPurpose::Password,
             };
-            match self.secrets.get(&key).await.map_err(refusal_of)? {
+            match self.secrets.get(&key).await.map_err(secrets_refusal)? {
                 Credential::Password(password) => Ok(password),
                 _ => Err(Refusal::NeedsReauth),
             }

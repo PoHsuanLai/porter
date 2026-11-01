@@ -281,3 +281,38 @@ fn a_session_owns_exactly_the_grants_scoped_to_it() {
     assert_eq!(ids(None), ["g1", "g2"]);
     assert!(ids(Some(&session("sess-3"))).is_empty());
 }
+
+#[test]
+fn an_accounts_capabilities_are_its_claims_with_its_own_toggles_applied() {
+    use porter_capability::{AbsentReason, Offer, Toggle};
+    use porter_core::store::AccountToggle;
+    let account = llm_account();
+    let claims = account.capabilities.clone();
+    let kind = claims[0].offer.kind();
+    let registry = Registry {
+        accounts: vec![account.clone()],
+        toggles: vec![AccountToggle {
+            account: account.id.clone(),
+            kind,
+            toggle: Toggle::Off,
+        }],
+        ..Registry::default()
+    };
+    let other = porter_core::AccountId::parse("another").expect("id");
+    assert_eq!(
+        registry.effective_for(&other, &claims),
+        porter_capability::effective(&claims, &[])
+    );
+    let off = registry.effective_for(&account.id, &claims);
+    assert!(
+        off.iter()
+            .filter(|c| c.offer.kind() == kind)
+            .all(|c| matches!(
+                c.offer,
+                Offer::Absent {
+                    reason: AbsentReason::TurnedOff,
+                    ..
+                }
+            ))
+    );
+}

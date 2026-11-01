@@ -15,7 +15,7 @@ mod reauth;
 mod scopes;
 
 use crate::extend::{answered_as, asked_claims};
-use crate::oauth::{BrowserIssuer, Cx, Grant, OAuthSession, provider_fault, userinfo_address};
+use crate::oauth::{BrowserIssuer, Cx, Grant, OAuthSession, userinfo_address};
 use porter_capability::{Ask, Capability, CapabilityKind, Claim, Offer, StorageScope};
 use porter_core::{
     AccountLabel, Audience, Credential, EndpointUrl, Family, GrantedScopes, Limit, LimitReason,
@@ -148,7 +148,7 @@ impl BrowserIssuer for Google {
             .ok_or(SignInFault::Unreadable)?;
         let address = userinfo_address(&*cx.env.http, &userinfo, &token)
             .await
-            .map_err(provider_fault)?;
+            .map_err(SignInFault::from)?;
         let claims = probe(
             &*cx.env.http,
             cx.spec,
@@ -157,7 +157,7 @@ impl BrowserIssuer for Google {
             (&granted, grant.traits.byo),
         )
         .await
-        .map_err(provider_fault)?;
+        .map_err(SignInFault::from)?;
         let credential = Credential::OAuth {
             expires_at: tokens.expires_at(now),
             access: tokens.access_token,
@@ -203,7 +203,7 @@ impl BrowserIssuer for Google {
             .ok_or(SignInFault::Unreadable)?;
         let address = userinfo_address(&*cx.env.http, &userinfo, tokens.access_token.expose())
             .await
-            .map_err(provider_fault)?;
+            .map_err(SignInFault::from)?;
         Ok(Signed::new(
             AccountLabel(address.clone()),
             vec![(

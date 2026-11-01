@@ -4,7 +4,7 @@
 //! per-service probe to ask). Tokens are not narrowed per kind: a grant is the whole of what was
 //! granted, for the audiences the file names.
 
-use super::flow::{Cx, Grant, provider_fault};
+use super::flow::{Cx, Grant};
 use super::issuer::BrowserIssuer;
 use super::session::OAuthSession;
 use super::userinfo_address;
@@ -59,7 +59,7 @@ impl BrowserIssuer for Standard {
         let userinfo = cx.env.userinfo_of(self.0).ok_or(SignInFault::Unreadable)?;
         let address = userinfo_address(&*cx.env.http, &userinfo, tokens.access_token.expose())
             .await
-            .map_err(provider_fault)?;
+            .map_err(SignInFault::from)?;
         Ok(Signed::new(
             AccountLabel(address.clone()),
             vec![(
@@ -93,7 +93,7 @@ impl BrowserIssuer for Standard {
         let userinfo = cx.env.userinfo_of(self.0).ok_or(SignInFault::Unreadable)?;
         let address = userinfo_address(&*cx.env.http, &userinfo, tokens.access_token.expose())
             .await
-            .map_err(provider_fault)?;
+            .map_err(SignInFault::from)?;
         let mut granted = self
             .0
             .data()
