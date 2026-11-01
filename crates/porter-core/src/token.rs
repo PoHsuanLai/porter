@@ -70,6 +70,15 @@ pub enum TokenKind {
     ApiKeyHandle,
 }
 
+/// How long before a token expires it counts as due: renewed, and no longer handed out again.
+pub const RENEW_MARGIN_SECONDS: i64 = 60;
+
+/// Whether a token that expires at `expires` needs renewing at `now`: it is expired or about to
+/// be, within [`RENEW_MARGIN_SECONDS`]. The one rule for renewing and for reusing a token.
+pub fn is_due(expires: UnixSeconds, now: UnixSeconds) -> bool {
+    expires.0 - now.0 <= RENEW_MARGIN_SECONDS
+}
+
 /// A short-lived token issued to a granted app.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
@@ -97,6 +106,24 @@ impl IssuedToken {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_token_is_due_inside_the_margin() {
+        const CASES: &[(&str, i64, bool)] = &[
+            ("an hour left", 3600, false),
+            ("just outside the margin", RENEW_MARGIN_SECONDS + 1, false),
+            ("on the margin", RENEW_MARGIN_SECONDS, true),
+            ("expiring", 1, true),
+            ("expired", -5, true),
+        ];
+        for (name, left, due) in CASES {
+            assert_eq!(
+                is_due(UnixSeconds(1_000 + left), UnixSeconds(1_000)),
+                *due,
+                "{name}"
+            );
+        }
+    }
 
     #[test]
     fn plain_is_nul_user_nul_password() {

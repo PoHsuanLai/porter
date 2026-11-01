@@ -17,14 +17,14 @@ use porter_core::{Account, AccountState, AppId, AuthKind, DataClass, LoginName, 
 use porter_core::{AccountId, ProviderId};
 use porter_match::Need;
 use porter_provider::{ProviderSpec, SignInStep, Signed};
-use porter_service_core::Ports;
 use porter_service_core::audit::AuditEvent;
 use porter_service_core::consent::settle;
 use porter_service_core::registry::{Asker, Registry};
+use porter_service_core::{Audited, Ports};
 
 use porter_ids::clock::Clock;
 use porter_secrets::Secrets;
-use porter_wire::AccountsReply;
+use porter_wire::{AccountsReply, Refusal};
 use std::collections::HashSet;
 use std::sync::{Mutex, MutexGuard};
 
@@ -105,14 +105,20 @@ fn same_login(held: &[porter_core::ServiceEndpoint], new: &[porter_core::Service
     !new_logins.is_empty() && held_logins == new_logins && servers(held) == servers(new)
 }
 
-/// Whether `held` is the account that adding `new` through `provider` would make again. An agent
-/// program signs itself in to the one plan its own login holds, so a second account of the same
-/// agent provider is the same account, and so is a second Tailscale (one program serves this
-/// computer); any other is the same login at the same servers.
-fn duplicate(held: &Account, provider: &ProviderId, new: &[porter_core::ServiceEndpoint]) -> bool {
-    held.provider == *provider
-        && (matches!(held.auth, AuthKind::AgentLogin | AuthKind::OwnProgram)
-            || same_login(&held.endpoints, new))
+/// The account in `registry` that adding `new` through `provider` would make again, if any. An
+/// agent program signs itself in to the one plan its own login holds, so a second account of the
+/// same agent provider is the same account, and so is a second Tailscale (one program serves
+/// this computer); any other is the same login at the same servers.
+pub(crate) fn duplicate<'r>(
+    registry: &'r Registry,
+    provider: &ProviderId,
+    new: &[porter_core::ServiceEndpoint],
+) -> Option<&'r Account> {
+    registry.accounts.iter().find(|held| {
+        held.provider == *provider
+            && (matches!(held.auth, AuthKind::AgentLogin | AuthKind::OwnProgram)
+                || same_login(&held.endpoints, new))
+    })
 }
 
 /// An account id an add has chosen and is filing secrets under. Dropping it (the add finished,
@@ -153,12 +159,7 @@ impl<E: Ports> Accounts<'_, E> {
             SignInStep::Done(signed) => &signed.endpoints,
             _ => return None,
         };
-        self.ctx
-            .lock()
-            .accounts
-            .iter()
-            .find(|a| duplicate(a, provider, endpoints))
-            .map(|a| a.id.clone())
+        duplicate(&self.ctx.lock(), provider, endpoints).map(|a| a.id.clone())
     }
 
     /// Stores the account `signed` describes, with the person's service `choices`, and the
@@ -186,15 +187,6 @@ impl<E: Ports> Accounts<'_, E> {
         // does the row appear: a drop at an await leaves no row without its secrets.
         let reservation = {
             let registry = self.ctx.lock();
-            // The sheet stops a second add of one login at the review; a second sheet that got
-            // here first is the same thing, caught where the registry is written.
-            if registry
-                .accounts
-                .iter()
-                .any(|a| duplicate(a, &spec.id, &signed.endpoints))
-            {
-                return Err(());
-            }
             let mut reserved = self.reserved_ids();
             let id = fresh_id(&registry, &reserved, &spec.id, &signed.label.0);
             reserved.insert(id.clone());
@@ -214,15 +206,17 @@ impl<E: Ports> Accounts<'_, E> {
                 return Err(());
             }
         }
-        let pushed = {
-            let mut registry = self.ctx.lock();
-            if registry
-                .accounts
-                .iter()
-                .any(|a| duplicate(a, &spec.id, &signed.endpoints))
-            {
-                None
-            } else {
+        // The row, its toggles and its first grant are one transaction, and the only place a
+        // duplicate is refused for good: the sheet stops a second add of one login at the review,
+        // but a second sheet may finish first, even while these secrets are being filed. A
+        // transaction that refuses, or that cannot be saved, leaves the registry as it
+        // was, and the secrets go.
+        let stored = self
+            .ctx
+            .transact(|registry| {
+                if duplicate(registry, &spec.id, &signed.endpoints).is_some() {
+                    return Err(Refusal::Unavailable);
+                }
                 let account = Account {
                     id: reservation.id.clone(),
                     provider: spec.id.clone(),
@@ -239,41 +233,41 @@ impl<E: Ports> Accounts<'_, E> {
                     kind: t.kind,
                     toggle: t.toggle,
                 }));
-                Some(account)
+                let granted =
+                    allow.and_then(|ask| self.grant_first(registry, caller, &account.id, ask));
+                let mut lines = vec![Audited::new(
+                    Some(caller.clone()),
+                    Some(account.id.clone()),
+                    AuditEvent::SignedIn,
+                )];
+                if let Some(AccountsReply::Chosen(candidate)) = granted {
+                    lines.push(Audited::new(
+                        Some(caller.clone()),
+                        Some(account.id.clone()),
+                        AuditEvent::Granted {
+                            grant: candidate.grant,
+                            kind: ask_kind(allow),
+                        },
+                    ));
+                }
+                Ok((lines, account.id))
+            })
+            .await;
+        match stored {
+            Ok(written) => Ok(written.value),
+            Err(_) => {
+                // Nothing more can be done for a secret that cannot be deleted.
+                let _ = self.ctx.secrets().delete_account(&reservation.id).await;
+                Err(())
             }
-        };
-        // Another add of the same login finished while the secrets were being filed.
-        let Some(account) = pushed else {
-            let _ = self.ctx.secrets().delete_account(&reservation.id).await;
-            return Err(());
-        };
-        let granted = allow.and_then(|ask| self.grant_first(caller, &account.id, ask));
-        if self.ctx.persist().await.is_err() {
-            self.undo_add(&account.id).await;
-            return Err(());
         }
-        self.ctx.note(
-            Some(caller.clone()),
-            Some(account.id.clone()),
-            AuditEvent::SignedIn,
-        );
-        if let Some(AccountsReply::Chosen(candidate)) = granted {
-            self.ctx.note(
-                Some(caller.clone()),
-                Some(account.id.clone()),
-                AuditEvent::Granted {
-                    grant: candidate.grant,
-                    kind: ask_kind(allow),
-                },
-            );
-        }
-        Ok(account.id)
     }
 
     /// The first grant of "Add, and allow": always, for the app that asked, when the new account
     /// meets what it asked for.
     fn grant_first(
         &self,
+        registry: &mut Registry,
         caller: &AppId,
         account: &AccountId,
         ask: &AllowFor,
@@ -288,7 +282,7 @@ impl<E: Ports> Accounts<'_, E> {
             scope: GrantScope::Always,
         };
         let reply = settle(
-            &mut self.ctx.lock(),
+            registry,
             &ask.need,
             asker,
             None,
@@ -299,26 +293,61 @@ impl<E: Ports> Accounts<'_, E> {
         matches!(reply, AccountsReply::Chosen(_)).then_some(reply)
     }
 
-    /// Takes back an add that could not be finished: the row, its toggles and grants, and
-    /// whatever secrets were filed.
-    async fn undo_add(&self, id: &AccountId) {
-        {
-            let mut registry = self.ctx.lock();
-            registry.accounts.retain(|a| a.id != *id);
-            registry.grants.retain(|g| g.key.account != *id);
-            registry.toggles.retain(|t| t.account != *id);
-        }
-        // Nothing more can be done for a secret that cannot be deleted.
-        let _ = self.ctx.secrets().delete_account(id).await;
-    }
-
     /// Files the credentials of a sign-in again under the account's id, sets it working, and
     /// audits it. A different person's login is refused: the account keeps its owner.
+    ///
+    /// Runs under the account's turn at its issuer, as a look at the account again does, so a
+    /// credential read before this one was filed is never written back over it.
     pub(crate) async fn store_renewed(
         &self,
         caller: &AppId,
         account: &AccountId,
         signed: &Signed,
+    ) -> Result<(), ()> {
+        let flight = self.ctx.flights().of(account);
+        let _turn = flight.gate.lock().await;
+        self.renew(caller, account, signed, &[]).await
+    }
+
+    /// Files the credential of a sign-in that asked for one more access, as
+    /// [`Self::store_renewed`] does, once it is known to be the same person: the answer's login
+    /// must be the account's own, and an account with no login to compare keeps what it has.
+    /// The account then claims `given`, the access the person just agreed to (the provider's
+    /// on-use rows of the kinds asked), so a need of it fits the account from now on. Each is
+    /// claimed as `Declared`, below what sign-in found of its kind, so what the account shows of
+    /// the kind is unchanged; a claim already held is not added twice. The credential and the
+    /// claims are one transaction.
+    pub(crate) async fn store_extended(
+        &self,
+        caller: &AppId,
+        account: &AccountId,
+        signed: &Signed,
+        given: &[Capability],
+    ) -> Result<(), ()> {
+        let flight = self.ctx.flights().of(account);
+        let _turn = flight.gate.lock().await;
+        let held = self
+            .ctx
+            .lock()
+            .accounts
+            .iter()
+            .find(|a| a.id == *account)
+            .map(|a| a.endpoints.clone())
+            .ok_or(())?;
+        if !same_person(&held, &signed.endpoints) {
+            return Err(());
+        }
+        self.renew(caller, account, signed, given).await
+    }
+
+    /// The body of both, under the account's turn: files the credentials, then in one
+    /// transaction sets the account working, dates the sign-in and claims `given`.
+    async fn renew(
+        &self,
+        caller: &AppId,
+        account: &AccountId,
+        signed: &Signed,
+        given: &[Capability],
     ) -> Result<(), ()> {
         let held = self
             .ctx
@@ -345,96 +374,42 @@ impl<E: Ports> Accounts<'_, E> {
                 .await
                 .map_err(|_| ())?;
         }
-        let was = {
-            let mut registry = self.ctx.lock();
-            let row = registry
-                .accounts
-                .iter_mut()
-                .find(|a| a.id == *account)
-                .ok_or(())?;
-            // Signing in again makes a refused credential good. An agent account has none: the
-            // agent says when it is signed in, so the state stays what the agent last said.
-            let next = match row.auth {
-                AuthKind::AgentLogin => row.state,
-                _ => AccountState::Ok,
-            };
-            // The date of this sign-in starts the next seven days.
-            if signed.restriction.signed_in.is_some() {
-                row.restriction.signed_in = signed.restriction.signed_in;
-            }
-            std::mem::replace(&mut row.state, next)
-        };
-        if self.ctx.persist().await.is_err() {
-            if let Some(row) = self
-                .ctx
-                .lock()
-                .accounts
-                .iter_mut()
-                .find(|a| a.id == *account)
-            {
-                row.state = was;
-            }
-            return Err(());
-        }
-        self.ctx.note(
-            Some(caller.clone()),
-            Some(account.clone()),
-            AuditEvent::Reauthed,
-        );
-        Ok(())
-    }
-
-    /// Files the credential of a sign-in that asked for one more access, as
-    /// [`Self::store_renewed`] does, once it is known to be the same person: the answer's login
-    /// must be the account's own, and an account with no login to compare keeps what it has.
-    /// The account then claims `given`, the access the person just agreed to (the provider's
-    /// on-use rows of the kinds asked), so a need of it fits the account from now on. Each is
-    /// claimed as `Declared`, below what sign-in found of its kind, so what the account shows of
-    /// the kind is unchanged; a claim already held is not added twice.
-    pub(crate) async fn store_extended(
-        &self,
-        caller: &AppId,
-        account: &AccountId,
-        signed: &Signed,
-        given: &[Capability],
-    ) -> Result<(), ()> {
-        let held = self
-            .ctx
-            .lock()
-            .accounts
-            .iter()
-            .find(|a| a.id == *account)
-            .map(|a| a.endpoints.clone())
-            .ok_or(())?;
-        if !same_person(&held, &signed.endpoints) {
-            return Err(());
-        }
-        self.store_renewed(caller, account, signed).await?;
-        let added = {
-            let mut registry = self.ctx.lock();
-            let row = registry
-                .accounts
-                .iter_mut()
-                .find(|a| a.id == *account)
-                .ok_or(())?;
-            let mut added = false;
-            for capability in given {
-                let claim = Claim {
-                    subject: Subject::Account,
-                    offer: Offer::Present(capability.clone()),
-                    provenance: Provenance::Declared,
-                };
-                if !row.capabilities.contains(&claim) {
-                    row.capabilities.push(claim);
-                    added = true;
+        self.ctx
+            .transact(|registry| {
+                let row = registry
+                    .accounts
+                    .iter_mut()
+                    .find(|a| a.id == *account)
+                    .ok_or(Refusal::UnknownGrant)?;
+                // Signing in again makes a refused credential good. An agent account has none: the
+                // agent says when it is signed in, so the state stays what the agent last said.
+                if row.auth != AuthKind::AgentLogin {
+                    row.state = AccountState::Ok;
                 }
-            }
-            added
-        };
-        match added {
-            true => self.ctx.persist().await.map_err(drop),
-            false => Ok(()),
-        }
+                // The date of this sign-in starts the next seven days.
+                if signed.restriction.signed_in.is_some() {
+                    row.restriction.signed_in = signed.restriction.signed_in;
+                }
+                for capability in given {
+                    let claim = Claim {
+                        subject: Subject::Account,
+                        offer: Offer::Present(capability.clone()),
+                        provenance: Provenance::Declared,
+                    };
+                    if !row.capabilities.contains(&claim) {
+                        row.capabilities.push(claim);
+                    }
+                }
+                let line = Audited::new(
+                    Some(caller.clone()),
+                    Some(account.clone()),
+                    AuditEvent::Reauthed,
+                );
+                Ok((vec![line], ()))
+            })
+            .await
+            .map(|_| ())
+            .map_err(drop)
     }
 }
 

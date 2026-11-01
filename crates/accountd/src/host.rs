@@ -13,6 +13,7 @@ use porter_provider::{Provider, RevokeOutcome};
 use porter_secrets::{Secrets, SecretsError};
 use porter_service::AccountService;
 use porter_service_accounts::{AgentFault, Launchers, LocalFault, Roster};
+use porter_service_core::Committed;
 use porter_service_core::audit::AuditSink;
 use porter_service_core::registry::Registry;
 use porter_sheet::host::Sheets;
@@ -66,6 +67,19 @@ pub trait Host: Send + Sync + 'static {
     /// removed). A host with no audit records nothing.
     fn audit_app(&self, app: &AppId, event: porter_service_core::audit::AuditEvent) {
         let _ = (app, event);
+    }
+
+    /// Records the end of a relay (`AuditEvent::ProxyClosed`). A host with no audit records
+    /// nothing.
+    fn audit_relay_end(
+        &self,
+        app: &AppId,
+        account: Option<AccountId>,
+        grant: &porter_core::GrantId,
+        endpoint: &porter_core::EndpointUrl,
+        outcome: porter_service_core::audit::ProxyOutcome,
+    ) {
+        let _ = (app, account, grant, endpoint, outcome);
     }
 
     /// Sets an account's state; whether it changed.
@@ -231,6 +245,10 @@ pub trait Host: Send + Sync + 'static {
     /// Tells the host which agent programs have a launcher, so that adding an agent account
     /// with none ends in `NoLauncher`.
     fn use_launcher_roster(&self, roster: Roster);
+
+    /// Has `told` called with each change of the registry once it is saved and swapped in, in
+    /// the order the changes were made: how accountd hears of them. It must not wait.
+    fn follow_committed(&self, told: Box<dyn Fn(Committed) + Send + Sync>);
 }
 
 impl<P, S, U, K, R, A> Host for AccountService<P, S, U, K, R, A>
@@ -278,8 +296,31 @@ where
         AccountService::audit_app(self, app.clone(), event);
     }
 
-    fn set_state(&self, id: &AccountId, state: AccountState) -> impl Future<Output = bool> + Send {
-        AccountService::set_state(self, id, state)
+    fn audit_relay_end(
+        &self,
+        app: &AppId,
+        account: Option<AccountId>,
+        grant: &porter_core::GrantId,
+        endpoint: &porter_core::EndpointUrl,
+        outcome: porter_service_core::audit::ProxyOutcome,
+    ) {
+        AccountService::audit_relay_end(
+            self,
+            app.clone(),
+            account,
+            grant.clone(),
+            endpoint.clone(),
+            outcome,
+        );
+    }
+
+    async fn set_state(&self, id: &AccountId, state: AccountState) -> bool {
+        AccountService::try_set_state(self, id, state)
+            .await
+            .unwrap_or_else(|why| {
+                eprintln!("accountd: the state of {id} could not be saved: {why:?}");
+                false
+            })
     }
 
     fn set_toggle(
@@ -452,5 +493,9 @@ where
 
     fn use_launcher_roster(&self, roster: Roster) {
         AccountService::set_launcher_roster(self, roster);
+    }
+
+    fn follow_committed(&self, told: Box<dyn Fn(Committed) + Send + Sync>) {
+        AccountService::follow_committed(self, told);
     }
 }

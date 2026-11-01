@@ -103,7 +103,7 @@ impl<H: Host, C: Callers> Core<H, C> {
                 },
                 request => core.host.handle(&app, request).await,
             };
-            core.publish().await;
+            core.told().await;
             reply
         };
         let path = self

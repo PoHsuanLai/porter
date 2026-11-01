@@ -23,7 +23,7 @@
 //! The consent alert is not a stage: it is one call (`Sheets::consent`), so `Answer` is not
 //! this machine's input and is dropped here.
 
-use super::{Purpose, Sheet, SheetEffect, SheetEnd, SheetEvent, Stage};
+use super::{Purpose, Restart, Sheet, SheetEffect, SheetEnd, SheetEvent, Stage};
 use crate::fields::{FieldAnswer, FieldKind, FieldSpec, FieldValue};
 use crate::input::SheetInput;
 use crate::manual;
@@ -36,8 +36,60 @@ pub(super) fn step(sheet: Sheet, event: SheetEvent) -> (Sheet, Vec<SheetEffect>)
         SheetEvent::Input(SheetInput::Dismiss) | SheetEvent::Left => leave(sheet),
         SheetEvent::Input(input) => on_input(sheet, input),
         SheetEvent::SignIn(progress) => on_progress(sheet, progress),
+        SheetEvent::Duplicate => on_fact(sheet, Fact::Duplicate),
+        SheetEvent::NoLauncher => on_fact(sheet, Fact::NoLauncher),
+        SheetEvent::SignedInBefore => on_fact(sheet, Fact::SignedInBefore),
         SheetEvent::Stored => on_stored(sheet),
         SheetEvent::StoreFailed => on_store_failed(sheet),
+    }
+}
+
+/// A fact the host found out about the sign-in that is running; what it means is `decide`'s.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Fact {
+    /// The sign-in showed an account that is stored already.
+    Duplicate,
+    /// An agent's program has no launcher.
+    NoLauncher,
+    /// A sign-in without a consent screen ended unreadable.
+    SignedInBefore,
+}
+
+/// What a fact makes of the sheet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Verdict {
+    /// The sign-in ends here with this fault.
+    Fail(SignInFault),
+    /// The sign-in is started again, once.
+    Restart(Restart),
+    /// The fact means nothing to this sheet.
+    Ignore,
+}
+
+/// Every judgement of a sign-in's facts, in one place: only an add refuses a duplicate or a
+/// missing launcher (the other jobs act on an account that is here already), and only an add in
+/// flight on a provider tries a consent-less sign-in again, as a first one; anywhere else the
+/// unreadable answer stands. Whether the person's own `Retry` can help is [`retryable`].
+pub(super) fn decide(sheet: &Sheet, fact: Fact) -> Verdict {
+    let adding = matches!(sheet.purpose, Purpose::Add { .. });
+    match fact {
+        Fact::Duplicate if adding => Verdict::Fail(SignInFault::AlreadyAdded),
+        Fact::NoLauncher if adding => Verdict::Fail(SignInFault::NoLauncher),
+        Fact::Duplicate | Fact::NoLauncher => Verdict::Ignore,
+        Fact::SignedInBefore
+            if adding && matches!(sheet.stage, Stage::Working(_) | Stage::Confirming { .. }) =>
+        {
+            Verdict::Restart(Restart::FirstSignIn)
+        }
+        Fact::SignedInBefore => Verdict::Fail(SignInFault::Unreadable),
+    }
+}
+
+fn on_fact(sheet: Sheet, fact: Fact) -> (Sheet, Vec<SheetEffect>) {
+    match decide(&sheet, fact) {
+        Verdict::Fail(fault) => on_progress(sheet, Progress::Failed(fault)),
+        Verdict::Restart(how) => (sheet, vec![SheetEffect::Restart(how)]),
+        Verdict::Ignore => ignore(sheet),
     }
 }
 
@@ -98,8 +150,8 @@ fn on_input(sheet: Sheet, input: SheetInput) -> (Sheet, Vec<SheetEffect>) {
             effects.push(feed);
             (sheet, effects)
         }
-        (Stage::Browser { url, .. }, SheetInput::OpenAgain) => {
-            let effects = vec![SheetEffect::OpenBrowser(url.clone())];
+        (Stage::Browser { .. }, SheetInput::OpenAgain) => {
+            let effects = vec![SheetEffect::OpenBrowser];
             (sheet, effects)
         }
         (Stage::Failed { provider, fault }, SheetInput::Retry) if retryable(*fault) => {

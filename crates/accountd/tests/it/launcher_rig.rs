@@ -6,7 +6,7 @@
 use crate::common::bus::PrivateBus;
 
 use accountd::launcher::{Launchers, LoginTiming};
-use accountd::{NewsStore, Options, TableCallers, serve_with};
+use accountd::{Options, TableCallers, serve_with};
 use porter_callers::{Caller, CallerRole};
 use porter_capability::CapabilityKind;
 use porter_capability::StorageScope;
@@ -58,14 +58,8 @@ impl Secrets for Shared {
     }
 }
 
-pub type Svc = AccountService<
-    FakeProvider,
-    Shared,
-    ScriptedSheets,
-    FixedClock,
-    NewsStore<MemoryStore>,
-    RecordingAudit,
->;
+pub type Svc =
+    AccountService<FakeProvider, Shared, ScriptedSheets, FixedClock, MemoryStore, RecordingAudit>;
 
 pub fn account(id: &str, auth: AuthKind) -> Account {
     Account {
@@ -141,7 +135,6 @@ impl Rig {
             grants: permits,
             toggles: vec![],
         };
-        let saved = Arc::new(tokio::sync::Notify::new());
         let sheets = ScriptedSheets::answering(consent);
         let log = sheets.log();
         let audit = RecordingAudit::default();
@@ -153,7 +146,7 @@ impl Rig {
                 sheets,
                 FixedClock(porter_fake::NOW),
             )
-            .with_store(NewsStore::new(MemoryStore::default(), Arc::clone(&saved)))
+            .with_store(MemoryStore::default())
             .with_audit(audit.clone()),
         );
         let peers = Arc::new(TableCallers::new());
@@ -167,7 +160,6 @@ impl Rig {
             Arc::clone(&peers),
             Options {
                 launchers: Some(launchers.clone()),
-                saved: Some(saved),
                 ..Options::default()
             },
         )

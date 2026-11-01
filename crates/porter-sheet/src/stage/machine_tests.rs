@@ -9,6 +9,7 @@ use crate::input::SheetInput;
 use crate::progress::{
     Progress, Review, ServiceRow, ServiceState, SignInFault, SignInInput, UserCode,
 };
+use crate::stage::Restart;
 use crate::view::{FieldProblem, ProblemKind, ProviderKind, ProviderRow, RowKind, SheetView};
 use porter_capability::CapabilityKind;
 use porter_capability::Toggle;
@@ -749,11 +750,11 @@ fn open_again_on_the_browser_page_opens_it_again_and_does_not_restart() {
     let sheet = at(add(), browser());
     let (after, effects) = step(sheet.clone(), input(SheetInput::OpenAgain));
     assert_eq!(after, sheet);
-    assert_eq!(effects, vec![SheetEffect::OpenBrowser(page())]);
+    assert_eq!(effects, vec![SheetEffect::OpenBrowser]);
     // Again, and again: the same, and nothing is cancelled or fed.
     let (after, effects) = step(after, input(SheetInput::OpenAgain));
     assert_eq!(after, sheet);
-    assert_eq!(effects, vec![SheetEffect::OpenBrowser(page())]);
+    assert_eq!(effects, vec![SheetEffect::OpenBrowser]);
 }
 
 #[test]
@@ -822,7 +823,8 @@ fn leaks(effect: &SheetEffect) -> bool {
         SheetEffect::Show(view) => serde_json::to_string(view).expect("view"),
         SheetEffect::Store(choices) => serde_json::to_string(choices).expect("choices"),
         SheetEffect::Close(end) => format!("{end:?}"),
-        SheetEffect::OpenBrowser(url) => format!("{url:?}"),
+        SheetEffect::OpenBrowser => String::new(),
+        SheetEffect::Restart(how) => format!("{how:?}"),
         SheetEffect::Feed(SignInInput::Fields(_)) => return false,
         SheetEffect::Feed(other) => format!("{other:?}"),
     };
@@ -857,6 +859,9 @@ fn event_strategy() -> impl Strategy<Value = SheetEvent> {
         Just(SheetEvent::SignIn(Progress::Done)),
         Just(SheetEvent::SignIn(Progress::Failed(SignInFault::Refused))),
         Just(SheetEvent::Stored),
+        Just(SheetEvent::Duplicate),
+        Just(SheetEvent::NoLauncher),
+        Just(SheetEvent::SignedInBefore),
         Just(SheetEvent::StoreFailed),
         Just(SheetEvent::Left),
     ]
@@ -881,4 +886,96 @@ proptest! {
             sheet = next;
         }
     }
+}
+
+fn in_stage(purpose: Purpose, stage: Stage, event: SheetEvent) -> (Stage, Vec<SheetEffect>) {
+    run(at(purpose, stage), event)
+}
+
+#[test]
+fn the_facts_of_a_sign_in_are_judged_in_one_table() {
+    use super::machine::{Fact, Verdict, decide};
+    let working = Stage::Working(nc());
+    let table = [
+        (
+            add(),
+            working.clone(),
+            Fact::Duplicate,
+            Verdict::Fail(SignInFault::AlreadyAdded),
+        ),
+        (reauth(), working.clone(), Fact::Duplicate, Verdict::Ignore),
+        (
+            add(),
+            working.clone(),
+            Fact::NoLauncher,
+            Verdict::Fail(SignInFault::NoLauncher),
+        ),
+        (reauth(), working.clone(), Fact::NoLauncher, Verdict::Ignore),
+        (
+            add(),
+            working.clone(),
+            Fact::SignedInBefore,
+            Verdict::Restart(Restart::FirstSignIn),
+        ),
+        (
+            add(),
+            confirming(),
+            Fact::SignedInBefore,
+            Verdict::Restart(Restart::FirstSignIn),
+        ),
+        (
+            add(),
+            browser(),
+            Fact::SignedInBefore,
+            Verdict::Fail(SignInFault::Unreadable),
+        ),
+        (
+            reauth(),
+            working,
+            Fact::SignedInBefore,
+            Verdict::Fail(SignInFault::Unreadable),
+        ),
+    ];
+    for (purpose, stage, fact, want) in table {
+        let sheet = at(purpose, stage);
+        assert_eq!(decide(&sheet, fact), want, "{fact:?} at {:?}", sheet.stage);
+    }
+}
+
+#[test]
+fn a_duplicate_or_a_missing_launcher_fails_the_working_sheet_as_the_sign_in_saying_so_did() {
+    for (event, fault) in [
+        (SheetEvent::Duplicate, SignInFault::AlreadyAdded),
+        (SheetEvent::NoLauncher, SignInFault::NoLauncher),
+    ] {
+        let via_fact = in_stage(add(), Stage::Working(nc()), event);
+        let via_progress = in_stage(
+            add(),
+            Stage::Working(nc()),
+            SheetEvent::SignIn(Progress::Failed(fault)),
+        );
+        assert_eq!(via_fact, via_progress);
+        assert_eq!(via_fact.0, failed(fault));
+    }
+}
+
+#[test]
+fn a_consent_less_sign_in_that_ends_unreadable_restarts_once_without_a_redraw() {
+    let (stage, effects) = in_stage(add(), Stage::Working(nc()), SheetEvent::SignedInBefore);
+    assert_eq!(stage, Stage::Working(nc()));
+    assert_eq!(effects, vec![SheetEffect::Restart(Restart::FirstSignIn)]);
+    // Elsewhere the unreadable answer stands.
+    let (stage, _) = in_stage(reauth(), Stage::Working(nc()), SheetEvent::SignedInBefore);
+    assert_eq!(stage, failed(SignInFault::Unreadable));
+}
+
+#[test]
+fn a_sheet_starts_its_sign_in_when_it_opens_on_a_provider_or_a_form() {
+    let (sheet, effects) = Sheet::start(reauth(), vec![]);
+    assert_eq!(sheet.stage, Stage::Working(nc()));
+    assert_eq!(effects, vec![SheetEffect::Feed(SignInInput::Start)]);
+    let (sheet, effects) = Sheet::start(add(), rows());
+    assert!(matches!(sheet.stage, Stage::Choosing(_)));
+    assert!(effects.is_empty());
+    assert_eq!(sheet, Sheet::new(add(), rows()));
 }

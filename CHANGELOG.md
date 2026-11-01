@@ -9,6 +9,78 @@
   from an empty registry, so the first change overwrote what the store held; it now accepts only a
   config without a store (`NoStore`), so that cannot be written.
 
+### Sign-in decisions are the sheet machine's
+
+- The OAuth browser flow's decisions are free functions: `plan` (client, scopes and PKCE from the
+  registry, the rules and the random bytes: `NeedsClientId` first, then `Unreadable`) and
+  `AuthorizePlan::authorize` (the page), and Google's `signed_from` (the account from what the
+  sign-in read). `Flow` and `Move` are unchanged. Generic's `untried` and OAuth's `rotations`
+  stay where they are: neither can move without changing `Flow::confirm` or `Provider::discover`.
+
+- The sheet host no longer decides a retry, a duplicate or a missing launcher on its own. It tells
+  the machine what it found (`SheetEvent::SignedInBefore`, `Duplicate`, `NoLauncher`), and one
+  `decide` in `machine.rs` answers: the refusals are the same `Failed { fault }` as before (the
+  `SheetView` wire form is unchanged), and the consent retry is a `SheetEffect::Restart`.
+  `SheetEffect::OpenBrowser` no longer carries a page (the host showed the view's). `Sheet::start`
+  returns the sheet and the effects that begin it; `Sheet::new` stays.
+- A duplicate account is refused in one place when it is stored: the check in `store_new`'s
+  transaction (`add_store::duplicate`). The earlier second look before the secrets were filed is
+  gone; a refused add still leaves no row and no secret.
+
+### A relay is opened once, and its end is recorded
+
+- `spend_once` is decided on the registry as it is when the plan is ready: it answers
+  `UnknownGrant` when the grant is no longer held, so of two openers of one `Once` grant (a
+  relay, or a key read) exactly one gets through. The order is unchanged: check, mint, then spend;
+  a plan that could not be made spends nothing, and a plan whose grant went meanwhile is dropped
+  unused. A relay's `ProxyOpened` line is written in the spending transaction.
+- accountd records `AuditEvent::ProxyClosed { grant, endpoint, outcome }` when a relay ends
+  (`ProxyOutcome`: finished, or the fault). Readers of an older daemon skip the new line.
+- A revoke still does not close a relay already open: a grant gates opening, not an open stream.
+  This is policy; changing it is the owner's decision.
+- One margin (`porter_core::token::{RENEW_MARGIN_SECONDS, is_due}`) decides when a token is
+  renewed and when a minted one is no longer reused; `porter_oauth` re-exports it. One
+  `porter_ids::percent::decode_checked` serves both path-reach rules.
+
+### The clients are told once per change
+
+- accountd's news task takes each `Committed { before, after }` the service sends, in commit order
+  (`Host::follow_committed`, `Ctx::follow`), and tells the clients from it: it no longer holds a
+  copy of the registry to diff against, and `Options::saved`, `follow_saves` and `Core::publish`
+  are gone. The explicit calls after a change are gone with them; a reply that must follow its
+  own news waits on `Core::told`, which is no trigger. Signals and their counts are unchanged.
+- `Ctx::on_committed` and `AccountService::on_committed` still work and may be mixed with
+  `follow_committed`; every listener is told, in the order named.
+
+### `clients.toml` is kept like the other files
+
+- Settings writes `clients.toml` through `porter_fs::atomic::AtomicFile`, on the blocking pool: the
+  file it replaces is kept as `clients.toml.bak`, and two edits at once no longer lose one. A
+  `clients.toml` that does not parse is now refused (`RowRefused::Damaged`) and left as it is;
+  before, the edit replaced it with one row. The file is created owner-only (0600).
+- `SpaceBook` and `UseBook` save through one `porter_fs::book::commit` (feature `book`): the
+  document is written on the blocking pool and held only once it is on disk, and the
+  `Committed { before, after }` it returns is for the caller to pass on after the swap.
+- `AtomicFile::new` takes any name, and `AtomicFile::at(path)` makes one from a path.
+
+### The registry is changed one way
+
+- `porter_service_core::Ctx::transact(decide)` is the only way the registry changes. It takes the
+  gate, runs the sync `decide` on a copy, and, when the copy differs, saves it, swaps it in, writes
+  the audit lines `decide` returned (`Audited`) and tells `Ctx::on_committed` a `Committed { before,
+  after }`. A registry that cannot be saved is left as it was, with no audit line: the answer is
+  `Unavailable`. `Ctx::lock()` is now a read-only `Read`; `Ctx::persist` is gone.
+- Every change moves onto it: `choose`, `revoke`, `revoke_grant`, `spend_once`,
+  `end_session_grants`, `set_toggle`, `remove_account`, `rediscover`, `set_agent_state`,
+  `report_local`, a sign-in's store, `Ctx::set_state`. Behaviour that changes: a change that could
+  not be saved is no longer kept in memory (and no longer audited) while the caller is told
+  `Unavailable`; a removal and a state change that could not be saved say so instead of
+  succeeding (`remove_account` is `SecretsError::Unavailable`; `set_state` is `false`, and
+  `AccountService::try_set_state` says why, which accountd logs); `set_toggle` to the state a kind
+  already has saves nothing; a sign-in again and one more access take the account's turn at its
+  issuer (as `rediscover` does), so a look at the account no longer writes an older credential
+  over the one just filed; one more access is one transaction.
+
 ### Grants are on the bus
 
 - `org.quire.Grants1` at `/org/quire/Grants1` on accountd's name (`dbus/org.quire.Grants1.xml`):

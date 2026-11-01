@@ -1,18 +1,19 @@
-//! Telling the clients what changed. Objects that change the registry ask `Core::publish`, which
-//! hands the request to the one task started here and waits for its answer: the task registers
-//! and removes the `Account` objects and sends each signal to the connections of the roles it
-//! concerns, one request at a time.
+//! Telling the clients what changed. The host sends each change of the registry as it is
+//! committed, `Committed { before, after }`, down one ordered channel, and the one task started
+//! here takes them in turn: it registers and removes the `Account` objects and sends each signal
+//! to the connections of the roles it concerns. Nothing is diffed against a copy held here.
 
 use crate::account::AccountObject;
 use crate::callers::Callers;
 use crate::host::Host;
 use crate::hub::{Event, events, hears, settings_news};
 use crate::manager::Manager;
-use crate::state::{Core, held};
+use crate::state::Core;
 use porter_core::AccountId;
 use porter_dbus::accounts::AccountServed;
 use porter_dbus::accounts::ManagerServed;
 use porter_dbus::accounts::account_path;
+use porter_service_core::Committed;
 use porter_service_core::registry::Registry;
 use porter_wire::names::ACCOUNTS_PATH;
 use std::borrow::Cow;
@@ -24,44 +25,56 @@ use zbus::names::{BusName, InterfaceName};
 use zbus::object_server::SignalEmitter;
 use zbus::zvariant::ObjectPath;
 
-/// Starts the task that answers `Core::publish`. It holds the core weakly, so it ends with it.
-pub(crate) fn start<H: Host, C: Callers>(core: &Arc<Core<H, C>>) {
-    let (requests, mut asked) = mpsc::unbounded_channel::<oneshot::Sender<()>>();
-    let _ = core.publisher.set(requests);
-    let core = Arc::downgrade(core);
-    tokio::spawn(async move {
-        while let Some(done) = asked.recv().await {
-            let Some(core) = core.upgrade() else { return };
-            core.tell_all().await;
-            let _ = done.send(());
-        }
-    });
+/// What the news task is handed, in the order it was sent.
+pub(crate) enum Item {
+    /// One change of the registry, saved and swapped in.
+    Committed(Committed),
+    /// Someone waiting until everything sent before it has been told.
+    Told(oneshot::Sender<()>),
 }
 
-/// Tells the clients what moved each time the registry was saved, whoever saved it: a sign-in
-/// that finished in the background, a permit given, a runtime reported. Holds the core weakly,
-/// so it ends with it.
-pub(crate) fn follow_saves<H: Host, C: Callers>(
+/// Starts the one task that tells the clients, and has `host` send it each change of the registry
+/// as it is committed. The task takes the changes one at a time, in the order they were made, and
+/// holds the core weakly, so it ends with it.
+pub(crate) fn start<H: Host, C: Callers>(
     core: &Arc<Core<H, C>>,
-    saved: Arc<tokio::sync::Notify>,
+    mut heard: mpsc::UnboundedReceiver<Item>,
 ) {
+    let news = core.news.clone();
+    core.host.follow_committed(Box::new(move |committed| {
+        let _ = news.send(Item::Committed(committed));
+    }));
     let core = Arc::downgrade(core);
     tokio::spawn(async move {
-        loop {
-            saved.notified().await;
+        while let Some(item) = heard.recv().await {
             let Some(core) = core.upgrade() else { return };
-            core.publish().await;
+            match item {
+                Item::Committed(committed) => core.tell_all(committed).await,
+                Item::Told(done) => {
+                    let _ = done.send(());
+                }
+            }
         }
     });
 }
 
 impl<H: Host, C: Callers> Core<H, C> {
-    /// Tells the clients what changed since they were last told: registers and removes the
-    /// `Account` objects, and sends each signal to the connections of the roles it concerns
-    /// (the shell and Settings, the only ones that read an account).
-    async fn tell_all(self: &Arc<Self>) {
-        let after = self.host.registry();
-        let before = std::mem::replace(&mut *held(&self.published), after.clone());
+    /// Returns once every change committed before the call has been told: the `Account` objects
+    /// registered or removed and the signals sent. A reply that follows its own change waits
+    /// here, so a client that hears it finds the news already out. A service that is not being
+    /// served yet tells no one.
+    pub(crate) async fn told(&self) {
+        let (done, finished) = oneshot::channel();
+        if self.news.send(Item::Told(done)).is_ok() {
+            let _ = finished.await;
+        }
+    }
+
+    /// Tells the clients what `committed` changed: registers and removes the `Account` objects,
+    /// and sends each signal to the connections of the roles it concerns (the shell and
+    /// Settings, the only ones that read an account).
+    async fn tell_all(self: &Arc<Self>, committed: Committed) {
+        let Committed { before, after } = committed;
         let list = events(&before, &after);
         let server = self.connection.object_server();
         for event in &list {
@@ -75,6 +88,7 @@ impl<H: Host, C: Callers> Core<H, C> {
                         .await;
                 }
                 Event::Removed(id) => {
+                    // Already gone is as good as removed.
                     let _ = server
                         .remove::<AccountServed<AccountObject<H, C>>, _>(account_path(id))
                         .await;
@@ -84,11 +98,9 @@ impl<H: Host, C: Callers> Core<H, C> {
         }
         self.announce_states(&list, &before, &after).await;
         self.announce_identities_removed(&before, &after).await;
-        if before != after {
-            // The AI broker asks again, and a credential does not outlive its permit.
-            crate::broker::announce(self).await;
-            self.sweep().await;
-        }
+        // The AI broker asks again, and a credential does not outlive its permit.
+        crate::broker::announce(self).await;
+        self.sweep().await;
         for event in list {
             let names = self.known_where(|who| hears(who.role, &event));
             for name in names {

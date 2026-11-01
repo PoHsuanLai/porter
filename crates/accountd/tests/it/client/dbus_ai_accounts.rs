@@ -5,7 +5,7 @@
 
 use super::common;
 
-use accountd::{NewsStore, Options, TableCallers, serve_with};
+use accountd::{Options, TableCallers, serve_with};
 use common::bus::PrivateBus;
 use porter_callers::{Caller, CallerRole};
 use porter_capability::{CapabilityKind, StorageScope};
@@ -56,7 +56,7 @@ type Service = AccountService<
     MemorySecrets,
     ScriptedSheets,
     FixedClock,
-    NewsStore<MemoryStore>,
+    MemoryStore,
 >;
 
 struct World {
@@ -82,7 +82,6 @@ impl World {
             )
             .await
             .expect("key");
-        let saved = Arc::new(tokio::sync::Notify::new());
         let service: Arc<Service> = Arc::new(
             AccountService::new(
                 vec![llm_provider()],
@@ -98,16 +97,13 @@ impl World {
                 ScriptedSheets::answering([]),
                 FixedClock(NOW),
             )
-            .with_store(NewsStore::new(MemoryStore::default(), Arc::clone(&saved))),
+            .with_store(MemoryStore::default()),
         );
         serve_with(
             &connection,
             Arc::clone(&service),
             Arc::clone(&callers),
-            Options {
-                saved: Some(saved),
-                ..Options::default()
-            },
+            Options::default(),
         )
         .await
         .expect("accountd serves");

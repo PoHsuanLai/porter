@@ -14,7 +14,7 @@
 
 use crate::import::{Import, ImportError, OldStore, Outcome};
 use crate::paths::{HONOURS_PROC_ROOT, Paths};
-use crate::{FileAudit, NewsStore, Options, serve_with};
+use crate::{FileAudit, Options, serve_with};
 use porter_callers::choose_proc_root;
 use porter_callers::load_callers;
 use porter_callers::{CallerFileError, ProcCallers};
@@ -310,11 +310,10 @@ impl Daemon {
         });
         let sheets =
             BusSheets::new(connection.clone(), Arc::clone(&callers)).with_names(app_names.clone());
-        let saved = Arc::new(tokio::sync::Notify::new());
         let service = Arc::new(
             AccountService::new(families, registry, secrets.clone(), sheets, SystemClock)
                 .with_local_runtimes(local)
-                .with_store(NewsStore::new(store, Arc::clone(&saved)))
+                .with_store(store)
                 .with_audit(FileAudit::new(paths.audit.clone())),
         );
         // The picker of `Identities1.Offer` is the sheet host, and the password of
@@ -343,7 +342,6 @@ impl Daemon {
                 crate::launcher::LoginTiming::new()
                     .with_audit(Arc::new(FileAudit::new(paths.audit.clone()))),
             )),
-            saved: Some(saved),
             // The platform's trusted roots.
             relays: None,
         };

@@ -21,10 +21,6 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
-/// How long before a token expires it is no longer reused: the same margin porter-oauth renews
-/// with (`RENEW_MARGIN_SECONDS`), so a caller is never handed a token about to stop working.
-const REUSE_MARGIN_SECONDS: i64 = 60;
-
 /// A token a refresh issued.
 #[derive(Debug)]
 struct Issued {
@@ -85,7 +81,8 @@ impl Flight {
             .issued
             .iter()
             .find(|i| i.audience == *audience && i.grant == grant)
-            .filter(|i| i.token.expires.0 - now.0 > REUSE_MARGIN_SECONDS)
+            // The margin porter-oauth renews with, so a caller is never handed a token about to stop.
+            .filter(|i| !porter_core::token::is_due(i.token.expires, now))
             .map(|i| i.token.clone())
     }
 

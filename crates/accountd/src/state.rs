@@ -11,12 +11,11 @@ use porter_core::ProviderHint;
 use porter_core::ProviderId;
 use porter_families::set::ProviderNames;
 use porter_ids::clock::Clock;
-use porter_service_core::registry::Registry;
 use porter_sheets::{AppNames, RequestObjects};
 use porter_wire::{ParentWindow, Refusal};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 use zbus::Connection;
 use zbus::message::Header;
 
@@ -50,10 +49,10 @@ pub(crate) struct Core<H, C> {
     pub(crate) connection: Connection,
     /// The connections that have called, by unique name: who a unicast signal can reach.
     pub(crate) roster: Mutex<BTreeMap<String, Caller>>,
-    /// The registry as clients were last told of it.
-    pub(crate) published: Mutex<Registry>,
     /// The user's `clients.toml`, which Settings writes.
     pub(crate) clients: Option<std::path::PathBuf>,
+    /// Held while Settings reads, edits and writes the clients file, so two edits cannot lose one.
+    pub(crate) clients_write: Arc<std::sync::Mutex<()>>,
     /// What the settings module calls an app (the "apps using this identity" rows).
     pub(crate) app_names: AppNames,
     /// What the settings module calls a provider and which part of the page it is listed under.
@@ -84,9 +83,9 @@ pub(crate) struct Core<H, C> {
     pub(crate) uses: tokio::sync::Mutex<porter_identities::UseBook>,
     /// What each connection just picked in `Identities1.Offer`.
     pub(crate) picks: porter_identities::Picks,
-    /// Asks the task that tells the clients (`publish`) to do so; each request carries the
-    /// sender its answer comes back on.
-    pub(crate) publisher: OnceLock<mpsc::UnboundedSender<oneshot::Sender<()>>>,
+    /// Where the host's commits go to be told to the clients, in order (`publish`); a request
+    /// to wait until they were told goes down it too.
+    pub(crate) news: mpsc::UnboundedSender<crate::publish::Item>,
 }
 
 pub(crate) fn held<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -156,19 +155,6 @@ impl<H: Host, C: Callers> Core<H, C> {
     /// The unique names of the connections that have called, which a broadcast reaches.
     pub(crate) fn known(&self) -> Vec<String> {
         held(&self.roster).keys().cloned().collect()
-    }
-
-    /// Tells the clients what changed since they were last told (`publish`), and returns once
-    /// they have been: the registry's `Account` objects registered or removed and the signals
-    /// sent. A service that is not being served yet tells no one.
-    pub(crate) async fn publish(&self) {
-        let Some(requests) = self.publisher.get() else {
-            return;
-        };
-        let (done, finished) = oneshot::channel();
-        if requests.send(done).is_ok() {
-            let _ = finished.await;
-        }
     }
 
     /// Forgets a connection that left the bus.

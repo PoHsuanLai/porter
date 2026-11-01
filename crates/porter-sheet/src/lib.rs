@@ -36,7 +36,7 @@ pub use mark::{MarkColour, MarkFace, MarkFaceError, MarkLetter};
 pub use progress::{
     Progress, Review, ServiceRow, ServiceState, SignInFault, SignInInput, UserCode,
 };
-pub use stage::{Purpose, Sheet, SheetEffect, SheetEnd, SheetEvent, Stage, step};
+pub use stage::{Purpose, Restart, Sheet, SheetEffect, SheetEnd, SheetEvent, Stage, step};
 pub use view::{
     FieldProblem, ProblemKind, ProviderKind, ProviderRow, ReviewView, RowKind, SheetView,
     SignInView,

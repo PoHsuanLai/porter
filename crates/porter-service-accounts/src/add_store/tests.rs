@@ -88,3 +88,48 @@ fn a_label_of_symbols_still_makes_an_id() {
         "generic-imap"
     );
 }
+
+fn imap(login: &str, host: &str) -> porter_core::ServiceEndpoint {
+    porter_core::ServiceEndpoint {
+        family: porter_core::Family::Imap,
+        url: porter_core::EndpointUrl::parse(&format!("imaps://{host}:993")).expect("url"),
+        tls: porter_core::Tls::Implicit,
+        login: LoginName(login.into()),
+    }
+}
+
+#[test]
+fn a_duplicate_is_the_same_login_at_the_same_servers_or_the_same_agent() {
+    let provider = ProviderId::parse("nextcloud").expect("id");
+    let other = ProviderId::parse("generic-imap").expect("id");
+    let mut held = account("held");
+    held.endpoints = vec![imap("ada", "mail.example.org")];
+    let logins = Registry {
+        accounts: vec![held],
+        ..Registry::default()
+    };
+    let found = |registry: &Registry, provider: &ProviderId, login: &str, host: &str| {
+        duplicate(registry, provider, &[imap(login, host)]).map(|a| a.id.as_str().to_string())
+    };
+    assert_eq!(
+        found(&logins, &provider, "ada", "mail.example.org").as_deref(),
+        Some("held")
+    );
+    assert_eq!(found(&logins, &provider, "bob", "mail.example.org"), None);
+    assert_eq!(found(&logins, &provider, "ada", "other.example.org"), None);
+    assert_eq!(found(&logins, &other, "ada", "mail.example.org"), None);
+    // No login to compare is never the same.
+    assert_eq!(found(&logins, &provider, "", "mail.example.org"), None);
+    // An agent signs in to one plan: whatever else it shows, a second is the same account.
+    let mut agent = account("agent");
+    agent.auth = AuthKind::AgentLogin;
+    let agents = Registry {
+        accounts: vec![agent],
+        ..Registry::default()
+    };
+    assert_eq!(
+        found(&agents, &provider, "bob", "elsewhere.example.org").as_deref(),
+        Some("agent")
+    );
+    assert_eq!(found(&agents, &other, "bob", "elsewhere.example.org"), None);
+}

@@ -161,18 +161,32 @@ fn sync_dir(_dir: &Path) -> io::Result<()> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AtomicFile {
     dir: PathBuf,
-    name: &'static str,
+    name: String,
 }
 
 impl AtomicFile {
     /// The file `name` in `dir` (the directory is created on the first save).
-    pub fn new(dir: PathBuf, name: &'static str) -> Self {
-        Self { dir, name }
+    pub fn new(dir: PathBuf, name: impl Into<String>) -> Self {
+        Self {
+            dir,
+            name: name.into(),
+        }
+    }
+
+    /// The file at `path` (its directory is created on the first save). `None` for a path with no
+    /// file name.
+    pub fn at(path: &Path) -> Option<Self> {
+        let name = path.file_name()?.to_string_lossy().into_owned();
+        let dir = path
+            .parent()
+            .filter(|dir| !dir.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        Some(Self::new(dir.to_path_buf(), name))
     }
 
     /// The file.
     pub fn path(&self) -> PathBuf {
-        self.dir.join(self.name)
+        self.dir.join(&self.name)
     }
 
     /// The copy of the file from before its last change.

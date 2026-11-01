@@ -18,9 +18,9 @@ use porter_service_accounts::{
     Accounts, AccountsApi, AccountsState, AgentFault, AllowFor, Launchers, LocalFault, OwnMachines,
     Roster, SignInAs,
 };
-use porter_service_core::audit::{AuditEvent, AuditSink, NoAudit};
+use porter_service_core::audit::{AuditEvent, AuditSink, NoAudit, ProxyOutcome};
 use porter_service_core::registry::Registry;
-use porter_service_core::{Ctx, Parts};
+use porter_service_core::{Committed, Ctx, Parts};
 use porter_service_grants::{Grants, GrantsApi};
 use porter_sheet::host::Sheets;
 use porter_wire::{AccountsReply, AccountsRequest};
@@ -80,6 +80,22 @@ where
             ctx: self.ctx.with_store(store),
             accounts: self.accounts,
         }
+    }
+
+    /// The same service telling `told` of each change once it is saved, swapped in and audited
+    /// (a [`Committed`]); it runs while the next change waits, so it must not wait.
+    #[must_use]
+    pub fn on_committed(self, told: impl Fn(Committed) + Send + Sync + 'static) -> Self {
+        Self {
+            ctx: self.ctx.on_committed(told),
+            accounts: self.accounts,
+        }
+    }
+
+    /// Tells `told` of each change from now on, as [`AccountService::on_committed`] does, for
+    /// the host that serves a service it was handed.
+    pub fn follow_committed(&self, told: impl Fn(Committed) + Send + Sync + 'static) {
+        self.ctx.follow(told);
     }
 
     /// The same service recording its decisions to `audit`.
@@ -434,6 +450,28 @@ where
         self.ctx.note(Some(app), None, event);
     }
 
+    /// Records the end of a relay opened under `grant` for `app` on `account`: the host that ran
+    /// the relay calls this once, with how it ended. A revoke does not close an open relay, so
+    /// the line may come after the grant is gone.
+    pub fn audit_relay_end(
+        &self,
+        app: AppId,
+        account: Option<AccountId>,
+        grant: GrantId,
+        endpoint: EndpointUrl,
+        outcome: ProxyOutcome,
+    ) {
+        self.ctx.note(
+            Some(app),
+            account,
+            AuditEvent::ProxyClosed {
+                grant,
+                endpoint,
+                outcome,
+            },
+        );
+    }
+
     /// Withdraws any grant, whoever holds it (Settings' "Revoke"). `UnknownGrant` when none has
     /// that id.
     pub async fn revoke_grant(&self, grant: &GrantId) -> Result<(), Refusal> {
@@ -441,15 +479,26 @@ where
     }
 
     /// Sets an account's state (`NeedsReauth` when its credential was refused, `Ok` again once
-    /// it is signed in). Whether it changed.
+    /// it is signed in). Whether it changed; a state that could not be saved is not changed.
     pub async fn set_state(&self, id: &AccountId, state: AccountState) -> bool {
+        self.try_set_state(id, state).await.unwrap_or(false)
+    }
+
+    /// [`AccountService::set_state`] saying why when the state could not be saved
+    /// (`Unavailable`), for a host that logs it.
+    pub async fn try_set_state(
+        &self,
+        id: &AccountId,
+        state: AccountState,
+    ) -> Result<bool, Refusal> {
         self.ctx.set_state(id, state).await
     }
 
     /// Spends `caller`'s grant when it is a `Once` one: the first use of any kind (a relay
     /// opened, a key read by the host that holds the secret) drops it, so a second use asks
     /// again. A host that reads a key itself, as inferd does, calls this once the read has
-    /// succeeded.
+    /// succeeded. `UnknownGrant` when the grant is no longer held: the answer is decided on the
+    /// registry as it is now, so of two uses of a `Once` grant racing, one is refused.
     pub async fn spend_once(&self, caller: &AppId, grant: &GrantId) -> Result<(), Refusal> {
         self.grants_domain().spend_once(caller, grant).await
     }

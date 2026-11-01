@@ -15,6 +15,7 @@ cd "$(dirname "$0")/.."
 # only through their named I/O feature (`io`). reqwest is named by one crate, porter-http-reqwest
 # (see ONE CLIENT below), and reached through it by the families that send directly. porter-families reaches none with default features;
 # each of its family features is checked on its own in FAMILY_FORBIDS below.
+# porter-calendar reaches zbus only through its `eds` feature.
 EFFECTS="zbus zvariant tokio reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
 RULES=(
   "porter-ids: $EFFECTS toml"
@@ -47,6 +48,7 @@ RULES=(
   "porter-daemon: $EFFECTS"
   "porter-tailscale: $EFFECTS"
   "dav-proto: $EFFECTS"
+  "porter-calendar: $EFFECTS"
   "nextcloud-proto: $EFFECTS"
   "generic-proto: $EFFECTS"
   "oauth-probe-proto: $EFFECTS"
@@ -316,6 +318,7 @@ EDGES=(
   "porter-discover: porter-core porter-capability porter-ids porter-http porter-provider"
   "porter-tailscale: porter-ids"
   "dav-proto:"
+  "porter-calendar: dav-proto porter-http porter-ids"
   "nextcloud-proto: porter-core porter-capability porter-ids"
   "oauth-probe-proto: porter-capability porter-ids"
   "generic-proto: dav-proto porter-core porter-capability porter-ids porter-provider porter-sheet"

@@ -1923,6 +1923,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "05c8b63e8d9609db387f0324918f81d68fe27748f084ef092fb35954d0539a85"
 
 [[package]]
+name = "porter-calendar"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "dav-proto",
+ "porter-fake-servers",
+ "porter-http",
+ "porter-http-relay",
+ "porter-ids",
+ "serde_json",
+ "test-kit",
+ "thiserror",
+ "tokio",
+ "zbus",
+]
+
+[[package]]
 name = "porter-callers"
 version = "0.1.0"
 dependencies = [
@@ -2232,7 +2250,10 @@ dependencies = [
 name = "porter-fs"
 version = "0.1.0"
 dependencies = [
+ "serde",
+ "serde_json",
  "test-kit",
+ "tokio",
 ]
 
 [[package]]
