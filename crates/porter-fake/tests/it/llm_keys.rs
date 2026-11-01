@@ -11,7 +11,8 @@ use porter_core::{
     SecretText,
 };
 use porter_fake::{
-    AskLog, MemoryStore, NOW, RecordingAudit, Scripted, ScriptedSheets, llm_account, llm_provider,
+    AskLog, MemoryStore, NOW, RecordingAudit, Scripted, ScriptedSheets, cloud_provider,
+    llm_account, llm_provider, mail_account, mail_provider, storage_account,
 };
 use porter_ids::clock::FixedClock;
 use porter_match::llm_need;
@@ -184,6 +185,66 @@ async fn an_app_sees_its_permit_and_every_other_app_or_class_is_asked() {
         .expect("the permit it holds");
     assert_eq!(chosen.grant, grant);
     assert_eq!(rig.asks.asked().len(), 1);
+}
+
+#[tokio::test]
+async fn the_verdicts_list_only_the_accounts_that_serve_language_models() {
+    let sheets = ScriptedSheets::answering([Scripted::AllowFirst(GrantScope::Always)]);
+    let service = AccountService::new(
+        vec![cloud_provider(), llm_provider(), mail_provider()],
+        Registry {
+            accounts: vec![storage_account(), llm_account(), mail_account()],
+            grants: vec![],
+            toggles: vec![],
+        },
+        Shared::default(),
+        sheets,
+        FixedClock(NOW),
+    )
+    .with_store(MemoryStore::default());
+    let companion = app("org.quire.Companion");
+    let rows = |who: &AppId, class| {
+        service.llm_verdicts(who, class, Usage::Interactive, &|provider| {
+            Some(format!("label of {}", provider.as_str()))
+        })
+    };
+
+    let before = rows(&companion, DataClass::Prompt);
+    assert_eq!(before.len(), 1);
+    assert_eq!(before[0].account, llm_account().id);
+    assert_eq!(before[0].label, llm_account().label.0);
+    assert_eq!(before[0].provider, llm_account().provider.as_str());
+    assert_eq!(
+        before[0].provider_label,
+        Some(format!("label of {}", llm_account().provider.as_str()))
+    );
+    assert_eq!(before[0].state, llm_account().state);
+    assert_eq!(before[0].verdict, Verdict::Ask);
+
+    let reply = service
+        .handle(
+            &companion,
+            AccountsRequest::Choose {
+                need: llm_need(),
+                class: DataClass::Prompt,
+                usage: Usage::Interactive,
+                window: ParentWindow::Unparented,
+                account: None,
+            },
+        )
+        .await;
+    let AccountsReply::Chosen(chosen) = reply else {
+        panic!("a permit, got {reply:?}");
+    };
+    assert!(matches!(
+        rows(&companion, DataClass::Prompt)[0].verdict,
+        Verdict::Granted { ref grant, .. } if *grant == chosen.grant
+    ));
+    assert_eq!(rows(&companion, DataClass::Mail)[0].verdict, Verdict::Ask);
+    assert_eq!(
+        rows(&app("org.quire.Other"), DataClass::Prompt)[0].verdict,
+        Verdict::Ask
+    );
 }
 
 #[tokio::test]

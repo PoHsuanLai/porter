@@ -4,11 +4,11 @@
 //! secrets and handed over once.
 
 use crate::Grants;
-use porter_capability::{CapabilityKind, Offer};
+use porter_capability::CapabilityKind;
 use porter_core::consent::{Decision, Usage};
 use porter_core::{AppId, Audience, Candidate, DataClass, GrantId, LlmVerdict};
-use porter_core::{GrantKey, SecretText, SpaceScope, decide_key};
-use porter_match::{Match, Need, llm_need, matches};
+use porter_core::{SecretText, decide_key};
+use porter_match::{Need, llm_need};
 use porter_service_accounts::AccountsApi;
 use porter_service_core::Ports;
 use porter_service_core::audit::AuditEvent;
@@ -25,32 +25,20 @@ impl<E: Ports> Grants<'_, E> {
         provider_label: &dyn Fn(&porter_core::ProviderId) -> Option<String>,
     ) -> Vec<LlmVerdict> {
         let registry = self.ctx.lock();
-        let need = llm_need();
+        let asker = Asker { app, class, usage };
         registry
-            .accounts
+            .fitting(&llm_need())
             .iter()
-            .filter_map(|account| {
-                let claim = account.capabilities.iter().find(|claim| {
-                    matches!(claim.offer, Offer::Present(_))
-                        && matches(&need, &claim.offer) == Match::Fits
-                })?;
-                let key = GrantKey {
-                    app: app.clone(),
-                    account: account.id.clone(),
-                    kind: claim.offer.kind(),
-                    class,
-                    usage,
-                    space: SpaceScope::Any,
-                    reach: porter_capability::StorageScope::AppFolder,
-                };
-                Some(LlmVerdict::new(
+            .map(|fit| {
+                let account = fit.account;
+                LlmVerdict::new(
                     account.id.clone(),
                     account.provider.as_str().to_owned(),
                     account.label.0.clone(),
                     provider_label(&account.provider),
                     account.state,
-                    decide_key(&registry.grants, &key),
-                ))
+                    decide_key(&registry.grants, &asker.key(fit)),
+                )
             })
             .collect()
     }
