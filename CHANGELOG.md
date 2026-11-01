@@ -14,6 +14,13 @@
 - Eleven domain crates carry a `clippy.toml` that disallows `SystemTime::now`, `Instant::now` and
   `std::fs::*`.
 
+### A hosted app's store is loaded
+
+- `porter_client_inproc::hosted_with_store(config).await` loads the config's `RegistryStore` before
+  it builds the service. `hosted(config)` took a store through `HostConfig::with_store` but started
+  from an empty registry, so the first change overwrote what the store held; it now accepts only a
+  config without a store (`NoStore`), so that cannot be written.
+
 ### Sign-in decisions are the sheet machine's
 
 - The OAuth browser flow's decisions are free functions: `plan` (client, scopes and PKCE from the

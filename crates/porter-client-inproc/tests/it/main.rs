@@ -2,6 +2,7 @@
 
 mod edit_servers;
 mod end_to_end;
+mod persisted;
 
 #[test]
 fn every_module_is_declared() {
