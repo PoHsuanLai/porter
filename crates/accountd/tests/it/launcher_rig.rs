@@ -135,7 +135,6 @@ impl Rig {
             grants: permits,
             toggles: vec![],
         };
-        let saved = Arc::new(tokio::sync::Notify::new());
         let sheets = ScriptedSheets::answering(consent);
         let log = sheets.log();
         let audit = RecordingAudit::default();
@@ -148,10 +147,6 @@ impl Rig {
                 FixedClock(porter_fake::NOW),
             )
             .with_store(MemoryStore::default())
-            .on_committed({
-                let saved = Arc::clone(&saved);
-                move |_| saved.notify_one()
-            })
             .with_audit(audit.clone()),
         );
         let peers = Arc::new(TableCallers::new());
@@ -165,7 +160,6 @@ impl Rig {
             Arc::clone(&peers),
             Options {
                 launchers: Some(launchers.clone()),
-                saved: Some(saved),
                 ..Options::default()
             },
         )

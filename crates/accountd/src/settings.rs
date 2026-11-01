@@ -283,7 +283,7 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
                 row.0.write(&tail, value, &at, self).await?;
             }
         }
-        self.0.publish().await;
+        self.0.told().await;
         Ok(())
     }
 }
@@ -332,7 +332,6 @@ impl<H: Host, C: Callers> Acts for AccountsSettings<H, C> {
                     porter_ids::word::word(&ReauthNews::of(&reply)),
                 )
                 .await;
-                core.publish().await;
             });
             Ok(())
         })
@@ -383,7 +382,7 @@ impl<H: Host, C: Callers> AccountsSettings<H, C> {
                     failed("That could not be done.")
                 })?;
             announce_row(core, &key, SignOutNews::LoginUntouched.slug()).await;
-            core.publish().await;
+            core.told().await;
             return Ok(());
         };
         announce_row(core, &key, SignOutNews::Asked.slug()).await;
@@ -391,7 +390,6 @@ impl<H: Host, C: Callers> AccountsSettings<H, C> {
         tokio::spawn(async move {
             let news = SignOutNews::of(waiting.await);
             announce_row(&core, &key, news.slug()).await;
-            core.publish().await;
         });
         Ok(())
     }

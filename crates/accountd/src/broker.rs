@@ -108,7 +108,7 @@ impl<H: Host, C: Callers> BrokerServer for BrokerObject<H, C> {
             .await
             .map_err(RefusedError::of)?;
         // An allow-once permit is spent by the read: the clients hear of it.
-        self.0.publish().await;
+        self.0.told().await;
         handed(&key)
     }
 
@@ -182,7 +182,7 @@ impl<H: Host, C: Callers> BrokerServer for BrokerObject<H, C> {
                 LocalFault::Unavailable => RefusedError::of(Refusal::Unavailable),
                 other => RefusedError::invalid(format!("report refused: {other:?}")),
             })?;
-        self.0.publish().await;
+        self.0.told().await;
         Ok(id.as_str().to_owned())
     }
 }

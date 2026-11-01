@@ -140,7 +140,8 @@ pub struct Ctx<E: Ports> {
     registry: Mutex<Registry>,
     /// Held for the whole of a transaction, so writers go one at a time.
     persist_gate: Gate,
-    committed: Option<Told>,
+    /// Who is told of each change: the ones the builder named and the ones that asked later.
+    committed: Mutex<Vec<Told>>,
     /// Each account's turn at its issuer: one refresh at a time, and the token it issued.
     flights: Flights,
 }
@@ -166,7 +167,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock> Ctx<Parts<P, S, U, K>> {
             audit: NoAudit,
             registry: Mutex::new(registry),
             persist_gate: Gate::default(),
-            committed: None,
+            committed: Mutex::new(Vec::new()),
             flights: Flights::default(),
         }
     }
@@ -267,9 +268,18 @@ impl<E: Ports> Ctx<E> {
 
     /// Tells `told` of every change once it is saved (see [`Committed`]).
     #[must_use]
-    pub fn on_committed(mut self, told: impl Fn(Committed) + Send + Sync + 'static) -> Self {
-        self.committed = Some(Arc::new(told));
+    pub fn on_committed(self, told: impl Fn(Committed) + Send + Sync + 'static) -> Self {
+        self.follow(told);
         self
+    }
+
+    /// Tells `told` of every change from now on, as [`Ctx::on_committed`] does, for a host that
+    /// serves the service it was handed and so cannot name its listener when it builds it.
+    pub fn follow(&self, told: impl Fn(Committed) + Send + Sync + 'static) {
+        self.committed
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push(Arc::new(told));
     }
 
     fn registry(&self) -> MutexGuard<'_, Registry> {
@@ -321,13 +331,21 @@ impl<E: Ports> Ctx<E> {
             .save(&after.persisted())
             .await
             .map_err(|_| Refusal::Unavailable)?;
-        let announced = self.committed.as_ref().map(|_| after.clone());
+        let listeners: Vec<Told> = self
+            .committed
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        let announced = (!listeners.is_empty()).then(|| after.clone());
         *self.registry() = after;
         for line in lines {
             self.note(line.app, line.account, line.event);
         }
-        if let (Some(told), Some(after)) = (&self.committed, announced) {
-            told(Committed { before, after });
+        if let Some(after) = announced {
+            let committed = Committed { before, after };
+            for told in listeners {
+                told(committed.clone());
+            }
         }
         Ok(Written {
             value,

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### The clients are told once per change
+
+- accountd's news task takes each `Committed { before, after }` the service sends, in commit order
+  (`Host::follow_committed`, `Ctx::follow`), and tells the clients from it: it no longer holds a
+  copy of the registry to diff against, and `Options::saved`, `follow_saves` and `Core::publish`
+  are gone. The explicit calls after a change are gone with them; a reply that must follow its
+  own news waits on `Core::told`, which is no trigger. Signals and their counts are unchanged.
+- `Ctx::on_committed` and `AccountService::on_committed` still work and may be mixed with
+  `follow_committed`; every listener is told, in the order named.
+
 ### `clients.toml` is kept like the other files
 
 - Settings writes `clients.toml` through `porter_fs::atomic::AtomicFile`, on the blocking pool: the
