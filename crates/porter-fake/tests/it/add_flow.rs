@@ -90,6 +90,16 @@ struct Script {
     revoke_fails: Arc<Mutex<bool>>,
     /// What the provider answers `readiness` with (`None`: ready).
     readiness: Arc<Mutex<Option<porter_provider::Readiness>>>,
+    /// When set, `discover` says it is in (`entered`) and waits to be let go (`release`).
+    hold: Arc<Mutex<Option<Hold>>>,
+    /// The credential a session says it renewed (`None`: it renewed nothing).
+    renewal: Arc<Mutex<Option<Credential>>>,
+}
+
+#[derive(Debug, Clone)]
+struct Hold {
+    entered: Arc<tokio::sync::Notify>,
+    release: Arc<tokio::sync::Notify>,
 }
 
 impl Script {
@@ -116,7 +126,7 @@ struct ScriptedProvider {
 struct ScriptedSignIn(Script);
 
 #[derive(Debug)]
-struct NoSession;
+struct NoSession(Option<Credential>);
 
 impl SignIn for ScriptedSignIn {
     async fn next(&mut self, input: SignInInput) -> SignInStep {
@@ -150,6 +160,11 @@ impl Provider for ScriptedProvider {
         _account: &Account,
         _presented: &Presented,
     ) -> Result<Vec<Claim>, ProviderError> {
+        let hold = self.script.hold.lock().expect("hold").clone();
+        if let Some(hold) = hold {
+            hold.entered.notify_one();
+            hold.release.notified().await;
+        }
         Ok(vec![])
     }
 
@@ -158,7 +173,9 @@ impl Provider for ScriptedProvider {
         _account: &AccountId,
         _presented: Presented,
     ) -> Result<NoSession, ProviderError> {
-        Ok(NoSession)
+        Ok(NoSession(
+            self.script.renewal.lock().expect("renewal").clone(),
+        ))
     }
 
     fn sign_in(&self, start: SignInStart) -> Result<ScriptedSignIn, ProviderError> {
@@ -205,7 +222,7 @@ impl ProviderSession for NoSession {
     }
 
     fn renewed(&self) -> Option<Credential> {
-        None
+        self.0.clone()
     }
 }
 
@@ -1833,4 +1850,107 @@ async fn one_more_access_given_is_claimed_so_a_need_of_it_fits_the_account() {
         availability_of_the_whole_store(&service),
         porter_core::consent::Availability::AvailableNeedsConsent
     );
+}
+
+// ---- the registry cannot be saved, and two writers meet ----
+
+fn password(text: &str) -> Credential {
+    Credential::Password(SecretText::new(text))
+}
+
+/// A sign-in that ends with `text` as the account's password, under the purpose its auth kind
+/// files its one credential under.
+fn signed_with(login: &str, text: &str) -> Signed {
+    Signed::new(
+        AccountLabel(format!("{login}@example.org")),
+        vec![(SecretPurpose::Password, password(text))],
+        vec![imap_claim()],
+        vec![imap(login)],
+        Restriction::none(),
+    )
+}
+
+fn the_password() -> SecretKey {
+    SecretKey {
+        account: ada(),
+        purpose: SecretPurpose::Password,
+    }
+}
+
+#[tokio::test]
+async fn a_sign_in_again_that_cannot_be_saved_leaves_the_account_as_it_was() {
+    let mail = app("org.quire.Mail");
+    let script = Script::answering(vec![SignInStep::Done(signed("ada"))]);
+    let (service, kept) = reauth_service(&script, AccountState::NeedsReauth, vec![typist()], &mail);
+    let before = service.registry();
+    kept.store.refusing(true);
+    assert_eq!(
+        service.handle(&mail, reauth_request()).await,
+        AccountsReply::Refused(Refusal::Unavailable)
+    );
+    assert_eq!(service.registry(), before);
+    assert_eq!(kept.audit.entries(), vec![]);
+    assert_eq!(kept.store.saves(), 0);
+}
+
+#[tokio::test]
+async fn one_more_access_that_cannot_be_saved_leaves_the_account_as_it_was() {
+    let files = app("org.quire.Files");
+    let script = Script::answering(vec![review("ada"), SignInStep::Done(signed("ada"))]);
+    let (service, kept) = extend_service(&script);
+    let before = service.registry();
+    kept.store.refusing(true);
+    let asked = service
+        .extend_access(
+            &files,
+            &ada(),
+            vec![CapabilityKind::Storage],
+            ParentWindow::Unparented,
+        )
+        .await;
+    assert_eq!(asked, Err(Refusal::Unavailable));
+    assert_eq!(service.registry(), before);
+    assert_eq!(kept.audit.entries(), vec![]);
+    assert_eq!(kept.store.saves(), 0);
+}
+
+/// A look at the account again holds its turn at the issuer from reading the credential to
+/// storing the one the session renewed. A sign-in again that finishes in the middle of it must
+/// not be written over by what the look read before it.
+#[tokio::test]
+async fn a_sign_in_again_during_a_look_at_the_account_is_not_written_over() {
+    let mail = app("org.quire.Mail");
+    let script = Script::answering(vec![SignInStep::Done(signed_with("ada", "new"))]);
+    let (service, kept) = reauth_service(&script, AccountState::NeedsReauth, vec![typist()], &mail);
+    kept.secrets
+        .put(&the_password(), &password("old"))
+        .await
+        .expect("filed");
+    let hold = Hold {
+        entered: Arc::default(),
+        release: Arc::default(),
+    };
+    *script.hold.lock().expect("hold") = Some(hold.clone());
+    *script.renewal.lock().expect("renewal") = Some(password("stale"));
+
+    let account = ada();
+    let looking = service.rediscover(&account);
+    let signing_in = async {
+        hold.entered.notified().await;
+        service.handle(&mail, reauth_request()).await
+    };
+    let letting_go = async {
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+        hold.release.notify_one();
+    };
+    let (looked, signed_in, ()) = tokio::join!(looking, signing_in, letting_go);
+    assert!(looked.is_ok(), "{looked:?}");
+    assert_eq!(signed_in, AccountsReply::Reauthenticated);
+    // OLD: the sign-in stored "new" without waiting for the look's turn, and the look then
+    // stored "stale" over it. NEW: the sign-in waits for the turn, so "new" is the last write.
+    assert_eq!(
+        kept.secrets.get(&the_password()).await,
+        Ok(password("stale"))
+    );
+    assert_eq!(service.registry().accounts[0].state, AccountState::Ok);
 }
