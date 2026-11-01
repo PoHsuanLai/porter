@@ -21,8 +21,8 @@ use porter_oauth::{
     exchange_code_scoped,
 };
 use porter_provider::{
-    ClientChannel, ClientEntry, IssuerEndpoints, ProviderError, ProviderSpec, SignInMode,
-    SignInStart, SignInStep, Signed,
+    ClientChannel, ClientEntry, IssuerEndpoints, ProviderSpec, SignInMode, SignInStart, SignInStep,
+    Signed,
 };
 use porter_sheet::SignInFault;
 use tokio::task::JoinHandle;
@@ -272,18 +272,6 @@ pub(crate) fn exchange_fault(fault: ExchangeFault) -> SignInFault {
         ExchangeFault::Refused => SignInFault::Refused,
         ExchangeFault::Unreachable => SignInFault::Unreachable,
         // unreadable, and a fault a later porter-oauth adds
-        _ => SignInFault::Unreadable,
-    }
-}
-
-/// What an API's refusal means to the person.
-pub(crate) fn provider_fault(error: ProviderError) -> SignInFault {
-    match error {
-        ProviderError::Unauthorized => SignInFault::Refused,
-        ProviderError::Forbidden => SignInFault::Forbidden,
-        ProviderError::Unreachable => SignInFault::Unreachable,
-        ProviderError::Unreadable => SignInFault::Unreadable,
-        // A fault this family does not know yet is read as an answer it cannot read.
         _ => SignInFault::Unreadable,
     }
 }

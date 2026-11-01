@@ -3,9 +3,7 @@
 //! on or off. The transport (accountd's settings module) decides who may ask.
 
 use crate::Accounts;
-use porter_capability::{
-    AbsentReason, CapabilityKind, Claim, Offer, Provenance, Subject, Toggle, effective,
-};
+use porter_capability::{AbsentReason, CapabilityKind, Claim, Offer, Provenance, Subject, Toggle};
 use porter_core::store::AccountToggle;
 use porter_core::{AccountId, SecretKey};
 use porter_provider::Provider;
@@ -115,17 +113,9 @@ impl<E: Ports> Accounts<'_, E> {
         }
         self.ctx
             .transact(|registry| {
-                let off: Vec<_> = registry
-                    .toggles
-                    .iter()
-                    .filter(|t| t.account == *id)
-                    .map(|t| porter_capability::KindToggle {
-                        kind: t.kind,
-                        toggle: t.toggle,
-                    })
-                    .collect();
+                let capabilities = registry.effective_for(id, &claims);
                 if let Some(held) = registry.accounts.iter_mut().find(|a| a.id == *id) {
-                    held.capabilities = effective(&claims, &off);
+                    held.capabilities = capabilities;
                 }
                 Ok((Vec::new(), ()))
             })
@@ -176,42 +166,43 @@ impl<E: Ports> Accounts<'_, E> {
                         toggle,
                     });
                 }
-                let off: Vec<_> = registry
-                    .toggles
+                let rebuilt = registry
+                    .accounts
                     .iter()
-                    .filter(|t| t.account == *id)
-                    .map(|t| porter_capability::KindToggle {
-                        kind: t.kind,
-                        toggle: t.toggle,
-                    })
-                    .collect();
-                if let Some(account) = registry.accounts.iter_mut().find(|a| a.id == *id) {
-                    // What the account holds, except what a toggle replaced, plus what the file
-                    // declares for the kinds that were toggled off: the toggles then apply afresh.
-                    let mut claims: Vec<Claim> = account
-                        .capabilities
-                        .iter()
-                        .filter(|c| {
-                            !matches!(
-                                &c.offer,
-                                Offer::Absent {
-                                    reason: AbsentReason::TurnedOff,
-                                    ..
-                                }
-                            )
-                        })
-                        .cloned()
-                        .collect();
-                    let missing: Vec<Claim> = declared
-                        .into_iter()
-                        .filter(|d| {
-                            !claims
-                                .iter()
-                                .any(|c| c.subject == d.subject && c.offer.kind() == d.offer.kind())
-                        })
-                        .collect();
-                    claims.extend(missing);
-                    account.capabilities = effective(&claims, &off);
+                    .find(|a| a.id == *id)
+                    .map(|account| {
+                        // What the account holds, except what a toggle replaced, plus what the file
+                        // declares for the kinds that were toggled off: the toggles then apply afresh.
+                        let mut claims: Vec<Claim> = account
+                            .capabilities
+                            .iter()
+                            .filter(|c| {
+                                !matches!(
+                                    &c.offer,
+                                    Offer::Absent {
+                                        reason: AbsentReason::TurnedOff,
+                                        ..
+                                    }
+                                )
+                            })
+                            .cloned()
+                            .collect();
+                        let missing: Vec<Claim> = declared
+                            .into_iter()
+                            .filter(|d| {
+                                !claims.iter().any(|c| {
+                                    c.subject == d.subject && c.offer.kind() == d.offer.kind()
+                                })
+                            })
+                            .collect();
+                        claims.extend(missing);
+                        claims
+                    });
+                if let Some(claims) = rebuilt {
+                    let capabilities = registry.effective_for(id, &claims);
+                    if let Some(account) = registry.accounts.iter_mut().find(|a| a.id == *id) {
+                        account.capabilities = capabilities;
+                    }
                 }
                 let lines = match was != toggle {
                     true => vec![Audited::new(

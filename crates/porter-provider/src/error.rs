@@ -49,3 +49,38 @@ pub enum ProviderError {
     #[error("access not given")]
     NeedsConsent,
 }
+
+/// What a failed call says to the person signing in: the one mapping every family uses.
+impl From<ProviderError> for porter_sheet::SignInFault {
+    fn from(error: ProviderError) -> Self {
+        use porter_sheet::SignInFault;
+        match error {
+            ProviderError::Unauthorized => SignInFault::Refused,
+            ProviderError::Forbidden => SignInFault::Forbidden,
+            ProviderError::Unreachable => SignInFault::Unreachable,
+            ProviderError::Unreadable => SignInFault::Unreadable,
+            // a variant a newer porter adds: the sign-in ends as unreadable
+            _ => SignInFault::Unreadable,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ProviderError;
+    use porter_sheet::SignInFault;
+
+    #[test]
+    fn a_failed_call_is_a_fault_the_person_can_read() {
+        let cases = [
+            (ProviderError::Unauthorized, SignInFault::Refused),
+            (ProviderError::Forbidden, SignInFault::Forbidden),
+            (ProviderError::Unreachable, SignInFault::Unreachable),
+            (ProviderError::Unreadable, SignInFault::Unreadable),
+            (ProviderError::NeedsConsent, SignInFault::Unreadable),
+        ];
+        for (error, want) in cases {
+            assert_eq!(SignInFault::from(error), want, "{error:?}");
+        }
+    }
+}

@@ -1,7 +1,7 @@
 //! The registry's state and the pure answers over it: which accounts fit a need, what the
 //! consent store says for each, and the candidates a caller may see.
 
-use porter_capability::{Capability, CapabilityKind, Claim, Offer};
+use porter_capability::{Capability, CapabilityKind, Claim, KindToggle, Offer, effective};
 use porter_capability::{StorageScope, VocabVersion};
 use porter_core::SpaceScope;
 use porter_core::store::{AccountToggle, Persisted};
@@ -98,6 +98,21 @@ impl Registry {
                 .session()
                 .is_some_and(|own| session.is_none_or(|only| only == own))
         })
+    }
+
+    /// The capabilities `account` holds for `claims`: the claims with the account's toggles
+    /// applied, the one place that reads them.
+    pub fn effective_for(&self, account: &AccountId, claims: &[Claim]) -> Vec<Claim> {
+        let off: Vec<KindToggle> = self
+            .toggles
+            .iter()
+            .filter(|t| t.account == *account)
+            .map(|t| KindToggle {
+                kind: t.kind,
+                toggle: t.toggle,
+            })
+            .collect();
+        effective(claims, &off)
     }
 
     /// Each account's first effective capability that meets `need`, in registry order.

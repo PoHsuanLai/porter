@@ -66,4 +66,17 @@ mod tests {
             assert_eq!(provider_refusal(error), want, "{error:?}");
         }
     }
+
+    #[test]
+    fn a_secret_store_fault_is_told_to_the_app_as_what_it_can_act_on() {
+        assert_eq!(secrets_refusal(SecretsError::Missing), Refusal::NeedsReauth);
+        assert_eq!(
+            secrets_refusal(SecretsError::Unreadable),
+            Refusal::NeedsReauth
+        );
+        assert_eq!(
+            secrets_refusal(SecretsError::Unavailable),
+            Refusal::Unavailable
+        );
+    }
 }

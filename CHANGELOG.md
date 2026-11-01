@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### One mapping per direction, one place for the toggles
+
+- A failed provider call becomes a sign-in fault in one place, `SignInFault::from(ProviderError)`
+  (porter-provider); the API-key and OAuth families no longer carry a copy each. The identities
+  desk tells a secret store's failure with `secrets_refusal`, as the service does.
+- `Registry::effective_for(account, claims)` applies an account's own toggles to its claims; the
+  rediscover, reload and local-runtime paths use it instead of building the list each.
+
 ### Three rules said once
 
 - `llm_verdicts` takes the accounts from `Registry::fitting` and the key from `Asker::key`, as
