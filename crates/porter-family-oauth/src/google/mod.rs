@@ -158,23 +158,23 @@ impl BrowserIssuer for Google {
         )
         .await
         .map_err(provider_fault)?;
-        let apis = apis_of(cx.spec);
-        let endpoints = endpoints_for(cx.spec, &apis, (&claims, &granted), &address);
-        let restriction = restriction_for(grant.traits.testing, &claims, now);
-        Ok(Signed::new(
-            AccountLabel(address),
-            vec![(
-                SecretPurpose::OAuthRefresh,
-                Credential::OAuth {
-                    expires_at: tokens.expires_at(now),
-                    access: tokens.access_token,
-                    refresh,
-                    granted: granted.record(),
-                },
-            )],
+        let credential = Credential::OAuth {
+            expires_at: tokens.expires_at(now),
+            access: tokens.access_token,
+            refresh,
+            granted: granted.record(),
+        };
+        let seen = Seen {
+            address,
             claims,
-            endpoints,
-            restriction,
+            granted,
+        };
+        Ok(signed_from(
+            cx.spec,
+            grant.traits.testing,
+            seen,
+            credential,
+            now,
         ))
     }
 
@@ -366,6 +366,35 @@ fn grant_target<H>(
 
 /// What limits the account: a client in testing is unverified (100 users, and a sign-in that
 /// lasts seven days), and the Drive and Photos scopes are narrow by design (R3, R4).
+/// What the sign-in read of the account: who answered, what the probes found, and what the
+/// token holds.
+struct Seen {
+    address: String,
+    claims: Vec<Claim>,
+    granted: Granted,
+}
+
+/// The account a finished Google sign-in makes, from what was read: no I/O, so the same reads
+/// always make the same account.
+fn signed_from(
+    spec: &ProviderSpec,
+    testing: bool,
+    seen: Seen,
+    credential: Credential,
+    now: UnixSeconds,
+) -> Signed {
+    let apis = apis_of(spec);
+    let endpoints = endpoints_for(spec, &apis, (&seen.claims, &seen.granted), &seen.address);
+    let restriction = restriction_for(testing, &seen.claims, now);
+    Signed::new(
+        AccountLabel(seen.address),
+        vec![(SecretPurpose::OAuthRefresh, credential)],
+        seen.claims,
+        endpoints,
+        restriction,
+    )
+}
+
 fn restriction_for(testing: bool, claims: &[Claim], now: UnixSeconds) -> Restriction {
     let present = |kind| {
         claims
@@ -484,5 +513,33 @@ mod tests {
         assert_eq!(verified.verification, Verification::Verified);
         assert_eq!(verified.token_lifetime, TokenLifetime::Standard);
         assert_eq!(verified.signed_in, None);
+    }
+
+    #[test]
+    fn the_account_a_sign_in_makes_is_the_reads_and_nothing_else() {
+        let spec =
+            porter_provider::parse_provider(include_str!("../../../../providers/google.toml"))
+                .expect("the shipped Google file");
+        let credential = || Credential::OAuth {
+            expires_at: UnixSeconds(3_600),
+            access: porter_core::SecretText::new("access"),
+            refresh: porter_core::SecretText::new("refresh"),
+            granted: Granted::of(vec![]).record(),
+        };
+        let seen = || Seen {
+            address: "ada@example.org".into(),
+            claims: vec![],
+            granted: Granted::of(vec![]),
+        };
+        let signed = signed_from(&spec, true, seen(), credential(), UnixSeconds(1_000));
+        assert_eq!(signed.label, AccountLabel("ada@example.org".into()));
+        assert_eq!(signed.credentials.len(), 1);
+        assert_eq!(signed.credentials[0].0, SecretPurpose::OAuthRefresh);
+        assert_eq!(signed.restriction.signed_in, Some(UnixSeconds(1_000)));
+        let again = signed_from(&spec, true, seen(), credential(), UnixSeconds(1_000));
+        assert_eq!(again.endpoints, signed.endpoints);
+        assert_eq!(again.restriction, signed.restriction);
+        let verified = signed_from(&spec, false, seen(), credential(), UnixSeconds(1_000));
+        assert_eq!(verified.restriction.verification, Verification::Verified);
     }
 }

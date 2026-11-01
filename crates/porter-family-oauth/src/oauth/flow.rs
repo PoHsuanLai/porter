@@ -16,12 +16,13 @@ use porter_family_kit::{Flow, Move};
 use porter_http::Http;
 use porter_ids::WebUrl;
 use porter_oauth::{
-    AuthCode, AuthorizeAsk, ClientTraits, ExchangeFault, LoopbackFault, LoopbackServer, OAuthState,
-    Pkce, TokenResponse, authorize_url_for, endpoints_of, exchange_code_scoped,
+    AuthCode, AuthorizeAsk, ClientRegistry, ClientTraits, ExchangeFault, LoopbackFault,
+    LoopbackServer, OAuthState, Pkce, TokenResponse, authorize_url_for, endpoints_of,
+    exchange_code_scoped,
 };
 use porter_provider::{
-    ClientEntry, IssuerEndpoints, ProviderError, ProviderSpec, SignInMode, SignInStart, SignInStep,
-    Signed,
+    ClientChannel, ClientEntry, IssuerEndpoints, ProviderError, ProviderSpec, SignInMode,
+    SignInStart, SignInStep, Signed,
 };
 use porter_sheet::SignInFault;
 use tokio::task::JoinHandle;
@@ -103,6 +104,65 @@ impl<R, H> BrowserFlow<R, H> {
     }
 }
 
+/// What a sign-in will ask, decided before anything is opened or dialled.
+#[derive(Debug)]
+pub(crate) struct AuthorizePlan {
+    grant: Grant,
+    pkce: Pkce,
+}
+
+/// The client, scopes and PKCE a sign-in under `mode` asks with: the client of this build and
+/// channel (`NeedsClientId` when the registry has none), the scopes the issuer's rules ask for
+/// that mode, and the PKCE of `random` (`Unreadable` when the system gave none; the client is
+/// asked after it is looked up, so a missing client is reported first). Pure: the registry, the
+/// rules and the random bytes are the whole input.
+pub(crate) fn plan<R: BrowserIssuer>(
+    clients: &ClientRegistry,
+    rules: &R,
+    spec: &ProviderSpec,
+    mode: &SignInMode,
+    channel: ClientChannel,
+    random: Option<([u8; 32], [u8; 16])>,
+) -> Result<AuthorizePlan, SignInFault> {
+    let issuer = rules.issuer();
+    let client = clients
+        .lookup(issuer, channel)
+        .cloned()
+        .ok_or(SignInFault::NeedsClientId)?;
+    let traits = clients.traits(issuer, channel);
+    let scopes = rules.scopes(spec, mode, traits.byo);
+    let (verifier, state) = random.ok_or(SignInFault::Unreadable)?;
+    let endpoints = endpoints_of(&client);
+    Ok(AuthorizePlan {
+        grant: Grant {
+            client,
+            endpoints,
+            traits,
+            scopes,
+        },
+        pkce: Pkce::from_random(verifier, state),
+    })
+}
+
+impl AuthorizePlan {
+    /// The page the person is sent to, with the listener's `redirect`.
+    pub(crate) fn authorize(
+        &self,
+        redirect: &str,
+        ask: &AuthorizeAsk,
+    ) -> Result<WebUrl, SignInFault> {
+        let target = authorize_url_for(
+            &self.grant.endpoints,
+            &self.grant.client,
+            &self.pkce,
+            redirect,
+            &self.grant.scopes,
+            ask,
+        );
+        WebUrl::parse(&target).map_err(|_| SignInFault::Unreadable)
+    }
+}
+
 type Step = Result<Move<Browser>, SignInFault>;
 
 impl<R: BrowserIssuer, H: Http + 'static> BrowserFlow<R, H> {
@@ -115,37 +175,23 @@ impl<R: BrowserIssuer, H: Http + 'static> BrowserFlow<R, H> {
 
     async fn begin(&mut self) -> Step {
         let clients = self.env.clients().into_owned();
-        let issuer = self.rules.issuer();
-        let client = clients
-            .lookup(issuer, self.env.channel)
-            .cloned()
-            .ok_or(SignInFault::NeedsClientId)?;
-        let traits = clients.traits(issuer, self.env.channel);
-        let scopes = self.rules.scopes(&self.spec, &self.start.mode, traits.byo);
-        let (verifier, state) = (self.env.random)().ok_or(SignInFault::Unreadable)?;
-        let pkce = Pkce::from_random(verifier, state);
+        let random = (self.env.random)();
+        let plan = plan(
+            &clients,
+            &self.rules,
+            &self.spec,
+            &self.start.mode,
+            self.env.channel,
+            random,
+        )?;
         let server = LoopbackServer::bind()
             .await
             .map_err(|_| SignInFault::Unreachable)?;
         let redirect = server.redirect_uri();
-        let endpoints = endpoints_of(&client);
-        let target = authorize_url_for(
-            &endpoints,
-            &client,
-            &pkce,
-            &redirect,
-            &scopes,
-            &AuthorizeAsk::of(&self.start),
-        );
-        let url = WebUrl::parse(&target).map_err(|_| SignInFault::Unreadable)?;
-        let expected: OAuthState = pkce.state.clone();
+        let url = plan.authorize(&redirect, &AuthorizeAsk::of(&self.start))?;
+        let expected: OAuthState = plan.pkce.state.clone();
         let wait = Task(tokio::spawn(async move { server.wait(&expected).await }));
-        let grant = Grant {
-            client,
-            endpoints,
-            traits,
-            scopes,
-        };
+        let AuthorizePlan { grant, pkce } = plan;
         let browser = Browser {
             grant,
             pkce,
@@ -286,5 +332,59 @@ mod tests {
             loopback_fault(&rules, LoopbackFault::Refused("server_error".into())),
             SignInFault::Refused
         );
+    }
+
+    fn spec() -> ProviderSpec {
+        porter_provider::parse_provider(include_str!("../../../../providers/yahoo.toml"))
+            .expect("the shipped Yahoo file")
+    }
+
+    fn registry(rows: &str) -> ClientRegistry {
+        ClientRegistry::layered(
+            porter_provider::parse_clients(rows).expect("clients"),
+            porter_provider::ClientsFile::default(),
+        )
+    }
+
+    const RANDOM: Option<([u8; 32], [u8; 16])> = Some(([7; 32], [9; 16]));
+
+    #[test]
+    fn a_plan_is_the_client_the_scopes_and_the_pkce_or_the_first_thing_missing() {
+        let rules = Standard::of(Issuer::Yahoo);
+        let mode = SignInMode::Add;
+        let plan_of = |clients: &ClientRegistry, random| {
+            plan(
+                clients,
+                &rules,
+                &spec(),
+                &mode,
+                ClientChannel::Stable,
+                random,
+            )
+        };
+        let none = registry("");
+        // No client is reported before missing randomness.
+        assert!(matches!(
+            plan_of(&none, None),
+            Err(SignInFault::NeedsClientId)
+        ));
+        let one = registry(
+            "[[client]]\nissuer = \"yahoo\"\nchannel = \"stable\"\nclient_id = \"mine\"\n",
+        );
+        assert!(matches!(plan_of(&one, None), Err(SignInFault::Unreadable)));
+        let planned = plan_of(&one, RANDOM).expect("a plan");
+        assert_eq!(
+            planned.grant.scopes,
+            rules.scopes(&spec(), &mode, planned.grant.traits.byo)
+        );
+        // The same input makes the same page.
+        let again = plan_of(&one, RANDOM).expect("a plan");
+        let ask = AuthorizeAsk::of(&SignInStart::new(SignInMode::Add));
+        let url = planned.authorize("http://127.0.0.1:1/", &ask).expect("url");
+        assert_eq!(
+            url,
+            again.authorize("http://127.0.0.1:1/", &ask).expect("url")
+        );
+        assert!(url.as_str().contains("client_id=mine"));
     }
 }
