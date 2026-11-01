@@ -16,7 +16,6 @@ use porter_ids::word::word as word_of;
 use porter_provider::Provider;
 use porter_secrets::{Secrets, SecretsError};
 use porter_service_core::Ports;
-use porter_service_core::audit::AuditEvent;
 use porter_service_core::reach::{Declared, declared_endpoint, reach_for};
 use porter_service_core::refusal::secrets_refusal;
 use porter_wire::Refusal;
@@ -93,15 +92,10 @@ impl<E: Ports> Grants<'_, E> {
             return Err(Refusal::NeedsReauth);
         }
         let plan = self.plan_relay(&account, &endpoint, kind).await?;
-        self.spend_once(caller, grant).await?;
-        self.ctx.note(
-            Some(caller.clone()),
-            Some(account.id.clone()),
-            AuditEvent::ProxyOpened {
-                grant: grant.clone(),
-                endpoint: endpoint.url.clone(),
-            },
-        );
+        // The plan is minted; the grant is spent now, on the registry as it is now. A grant
+        // spent or revoked meanwhile drops the plan unused.
+        self.spend(caller, grant, Some((account.id, endpoint.url)))
+            .await?;
         Ok(plan)
     }
 
@@ -113,15 +107,8 @@ impl<E: Ports> Grants<'_, E> {
         origin: &EndpointUrl,
     ) -> Result<RelayPlan, Refusal> {
         let (plan, account) = self.plan_linked(caller, grant, origin)?;
-        self.spend_once(caller, grant).await?;
-        self.ctx.note(
-            Some(caller.clone()),
-            Some(account.id.clone()),
-            AuditEvent::ProxyOpened {
-                grant: grant.clone(),
-                endpoint: plan.endpoint.url.clone(),
-            },
-        );
+        self.spend(caller, grant, Some((account.id, plan.endpoint.url.clone())))
+            .await?;
         Ok(plan)
     }
 

@@ -23,6 +23,7 @@ use porter_fake::cloud_provider;
 use porter_fake_servers::{DavHandle, FakeDav, Running};
 use porter_match::{Need, StorageNeed};
 use porter_proxy::RustlsConnect;
+use porter_service_core::audit::{AuditEvent, ProxyOutcome};
 use porter_sheet::SheetInput;
 use porter_wire::AccountsReply;
 use std::io::{Read, Write};
@@ -193,6 +194,32 @@ async fn an_app_is_asked_once_and_then_reaches_the_server_through_a_descriptor()
             .as_deref()
             .is_some_and(|authorization| authorization.starts_with("Basic ")),
         "the server saw accountd's credential"
+    );
+
+    // The app dropped its end, so the relay ended, and its end is audited beside its opening.
+    let mut closed = Vec::new();
+    for _ in 0..100 {
+        closed = rig
+            .audit
+            .entries()
+            .into_iter()
+            .filter(|e| matches!(e.event, AuditEvent::ProxyClosed { .. }))
+            .collect();
+        if !closed.is_empty() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert_eq!(closed.len(), 1, "the relay's end is recorded once");
+    assert_eq!(closed[0].app, Some(app("org.quire.Photos")));
+    assert_eq!(closed[0].account, Some(chosen.account.clone()));
+    assert_eq!(
+        closed[0].event,
+        AuditEvent::ProxyClosed {
+            grant: chosen.grant.clone(),
+            endpoint: endpoint.clone(),
+            outcome: ProxyOutcome::Finished,
+        }
     );
 
     // Revoking is the app's own, once.

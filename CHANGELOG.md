@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### A relay is opened once, and its end is recorded
+
+- `spend_once` is decided on the registry as it is when the plan is ready: it answers
+  `UnknownGrant` when the grant is no longer held, so of two openers of one `Once` grant (a
+  relay, or a key read) exactly one gets through. The order is unchanged: check, mint, then spend;
+  a plan that could not be made spends nothing, and a plan whose grant went meanwhile is dropped
+  unused. A relay's `ProxyOpened` line is written in the spending transaction.
+- accountd records `AuditEvent::ProxyClosed { grant, endpoint, outcome }` when a relay ends
+  (`ProxyOutcome`: finished, or the fault). Readers of an older daemon skip the new line.
+- A revoke still does not close a relay already open: a grant gates opening, not an open stream.
+  This is policy; changing it is the owner's decision.
+- One margin (`porter_core::token::{RENEW_MARGIN_SECONDS, is_due}`) decides when a token is
+  renewed and when a minted one is no longer reused; `porter_oauth` re-exports it. One
+  `porter_ids::percent::decode_checked` serves both path-reach rules.
+
 ### The clients are told once per change
 
 - accountd's news task takes each `Committed { before, after }` the service sends, in commit order

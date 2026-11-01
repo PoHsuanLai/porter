@@ -31,6 +31,25 @@ impl AuditSink for NoAudit {
     fn record(&self, _entry: AuditEntry) {}
 }
 
+/// How a relay ended: both sides finished, or why it did not.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum ProxyOutcome {
+    /// Both sides finished.
+    Finished,
+    /// The server refused the credential.
+    Refused,
+    /// The server could not be reached.
+    Unreachable,
+    /// The TLS handshake or certificate check failed.
+    Tls,
+    /// Someone did not speak the protocol.
+    Protocol,
+    /// The app asked for another origin, or a path outside its reach.
+    ForeignOrigin,
+}
+
 /// One audited event, as a line of `audit.jsonl`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
@@ -111,6 +130,18 @@ pub enum AuditEvent {
         grant: GrantId,
         /// The only server it talks to.
         endpoint: EndpointUrl,
+    },
+    /// An authenticated relay ended. Written by the host that ran it, once, after the matching
+    /// `ProxyOpened`; a line an older daemon never wrote is simply absent. A revoke does not
+    /// close an open relay (a grant gates opening, not an open stream), so it may end long after
+    /// its grant did.
+    ProxyClosed {
+        /// The grant it was opened under.
+        grant: GrantId,
+        /// The server it talked to.
+        endpoint: EndpointUrl,
+        /// How it ended.
+        outcome: ProxyOutcome,
     },
     /// An account was added.
     SignedIn,
@@ -289,6 +320,11 @@ mod tests {
             AuditEvent::ProxyOpened {
                 grant,
                 endpoint: EndpointUrl::parse("imaps://mail.example.org").expect("url"),
+            },
+            AuditEvent::ProxyClosed {
+                grant: GrantId::parse("g1").expect("id"),
+                endpoint: EndpointUrl::parse("imaps://mail.example.org").expect("url"),
+                outcome: ProxyOutcome::Tls,
             },
             AuditEvent::SignedIn,
             AuditEvent::Reauthed,
