@@ -278,15 +278,13 @@ where
         AccountService::audit_app(self, app.clone(), event);
     }
 
-    fn set_state(&self, id: &AccountId, state: AccountState) -> impl Future<Output = bool> + Send {
-        async move {
-            AccountService::try_set_state(self, id, state)
-                .await
-                .unwrap_or_else(|why| {
-                    eprintln!("accountd: the state of {id} could not be saved: {why:?}");
-                    false
-                })
-        }
+    async fn set_state(&self, id: &AccountId, state: AccountState) -> bool {
+        AccountService::try_set_state(self, id, state)
+            .await
+            .unwrap_or_else(|why| {
+                eprintln!("accountd: the state of {id} could not be saved: {why:?}");
+                false
+            })
     }
 
     fn set_toggle(
