@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Three rules said once
+
+- `llm_verdicts` takes the accounts from `Registry::fitting` and the key from `Asker::key`, as
+  every other verdict does, and no longer builds a `GrantKey` of its own.
+- Which grants a session's end takes is `Registry::session_grants`: `end_session_grants` and the
+  launcher's `close_session` both use it.
+- The role rules every accountd call is held to are one table, `Standing::admits`, with a test over
+  every role and standing; `identify` no longer carries the chain of `if`s.
+
 ### Sign-in decisions are the sheet machine's
 
 - The OAuth browser flow's decisions are free functions: `plan` (client, scopes and PKCE from the
