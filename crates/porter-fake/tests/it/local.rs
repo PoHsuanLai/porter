@@ -180,7 +180,7 @@ async fn a_report_that_is_not_a_runtimes_to_make_is_refused_and_changes_nothing(
 }
 
 #[tokio::test]
-async fn a_registry_that_cannot_be_saved_says_unavailable_and_keeps_the_change_in_memory() {
+async fn a_registry_that_cannot_be_saved_says_unavailable_and_changes_nothing() {
     let (service, store) = service();
     store.refusing(true);
     assert_eq!(
@@ -189,5 +189,5 @@ async fn a_registry_that_cannot_be_saved_says_unavailable_and_keeps_the_change_i
             .await,
         Err(LocalFault::Unavailable)
     );
-    assert_eq!(service.registry().accounts.len(), 1);
+    assert!(service.registry().accounts.is_empty());
 }

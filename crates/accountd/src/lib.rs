@@ -90,7 +90,6 @@ pub mod import;
 mod keys;
 pub mod launcher;
 mod manager;
-mod news;
 mod open_sheets;
 pub mod paths;
 mod publish;
@@ -111,7 +110,6 @@ pub use core::{Options, serve, serve_with};
 pub use daemon::{Config, Daemon, StartError};
 pub use errors::RefusedError;
 pub use host::Host;
-pub use news::NewsStore;
 #[doc(inline)]
 pub use porter_families::set::ProviderNames;
 #[doc(inline)]

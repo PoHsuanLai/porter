@@ -13,8 +13,8 @@ use porter_provider::ProviderSession;
 use porter_provider::{Presented, RevokeOutcome};
 use porter_secrets::Secrets;
 use porter_secrets::SecretsError;
-use porter_service_core::Ports;
 use porter_service_core::audit::AuditEvent;
+use porter_service_core::{Audited, Ports};
 use porter_wire::Refusal;
 
 impl<E: Ports> Accounts<'_, E> {
@@ -113,22 +113,23 @@ impl<E: Ports> Accounts<'_, E> {
                 .await
                 .map_err(porter_service_core::refusal::secrets_refusal)?;
         }
-        {
-            let mut registry = self.ctx.lock();
-            let off: Vec<_> = registry
-                .toggles
-                .iter()
-                .filter(|t| t.account == *id)
-                .map(|t| porter_capability::KindToggle {
-                    kind: t.kind,
-                    toggle: t.toggle,
-                })
-                .collect();
-            if let Some(held) = registry.accounts.iter_mut().find(|a| a.id == *id) {
-                held.capabilities = effective(&claims, &off);
-            }
-        }
-        self.ctx.persist().await?;
+        self.ctx
+            .transact(|registry| {
+                let off: Vec<_> = registry
+                    .toggles
+                    .iter()
+                    .filter(|t| t.account == *id)
+                    .map(|t| porter_capability::KindToggle {
+                        kind: t.kind,
+                        toggle: t.toggle,
+                    })
+                    .collect();
+                if let Some(held) = registry.accounts.iter_mut().find(|a| a.id == *id) {
+                    held.capabilities = effective(&claims, &off);
+                }
+                Ok((Vec::new(), ()))
+            })
+            .await?;
         Ok(claims)
     }
 
@@ -139,123 +140,137 @@ impl<E: Ports> Accounts<'_, E> {
         kind: CapabilityKind,
         toggle: Toggle,
     ) -> Result<(), Refusal> {
-        let changed = {
-            let mut registry = self.ctx.lock();
-            // Only a kind switched off has a row.
-            let was = match registry
-                .toggles
-                .iter()
-                .any(|t| t.account == *id && t.kind == kind)
-            {
-                true => Toggle::Off,
-                false => Toggle::On,
-            };
-            let spec = registry
-                .accounts
-                .iter()
-                .find(|a| a.id == *id)
-                .and_then(|a| self.ctx.catalog().get(&a.provider))
-                .ok_or(Refusal::UnknownGrant)?;
-            let declared: Vec<Claim> = spec
-                .capabilities
-                .iter()
-                .map(|row| Claim {
-                    subject: Subject::Account,
-                    offer: Offer::Present(row.capability.clone()),
-                    provenance: Provenance::Declared,
-                })
-                .collect();
-            registry
-                .toggles
-                .retain(|t| !(t.account == *id && t.kind == kind));
-            if toggle == Toggle::Off {
-                registry.toggles.push(AccountToggle {
-                    account: id.clone(),
-                    kind,
-                    toggle,
-                });
-            }
-            let off: Vec<_> = registry
-                .toggles
-                .iter()
-                .filter(|t| t.account == *id)
-                .map(|t| porter_capability::KindToggle {
-                    kind: t.kind,
-                    toggle: t.toggle,
-                })
-                .collect();
-            if let Some(account) = registry.accounts.iter_mut().find(|a| a.id == *id) {
-                // What the account holds, except what a toggle replaced, plus what the file
-                // declares for the kinds that were toggled off: the toggles then apply afresh.
-                let mut claims: Vec<Claim> = account
+        self.ctx
+            .transact(|registry| {
+                // Only a kind switched off has a row.
+                let was = match registry
+                    .toggles
+                    .iter()
+                    .any(|t| t.account == *id && t.kind == kind)
+                {
+                    true => Toggle::Off,
+                    false => Toggle::On,
+                };
+                let spec = registry
+                    .accounts
+                    .iter()
+                    .find(|a| a.id == *id)
+                    .and_then(|a| self.ctx.catalog().get(&a.provider))
+                    .ok_or(Refusal::UnknownGrant)?;
+                let declared: Vec<Claim> = spec
                     .capabilities
                     .iter()
-                    .filter(|c| {
-                        !matches!(
-                            &c.offer,
-                            Offer::Absent {
-                                reason: AbsentReason::TurnedOff,
-                                ..
-                            }
-                        )
-                    })
-                    .cloned()
-                    .collect();
-                let missing: Vec<Claim> = declared
-                    .into_iter()
-                    .filter(|d| {
-                        !claims
-                            .iter()
-                            .any(|c| c.subject == d.subject && c.offer.kind() == d.offer.kind())
+                    .map(|row| Claim {
+                        subject: Subject::Account,
+                        offer: Offer::Present(row.capability.clone()),
+                        provenance: Provenance::Declared,
                     })
                     .collect();
-                claims.extend(missing);
-                account.capabilities = effective(&claims, &off);
-            }
-            was != toggle
-        };
-        if changed {
-            self.ctx.note(
-                None,
-                Some(id.clone()),
-                AuditEvent::ServiceToggled { kind, toggle },
-            );
-        }
-        self.ctx.persist().await
+                registry
+                    .toggles
+                    .retain(|t| !(t.account == *id && t.kind == kind));
+                if toggle == Toggle::Off {
+                    registry.toggles.push(AccountToggle {
+                        account: id.clone(),
+                        kind,
+                        toggle,
+                    });
+                }
+                let off: Vec<_> = registry
+                    .toggles
+                    .iter()
+                    .filter(|t| t.account == *id)
+                    .map(|t| porter_capability::KindToggle {
+                        kind: t.kind,
+                        toggle: t.toggle,
+                    })
+                    .collect();
+                if let Some(account) = registry.accounts.iter_mut().find(|a| a.id == *id) {
+                    // What the account holds, except what a toggle replaced, plus what the file
+                    // declares for the kinds that were toggled off: the toggles then apply afresh.
+                    let mut claims: Vec<Claim> = account
+                        .capabilities
+                        .iter()
+                        .filter(|c| {
+                            !matches!(
+                                &c.offer,
+                                Offer::Absent {
+                                    reason: AbsentReason::TurnedOff,
+                                    ..
+                                }
+                            )
+                        })
+                        .cloned()
+                        .collect();
+                    let missing: Vec<Claim> = declared
+                        .into_iter()
+                        .filter(|d| {
+                            !claims
+                                .iter()
+                                .any(|c| c.subject == d.subject && c.offer.kind() == d.offer.kind())
+                        })
+                        .collect();
+                    claims.extend(missing);
+                    account.capabilities = effective(&claims, &off);
+                }
+                let lines = match was != toggle {
+                    true => vec![Audited::new(
+                        None,
+                        Some(id.clone()),
+                        AuditEvent::ServiceToggled { kind, toggle },
+                    )],
+                    false => Vec::new(),
+                };
+                Ok((lines, ()))
+            })
+            .await
+            .map(|_| ())
     }
 
-    /// The wipe of `remove_account`: secrets, grants, toggles, the registry row, one audit line.
+    /// The wipe of `remove_account`: the registry rows, the secrets, one audit line.
     pub(crate) async fn wipe_account(&self, id: &AccountId) -> Result<(), SecretsError> {
-        // The rows go first, in one step with no await, and come back if the secrets cannot be
+        // The rows go first, in one transaction, and come back if the secrets cannot be
         // deleted. A wipe dropped while it awaits the secrets therefore leaves no account
         // without its credentials; at worst credentials with no account, which nothing reads.
-        let (accounts, grants, toggles) = {
-            let mut registry = self.ctx.lock();
-            let (gone, kept) = std::mem::take(&mut registry.accounts)
-                .into_iter()
-                .partition(|a| a.id == *id);
-            registry.accounts = kept;
-            let (dropped, kept) = std::mem::take(&mut registry.grants)
-                .into_iter()
-                .partition(|g| g.key.account == *id);
-            registry.grants = kept;
-            let (off, kept) = std::mem::take(&mut registry.toggles)
-                .into_iter()
-                .partition(|t| t.account == *id);
-            registry.toggles = kept;
-            (gone, dropped, off)
-        };
+        // A registry that cannot be saved ends the wipe before anything is deleted.
+        let taken = self
+            .ctx
+            .transact(|registry| {
+                let (gone, kept) = std::mem::take(&mut registry.accounts)
+                    .into_iter()
+                    .partition(|a| a.id == *id);
+                registry.accounts = kept;
+                let (dropped, kept) = std::mem::take(&mut registry.grants)
+                    .into_iter()
+                    .partition(|g| g.key.account == *id);
+                registry.grants = kept;
+                let (off, kept) = std::mem::take(&mut registry.toggles)
+                    .into_iter()
+                    .partition(|t| t.account == *id);
+                registry.toggles = kept;
+                Ok((Vec::new(), (gone, dropped, off)))
+            })
+            .await
+            .map_err(|_| SecretsError::Unavailable)?;
         if let Err(why) = self.ctx.secrets().delete_account(id).await {
-            let mut registry = self.ctx.lock();
-            registry.accounts.extend(accounts);
-            registry.grants.extend(grants);
-            registry.toggles.extend(toggles);
+            let (accounts, grants, toggles) = taken.value;
+            // Put back, unless another sign-in has made the id its own meanwhile. If that cannot
+            // be saved either the account stays removed, and the secrets' failure is what the
+            // caller is told.
+            self.ctx
+                .transact(|registry| {
+                    if registry.accounts.iter().all(|a| a.id != *id) {
+                        registry.accounts.extend(accounts);
+                        registry.grants.extend(grants);
+                        registry.toggles.extend(toggles);
+                    }
+                    Ok((Vec::new(), ()))
+                })
+                .await
+                .ok();
             return Err(why);
         }
         self.ctx.note(None, Some(id.clone()), AuditEvent::Removed);
-        // The in-memory registry is already without the account; a store that cannot be
-        // written keeps the old row until the next save, and the host sees it on its own save.
-        let _ = self.ctx.persist().await;
         Ok(())
     }
 }

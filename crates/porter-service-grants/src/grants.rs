@@ -11,6 +11,7 @@ use porter_core::{AppId, Candidate, DataClass, ProviderHint, SessionToken};
 use porter_ids::clock::Clock;
 use porter_match::Need;
 use porter_service_accounts::{AccountsApi, AllowFor};
+use porter_service_core::Audited;
 use porter_service_core::Ports;
 use porter_service_core::audit::AuditEvent;
 use porter_service_core::consent::{ask_for, settle};
@@ -102,75 +103,80 @@ impl<E: Ports> Grants<'_, E> {
                 _ => AccountsReply::Refused(Refusal::Dismissed),
             };
         }
-        let reply = settle(
-            &mut self.ctx.lock(),
-            &need,
-            asker,
-            only,
-            session,
-            answer,
-            self.ctx.clock().now(),
-        );
-        match &reply {
-            AccountsReply::Chosen(candidate) => self.ctx.note(
-                Some(caller.clone()),
-                Some(candidate.account.clone()),
-                AuditEvent::Granted {
-                    grant: candidate.grant.clone(),
-                    kind: need.kind(),
-                },
-            ),
-            AccountsReply::Refused(Refusal::Denied) => self.ctx.note(
-                Some(caller.clone()),
-                None,
-                AuditEvent::Denied { kind: need.kind() },
-            ),
-            _ => return reply,
-        }
-        match self.ctx.persist().await {
-            Ok(()) => reply,
+        let at = self.ctx.clock().now();
+        let written = self
+            .ctx
+            .transact(|registry| {
+                let reply = settle(registry, &need, asker, only, session, answer, at);
+                let lines = match &reply {
+                    AccountsReply::Chosen(candidate) => vec![Audited::new(
+                        Some(caller.clone()),
+                        Some(candidate.account.clone()),
+                        AuditEvent::Granted {
+                            grant: candidate.grant.clone(),
+                            kind: need.kind(),
+                        },
+                    )],
+                    AccountsReply::Refused(Refusal::Denied) => vec![Audited::new(
+                        Some(caller.clone()),
+                        None,
+                        AuditEvent::Denied { kind: need.kind() },
+                    )],
+                    _ => Vec::new(),
+                };
+                Ok((lines, reply))
+            })
+            .await;
+        match written {
+            Ok(written) => written.value,
             Err(refusal) => AccountsReply::Refused(refusal),
         }
     }
 
     /// See [`GrantsApi::revoke`](crate::GrantsApi::revoke).
     pub(crate) async fn revoke(&self, caller: &AppId, grant: &GrantId) -> Result<(), Refusal> {
-        let account = {
-            let mut registry = self.ctx.lock();
-            let Some(held) = registry.grant_of(caller, grant) else {
-                return Err(Refusal::UnknownGrant);
-            };
-            let account = held.key.account.clone();
-            registry.grants.retain(|g| g.id != *grant);
-            account
-        };
-        self.ctx.note(
-            Some(caller.clone()),
-            Some(account),
-            AuditEvent::Revoked {
-                grant: grant.clone(),
-            },
-        );
-        self.ctx.persist().await
+        self.ctx
+            .transact(|registry| {
+                let Some(held) = registry.grant_of(caller, grant) else {
+                    return Err(Refusal::UnknownGrant);
+                };
+                let account = held.key.account.clone();
+                registry.grants.retain(|g| g.id != *grant);
+                let line = Audited::new(
+                    Some(caller.clone()),
+                    Some(account),
+                    AuditEvent::Revoked {
+                        grant: grant.clone(),
+                    },
+                );
+                Ok((vec![line], ()))
+            })
+            .await
+            .map(|_| ())
     }
 
     /// See [`GrantsApi::revoke_grant`](crate::GrantsApi::revoke_grant).
     pub(crate) async fn revoke_grant(&self, grant: &GrantId) -> Result<(), Refusal> {
-        let held = {
-            let mut registry = self.ctx.lock();
-            let held = registry.grants.iter().find(|g| g.id == *grant).cloned();
-            registry.grants.retain(|g| g.id != *grant);
-            held
-        }
-        .ok_or(Refusal::UnknownGrant)?;
-        self.ctx.note(
-            Some(held.key.app),
-            Some(held.key.account),
-            AuditEvent::Revoked {
-                grant: grant.clone(),
-            },
-        );
-        self.ctx.persist().await
+        self.ctx
+            .transact(|registry| {
+                let held = registry
+                    .grants
+                    .iter()
+                    .find(|g| g.id == *grant)
+                    .cloned()
+                    .ok_or(Refusal::UnknownGrant)?;
+                registry.grants.retain(|g| g.id != *grant);
+                let line = Audited::new(
+                    Some(held.key.app),
+                    Some(held.key.account),
+                    AuditEvent::Revoked {
+                        grant: grant.clone(),
+                    },
+                );
+                Ok((vec![line], ()))
+            })
+            .await
+            .map(|_| ())
     }
 
     /// The answer "Add Account…" to a consent alert: runs the add sheet with the app's ask
@@ -212,59 +218,62 @@ impl<E: Ports> Grants<'_, E> {
 
     /// See [`GrantsApi::spend_once`](crate::GrantsApi::spend_once).
     pub(crate) async fn spend_once(&self, caller: &AppId, grant: &GrantId) -> Result<(), Refusal> {
-        let spent = {
-            let mut registry = self.ctx.lock();
-            let once = registry
-                .grant_of(caller, grant)
-                .is_some_and(|g| g.scope == GrantScope::Once);
-            if once {
-                registry.grants.retain(|g| g.id != *grant);
-            }
-            once
-        };
-        if spent {
-            self.ctx.persist().await?;
-        }
-        Ok(())
+        self.ctx
+            .transact(|registry| {
+                let once = registry
+                    .grant_of(caller, grant)
+                    .is_some_and(|g| g.scope == GrantScope::Once);
+                if once {
+                    registry.grants.retain(|g| g.id != *grant);
+                }
+                Ok((Vec::new(), ()))
+            })
+            .await
+            .map(|_| ())
     }
 
     /// See [`GrantsApi::end_session_grants`](crate::GrantsApi::end_session_grants).
     pub(crate) async fn end_session_grants(&self, session: Option<&SessionToken>) -> Vec<GrantId> {
-        let ended: Vec<(GrantId, AppId, AccountId, SessionToken)> = {
-            let mut registry = self.ctx.lock();
-            let ended = registry
-                .grants
-                .iter()
-                .filter_map(|g| match &g.scope {
-                    GrantScope::Session(own) if session.is_none_or(|only| only == own) => Some((
-                        g.id.clone(),
-                        g.key.app.clone(),
-                        g.key.account.clone(),
-                        own.clone(),
-                    )),
-                    _ => None,
-                })
-                .collect::<Vec<_>>();
-            registry
-                .grants
-                .retain(|g| !ended.iter().any(|(id, ..)| *id == g.id));
-            ended
-        };
-        for (grant, app, account, session) in &ended {
-            self.ctx.note(
-                Some(app.clone()),
-                Some(account.clone()),
-                AuditEvent::SessionGrantEnded {
-                    grant: grant.clone(),
-                    session: session.clone(),
-                },
-            );
-        }
-        if !ended.is_empty() {
-            // The grants are gone from memory whether or not the file could be written; the
-            // next save writes them out.
-            let _ = self.ctx.persist().await;
-        }
-        ended.into_iter().map(|(grant, ..)| grant).collect()
+        let ended = self
+            .ctx
+            .transact(|registry| {
+                let ended = registry
+                    .grants
+                    .iter()
+                    .filter_map(|g| match &g.scope {
+                        GrantScope::Session(own) if session.is_none_or(|only| only == own) => {
+                            Some((
+                                g.id.clone(),
+                                g.key.app.clone(),
+                                g.key.account.clone(),
+                                own.clone(),
+                            ))
+                        }
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>();
+                registry
+                    .grants
+                    .retain(|g| !ended.iter().any(|(id, ..)| *id == g.id));
+                let lines = ended
+                    .iter()
+                    .map(|(grant, app, account, session)| {
+                        Audited::new(
+                            Some(app.clone()),
+                            Some(account.clone()),
+                            AuditEvent::SessionGrantEnded {
+                                grant: grant.clone(),
+                                session: session.clone(),
+                            },
+                        )
+                    })
+                    .collect();
+                let grants: Vec<GrantId> = ended.into_iter().map(|(grant, ..)| grant).collect();
+                Ok((lines, grants))
+            })
+            .await;
+        // A registry that cannot be saved ends nothing: the grants stay, and the next end of
+        // the session takes them.
+        ended.map(|written| written.value).unwrap_or_default()
     }
 }

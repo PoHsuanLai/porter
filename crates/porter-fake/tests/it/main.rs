@@ -10,6 +10,7 @@ mod refresh;
 mod service;
 mod session_scope;
 mod space_owner;
+mod transact;
 
 #[test]
 fn every_module_is_declared() {

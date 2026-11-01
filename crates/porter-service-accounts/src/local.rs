@@ -25,7 +25,7 @@ pub enum LocalFault {
     State,
     /// A claim is not one a runtime may make: a model's, present, from a probe.
     Claim,
-    /// The registry could not be saved; the change stays in memory.
+    /// The registry could not be saved; nothing changed.
     Unavailable,
 }
 
@@ -60,39 +60,38 @@ impl<E: Ports> Accounts<'_, E> {
             return Err(LocalFault::NotLocal);
         }
         let id = AccountId::parse(provider.as_str()).map_err(|_| LocalFault::UnknownProvider)?;
-        {
-            let mut registry = self.ctx.lock();
-            let off: Vec<KindToggle> = registry
-                .toggles
-                .iter()
-                .filter(|t| t.account == id)
-                .map(|t| KindToggle {
-                    kind: t.kind,
-                    toggle: t.toggle,
-                })
-                .collect();
-            let held = registry.accounts.iter_mut().find(|a| a.id == id);
-            match held {
-                Some(account) => {
-                    account.state = state;
-                    if !(models.is_empty() && state == AccountState::Offline) {
-                        account.capabilities = effective(&models, &off);
-                    }
-                }
-                None => registry.accounts.push(Account {
-                    id: id.clone(),
-                    provider: spec.id.clone(),
-                    label: AccountLabel(spec.label.clone()),
-                    state,
-                    auth: spec.auth.kind,
-                    capabilities: effective(&models, &off),
-                    restriction: Restriction::none(),
-                    endpoints: Vec::new(),
-                }),
-            }
-        }
         self.ctx
-            .persist()
+            .transact(|registry| {
+                let off: Vec<KindToggle> = registry
+                    .toggles
+                    .iter()
+                    .filter(|t| t.account == id)
+                    .map(|t| KindToggle {
+                        kind: t.kind,
+                        toggle: t.toggle,
+                    })
+                    .collect();
+                let held = registry.accounts.iter_mut().find(|a| a.id == id);
+                match held {
+                    Some(account) => {
+                        account.state = state;
+                        if !(models.is_empty() && state == AccountState::Offline) {
+                            account.capabilities = effective(&models, &off);
+                        }
+                    }
+                    None => registry.accounts.push(Account {
+                        id: id.clone(),
+                        provider: spec.id.clone(),
+                        label: AccountLabel(spec.label.clone()),
+                        state,
+                        auth: spec.auth.kind,
+                        capabilities: effective(&models, &off),
+                        restriction: Restriction::none(),
+                        endpoints: Vec::new(),
+                    }),
+                }
+                Ok((Vec::new(), ()))
+            })
             .await
             .map_err(|_| LocalFault::Unavailable)?;
         Ok(id)

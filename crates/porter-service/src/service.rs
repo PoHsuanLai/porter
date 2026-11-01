@@ -20,7 +20,7 @@ use porter_service_accounts::{
 };
 use porter_service_core::audit::{AuditEvent, AuditSink, NoAudit};
 use porter_service_core::registry::Registry;
-use porter_service_core::{Ctx, Parts};
+use porter_service_core::{Committed, Ctx, Parts};
 use porter_service_grants::{Grants, GrantsApi};
 use porter_sheet::host::Sheets;
 use porter_wire::{AccountsReply, AccountsRequest};
@@ -78,6 +78,16 @@ where
     pub fn with_store<N: RegistryStore>(self, store: N) -> AccountService<P, S, U, K, N, A> {
         AccountService {
             ctx: self.ctx.with_store(store),
+            accounts: self.accounts,
+        }
+    }
+
+    /// The same service telling `told` of each change once it is saved, swapped in and audited
+    /// (a [`Committed`]); it runs while the next change waits, so it must not wait.
+    #[must_use]
+    pub fn on_committed(self, told: impl Fn(Committed) + Send + Sync + 'static) -> Self {
+        Self {
+            ctx: self.ctx.on_committed(told),
             accounts: self.accounts,
         }
     }
@@ -441,8 +451,18 @@ where
     }
 
     /// Sets an account's state (`NeedsReauth` when its credential was refused, `Ok` again once
-    /// it is signed in). Whether it changed.
+    /// it is signed in). Whether it changed; a state that could not be saved is not changed.
     pub async fn set_state(&self, id: &AccountId, state: AccountState) -> bool {
+        self.try_set_state(id, state).await.unwrap_or(false)
+    }
+
+    /// [`AccountService::set_state`] saying why when the state could not be saved
+    /// (`Unavailable`), for a host that logs it.
+    pub async fn try_set_state(
+        &self,
+        id: &AccountId,
+        state: AccountState,
+    ) -> Result<bool, Refusal> {
         self.ctx.set_state(id, state).await
     }
 

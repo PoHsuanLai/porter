@@ -1,5 +1,6 @@
-//! The state every domain shares, and the three things every domain does with it: lock the
-//! registry, save it, and record an audited event. The domains (accounts, grants) are traits
+//! The state every domain shares, and the three things every domain does with it: read the
+//! registry, change it through [`Ctx::transact`] (the one place it is saved and the one place it
+//! is written), and record an audited event. The domains (accounts, grants) are traits
 //! over a [`Ctx`] in their own crates; `porter_service::AccountService` is the facade a host
 //! holds over them.
 
@@ -16,7 +17,8 @@ use porter_secrets::Secrets;
 use porter_sheet::host::Sheets;
 use porter_wire::Refusal;
 use std::marker::PhantomData;
-use std::sync::{Mutex, MutexGuard};
+use std::ops::Deref;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 /// The seams a service is built over, named once: its providers (protocol code), its secrets,
 /// the host that draws its sheets, a clock, the store its registry lives in between runs and the
@@ -67,6 +69,65 @@ where
     type Audit = A;
 }
 
+/// The registry, read: what [`Ctx::lock`] hands out. There is no way to change the registry
+/// through it; a change is a [`Ctx::transact`].
+#[derive(Debug)]
+pub struct Read<'a>(MutexGuard<'a, Registry>);
+
+impl Deref for Read<'_> {
+    type Target = Registry;
+
+    fn deref(&self) -> &Registry {
+        &self.0
+    }
+}
+
+/// One audit line a decision asks [`Ctx::transact`] to write once its change is saved.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Audited {
+    /// Who caused it (none for what accountd does by itself).
+    pub app: Option<AppId>,
+    /// The account it concerns, if any.
+    pub account: Option<AccountId>,
+    /// What happened.
+    pub event: AuditEvent,
+}
+
+impl Audited {
+    /// A line for `event`, caused by `app` and concerning `account` where there are any.
+    pub fn new(app: Option<AppId>, account: Option<AccountId>, event: AuditEvent) -> Self {
+        Self {
+            app,
+            account,
+            event,
+        }
+    }
+}
+
+/// What a transaction that ended well hands back.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Written<T> {
+    /// What the decision returned.
+    pub value: T,
+    /// Whether the registry changed. When it did not, nothing was saved or announced.
+    pub changed: bool,
+}
+
+/// One saved change: the registry before it and after it. Sent to whoever the host named with
+/// [`Ctx::on_committed`], once the change is saved, swapped in and audited, in the order the
+/// transactions ran.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Committed {
+    /// The registry the decision started from.
+    pub before: Registry,
+    /// The registry it left, which is the one now held and saved.
+    pub after: Registry,
+}
+
+/// Who is told of each [`Committed`]. It runs inside the transaction (the gate is held), so it
+/// must not wait.
+type Told = Arc<dyn Fn(Committed) + Send + Sync>;
+
 /// The service's seams and its registry.
 pub struct Ctx<E: Ports> {
     providers: Vec<E::Provider>,
@@ -77,8 +138,9 @@ pub struct Ctx<E: Ports> {
     store: E::Store,
     audit: E::Audit,
     registry: Mutex<Registry>,
-    /// Held across a save's snapshot and write, so saves do not overlap.
+    /// Held for the whole of a transaction, so writers go one at a time.
     persist_gate: Gate,
+    committed: Option<Told>,
     /// Each account's turn at its issuer: one refresh at a time, and the token it issued.
     flights: Flights,
 }
@@ -104,6 +166,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock> Ctx<Parts<P, S, U, K>> {
             audit: NoAudit,
             registry: Mutex::new(registry),
             persist_gate: Gate::default(),
+            committed: None,
             flights: Flights::default(),
         }
     }
@@ -130,6 +193,7 @@ where
             audit: self.audit,
             registry: self.registry,
             persist_gate: self.persist_gate,
+            committed: self.committed,
             flights: self.flights,
         }
     }
@@ -146,6 +210,7 @@ where
             audit,
             registry: self.registry,
             persist_gate: self.persist_gate,
+            committed: self.committed,
             flights: self.flights,
         }
     }
@@ -200,49 +265,97 @@ impl<E: Ports> Ctx<E> {
         self.catalog = ProviderSet::layered(all, Vec::new());
     }
 
-    /// The registry, locked for a plain data update.
-    pub fn lock(&self) -> MutexGuard<'_, Registry> {
+    /// Tells `told` of every change once it is saved (see [`Committed`]).
+    #[must_use]
+    pub fn on_committed(mut self, told: impl Fn(Committed) + Send + Sync + 'static) -> Self {
+        self.committed = Some(Arc::new(told));
+        self
+    }
+
+    fn registry(&self) -> MutexGuard<'_, Registry> {
         // Every critical section is a plain data update that cannot panic midway.
         self.registry
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    /// Saves the registry; `Unavailable` when the store cannot be written. The change stays in
-    /// memory, and the next save writes it.
-    ///
-    /// One save runs at a time, and its snapshot is taken only once it holds the gate: a save
-    /// that waited writes the registry as it is then, so the last save to finish always carries
-    /// the last state (a snapshot taken before the wait could land after a newer one).
-    pub async fn persist(&self) -> Result<(), Refusal> {
-        let _one_at_a_time = self.persist_gate.lock().await;
-        let snapshot = self.lock().persisted();
-        self.store
-            .save(&snapshot)
-            .await
-            .map_err(|_| Refusal::Unavailable)
+    /// The registry, to read. Hold it only while reading, never across an `.await`.
+    pub fn lock(&self) -> Read<'_> {
+        Read(self.registry())
     }
 
-    /// Records one audited event, dated now.
+    /// Changes the registry: the one way it is changed.
+    ///
+    /// 1. Takes the gate, so one transaction runs at a time and each starts from the registry the
+    ///    last one left.
+    /// 2. Runs `decide` on a copy of the registry (`decide` is sync, so no await is in it; an
+    ///    effect it needs ran before this call, and `decide` checks again against the registry
+    ///    as it is now). Its `Err` ends the transaction with nothing changed.
+    /// 3. A copy equal to the registry ends it too: nothing is saved or announced, and the lines
+    ///    `decide` returned are written (a decision that changed nothing and wants no line returns
+    ///    none).
+    /// 4. Saves the copy. A store that cannot be written is `Unavailable`, and the registry, the
+    ///    audit log and the listeners are as they were.
+    /// 5. Swaps the copy in, writes `decide`'s audit lines and tells [`Ctx::on_committed`].
+    ///
+    /// The last save to finish therefore carries the last state. A caller dropped while it waits
+    /// for the gate or the store leaves nothing behind.
+    pub async fn transact<T>(
+        &self,
+        decide: impl FnOnce(&mut Registry) -> Result<(Vec<Audited>, T), Refusal> + Send,
+    ) -> Result<Written<T>, Refusal> {
+        let _one_at_a_time = self.persist_gate.lock().await;
+        let before = self.registry().clone();
+        let mut after = before.clone();
+        let (lines, value) = decide(&mut after)?;
+        if after == before {
+            for line in lines {
+                self.note(line.app, line.account, line.event);
+            }
+            return Ok(Written {
+                value,
+                changed: false,
+            });
+        }
+        self.store
+            .save(&after.persisted())
+            .await
+            .map_err(|_| Refusal::Unavailable)?;
+        let announced = self.committed.as_ref().map(|_| after.clone());
+        *self.registry() = after;
+        for line in lines {
+            self.note(line.app, line.account, line.event);
+        }
+        if let (Some(told), Some(after)) = (&self.committed, announced) {
+            told(Committed { before, after });
+        }
+        Ok(Written {
+            value,
+            changed: true,
+        })
+    }
+
+    /// Records one audited event, dated now. For an event that is no change of the registry (a
+    /// relay opened); a change writes its lines through [`Ctx::transact`].
     pub fn note(&self, app: Option<AppId>, account: Option<AccountId>, event: AuditEvent) {
         self.audit
             .record(AuditEntry::new(self.clock.now(), app, account, event));
     }
 
     /// Sets an account's state (`NeedsReauth` when its credential was refused, `Ok` again once
-    /// it is signed in). Whether it changed.
-    pub async fn set_state(&self, id: &AccountId, state: AccountState) -> bool {
-        let changed = {
-            let mut registry = self.lock();
-            registry
-                .accounts
-                .iter_mut()
-                .find(|a| a.id == *id)
-                .is_some_and(|a| std::mem::replace(&mut a.state, state) != state)
-        };
-        if changed {
-            let _ = self.persist().await;
-        }
-        changed
+    /// it is signed in). Whether it changed; `Unavailable` when the change could not be saved,
+    /// and then the state is as it was.
+    pub async fn set_state(&self, id: &AccountId, state: AccountState) -> Result<bool, Refusal> {
+        let written = self
+            .transact(|registry| {
+                let changed = registry
+                    .accounts
+                    .iter_mut()
+                    .find(|a| a.id == *id)
+                    .is_some_and(|a| std::mem::replace(&mut a.state, state) != state);
+                Ok((Vec::new(), changed))
+            })
+            .await?;
+        Ok(written.value)
     }
 }

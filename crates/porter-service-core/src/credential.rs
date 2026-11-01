@@ -113,7 +113,11 @@ impl<E: Ports> Ctx<E> {
     pub async fn refused_refresh(&self, account: &AccountId, error: ProviderError) -> Refusal {
         let refusal = provider_refusal(error);
         if refusal == Refusal::NeedsReauth {
-            self.set_state(account, AccountState::NeedsReauth).await;
+            // The app is refused either way; a state that could not be saved is set again by the
+            // next refusal.
+            self.set_state(account, AccountState::NeedsReauth)
+                .await
+                .ok();
         }
         refusal
     }
