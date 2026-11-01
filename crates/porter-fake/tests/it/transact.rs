@@ -547,3 +547,29 @@ async fn the_service_tells_of_a_change_only_once_it_is_in_the_registry() {
     changed.expect("toggled");
     assert_eq!(seen, 1, "the registry already holds the change");
 }
+
+#[tokio::test]
+async fn a_listener_that_asks_later_hears_every_change_after_it_in_commit_order() {
+    let (store, audit) = (MemoryStore::default(), RecordingAudit::default());
+    let ctx = ctx(&store, &audit);
+    let early = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let late = Arc::new(std::sync::Mutex::new(Vec::new()));
+    {
+        let early = early.clone();
+        ctx.follow(move |c| early.lock().expect("early").push(c.after.toggles.len()));
+    }
+    for kind in [CapabilityKind::Calendar, CapabilityKind::Contacts] {
+        ctx.transact(|registry| {
+            registry.toggles.push(toggle_row(kind));
+            Ok((Vec::new(), ()))
+        })
+        .await
+        .expect("written");
+        if kind == CapabilityKind::Calendar {
+            let late = late.clone();
+            ctx.follow(move |c| late.lock().expect("late").push(c.after.toggles.len()));
+        }
+    }
+    assert_eq!(*early.lock().expect("early"), [1, 2]);
+    assert_eq!(*late.lock().expect("late"), [2]);
+}

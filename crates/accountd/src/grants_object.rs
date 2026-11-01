@@ -169,7 +169,7 @@ impl<H: Host, C: Callers> GrantsServer for GrantsObject<H, C> {
             .revoke_own(&caller.app, &grant_of(&grant)?)
             .await
             .map_err(RefusedError::of)?;
-        self.0.publish().await;
+        self.0.told().await;
         Ok(())
     }
 
@@ -262,7 +262,7 @@ impl<H: Host, C: Callers> GrantsServer for GrantsObject<H, C> {
             // The app left: the sign-in is taken down with the dropped call, and nobody is told.
             () = departed(leaving) => Err(Refusal::Dismissed),
         };
-        self.0.publish().await;
+        self.0.told().await;
         ended.map_err(RefusedError::of)
     }
 

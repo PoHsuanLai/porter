@@ -82,7 +82,6 @@ impl World {
             )
             .await
             .expect("key");
-        let saved = Arc::new(tokio::sync::Notify::new());
         let service: Arc<Service> = Arc::new(
             AccountService::new(
                 vec![llm_provider()],
@@ -98,20 +97,13 @@ impl World {
                 ScriptedSheets::answering([]),
                 FixedClock(NOW),
             )
-            .with_store(MemoryStore::default())
-            .on_committed({
-                let saved = Arc::clone(&saved);
-                move |_| saved.notify_one()
-            }),
+            .with_store(MemoryStore::default()),
         );
         serve_with(
             &connection,
             Arc::clone(&service),
             Arc::clone(&callers),
-            Options {
-                saved: Some(saved),
-                ..Options::default()
-            },
+            Options::default(),
         )
         .await
         .expect("accountd serves");
