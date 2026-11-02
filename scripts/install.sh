@@ -114,7 +114,19 @@ mode_of() {
 mount_namespace_for_user_units() {
     [ -n "$destdir" ] && return 0
     command -v systemd-run >/dev/null 2>&1 || return 1
-    systemd-run --user --quiet --wait -p PrivateTmp=yes -p ProtectSystem=strict true >/dev/null 2>&1
+    if [ "$(id -u)" -ne 0 ]; then
+        systemd-run --user --quiet --wait -p PrivateTmp=yes -p ProtectSystem=strict true >/dev/null 2>&1
+        return
+    fi
+    # Run by root (sudo), `systemd-run --user` would ask root's own user manager, which has no bus: that
+    # says nothing about the system. The person who ran sudo is the one whose manager runs these units,
+    # so it is asked there; with no such person, or no manager running for them, the answer is unknown (2).
+    local who=${SUDO_USER:-} uid
+    [ -n "$who" ] && [ "$who" != root ] || return 2
+    uid=$(id -u "$who" 2>/dev/null) || return 2
+    [ -S "/run/user/$uid/bus" ] || return 2
+    sudo -n -u "$who" env XDG_RUNTIME_DIR="/run/user/$uid" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" \
+        systemd-run --user --quiet --wait -p PrivateTmp=yes -p ProtectSystem=strict true >/dev/null 2>&1
 }
 
 # --- The daemons ---------------------------------------------------------------------------------
@@ -178,7 +190,13 @@ for daemon in $daemons; do
     put 755 "$built/$daemon" "$libexec/$daemon"
     put 644 "$dist/$daemon.service" "$prefix/lib/systemd/user/$daemon.service" /usr/libexec/quire "$libexec"
 done
-if mount_namespace_for_user_units; then
+namespaces=0
+mount_namespace_for_user_units || namespaces=$?
+# Unknown (2) installs the sandbox too: the units drop their capabilities, which a user manager can only do
+# inside the namespace the drop-in sets up, so leaving it out is what stops them (218/CAPABILITIES). Only a
+# system that was asked and said no (1) goes without it.
+if [ "$namespaces" -ne 1 ]; then
+    [ "$namespaces" -eq 0 ] || echo "install.sh: could not ask your user manager whether it allows a mount namespace (run this with sudo from your own login); the sandbox is installed anyway." >&2
     for daemon in $daemons; do
         put 644 "$dist/$daemon.service.d/sandbox.conf" "$prefix/lib/systemd/user/$daemon.service.d/sandbox.conf"
     done
